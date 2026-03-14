@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { ArrowLeftIcon, Trash2Icon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,11 +16,13 @@ import { Loader } from "@/components/ai/loader";
 import { usePresignedUrl } from "@/hooks/use-presigned-url";
 import { useFileContent } from "@/hooks/use-file-content";
 import { useDeleteFile } from "@/hooks/use-delete-file";
+import { PreviewActionsProvider } from "./preview-actions-context";
 import { ImagePreview } from "./image-preview";
 import { MarkdownPreview } from "./markdown-preview";
 import { TextPreview } from "./text-preview";
 import { CodePreview } from "./code-preview";
 import { CsvPreview } from "./csv-preview";
+import { HtmlPreview } from "./html-preview";
 import { DownloadFallback } from "./download-fallback";
 import type { FileItem } from "@/hooks/use-files";
 
@@ -32,6 +34,7 @@ interface FilePreviewProps {
 
 export function FilePreview({ file, projectId, onBack }: FilePreviewProps) {
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [actions, setActions] = useState<ReactNode>(null);
   const { data: urlData, isLoading: urlLoading } = usePresignedUrl(
     projectId,
     file.id,
@@ -53,49 +56,52 @@ export function FilePreview({ file, projectId, onBack }: FilePreviewProps) {
   }
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex items-center gap-2 border-b px-4 py-2">
-        <Button variant="ghost" size="icon-sm" onClick={onBack}>
-          <ArrowLeftIcon className="h-4 w-4" />
-        </Button>
-        <p className="text-sm font-medium truncate flex-1">{file.filename}</p>
-        <AlertDialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <AlertDialogTrigger asChild>
-            <Button variant="ghost" size="icon-sm" className="text-muted-foreground hover:text-destructive">
-              <Trash2Icon className="h-4 w-4" />
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent size="sm">
-            <AlertDialogHeader>
-              <AlertDialogTitle>Delete file</AlertDialogTitle>
-              <AlertDialogDescription>
-                Are you sure you want to delete "{file.filename}"? This action cannot be undone.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction
-                variant="destructive"
-                disabled={deleteFile.isPending}
-                onClick={() => {
-                  deleteFile.mutate(file.id, {
-                    onSuccess: () => {
-                      setDialogOpen(false);
-                      onBack();
-                    },
-                  });
-                }}
-              >
-                {deleteFile.isPending ? "Deleting..." : "Delete"}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+    <PreviewActionsProvider value={{ setActions }}>
+      <div className="flex flex-col h-full">
+        <div className="flex items-center gap-2 border-b px-4 py-2">
+          <Button variant="ghost" size="icon-sm" onClick={onBack}>
+            <ArrowLeftIcon className="h-4 w-4" />
+          </Button>
+          <p className="text-sm font-medium truncate flex-1">{file.filename}</p>
+          {actions}
+          <AlertDialog open={dialogOpen} onOpenChange={setDialogOpen}>
+            <AlertDialogTrigger asChild>
+              <Button variant="ghost" size="icon-sm" className="text-muted-foreground hover:text-destructive">
+                <Trash2Icon className="h-4 w-4" />
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent size="sm">
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete file</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Are you sure you want to delete "{file.filename}"? This action cannot be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  variant="destructive"
+                  disabled={deleteFile.isPending}
+                  onClick={() => {
+                    deleteFile.mutate(file.id, {
+                      onSuccess: () => {
+                        setDialogOpen(false);
+                        onBack();
+                      },
+                    });
+                  }}
+                >
+                  {deleteFile.isPending ? "Deleting..." : "Delete"}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
+        <div className="flex-1 overflow-y-auto">
+          <FilePreviewContent file={file} url={url} thumbnailUrl={thumbnailUrl} content={content} projectId={projectId} />
+        </div>
       </div>
-      <div className="flex-1 overflow-y-auto">
-        <FilePreviewContent file={file} url={url} thumbnailUrl={thumbnailUrl} content={content} projectId={projectId} />
-      </div>
-    </div>
+    </PreviewActionsProvider>
   );
 }
 
@@ -103,8 +109,12 @@ function isMarkdownFile(file: FileItem): boolean {
   return file.mimeType === "text/markdown" || file.filename.endsWith(".md");
 }
 
+function isHtmlFile(file: FileItem): boolean {
+  return file.mimeType === "text/html" || file.filename.endsWith(".html");
+}
+
 function isPlainTextFile(file: FileItem): boolean {
-  return (file.mimeType === "text/plain" || file.filename.endsWith(".txt")) && !isMarkdownFile(file) && !isCodeFile(file);
+  return (file.mimeType === "text/plain" || file.filename.endsWith(".txt")) && !isMarkdownFile(file) && !isCodeFile(file) && !isHtmlFile(file);
 }
 
 function isCsvFile(file: FileItem): boolean {
@@ -130,9 +140,12 @@ function FilePreviewContent({
   content?: string;
   projectId: string;
 }) {
-  // Route by file type
   if (file.mimeType.startsWith("image/") && url) {
     return <ImagePreview file={file} url={url} thumbnailUrl={thumbnailUrl} />;
+  }
+
+  if (isHtmlFile(file) && content !== undefined) {
+    return <HtmlPreview file={file} content={content} />;
   }
 
   if (isMarkdownFile(file) && content !== undefined) {

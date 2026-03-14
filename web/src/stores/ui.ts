@@ -1,12 +1,12 @@
 import { create } from "zustand";
 
-type DrawerType = "files" | "leads" | null;
+type DrawerType = "files" | null;
 
 interface UIState {
   activeDrawer: DrawerType;
-  openDrawer: (drawer: "files" | "leads") => void;
+  openDrawer: (drawer: "files") => void;
   closeDrawer: () => void;
-  toggleDrawer: (drawer: "files" | "leads") => void;
+  toggleDrawer: (drawer: "files") => void;
 }
 
 export const useUIStore = create<UIState>((set, get) => ({

@@ -14,7 +14,7 @@ interface LaunchResult {
 }
 
 function getUserDataDir(profile: string): string {
-  const dir = join(homedir(), ".leadsagent", "browser", profile, "user-data");
+  const dir = join(homedir(), ".zero-agent", "browser", profile, "user-data");
   mkdirSync(dir, { recursive: true });
   return dir;
 }

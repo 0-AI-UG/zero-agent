@@ -220,7 +220,7 @@ function TaskDialog({
               <Input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Check overdue leads"
+                placeholder="e.g. Daily status report"
               />
             </div>
             <div className="space-y-2">
@@ -537,7 +537,7 @@ export function TasksPage() {
             <p className="text-sm font-medium mb-1">No scheduled tasks</p>
             <p className="text-xs text-muted-foreground max-w-[280px]">
               Create tasks to have the agent automatically review your project,
-              check for overdue leads, or run custom prompts on a schedule.
+              check for updates, or run custom prompts on a schedule.
             </p>
           </div>
         ) : (

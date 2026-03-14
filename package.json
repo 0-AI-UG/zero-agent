@@ -1,5 +1,5 @@
 {
-  "name": "leadbot",
+  "name": "zero-agent",
   "private": true,
   "workspaces": ["api", "web"],
   "scripts": {

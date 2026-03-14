@@ -1,5 +1,5 @@
 import { generateId } from "ai";
-import { createSalesAgent } from "@/lib/agent.ts";
+import { createAgent } from "@/lib/agent.ts";
 import { getOrCreateAutonomousChat } from "@/db/queries/chats.ts";
 import { touchChat } from "@/db/queries/chats.ts";
 import { db } from "@/db/index.ts";
@@ -60,7 +60,7 @@ export async function runAutonomousTask(
     autoLog.info("no heartbeat checklist found", { projectId: project.id });
   }
 
-  const agent = await createSalesAgent(project, {
+  const agent = await createAgent(project, {
     onlyTools: options?.onlyTools,
     userId: options?.userId,
   });

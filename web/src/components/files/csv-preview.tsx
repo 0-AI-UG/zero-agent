@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useRef } from "react";
+import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import Papa from "papaparse";
 import { SaveIcon, PlusIcon, XIcon, Trash2Icon, UndoIcon } from "lucide-react";
 import {
@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import { useUpdateFileContent } from "@/hooks/use-update-file-content";
+import { usePreviewActions } from "./preview-actions-context";
 import type { FileItem } from "@/hooks/use-files";
 
 interface CsvPreviewProps {
@@ -49,6 +50,7 @@ export function CsvPreview({ file, content, projectId }: CsvPreviewProps) {
   const [headers, setHeaders] = useState<string[]>(initial.headers);
   const [rows, setRows] = useState<string[][]>(initial.rows);
   const updateFile = useUpdateFileContent(projectId);
+  const { setActions } = usePreviewActions();
 
   const prevContent = useRef(content);
   if (content !== prevContent.current) {
@@ -64,6 +66,47 @@ export function CsvPreview({ file, content, projectId }: CsvPreviewProps) {
       serializeCSV(initial.headers, initial.rows),
     [headers, rows, initial],
   );
+
+  const handleSave = () => {
+    const csv = serializeCSV(headers, rows);
+    updateFile.mutate(
+      { fileId: file.id, content: csv },
+      {
+        onSuccess: () => toast("File saved"),
+        onError: () => toast.error("Failed to save file"),
+      },
+    );
+  };
+
+  const handleReset = useCallback(() => {
+    setHeaders(initial.headers);
+    setRows(initial.rows);
+  }, [initial]);
+
+  useEffect(() => {
+    setActions(
+      <>
+        {isDirty && (
+          <Button variant="ghost" size="icon-sm" onClick={handleReset} title="Reset changes">
+            <UndoIcon className="h-3.5 w-3.5" />
+          </Button>
+        )}
+        <Button
+          variant="default"
+          size="sm"
+          onClick={handleSave}
+          disabled={!isDirty || updateFile.isPending}
+        >
+          <SaveIcon className="h-3.5 w-3.5 mr-1" />
+          {updateFile.isPending ? "Saving..." : "Save"}
+        </Button>
+        <span className="text-xs text-muted-foreground">
+          {rows.length} row{rows.length !== 1 ? "s" : ""} · {headers.length} col{headers.length !== 1 ? "s" : ""}
+        </span>
+      </>
+    );
+    return () => setActions(null);
+  }, [isDirty, updateFile.isPending, rows.length, headers.length]);
 
   const handleCellChange = useCallback(
     (rowIdx: number, colIdx: number, value: string) => {
@@ -102,22 +145,6 @@ export function CsvPreview({ file, content, projectId }: CsvPreviewProps) {
     setRows((prev) => prev.map((r) => r.filter((_, i) => i !== colIdx)));
   }, []);
 
-  const handleReset = useCallback(() => {
-    setHeaders(initial.headers);
-    setRows(initial.rows);
-  }, [initial]);
-
-  const handleSave = () => {
-    const csv = serializeCSV(headers, rows);
-    updateFile.mutate(
-      { fileId: file.id, content: csv },
-      {
-        onSuccess: () => toast("File saved"),
-        onError: () => toast.error("Failed to save file"),
-      },
-    );
-  };
-
   if (headers.length === 0) {
     return (
       <div className="p-4 text-sm text-muted-foreground">
@@ -128,29 +155,6 @@ export function CsvPreview({ file, content, projectId }: CsvPreviewProps) {
 
   return (
     <div className="p-4">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-base font-semibold">{file.filename}</h3>
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-muted-foreground">
-            {rows.length} row{rows.length !== 1 ? "s" : ""} ·{" "}
-            {headers.length} column{headers.length !== 1 ? "s" : ""}
-          </span>
-          {isDirty && (
-            <Button variant="ghost" size="icon-sm" onClick={handleReset} title="Reset changes">
-              <UndoIcon className="h-3.5 w-3.5" />
-            </Button>
-          )}
-          <Button
-            variant="default"
-            size="sm"
-            onClick={handleSave}
-            disabled={!isDirty || updateFile.isPending}
-          >
-            <SaveIcon className="h-3.5 w-3.5 mr-1" />
-            {updateFile.isPending ? "Saving..." : "Save"}
-          </Button>
-        </div>
-      </div>
       <div className="rounded-md border overflow-auto max-h-[70vh]">
         <Table>
           <TableHeader className="sticky top-0 bg-muted z-10">
@@ -234,7 +238,6 @@ export function CsvPreview({ file, content, projectId }: CsvPreviewProps) {
                 <TableCell className="w-8 p-0" />
               </TableRow>
             ))}
-            {/* Add row */}
             <TableRow>
               <TableCell className="p-0" colSpan={headers.length + 2}>
                 <button

@@ -4,41 +4,41 @@ import { parseSkillMd } from "./parser.ts";
 describe("parseSkillMd", () => {
   test("parses valid SKILL.md with full metadata", () => {
     const content = `---
-name: linkedin-outreach
-description: Guide for LinkedIn prospecting and outreach
+name: web-research
+description: Guide for web research and data extraction
 metadata:
   version: "1.0.0"
-  platform: linkedin
+  platform: web
   login_required: true
   requires:
     env:
-      - LINKEDIN_COOKIE
+      - API_KEY
     bins:
       - chromium
   capabilities:
     - search
-    - message
+    - extract
   tags:
-    - social
-    - b2b
+    - research
+    - data
 ---
 
-# LinkedIn Outreach
+# Web Research
 
-Use the browser tool to navigate to LinkedIn...`;
+Use the browser tool to navigate to websites...`;
 
     const { frontmatter, body } = parseSkillMd(content);
 
-    expect(frontmatter.name).toBe("linkedin-outreach");
-    expect(frontmatter.description).toBe("Guide for LinkedIn prospecting and outreach");
+    expect(frontmatter.name).toBe("web-research");
+    expect(frontmatter.description).toBe("Guide for web research and data extraction");
     expect(frontmatter.metadata.version).toBe("1.0.0");
-    expect(frontmatter.metadata.platform).toBe("linkedin");
+    expect(frontmatter.metadata.platform).toBe("web");
     expect(frontmatter.metadata.login_required).toBe(true);
-    expect(frontmatter.metadata.requires.env).toEqual(["LINKEDIN_COOKIE"]);
+    expect(frontmatter.metadata.requires.env).toEqual(["API_KEY"]);
     expect(frontmatter.metadata.requires.bins).toEqual(["chromium"]);
-    expect(frontmatter.metadata.capabilities).toEqual(["search", "message"]);
-    expect(frontmatter.metadata.tags).toEqual(["social", "b2b"]);
-    expect(body).toContain("# LinkedIn Outreach");
+    expect(frontmatter.metadata.capabilities).toEqual(["search", "extract"]);
+    expect(frontmatter.metadata.tags).toEqual(["research", "data"]);
+    expect(body).toContain("# Web Research");
     expect(body).toContain("Use the browser tool");
   });
 

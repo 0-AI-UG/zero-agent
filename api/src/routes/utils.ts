@@ -9,8 +9,6 @@ import { getProjectById } from "@/db/queries/projects.ts";
 import { isProjectMember, getMemberRole, getMemberCount } from "@/db/queries/members.ts";
 import type {
   ProjectRow,
-  LeadRow,
-  OutreachMessageRow,
 } from "@/db/types.ts";
 import { log } from "@/lib/logger.ts";
 
@@ -71,8 +69,6 @@ export function formatProject(row: ProjectRow, opts?: { role?: string; memberCou
     name: row.name,
     description: row.description,
     automationEnabled: row.automation_enabled === 1,
-    defaultOutreachChannel: row.default_outreach_channel,
-    outreachApprovalRequired: row.outreach_approval_required === 1,
     codeExecutionEnabled: row.code_execution_enabled === 1,
     browserAutomationEnabled: row.browser_automation_enabled === 1,
     showSkillsInFiles: row.show_skills_in_files === 1,
@@ -83,48 +79,6 @@ export function formatProject(row: ProjectRow, opts?: { role?: string; memberCou
     memberCount: opts?.memberCount ?? 1,
     createdAt: toUTC(row.created_at),
     updatedAt: toUTC(row.updated_at),
-  };
-}
-
-/** Convert a LeadRow (snake_case DB) to a camelCase API response object. */
-export function formatLead(row: LeadRow) {
-  return {
-    id: row.id,
-    projectId: row.project_id,
-    name: row.name,
-    source: row.source,
-    notes: row.notes,
-    email: row.email,
-    status: row.status,
-    followUpDate: row.follow_up_date,
-    platform: row.platform,
-    platformHandle: row.platform_handle,
-    profileUrl: row.profile_url,
-    interest: row.interest,
-    priority: row.priority,
-    lastInteraction: row.last_interaction,
-    tags: row.tags,
-    score: row.score,
-    createdAt: toUTC(row.created_at),
-    updatedAt: toUTC(row.updated_at),
-  };
-}
-
-/** Convert an OutreachMessageRow to a camelCase API response. */
-export function formatOutreachMessage(row: OutreachMessageRow) {
-  return {
-    id: row.id,
-    leadId: row.lead_id,
-    projectId: row.project_id,
-    channel: row.channel,
-    subject: row.subject,
-    body: row.body,
-    status: row.status,
-    sentAt: row.sent_at ? toUTC(row.sent_at) : null,
-    repliedAt: row.replied_at ? toUTC(row.replied_at) : null,
-    replyBody: row.reply_body,
-    error: row.error,
-    createdAt: toUTC(row.created_at),
   };
 }
 

@@ -5,7 +5,7 @@ import { spawn } from "bun";
 import type { Logger } from "./logger.ts";
 
 export function isFirstRun(profile: string): boolean {
-  const dir = join(homedir(), ".leadsagent", "browser", profile, "user-data");
+  const dir = join(homedir(), ".zero-agent", "browser", profile, "user-data");
   return !existsSync(dir);
 }
 
@@ -39,7 +39,7 @@ export async function printStartupInfo(opts: {
   const pkg = await import("../package.json");
 
   logger.banner([
-    `LeadsAgent Companion v${pkg.version}`,
+    `Zero-Agent Companion v${pkg.version}`,
     "─".repeat(30),
   ]);
 

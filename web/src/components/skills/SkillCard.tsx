@@ -1,6 +1,7 @@
 import type { SkillMetadata, SkillSource } from "@/api/skills";
 import { Badge } from "@/components/ui/badge";
 import { TrashIcon, DownloadIcon, GlobeIcon, Loader2Icon } from "lucide-react";
+import type { MouseEvent } from "react";
 import {
   getPlatformConfig,
   CAPABILITY_LABELS,
@@ -89,15 +90,15 @@ export function SkillCard({
       </div>
 
       {/* Actions */}
-      <div
-        className="flex items-center gap-2 mt-3 pt-2 border-t"
-        onClick={(e) => e.stopPropagation()}
-      >
+      <div className="flex items-center gap-2 mt-3 pt-2 border-t">
         {skill.installed ? (
           <div className="ml-auto flex items-center gap-1">
             {skill.source === "user" && !skill.published && onPublish && (
               <button
-                onClick={onPublish}
+                onClick={(e: MouseEvent) => {
+                  e.stopPropagation();
+                  onPublish();
+                }}
                 disabled={isPublishing}
                 className="text-muted-foreground hover:text-foreground p-1 disabled:opacity-50"
                 aria-label={`Publish ${skill.name}`}
@@ -111,7 +112,10 @@ export function SkillCard({
             )}
             {skill.published && onUnpublish && (
               <button
-                onClick={onUnpublish}
+                onClick={(e: MouseEvent) => {
+                  e.stopPropagation();
+                  onUnpublish();
+                }}
                 disabled={isPublishing}
                 className="text-muted-foreground hover:text-foreground p-1 disabled:opacity-50"
                 aria-label={`Unpublish ${skill.name}`}
@@ -124,7 +128,10 @@ export function SkillCard({
               </button>
             )}
             <button
-              onClick={onUninstall}
+              onClick={(e: MouseEvent) => {
+                e.stopPropagation();
+                onUninstall?.();
+              }}
               className="text-muted-foreground hover:text-destructive p-1"
               aria-label={`Uninstall ${skill.name}`}
             >
@@ -133,12 +140,21 @@ export function SkillCard({
           </div>
         ) : (
           <button
-            onClick={onInstall}
+            type="button"
+            onClick={(e: MouseEvent) => {
+              e.stopPropagation();
+              e.preventDefault();
+              onInstall?.();
+            }}
             disabled={isInstalling}
             className="flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs font-medium hover:bg-muted disabled:opacity-50"
           >
-            <DownloadIcon className="size-3" />
-            Install
+            {isInstalling ? (
+              <Loader2Icon className="size-3 animate-spin" />
+            ) : (
+              <DownloadIcon className="size-3" />
+            )}
+            {isInstalling ? "Installing..." : "Install"}
           </button>
         )}
       </div>

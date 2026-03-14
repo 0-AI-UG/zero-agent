@@ -27,6 +27,7 @@ function guessMimeType(filename: string): string {
     webp: "image/webp",
     gif: "image/gif",
     pdf: "application/pdf",
+    html: "text/html",
   };
   return map[ext ?? ""] ?? "application/octet-stream";
 }
@@ -143,7 +144,7 @@ export function createFileTools(projectId: string) {
 
     writeFile: tool({
       description:
-        "Write or overwrite a file in this project's storage. Use for creating new files or complete rewrites. You must read a file first before overwriting it. Prefer creating .md, .txt, .json, .csv, or .py files — these formats have built-in preview support.",
+        "Write or overwrite a file in this project's storage. Use for creating new files or complete rewrites. You must read a file first before overwriting it. Prefer creating .md, .txt, .json, .csv, .py, or .html files — these formats have built-in preview support.",
       inputSchema: z.object({
         path: z
           .string()

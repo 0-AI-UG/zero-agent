@@ -137,62 +137,6 @@ db.run(`
 }
 
 
-db.run(`
-  CREATE TABLE IF NOT EXISTS leads (
-    id             TEXT PRIMARY KEY,
-    project_id     TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    name           TEXT NOT NULL,
-    source         TEXT DEFAULT '',
-    notes          TEXT DEFAULT '',
-    status         TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new', 'contacted', 'replied', 'converted', 'dropped')),
-    follow_up_date TEXT,
-    created_at     TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
-  )
-`);
-
-// Migration: add new columns to leads table
-{
-  const cols = db.query<{ name: string }, []>(
-    "SELECT name FROM pragma_table_info('leads')",
-  ).all();
-  const colNames = cols.map((c) => c.name);
-  const newCols: [string, string][] = [
-    ["rednote_handle", "TEXT DEFAULT ''"],
-    ["profile_url", "TEXT DEFAULT ''"],
-    ["interest", "TEXT DEFAULT ''"],
-    ["priority", "TEXT NOT NULL DEFAULT 'medium' CHECK (priority IN ('low','medium','high'))"],
-    ["last_interaction", "TEXT"],
-    ["tags", "TEXT DEFAULT ''"],
-    ["score", "INTEGER"],
-    ["platform", "TEXT"],
-    ["platform_handle", "TEXT"],
-    ["email", "TEXT DEFAULT ''"],
-  ];
-  for (const [name, def] of newCols) {
-    if (!colNames.includes(name)) {
-      db.run(`ALTER TABLE leads ADD COLUMN ${name} ${def}`);
-    }
-  }
-}
-
-// Migration: populate platform/platform_handle from rednote_handle
-{
-  const cols = db.query<{ name: string }, []>(
-    "SELECT name FROM pragma_table_info('leads')",
-  ).all();
-  const colNames = cols.map((c) => c.name);
-  if (colNames.includes("platform") && colNames.includes("rednote_handle")) {
-    db.run("UPDATE leads SET platform = 'rednote', platform_handle = rednote_handle WHERE rednote_handle IS NOT NULL AND rednote_handle != '' AND (platform IS NULL OR platform = '')");
-  }
-}
-
-// Migration: normalize outreach_messages channels
-{
-  db.run("UPDATE outreach_messages SET channel = 'direct_message' WHERE channel = 'rednote_dm'");
-  db.run("UPDATE outreach_messages SET channel = 'comment' WHERE channel = 'rednote_comment'");
-}
-
 // Migration: add automation_enabled column to projects
 {
   const cols = db.query<{ name: string }, []>(
@@ -200,16 +144,6 @@ db.run(`
   ).all();
   if (!cols.some((c) => c.name === "automation_enabled")) {
     db.run("ALTER TABLE projects ADD COLUMN automation_enabled INTEGER NOT NULL DEFAULT 0");
-  }
-}
-
-// Migration: add rednote_cookies column to projects
-{
-  const cols = db.query<{ name: string }, []>(
-    "SELECT name FROM pragma_table_info('projects')",
-  ).all();
-  if (!cols.some((c) => c.name === "rednote_cookies")) {
-    db.run("ALTER TABLE projects ADD COLUMN rednote_cookies TEXT DEFAULT ''");
   }
 }
 
@@ -266,20 +200,11 @@ db.run(`
   )
 `);
 
-// Migration: add outreach columns to projects
+// Migration: add feature columns to projects
 {
   const cols = db.query<{ name: string }, []>(
     "SELECT name FROM pragma_table_info('projects')",
   ).all();
-  if (!cols.some((c) => c.name === "outreach_enabled")) {
-    db.run("ALTER TABLE projects ADD COLUMN outreach_enabled INTEGER NOT NULL DEFAULT 1");
-  }
-  if (!cols.some((c) => c.name === "default_outreach_channel")) {
-    db.run("ALTER TABLE projects ADD COLUMN default_outreach_channel TEXT NOT NULL DEFAULT 'manual'");
-  }
-  if (!cols.some((c) => c.name === "outreach_approval_required")) {
-    db.run("ALTER TABLE projects ADD COLUMN outreach_approval_required INTEGER NOT NULL DEFAULT 1");
-  }
   if (!cols.some((c) => c.name === "browser_search_fallback")) {
     db.run("ALTER TABLE projects ADD COLUMN browser_search_fallback INTEGER NOT NULL DEFAULT 0");
   }
@@ -288,99 +213,6 @@ db.run(`
   }
   if (!cols.some((c) => c.name === "browser_automation_enabled")) {
     db.run("ALTER TABLE projects ADD COLUMN browser_automation_enabled INTEGER NOT NULL DEFAULT 1");
-  }
-}
-
-// Migration: outreach_approval_required defaults to true (was false before)
-db.run("UPDATE projects SET outreach_approval_required = 1 WHERE outreach_approval_required = 0");
-
-// Migration: drop old outreach tables (sequences, steps, enrollments, templates)
-db.run("DROP TABLE IF EXISTS outreach_templates");
-db.run("DROP TABLE IF EXISTS sequence_enrollments");
-db.run("DROP TABLE IF EXISTS sequence_steps");
-db.run("DROP TABLE IF EXISTS outreach_sequences");
-
-// Migration: recreate outreach_messages without enrollment_id/step_id, add 'rejected' status
-{
-  const cols = db.query<{ name: string }, []>(
-    "SELECT name FROM pragma_table_info('outreach_messages')",
-  ).all();
-  if (cols.some((c) => c.name === "enrollment_id")) {
-    db.transaction(() => {
-      db.run(`CREATE TABLE outreach_messages_new (
-        id         TEXT PRIMARY KEY,
-        lead_id    TEXT NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
-        project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-        channel    TEXT NOT NULL DEFAULT 'manual',
-        subject    TEXT DEFAULT '',
-        body       TEXT NOT NULL DEFAULT '',
-        status     TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'sent', 'delivered', 'failed', 'replied', 'rejected')),
-        sent_at    TEXT,
-        replied_at TEXT,
-        error      TEXT,
-        created_at TEXT NOT NULL DEFAULT (datetime('now'))
-      )`);
-      db.run("INSERT INTO outreach_messages_new (id, lead_id, project_id, channel, subject, body, status, sent_at, replied_at, error, created_at) SELECT id, lead_id, project_id, channel, subject, body, status, sent_at, replied_at, error, created_at FROM outreach_messages");
-      db.run("DROP TABLE outreach_messages");
-      db.run("ALTER TABLE outreach_messages_new RENAME TO outreach_messages");
-    })();
-  }
-}
-
-// Outreach messages table (for fresh DBs)
-db.run(`
-  CREATE TABLE IF NOT EXISTS outreach_messages (
-    id         TEXT PRIMARY KEY,
-    lead_id    TEXT NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
-    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    channel    TEXT NOT NULL DEFAULT 'manual',
-    subject    TEXT DEFAULT '',
-    body       TEXT NOT NULL DEFAULT '',
-    status     TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'sent', 'delivered', 'failed', 'replied', 'rejected')),
-    sent_at    TEXT,
-    replied_at TEXT,
-    error      TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )
-`);
-
-// Migration: add 'approved' to outreach_messages status CHECK constraint
-{
-  // Check if the CHECK constraint already includes 'approved' by trying an insert
-  // Simpler: just rebuild the table to ensure the constraint is up to date
-  const sql = db.query<{ sql: string }, [string]>(
-    "SELECT sql FROM sqlite_master WHERE type='table' AND name=?",
-  ).get("outreach_messages");
-  if (sql && !sql.sql.includes("'approved'")) {
-    db.transaction(() => {
-      db.run(`CREATE TABLE outreach_messages_new (
-        id         TEXT PRIMARY KEY,
-        lead_id    TEXT NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
-        project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-        channel    TEXT NOT NULL DEFAULT 'manual',
-        subject    TEXT DEFAULT '',
-        body       TEXT NOT NULL DEFAULT '',
-        status     TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'sent', 'delivered', 'failed', 'replied', 'rejected')),
-        sent_at    TEXT,
-        replied_at TEXT,
-        error      TEXT,
-        reply_body TEXT,
-        created_at TEXT NOT NULL DEFAULT (datetime('now'))
-      )`);
-      db.run("INSERT INTO outreach_messages_new (id, lead_id, project_id, channel, subject, body, status, sent_at, replied_at, error, reply_body, created_at) SELECT id, lead_id, project_id, channel, subject, body, status, sent_at, replied_at, error, reply_body, created_at FROM outreach_messages");
-      db.run("DROP TABLE outreach_messages");
-      db.run("ALTER TABLE outreach_messages_new RENAME TO outreach_messages");
-    })();
-  }
-}
-
-// Migration: add reply_body column to outreach_messages
-{
-  const cols = db.query<{ name: string }, []>(
-    "SELECT name FROM pragma_table_info('outreach_messages')",
-  ).all();
-  if (!cols.some((c) => c.name === "reply_body")) {
-    db.run("ALTER TABLE outreach_messages ADD COLUMN reply_body TEXT");
   }
 }
 
@@ -590,14 +422,16 @@ db.run(`
     "SELECT name FROM pragma_table_info('projects')",
   ).all();
   if (!cols.some((c) => c.name === "assistant_name")) {
-    db.run("ALTER TABLE projects ADD COLUMN assistant_name TEXT NOT NULL DEFAULT 'Sales Assistant'");
+    db.run("ALTER TABLE projects ADD COLUMN assistant_name TEXT NOT NULL DEFAULT 'Zero Agent'");
   }
   if (!cols.some((c) => c.name === "assistant_description")) {
-    db.run("ALTER TABLE projects ADD COLUMN assistant_description TEXT NOT NULL DEFAULT 'Ask me anything about your leads, messages, or sales strategy.'");
+    db.run("ALTER TABLE projects ADD COLUMN assistant_description TEXT NOT NULL DEFAULT 'Ask me anything — I can browse the web, manage files, run code, and automate tasks.'");
   }
   if (!cols.some((c) => c.name === "assistant_icon")) {
     db.run("ALTER TABLE projects ADD COLUMN assistant_icon TEXT NOT NULL DEFAULT 'message'");
   }
+  // Migrate old default name
+  db.run("UPDATE projects SET assistant_name = 'Zero Agent' WHERE assistant_name = 'AI Assistant'");
 }
 
 // Quick actions (user-managed starter suggestions)
@@ -614,39 +448,7 @@ db.run(`
   )
 `);
 
-// Channels (messaging platform integrations)
-db.run(`
-  CREATE TABLE IF NOT EXISTS channels (
-    id               TEXT PRIMARY KEY,
-    project_id       TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    platform         TEXT NOT NULL CHECK (platform IN ('telegram', 'whatsapp', 'signal')),
-    name             TEXT NOT NULL,
-    credentials      TEXT NOT NULL DEFAULT '{}',
-    allowed_senders  TEXT NOT NULL DEFAULT '[]',
-    enabled          INTEGER NOT NULL DEFAULT 0,
-    last_message_at  TEXT,
-    created_at       TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at       TEXT NOT NULL DEFAULT (datetime('now')),
-    UNIQUE(project_id, platform)
-  )
-`);
-
-db.run(`
-  CREATE TABLE IF NOT EXISTS channel_messages (
-    id                  TEXT PRIMARY KEY,
-    channel_id          TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
-    project_id          TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    chat_id             TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
-    external_chat_id    TEXT NOT NULL,
-    external_message_id TEXT,
-    sender_identifier   TEXT NOT NULL,
-    direction           TEXT NOT NULL CHECK (direction IN ('inbound', 'outbound')),
-    content_text        TEXT NOT NULL DEFAULT '',
-    created_at          TEXT NOT NULL DEFAULT (datetime('now'))
-  )
-`);
-
-// Migration: add source column to chats (for channel-created chats)
+// Migration: add source column to chats
 {
   const cols = db.query<{ name: string }, []>(
     "SELECT name FROM pragma_table_info('chats')",
@@ -657,18 +459,12 @@ db.run(`
 }
 
 // Indexes
-db.run(`CREATE INDEX IF NOT EXISTS idx_outreach_messages_status ON outreach_messages(project_id, status)`);
-db.run(`CREATE INDEX IF NOT EXISTS idx_outreach_messages_lead ON outreach_messages(lead_id)`);
-db.run(`CREATE INDEX IF NOT EXISTS idx_outreach_messages_project ON outreach_messages(project_id)`);
 db.run(`CREATE INDEX IF NOT EXISTS idx_projects_user_id ON projects(user_id)`);
 db.run(`CREATE INDEX IF NOT EXISTS idx_chats_project ON chats(project_id, updated_at)`);
 db.run(`CREATE INDEX IF NOT EXISTS idx_messages_project_created ON messages(project_id, created_at)`);
 db.run(`CREATE INDEX IF NOT EXISTS idx_messages_chat_created ON messages(chat_id, created_at)`);
 db.run(`CREATE INDEX IF NOT EXISTS idx_files_project_folder ON files(project_id, folder_path)`);
 db.run(`CREATE INDEX IF NOT EXISTS idx_folders_project ON folders(project_id)`);
-db.run(`CREATE INDEX IF NOT EXISTS idx_leads_project_status ON leads(project_id, status)`);
-db.run(`CREATE INDEX IF NOT EXISTS idx_leads_follow_up ON leads(project_id, follow_up_date)`);
-db.run(`CREATE INDEX IF NOT EXISTS idx_leads_score ON leads(project_id, score)`);
 db.run(`CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_next ON scheduled_tasks(next_run_at, enabled)`);
 db.run(`CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_project ON scheduled_tasks(project_id)`);
 db.run(`CREATE INDEX IF NOT EXISTS idx_task_runs_task ON task_runs(task_id, started_at)`);
@@ -685,10 +481,6 @@ db.run(`CREATE INDEX IF NOT EXISTS idx_companion_tokens_token ON companion_token
 db.run(`CREATE INDEX IF NOT EXISTS idx_published_skills_name ON published_skills(name)`);
 db.run(`CREATE INDEX IF NOT EXISTS idx_published_skills_downloads ON published_skills(downloads DESC)`);
 db.run(`CREATE INDEX IF NOT EXISTS idx_quick_actions_project ON quick_actions(project_id, sort_order)`);
-db.run(`CREATE INDEX IF NOT EXISTS idx_channels_project ON channels(project_id)`);
-db.run(`CREATE INDEX IF NOT EXISTS idx_channels_enabled ON channels(enabled)`);
-db.run(`CREATE INDEX IF NOT EXISTS idx_channel_messages_channel ON channel_messages(channel_id, created_at)`);
-db.run(`CREATE INDEX IF NOT EXISTS idx_channel_messages_chat ON channel_messages(chat_id, created_at)`);
 
 export function generateId(): string {
   return nanoid();

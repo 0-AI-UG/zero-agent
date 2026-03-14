@@ -10,7 +10,6 @@ const MEMORY_SECTIONS = [
   "facts",
   "preferences",
   "decisions",
-  "lead_insights",
 ] as const;
 
 type MemorySection = (typeof MEMORY_SECTIONS)[number];
@@ -19,7 +18,6 @@ const SECTION_HEADERS: Record<MemorySection, string> = {
   facts: "## Facts",
   preferences: "## Preferences",
   decisions: "## Decisions",
-  lead_insights: "## Lead Insights",
 };
 
 function extractTextFromMessage(message: UIMessage): string {
@@ -40,7 +38,6 @@ function parseMemory(
     facts: [],
     preferences: [],
     decisions: [],
-    lead_insights: [],
   };
 
   let current: MemorySection | null = null;
@@ -147,13 +144,12 @@ export async function flushConversationMemory(
       system: `You extract important information from conversations. Output new memory entries, one per line, in the format:
 section: content
 
-Valid sections: facts, preferences, decisions, lead_insights
+Valid sections: facts, preferences, decisions
 
 Categories:
 - facts: Concrete facts about the user, their business, market, or product
 - preferences: User preferences for workflow, communication, content style
 - decisions: Strategic decisions made during the conversation
-- lead_insights: Patterns or insights about specific leads or lead segments
 
 Rules:
 - Only extract information worth remembering across conversations

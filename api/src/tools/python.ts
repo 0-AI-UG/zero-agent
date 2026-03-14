@@ -175,7 +175,7 @@ export function createPythonTools(userId: string, projectId: string) {
     runPython: tool({
       description:
         "Run a Python script on the user's machine. All project files are accessible via normal open() calls " +
-        "(e.g. open('data/leads.csv')). New or modified files written to disk are saved back to the project automatically. " +
+        "(e.g. open('data/data.csv')). New or modified files written to disk are saved back to the project automatically. " +
         "Third-party packages are auto-detected from imports and installed automatically via uv. Returns stdout, stderr, exit code, and saved file info.",
       inputSchema: z.object({
         script: z.string().describe(

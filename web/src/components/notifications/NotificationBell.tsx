@@ -36,10 +36,6 @@ export function NotificationBell() {
         return `Task "${n.data.taskName}" completed in "${n.data.projectName}"`;
       case "task_failed":
         return `Task "${n.data.taskName}" failed in "${n.data.projectName}"`;
-      case "outreach_replied":
-        return `${n.data.leadName} replied to your outreach in "${n.data.projectName}"`;
-      case "lead_converted":
-        return `Lead "${n.data.leadName}" was converted in "${n.data.projectName}"`;
       default:
         return "Notification";
     }

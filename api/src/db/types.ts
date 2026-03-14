@@ -11,8 +11,6 @@ export interface ProjectRow {
   name: string;
   description: string;
   automation_enabled: number;
-  default_outreach_channel: string;
-  outreach_approval_required: number;
   browser_search_fallback: number;
   code_execution_enabled: number;
   browser_automation_enabled: number;
@@ -93,24 +91,6 @@ export interface TaskRunRow {
   error: string | null;
 }
 
-export type OutreachChannel = "direct_message" | "comment" | "email" | "manual";
-export type OutreachMessageStatus = "pending" | "approved" | "sent" | "delivered" | "failed" | "replied" | "rejected";
-
-export interface OutreachMessageRow {
-  id: string;
-  lead_id: string;
-  project_id: string;
-  channel: string;
-  subject: string;
-  body: string;
-  status: OutreachMessageStatus;
-  sent_at: string | null;
-  replied_at: string | null;
-  reply_body: string | null;
-  error: string | null;
-  created_at: string;
-}
-
 export interface ProjectMemberRow {
   id: string;
   project_id: string;
@@ -130,7 +110,7 @@ export interface InvitationRow {
   responded_at: string | null;
 }
 
-export type NotificationType = "invite" | "invite_accepted" | "member_removed" | "task_completed" | "task_failed" | "outreach_replied" | "lead_converted";
+export type NotificationType = "invite" | "invite_accepted" | "member_removed" | "task_completed" | "task_failed";
 
 export interface NotificationRow {
   id: string;
@@ -187,32 +167,6 @@ export interface QuickActionRow {
   updated_at: string;
 }
 
-export interface ChannelRow {
-  id: string;
-  project_id: string;
-  platform: string;
-  name: string;
-  credentials: string;
-  allowed_senders: string;
-  enabled: number;
-  last_message_at: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface ChannelMessageRow {
-  id: string;
-  channel_id: string;
-  project_id: string;
-  chat_id: string;
-  external_chat_id: string;
-  external_message_id: string | null;
-  sender_identifier: string;
-  direction: "inbound" | "outbound";
-  content_text: string;
-  created_at: string;
-}
-
 export interface PublishedSkillRow {
   id: string;
   name: string;
@@ -226,23 +180,3 @@ export interface PublishedSkillRow {
   updated_at: string;
 }
 
-export interface LeadRow {
-  id: string;
-  project_id: string;
-  name: string;
-  source: string;
-  notes: string;
-  email: string;
-  status: "new" | "contacted" | "replied" | "converted" | "dropped";
-  follow_up_date: string | null;
-  platform: string | null;
-  platform_handle: string | null;
-  profile_url: string;
-  interest: string;
-  priority: "low" | "medium" | "high";
-  last_interaction: string | null;
-  tags: string;
-  score: number | null;
-  created_at: string;
-  updated_at: string;
-}

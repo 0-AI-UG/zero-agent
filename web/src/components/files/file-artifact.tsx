@@ -1,4 +1,4 @@
-import { CopyIcon, DownloadIcon, ExternalLinkIcon } from "lucide-react";
+import { CopyIcon, DownloadIcon, EyeIcon } from "lucide-react";
 import {
   Artifact,
   ArtifactHeader,
@@ -9,7 +9,6 @@ import {
 } from "@/components/ai/artifact";
 import { usePresignedUrl } from "@/hooks/use-presigned-url";
 import { useFilesStore } from "@/stores/files-store";
-import { FileTypeIcon } from "./file-type-icon";
 
 interface FileArtifactProps {
   fileId: string;
@@ -24,10 +23,11 @@ export function FileArtifact({
   mimeType,
   projectId,
 }: FileArtifactProps) {
-  const { openFileInDrawer } = useFilesStore();
+  const { openFilePreview } = useFilesStore();
   const { data: urlData } = usePresignedUrl(projectId, fileId);
   const url = urlData?.url;
   const displayUrl = urlData?.thumbnailUrl ?? url;
+  const isImage = mimeType.startsWith("image/");
 
   return (
     <Artifact className="my-2 max-w-sm">
@@ -35,9 +35,9 @@ export function FileArtifact({
         <ArtifactTitle>{filename}</ArtifactTitle>
         <ArtifactActions>
           <ArtifactAction
-            icon={ExternalLinkIcon}
-            tooltip="View in Files"
-            onClick={() => openFileInDrawer(fileId)}
+            icon={EyeIcon}
+            tooltip="Preview"
+            onClick={() => openFilePreview(fileId)}
           />
           <ArtifactAction
             icon={CopyIcon}
@@ -57,20 +57,15 @@ export function FileArtifact({
           )}
         </ArtifactActions>
       </ArtifactHeader>
-      <ArtifactContent>
-        {mimeType.startsWith("image/") && displayUrl ? (
+      {isImage && displayUrl && (
+        <ArtifactContent>
           <img
             src={displayUrl}
             alt={filename}
             className="rounded max-h-[200px] w-full object-cover"
           />
-        ) : (
-          <div className="flex items-center gap-2">
-            <FileTypeIcon mimeType={mimeType} />
-            <span className="text-sm truncate">{filename}</span>
-          </div>
-        )}
-      </ArtifactContent>
+        </ArtifactContent>
+      )}
     </Artifact>
   );
 }

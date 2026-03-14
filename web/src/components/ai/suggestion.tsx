@@ -39,7 +39,7 @@ export const Suggestion = ({
     return (
       <Button
         className={cn(
-          "cursor-pointer rounded-xl px-4 py-3 h-auto text-left grid gap-0.5 overflow-hidden",
+          "cursor-pointer rounded-xl px-4 py-3 h-auto grid gap-0.5 overflow-hidden items-start justify-start whitespace-normal text-left",
           className,
         )}
         onClick={handleClick}

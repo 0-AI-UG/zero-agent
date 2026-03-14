@@ -12,18 +12,12 @@ import {
   GlobeIcon,
   ImageIcon,
   InboxIcon,
-  MessageSquareIcon,
   MonitorIcon,
   PencilIcon,
   TerminalSquareIcon,
   SearchIcon,
-  SendIcon,
   SparklesIcon,
-  TagIcon,
   Trash2Icon,
-  UserPlusIcon,
-  UserCogIcon,
-  UsersIcon,
   XCircleIcon,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -54,21 +48,6 @@ const TOOL_CONFIG: Record<
   string,
   { label: string; activeLabel: string; icon: LucideIcon }
 > = {
-  saveLead: {
-    label: "Saved lead",
-    activeLabel: "Saving lead",
-    icon: UserPlusIcon,
-  },
-  updateLead: {
-    label: "Updated lead",
-    activeLabel: "Updating lead",
-    icon: UserCogIcon,
-  },
-  listLeads: {
-    label: "Checked leads",
-    activeLabel: "Checking leads",
-    icon: UsersIcon,
-  },
   readFile: {
     label: "Read file",
     activeLabel: "Reading file",
@@ -159,31 +138,6 @@ const TOOL_CONFIG: Record<
     activeLabel: "Removing scheduled task",
     icon: ClockIcon,
   },
-  sendDirectMessage: {
-    label: "Sent message",
-    activeLabel: "Sending message",
-    icon: SendIcon,
-  },
-  getOutreachHistory: {
-    label: "Checked outreach history",
-    activeLabel: "Checking outreach history",
-    icon: MessageSquareIcon,
-  },
-  getApprovedMessages: {
-    label: "Fetched approved messages",
-    activeLabel: "Fetching approved messages",
-    icon: InboxIcon,
-  },
-  updateOutreachStatus: {
-    label: "Updated outreach status",
-    activeLabel: "Updating outreach status",
-    icon: SendIcon,
-  },
-  recordOutreachReply: {
-    label: "Recorded reply",
-    activeLabel: "Recording reply",
-    icon: InboxIcon,
-  },
   browser: {
     label: "Browser action",
     activeLabel: "Using browser",
@@ -193,11 +147,6 @@ const TOOL_CONFIG: Record<
     label: "Loaded skill",
     activeLabel: "Loading skill",
     icon: DownloadIcon,
-  },
-  appendLeadNote: {
-    label: "Added note to lead",
-    activeLabel: "Adding note to lead",
-    icon: PencilIcon,
   },
   runPython: {
     label: "Ran Python script",
@@ -234,12 +183,6 @@ function getToolDetail(toolName: string, input: unknown): string | null {
       return typeof inp.path === "string" ? inp.path : null;
     case "listFiles":
       return typeof inp.folderPath === "string" ? inp.folderPath : null;
-    case "saveLead":
-      return typeof inp.name === "string" ? inp.name : null;
-    case "updateLead":
-      return typeof inp.status === "string" ? inp.status : null;
-    case "listLeads":
-      return typeof inp.status === "string" ? inp.status : null;
     case "searchWeb":
       return typeof inp.query === "string" ? inp.query : null;
     case "generateImage":
@@ -258,13 +201,6 @@ function getToolDetail(toolName: string, input: unknown): string | null {
       return typeof inp.path === "string" ? inp.path : null;
     case "moveFile":
       return typeof inp.path === "string" ? inp.path : null;
-    case "sendDirectMessage":
-      return typeof inp.channel === "string" ? inp.channel : null;
-    case "getOutreachHistory":
-    case "getApprovedMessages":
-    case "updateOutreachStatus":
-    case "recordOutreachReply":
-      return null;
     case "scheduleTask":
     case "updateScheduledTask":
     case "removeScheduledTask":
@@ -331,125 +267,6 @@ function SearchResultsCard({
           </li>
         ))}
       </ul>
-    </div>
-  );
-}
-
-const STATUS_DISPLAY: Record<string, { label: string; icon: LucideIcon; color: string }> = {
-  pending: { label: "Pending approval", icon: ClockIcon, color: "text-amber-500" },
-  sent: { label: "Sent", icon: CheckCircleIcon, color: "text-emerald-500" },
-  delivered: { label: "Delivered", icon: CheckCircleIcon, color: "text-emerald-500" },
-  failed: { label: "Failed", icon: XCircleIcon, color: "text-destructive" },
-  replied: { label: "Replied", icon: MessageSquareIcon, color: "text-blue-500" },
-};
-
-const PRIORITY_COLORS: Record<string, string> = {
-  high: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
-  medium: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
-  low: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
-};
-
-const LEAD_STATUS_COLORS: Record<string, string> = {
-  new: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
-  contacted: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
-  replied: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
-  converted: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400",
-  dropped: "bg-muted text-muted-foreground",
-};
-
-// ── Lead Tool Cards ──
-
-function SaveLeadCard({ output }: { output: any }) {
-  const priority = output.priority ?? "medium";
-  return (
-    <div className="rounded-lg border bg-card p-3 max-w-md">
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <UserPlusIcon className="size-3" />
-          <span>Lead saved</span>
-        </div>
-        {priority && (
-          <span className={cn("text-xs px-1.5 py-0.5 rounded-full font-medium", PRIORITY_COLORS[priority] ?? "bg-muted text-muted-foreground")}>
-            {priority}
-          </span>
-        )}
-      </div>
-      <p className="text-sm font-medium">{output.name}</p>
-      {output.score != null && (
-        <p className="text-xs text-muted-foreground mt-1">Score: {output.score}/100</p>
-      )}
-    </div>
-  );
-}
-
-function UpdateLeadCard({ output }: { output: any }) {
-  const priority = output.priority ?? "medium";
-  const status = output.status ?? "new";
-  return (
-    <div className="rounded-lg border bg-card p-3 max-w-md">
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <UserCogIcon className="size-3" />
-          <span>Lead updated</span>
-        </div>
-        <span className={cn("text-xs px-1.5 py-0.5 rounded-full font-medium", LEAD_STATUS_COLORS[status] ?? "bg-muted text-muted-foreground")}>
-          {status}
-        </span>
-      </div>
-      <p className="text-sm font-medium">{output.name}</p>
-      <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
-        {priority && (
-          <span className={cn("px-1.5 py-0.5 rounded-full font-medium", PRIORITY_COLORS[priority] ?? "bg-muted text-muted-foreground")}>
-            {priority}
-          </span>
-        )}
-        {output.score != null && <span>Score: {output.score}/100</span>}
-      </div>
-      {output.tags?.length > 0 && (
-        <div className="flex items-center gap-1 mt-2 flex-wrap">
-          <TagIcon className="size-3 text-muted-foreground" />
-          {output.tags.map((t: string) => (
-            <span key={t} className="text-xs bg-muted px-1.5 py-0.5 rounded">{t}</span>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ListLeadsCard({ output, input }: { output: any[]; input: any }) {
-  const statusFilter = input?.status;
-  return (
-    <div className="rounded-lg border bg-card p-3 max-w-md">
-      <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-2">
-        <UsersIcon className="size-3" />
-        <span>Found {output.length} {statusFilter ? `"${statusFilter}" ` : ""}lead{output.length !== 1 ? "s" : ""}</span>
-      </div>
-      <ul className="space-y-1.5">
-        {output.slice(0, 5).map((lead: any) => (
-          <li key={lead.id ?? lead.name} className="flex items-center justify-between text-sm">
-            <span className="font-medium truncate mr-2">{lead.name}</span>
-            <div className="flex items-center gap-2 shrink-0">
-              {lead.status && (
-                <span className={cn("text-xs px-1.5 py-0.5 rounded-full", LEAD_STATUS_COLORS[lead.status] ?? "bg-muted text-muted-foreground")}>
-                  {lead.status}
-                </span>
-              )}
-              {lead.priority && (
-                <span className={cn("text-xs px-1.5 py-0.5 rounded-full", PRIORITY_COLORS[lead.priority] ?? "bg-muted text-muted-foreground")}>
-                  {lead.priority}
-                </span>
-              )}
-              {lead.score != null && (
-                <span className="text-xs text-muted-foreground">{lead.score}</span>
-              )}
-            </div>
-          </li>
-        ))}
-      </ul>
-      {output.length > 5 && (
-        <p className="text-xs text-muted-foreground mt-2">+{output.length - 5} more</p>
-      )}
     </div>
   );
 }
@@ -629,64 +446,6 @@ function FetchUrlCard({ output }: { output: any }) {
         {output.url}
         <ExternalLinkIcon className="size-3 opacity-50 shrink-0" />
       </a>
-    </div>
-  );
-}
-
-function OutreachHistoryCard({ output, input }: { output: any; input: any }) {
-  const messages = output.messages ?? [];
-  const leadName = output.leadName ?? input?.leadId;
-  return (
-    <div className="rounded-lg border bg-card p-3 max-w-md">
-      <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-2">
-        <MessageSquareIcon className="size-3" />
-        <span>Outreach history{leadName ? ` for ${leadName}` : ""} — {messages.length} message{messages.length !== 1 ? "s" : ""}</span>
-      </div>
-      <ul className="space-y-1.5">
-        {messages.slice(0, 3).map((m: any, i: number) => {
-          const st = STATUS_DISPLAY[m.status] ?? STATUS_DISPLAY.sent!;
-          const StIcon = st!.icon;
-          return (
-            <li key={m.id ?? i} className="text-sm">
-              <div className={cn("inline-flex items-center gap-1 text-xs mb-0.5", st!.color)}>
-                <StIcon className="size-3" />
-                <span>{st!.label}</span>
-              </div>
-              <p className="text-xs text-muted-foreground line-clamp-2">{m.body}</p>
-            </li>
-          );
-        })}
-      </ul>
-      {messages.length > 3 && (
-        <p className="text-xs text-muted-foreground mt-2">+{messages.length - 3} more</p>
-      )}
-    </div>
-  );
-}
-
-function OutreachMessageCard({ message }: { message: any }) {
-  const status = STATUS_DISPLAY[message.status] ?? STATUS_DISPLAY.sent!;
-  const StatusIcon = status!.icon;
-  const channelLabel = message.channel?.replace("_", " ") ?? "manual";
-
-  return (
-    <div className="rounded-lg border bg-card p-3 max-w-md">
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <SendIcon className="size-3" />
-          <span className="capitalize">{channelLabel}</span>
-        </div>
-        <div className={cn("flex items-center gap-1 text-xs", status!.color)}>
-          <StatusIcon className="size-3" />
-          <span>{status!.label}</span>
-        </div>
-      </div>
-      {message.subject && (
-        <p className="text-sm font-medium mb-1">{message.subject}</p>
-      )}
-      <p className="text-sm text-muted-foreground whitespace-pre-wrap line-clamp-4">
-        {message.body}
-      </p>
     </div>
   );
 }
@@ -959,25 +718,6 @@ export function ToolCallPart({
         />
       );
     }
-    if (toolName === "sendDirectMessage") {
-      const output = part.output as any;
-      if (output?.id) {
-        return <OutreachMessageCard message={output} />;
-      }
-    }
-    // Lead tools
-    if (toolName === "saveLead") {
-      const output = part.output as any;
-      if (output?.id) return <SaveLeadCard output={output} />;
-    }
-    if (toolName === "updateLead") {
-      const output = part.output as any;
-      if (output?.id) return <UpdateLeadCard output={output} />;
-    }
-    if (toolName === "listLeads") {
-      const output = part.output as any;
-      if (Array.isArray(output)) return <ListLeadsCard output={output} input={part.input} />;
-    }
     // File tools
     if (toolName === "searchFiles") {
       const output = part.output as any;
@@ -995,10 +735,6 @@ export function ToolCallPart({
     if (toolName === "fetchUrl") {
       const output = part.output as any;
       if (output?.url) return <FetchUrlCard output={output} />;
-    }
-    if (toolName === "getOutreachHistory") {
-      const output = part.output as any;
-      if (output?.messages) return <OutreachHistoryCard output={output} input={part.input} />;
     }
     if (toolName === "runPython") {
       const output = part.output as any;

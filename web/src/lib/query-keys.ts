@@ -11,12 +11,6 @@ export const queryKeys = {
     byChat: (projectId: string, chatId: string) =>
       ["messages", projectId, chatId] as const,
   },
-  leads: {
-    byProject: (projectId: string, status?: string) =>
-      status
-        ? (["leads", projectId, status] as const)
-        : (["leads", projectId] as const),
-  },
   files: {
     byProject: (projectId: string, folderPath?: string) =>
       folderPath
@@ -29,10 +23,6 @@ export const queryKeys = {
     byProject: (projectId: string) => ["tasks", projectId] as const,
     runs: (projectId: string, taskId: string) =>
       ["task-runs", projectId, taskId] as const,
-  },
-  outreach: {
-    leadHistory: (projectId: string, leadId: string) =>
-      ["outreach", "lead", projectId, leadId] as const,
   },
   members: {
     byProject: (projectId: string) => ["members", projectId] as const,
@@ -55,12 +45,8 @@ export const queryKeys = {
   quickActions: {
     byProject: (projectId: string) => ["quick-actions", projectId] as const,
   },
-  companion: {
+companion: {
     tokens: (projectId: string) => ["companion", "tokens", projectId] as const,
     status: (projectId: string) => ["companion", "status", projectId] as const,
-  },
-  channels: {
-    byProject: (projectId: string) => ["channels", projectId] as const,
-    status: (projectId: string, channelId: string) => ["channels", "status", projectId, channelId] as const,
   },
 } as const;

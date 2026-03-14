@@ -13,8 +13,8 @@ const CDP_HEALTH_INTERVAL = 10_000;
 const program = new Command();
 
 program
-  .name("leadsagent-companion")
-  .description("Browser companion agent for the leads assistant")
+  .name("zero-agent-companion")
+  .description("Browser companion agent for zero-agent")
   .requiredOption("--token <token>", "Companion authentication token")
   .option("--server <url>", "Server URL", "http://localhost:3001")
   .option("--profile <name>", "Browser profile name", "default")

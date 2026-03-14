@@ -45,7 +45,7 @@ import { ScreenshotButton } from "@/components/chat/ScreenshotButton";
 import { ToolSelector } from "@/components/chat/ToolSelector";
 import { FilePickerButton } from "@/components/chat/FilePickerButton";
 import { TodoProgress } from "@/components/chat/TodoProgress";
-import { QuickActionsManager, getQuickActionIcon, getIconByName } from "@/components/chat/QuickActionsManager";
+import { QuickActionsManager, getQuickActionIcon } from "@/components/chat/QuickActionsManager";
 import { useQuickActions } from "@/api/quick-actions";
 import { useProject } from "@/api/projects";
 import { useCompanionStatus } from "@/api/companion";
@@ -66,10 +66,11 @@ import {
   CopyIcon,
   RefreshCcwIcon,
   PackageIcon,
-  UsersIcon,
+  SearchIcon,
   TargetIcon,
 } from "lucide-react";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import logoSvg from "@/logo.svg";
 
 interface MessageMetadata {
   modelId?: string;
@@ -81,17 +82,17 @@ type ChatMessage = UIMessage<MessageMetadata>;
 
 const ONBOARDING_SUGGESTIONS = [
   {
-    text: "Here's what I'm selling",
+    text: "Here's what I'm working on",
     icon: <PackageIcon className="size-3.5" />,
-    description: "Describe your product or service",
+    description: "Describe your project or idea",
   },
   {
-    text: "My target audience is...",
-    icon: <UsersIcon className="size-3.5" />,
-    description: "Define your ideal customers",
+    text: "Help me research...",
+    icon: <SearchIcon className="size-3.5" />,
+    description: "Find information on a topic",
   },
   {
-    text: "My sales goals are...",
+    text: "My goals for this project are...",
     icon: <TargetIcon className="size-3.5" />,
     description: "Set your objectives",
   },
@@ -319,9 +320,9 @@ export function ChatPanel({ projectId, chatId, initialMessages }: ChatPanelProps
         <ConversationContent className="px-6 md:px-10">
           {messages.length === 0 && (
             <ConversationEmptyState
-              icon={getIconByName(project?.assistantIcon ?? "message", "size-8")}
-              title={project?.assistantName ?? "Sales Assistant"}
-              description={project?.assistantDescription ?? "Ask me anything about your leads, messages, or sales strategy."}
+              icon={<img src={logoSvg} alt="Zero Agent" className="size-10" />}
+              title={project?.assistantName ?? "Zero Agent"}
+              description={project?.assistantDescription ?? "Ask me anything — I can browse the web, manage files, run code, and automate tasks."}
             />
           )}
           {messages.length === 0 && (
@@ -488,7 +489,7 @@ export function ChatPanel({ projectId, chatId, initialMessages }: ChatPanelProps
                   setInput("");
                 }
               }}
-              placeholder="Ask your sales assistant..."
+              placeholder="Ask your assistant..."
             />
           </PromptInputBody>
           <PromptInputFooter>

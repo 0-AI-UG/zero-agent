@@ -9,18 +9,16 @@ import {
   BotIcon,
   ClockIcon,
   ZapIcon,
-  SendIcon,
   UsersIcon,
   TrashIcon,
   LogOutIcon,
   MailIcon,
   FolderIcon,
 } from "lucide-react";
+
 import { useMembers, useInviteMember, useRemoveMember, useLeaveProject } from "@/api/members";
 import { useNavigate } from "react-router";
 import { CompanionManager } from "@/components/settings/CompanionManager";
-import { ChannelsManager } from "@/components/settings/ChannelsManager";
-
 export function SettingsPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const { project } = useOutletContext<{ project: Project }>();
@@ -37,11 +35,6 @@ export function SettingsPage() {
   const leaveProject = useLeaveProject(projectId!);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteError, setInviteError] = useState("");
-
-  const handleToggleApproval = () => {
-    updateProject.mutate({ outreachApprovalRequired: !project.outreachApprovalRequired });
-  };
-
   const handleToggleAutomation = () => {
     updateProject.mutate({ automationEnabled: !project.automationEnabled });
   };
@@ -169,9 +162,6 @@ export function SettingsPage() {
           </div>
         </section>
 
-        {/* Messaging Channels section */}
-        <ChannelsManager projectId={projectId!} />
-
         {/* Browser Companion section */}
         <CompanionManager projectId={projectId!} project={project} updateProject={updateProject} />
 
@@ -268,33 +258,6 @@ export function SettingsPage() {
                 }
                 disabled={updateProject.isPending}
                 aria-label="Show skills in file explorer"
-              />
-            </div>
-          </div>
-        </section>
-
-        {/* Outreach section */}
-        <section className="space-y-4">
-          <div className="flex items-center gap-2">
-            <SendIcon className="size-4 text-blue-500" />
-            <h3 className="text-sm font-semibold">Outreach</h3>
-          </div>
-
-          <div className="rounded-lg border p-4 space-y-4">
-            <div className="flex items-center justify-between gap-4">
-              <div className="space-y-1">
-                <p className="text-sm font-medium">Require approval</p>
-                <p className="text-xs text-muted-foreground">
-                  When enabled, outreach messages need manual approval before
-                  being sent by automation. When off, messages are sent
-                  automatically on the next automation run.
-                </p>
-              </div>
-              <Switch
-                checked={project.outreachApprovalRequired}
-                onCheckedChange={handleToggleApproval}
-                disabled={updateProject.isPending}
-                aria-label="Toggle approval requirement"
               />
             </div>
           </div>

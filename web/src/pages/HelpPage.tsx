@@ -14,8 +14,6 @@ const sections = [
   { id: "skills", label: "Skills" },
   { id: "browser", label: "Browser Automation" },
   { id: "chat", label: "Chat Interface" },
-  { id: "pipeline", label: "Lead Pipeline" },
-  { id: "outreach", label: "Outreach" },
   { id: "automation", label: "Automation" },
   { id: "getting-started", label: "Getting Started" },
   { id: "knowledge", label: "Knowledge Files" },
@@ -106,14 +104,6 @@ function ExampleBlock({ examples }: { examples: string[] }) {
   );
 }
 
-function StatusLabel({ label }: { label: string }) {
-  return (
-    <span className="inline-flex items-center rounded border px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
-      {label}
-    </span>
-  );
-}
-
 function Step({
   n,
   title,
@@ -183,7 +173,7 @@ export function HelpPage() {
             <div>
               <h1 className="text-sm font-bold tracking-tight">Help</h1>
               <p className="text-[11px] text-muted-foreground">
-                LeadBot
+                Zero Agent
               </p>
             </div>
           </div>
@@ -199,7 +189,7 @@ export function HelpPage() {
           {/* Mobile header */}
           <div className="lg:hidden">
             <h1 className="text-lg font-bold tracking-tight">
-              LeadBot
+              Zero Agent
             </h1>
             <p className="text-xs text-muted-foreground mt-1">
               Documentation and feature reference
@@ -210,15 +200,15 @@ export function HelpPage() {
           <section className="space-y-2">
             <H2 id="overview">Overview</H2>
             <P>
-              The LeadBot is an AI assistant that helps you find leads,
-              create content, send outreach messages, and manage your sales
-              pipeline across social media platforms.
+              Zero Agent is an AI agent that helps you research, create
+              content, automate tasks, and manage projects across
+              platforms.
             </P>
             <P>
               It comes equipped with built-in tools for web search, browser
-              automation, lead management, outreach, file management, and image
-              generation. Platform-specific capabilities can be added via
-              installable skills.
+              automation, file management, and image generation.
+              Platform-specific capabilities can be added via installable
+              skills.
             </P>
           </section>
 
@@ -228,44 +218,29 @@ export function HelpPage() {
           <section className="space-y-2">
             <H2 id="capabilities">Capabilities</H2>
             <P>
-              The assistant has access to several tool groups that can be
+              The agent has access to several tool groups that can be
               individually toggled on or off in the chat toolbar.
             </P>
 
-            <H3>Lead Discovery & Qualification</H3>
+            <H3>Research & Discovery</H3>
             <P>
-              Search across platforms and the web to find potential customers.
-              The agent identifies high-intent prospects based on content and
-              engagement patterns.
+              Search across platforms and the web to find relevant information,
+              people, and resources. The agent identifies useful results based
+              on content and context.
             </P>
             <ExampleBlock
               examples={[
-                '"Find people interested in skincare products"',
-                '"Search for users asking about CRM tools"',
-                '"Who commented on competitor posts recently?"',
+                '"Find recent discussions about AI development tools"',
+                '"Search for experts in machine learning"',
+                '"What are the latest trends in this space?"',
               ]}
             />
 
-            <H3>Lead Enrichment</H3>
-            <P>
-              Research leads via web search and profile data. Discovers bio,
-              follower count, location, and content topics, then calculates a
-              lead score (0–100) based on intent signals, engagement, and
-              product fit.
-            </P>
-
-            <H3>Outreach & Messaging</H3>
-            <P>
-              Send personalized messages to leads via direct message, comment,
-              or email. Messages can require approval before sending. The agent
-              tracks delivery status and monitors for replies.
-            </P>
-
             <H3>Content Creation</H3>
             <P>
-              Create platform-optimized posts tailored to your target audience.
+              Create platform-optimized posts tailored to your audience.
               The agent adapts tone, format, and style based on the platform
-              and your brand voice.
+              and your preferences.
             </P>
 
             <H3>Cover Image Generation</H3>
@@ -277,7 +252,7 @@ export function HelpPage() {
 
             <H3>Web Search & Browsing</H3>
             <P>
-              Search the web for trends, competitor analysis, and industry
+              Search the web for trends, analysis, and topic
               insights. Fetch full web pages for deeper research, or use the
               browser tool for interactive browsing via the companion agent.
             </P>
@@ -292,7 +267,7 @@ export function HelpPage() {
             <H3>Sub-Agent Delegation</H3>
             <P>
               The agent can spawn autonomous sub-agents for complex multi-step
-              tasks like enriching many leads or conducting in-depth research.
+              tasks like enriching many profiles or conducting in-depth research.
               Sub-agents run in the background with live progress tracking.
             </P>
 
@@ -304,11 +279,9 @@ export function HelpPage() {
             <Ul
               items={[
                 "Sub Agents — delegate tasks to parallel background workers",
-                "Lead Management — save, update, and enrich leads",
                 "File Operations — create, read, edit, search, and organize files",
                 "Web & Browse — web search, URL fetching, and interactive browser control",
                 "Image Generation — create cover images for posts",
-                "Outreach — draft and send messages to leads",
                 "Scheduling — create and manage automated tasks",
               ]}
             />
@@ -329,42 +302,10 @@ export function HelpPage() {
             </div>
 
             <H3>Available skills</H3>
-            <div className="mt-3 space-y-2">
-              {[
-                {
-                  name: "RedNote (Xiaohongshu)",
-                  desc: "Search posts and users, view profiles, send DMs, create posts, and comment on the RedNote platform.",
-                },
-                {
-                  name: "LinkedIn",
-                  desc: "Search people, view profiles, send connection requests and messages, and create posts.",
-                },
-                {
-                  name: "X / Twitter",
-                  desc: "Search posts and users, view profiles, send DMs, create tweets, reply, and quote tweet.",
-                },
-                {
-                  name: "Instagram",
-                  desc: "Search users and hashtags, view profiles, send DMs, create posts, and comment.",
-                },
-                {
-                  name: "Google Maps",
-                  desc: "Search businesses, view details, and extract contact info for B2B lead generation.",
-                },
-              ].map((skill) => (
-                <div
-                  key={skill.name}
-                  className="flex items-start gap-3 text-[13px]"
-                >
-                  <span className="font-medium text-[12px] text-foreground shrink-0 mt-px w-36">
-                    {skill.name}
-                  </span>
-                  <span className="text-muted-foreground leading-relaxed">
-                    {skill.desc}
-                  </span>
-                </div>
-              ))}
-            </div>
+            <P>
+              Skills can be installed from the Skills page. You can also create
+              custom skills or install them from GitHub and the community marketplace.
+            </P>
 
             <div className="flex items-start gap-2 mt-4 text-muted-foreground">
               <ShieldIcon className="size-3.5 mt-0.5 shrink-0" />
@@ -384,8 +325,8 @@ export function HelpPage() {
             <div className="flex items-start gap-2 mb-2">
               <MonitorIcon className="size-4 text-muted-foreground mt-0.5 shrink-0" />
               <P>
-                The companion agent is a desktop application that gives the AI
-                assistant control over a real browser. This enables interactive
+                The companion agent is a desktop application that gives the
+                agent control over a real browser. This enables interactive
                 web actions like logging into platforms, navigating pages, and
                 taking screenshots.
               </P>
@@ -424,100 +365,17 @@ export function HelpPage() {
           <section className="space-y-2">
             <H2 id="chat">Chat Interface</H2>
             <P>
-              The chat is your primary way to interact with the assistant. It
+              The chat is your primary way to interact with the agent. It
               supports streaming responses and multiple conversations, each with
               its own history.
             </P>
             <Ul
               items={[
-                "Tool toggles — enable or disable tool groups: Sub Agents, Lead Management, File Operations, Web & Browse, Image Generation, Outreach, Scheduling",
-                "Screenshot parsing — upload a screenshot and the assistant extracts text, handles, and data using vision AI",
+                "Tool toggles — enable or disable tool groups: Sub Agents, File Operations, Web & Browse, Image Generation, Scheduling",
+                "Screenshot parsing — upload a screenshot and the agent extracts text, handles, and data using vision AI",
                 "Multiple conversations — create separate threads via the sidebar",
               ]}
             />
-          </section>
-
-          <hr className="border-border" />
-
-          {/* ───── Lead Pipeline ───── */}
-          <section className="space-y-2">
-            <H2 id="pipeline">Lead Pipeline</H2>
-            <P>
-              Every lead flows through a structured pipeline. The agent tracks
-              status, priority, follow-up dates, and scores to keep you
-              organized.
-            </P>
-
-            <div className="flex flex-wrap gap-1.5 mt-3">
-              <StatusLabel label="New" />
-              <StatusLabel label="Contacted" />
-              <StatusLabel label="Replied" />
-              <StatusLabel label="Converted" />
-              <StatusLabel label="Dropped" />
-            </div>
-
-            <H3>Tracked per lead</H3>
-            <Ul
-              items={[
-                "Priority (low / medium / high)",
-                "Lead score (0–100, set by the agent)",
-                "Platform & handle",
-                "Interest category & tags",
-                "Follow-up date with overdue alerts",
-                "Source, notes, and last interaction timestamp",
-              ]}
-            />
-
-            <H3>Scoring factors</H3>
-            <Ul
-              items={[
-                "Purchase intent signals",
-                "Engagement level",
-                "Follower count & influence",
-                "Product/market fit",
-                "Content topic relevance",
-                "Recency of activity",
-              ]}
-            />
-
-            <H3>Pipeline features</H3>
-            <Ul
-              items={[
-                "Filter by status tab (All, New, Contacted, …)",
-                "Visual pipeline bar showing distribution across statuses",
-                "Batch actions: change status or delete multiple leads at once",
-                "Overdue follow-ups bubble to the top with alerts",
-              ]}
-            />
-          </section>
-
-          <hr className="border-border" />
-
-          {/* ───── Outreach ───── */}
-          <section className="space-y-2">
-            <H2 id="outreach">Outreach & Messaging</H2>
-            <P>
-              The assistant can send messages to leads on your behalf and track
-              the full conversation. Enable outreach approval in Settings to
-              review messages before they are sent.
-            </P>
-            <Ul
-              items={[
-                "Channels: direct message, comment, or email — platform-specific delivery is handled by skills",
-                "Approval workflow: optionally require your approval before any message is sent",
-                "Reply tracking: the agent checks for new replies and logs them on each lead",
-                "Outreach history: full message timeline per lead with status (pending → approved → sent → delivered → replied / failed)",
-              ]}
-            />
-            <div className="flex items-start gap-2 mt-3 text-muted-foreground">
-              <ShieldIcon className="size-3.5 mt-0.5 shrink-0" />
-              <p className="text-[12px] leading-relaxed">
-                Outreach approval can be toggled in Settings. Platform-specific
-                channels (e.g. RedNote DMs, LinkedIn messages) require the
-                corresponding skill to be installed and the companion to be
-                connected.
-              </p>
-            </div>
           </section>
 
           <hr className="border-border" />
@@ -546,15 +404,15 @@ export function HelpPage() {
               <code className="text-[12px] font-mono text-foreground">
                 heartbeat.md
               </code>{" "}
-              checklist to monitor leads and follow-ups, and only notifies you
+              checklist to monitor tasks and follow-ups, and only notifies you
               when something needs attention.
             </P>
 
             <ExampleBlock
               examples={[
-                '"Alert me if any contacted lead hasn\'t replied in 3+ days"',
-                '"Search for new posts mentioning our product category daily"',
-                '"Summarize pipeline changes every morning"',
+                '"Alert me if any task is overdue by more than 3 days"',
+                '"Search for new posts mentioning our topic daily"',
+                '"Summarize project activity every morning"',
               ]}
             />
           </section>
@@ -565,34 +423,22 @@ export function HelpPage() {
           <section className="space-y-2">
             <H2 id="getting-started">Getting Started</H2>
             <div className="mt-3 space-y-0">
-              <Step n={1} title="Set up your product profile">
-                Tell the agent about your product, target audience, pricing, and
-                USPs. It saves this to product.md and project.md for future
-                reference.
+              <Step n={1} title="Set up your project profile">
+                Tell the agent about your project, goals, and context. It saves
+                this to project.md for future reference.
               </Step>
               <Step n={2} title="Install skills & connect the companion">
                 Go to Settings to install platform skills (e.g. LinkedIn,
                 Instagram) and set up the companion agent for browser
-                automation. This unlocks platform-specific search and outreach.
+                automation. This unlocks platform-specific capabilities.
               </Step>
-              <Step n={3} title="Discover leads">
-                Ask the agent to search for potential customers by topic,
-                keyword, or competitor. It saves relevant users to your pipeline.
+              <Step n={3} title="Start working">
+                Ask the agent to research topics, create content, browse the
+                web, or manage files. It handles multi-step tasks autonomously.
               </Step>
-              <Step n={4} title="Enrich & score leads">
-                The agent researches each lead's profile, calculates a fit
-                score, and suggests outreach strategies. Use sub-agents to
-                enrich multiple leads at once.
-              </Step>
-              <Step n={5} title="Send outreach">
-                Enable outreach in Settings, then ask the agent to draft and
-                send personalized messages. Optionally require approval before
-                messages are sent.
-              </Step>
-              <Step n={6} title="Automate follow-ups">
-                Set up scheduled tasks to monitor your pipeline, check for
-                overdue follow-ups, scan for replies, and discover new leads on
-                autopilot.
+              <Step n={4} title="Automate recurring tasks">
+                Set up scheduled tasks to monitor activity, track changes,
+                and surface new information on autopilot.
               </Step>
             </div>
           </section>
@@ -611,12 +457,8 @@ export function HelpPage() {
             <div className="mt-3 space-y-2">
               {[
                 {
-                  name: "product.md",
-                  desc: "Single source of truth — product name, audience, features, pricing, USPs, objection handling, competitor info.",
-                },
-                {
                   name: "project.md",
-                  desc: "Living knowledge base — goals, target market, content strategy, brand voice, campaign notes.",
+                  desc: "Living knowledge base — goals, context, strategy, and ongoing notes.",
                 },
                 {
                   name: "memory.md",
@@ -649,17 +491,14 @@ export function HelpPage() {
             <H2 id="tips">Tips</H2>
             <div className="mt-2 space-y-2">
               {[
-                "Be specific about your target audience — the agent gives better results with clear context.",
-                "Set up product.md early — it shapes all outreach and content the agent creates.",
+                "Be specific about your goals — the agent gives better results with clear context.",
+                "Set up project.md early — it shapes all content and actions the agent creates.",
                 "Install platform skills before asking the agent to search or interact on specific platforms.",
                 "Make sure the companion agent is running and connected before using browser-dependent features.",
-                "Use follow-up dates on leads so the agent can remind you when they're overdue.",
-                "Combine search + enrichment: find leads first, then enrich the top ones.",
-                "Use sub-agents for bulk work like enriching 10+ leads — they run in parallel.",
+                "Use sub-agents for bulk work like researching multiple topics — they run in parallel.",
                 "Toggle off unused tool groups in the chat toolbar to keep the agent focused.",
-                "Schedule a daily automation to check for overdue follow-ups and new opportunities.",
-                "Upload screenshots of profiles or chats — the agent extracts handles and text.",
-                "Enable outreach approval in Settings to review messages before they're sent.",
+                "Schedule a daily automation to check for updates and new information.",
+                "Upload screenshots of profiles or pages — the agent extracts handles and text.",
               ].map((tip, i) => (
                 <div
                   key={i}

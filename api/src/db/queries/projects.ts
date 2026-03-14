@@ -30,7 +30,7 @@ export function getProjectById(id: string): ProjectRow | null {
 
 export function updateProject(
   id: string,
-  fields: { name?: string; description?: string; automationEnabled?: boolean; defaultOutreachChannel?: string; outreachApprovalRequired?: boolean; codeExecutionEnabled?: boolean; browserAutomationEnabled?: boolean; showSkillsInFiles?: boolean; assistantName?: string; assistantDescription?: string; assistantIcon?: string },
+  fields: { name?: string; description?: string; automationEnabled?: boolean; codeExecutionEnabled?: boolean; browserAutomationEnabled?: boolean; showSkillsInFiles?: boolean; assistantName?: string; assistantDescription?: string; assistantIcon?: string },
 ): ProjectRow {
   const sets: string[] = [];
   const values: (string | number)[] = [];
@@ -46,14 +46,6 @@ export function updateProject(
   if (fields.automationEnabled !== undefined) {
     sets.push("automation_enabled = ?");
     values.push(fields.automationEnabled ? 1 : 0);
-  }
-  if (fields.defaultOutreachChannel !== undefined) {
-    sets.push("default_outreach_channel = ?");
-    values.push(fields.defaultOutreachChannel);
-  }
-  if (fields.outreachApprovalRequired !== undefined) {
-    sets.push("outreach_approval_required = ?");
-    values.push(fields.outreachApprovalRequired ? 1 : 0);
   }
   if (fields.codeExecutionEnabled !== undefined) {
     sets.push("code_execution_enabled = ?");
@@ -92,17 +84,6 @@ export function updateProject(
 
 export function deleteProject(id: string): void {
   db.query<void, [string]>("DELETE FROM projects WHERE id = ?").run(id);
-}
-
-export function getLeadCountsByProject(projectId: string): Record<string, number> {
-  const rows = db.query<{ status: string; count: number }, [string]>(
-    "SELECT status, COUNT(*) as count FROM leads WHERE project_id = ? GROUP BY status",
-  ).all(projectId);
-  const counts: Record<string, number> = {};
-  for (const row of rows) {
-    counts[row.status] = row.count;
-  }
-  return counts;
 }
 
 export function getLastMessageByProject(projectId: string): string | null {

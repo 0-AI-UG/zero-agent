@@ -4,21 +4,21 @@ import {
   validateBody,
   createProjectSchema,
   updateProjectSchema,
+  updateSoulSchema,
 } from "@/lib/validation.ts";
 import {
   insertProject,
   getProjectsByUser,
   updateProject,
   deleteProject,
-  getLeadCountsByProject,
   getLastMessageByProject,
 } from "@/db/queries/projects.ts";
-import { insertFile } from "@/db/queries/files.ts";
+import { insertFile, getFileByS3Key, updateFileSize } from "@/db/queries/files.ts";
 import { indexFileContent } from "@/db/queries/search.ts";
 import { insertChat } from "@/db/queries/chats.ts";
 import { insertChatMessage } from "@/db/queries/messages.ts";
 import { generateId } from "@/db/index.ts";
-import { writeToS3 } from "@/lib/s3.ts";
+import { writeToS3, readFromS3 } from "@/lib/s3.ts";
 import { handleError, formatProject, verifyProjectOwnership, verifyProjectAccess } from "@/routes/utils.ts";
 import { insertProjectMember, getMemberRole, getMemberCount } from "@/db/queries/members.ts";
 import { createHeartbeatTask } from "@/lib/heartbeat.ts";
@@ -34,11 +34,9 @@ export async function handleListProjects(request: Request): Promise<Response> {
       const role = getMemberRole(row.id, userId) ?? "owner";
       const memberCount = getMemberCount(row.id);
       const project = formatProject(row, { role, memberCount });
-      const leadCounts = getLeadCountsByProject(row.id);
       const lastMessage = getLastMessageByProject(row.id);
       return {
         ...project,
-        leadCounts,
         lastMessage: lastMessage ? lastMessage.slice(0, 120) : null,
       };
     });
@@ -54,56 +52,7 @@ export async function handleListProjects(request: Request): Promise<Response> {
 async function createDefaultProjectFiles(projectId: string, projectName: string): Promise<void> {
   const projectMd = `# ${projectName}
 
-_No project information yet. The assistant will update this file as you share details about your goals, target market, content strategy, and brand voice._
-
-## Ideal Customer Profile (ICP)
-
-_Define who your best leads are. The assistant uses this to score and qualify leads._
-
-- **Role / Title:** _e.g., Marketing Manager, Founder, Head of Growth_
-- **Industry:** _e.g., SaaS, E-commerce, Education_
-- **Company size:** _e.g., 10-50 employees, Solo creator_
-- **Pain points:** _What problems do they have that your product solves?_
-- **Buying signals:** _What behavior indicates they're ready to buy? e.g., asking about pricing, mentioning competitors, posting about the problem you solve_
-- **Platforms:** _Where do your ideal customers hang out? e.g., LinkedIn, RedNote, Twitter_
-
-## Disqualification Criteria
-
-_When should the assistant NOT save someone as a lead?_
-
-- _e.g., Competitors, students just researching, bots, people outside target geography_
-- _e.g., Accounts with <100 followers (low influence), inactive for 6+ months_
-
-## Outreach Strategy
-
-- **Tone / Voice:** _e.g., Professional but friendly, Casual and direct_
-- **First touch approach:** _e.g., Comment on their content first, then DM. Or direct cold DM._
-- **Value proposition to lead with:** _What's the one thing you want prospects to know?_
-- **Max follow-ups before dropping:** _e.g., 3_
-- **Escalation rules:** _When should the assistant stop and ask you? e.g., Lead asks for custom pricing, enterprise deal, negative sentiment_
-`;
-  const productMd = `# Product / Service
-
-_No product information yet. The assistant will update this file as you share details about your product or service._
-
-## What You Sell
-
-- **Product/Service name:** _
-- **One-line pitch:** _
-- **Key features:** _
-- **Pricing:** _e.g., Free tier + $29/mo, Custom quotes_
-
-## Target Audience
-
-- **Primary audience:** _Who benefits most?_
-- **Secondary audience:** _Who else might buy?_
-- **Use cases:** _Top 3 reasons people buy_
-
-## Competitive Positioning
-
-- **Competitors:** _Who else solves this problem?_
-- **Your advantage:** _Why should someone choose you over alternatives?_
-- **Common objections:** _What pushback do prospects give, and how do you handle it?_
+_No project information yet. The assistant will update this file as you share details about your goals, context, and how it can help you._
 `;
   const memoryMd = `# Memory
 
@@ -118,23 +67,38 @@ _No entries yet._
 ## Decisions
 
 _No entries yet._
-
-## Lead Insights
-
-_No entries yet._
 `;
   const heartbeatMd = `# Heartbeat Checklist
 
 Items the assistant checks during each automatic heartbeat run.
 Edit this file to add or remove checks.
 
-- [ ] Leads with overdue follow-up dates
-- [ ] High-priority leads that need attention
+- [ ] Check for any pending tasks or updates
+`;
+
+  const soulMd = `# Soul
+
+## Name & Role
+You are a helpful AI assistant.
+
+## Personality
+- Friendly and professional
+- Concise and clear communicator
+- Proactive in suggesting next steps
+
+## Rules
+- Always be honest about limitations
+- Never fabricate information
+- Ask for clarification when the request is ambiguous
+
+## Output Format
+- Use markdown formatting for structured content
+- Keep responses focused and actionable
 `;
 
   const files = [
+    { path: "soul.md", content: soulMd },
     { path: "project.md", content: projectMd },
-    { path: "product.md", content: productMd },
     { path: "memory.md", content: memoryMd },
     { path: "heartbeat.md", content: heartbeatMd },
   ];
@@ -163,7 +127,7 @@ export async function handleCreateProject(request: Request): Promise<Response> {
       parts: [
         {
           type: "text",
-          text: "Welcome! I'm your sales assistant. Before we get started, I'd love to learn about your business so I can find the right leads for you.\n\n**Tell me about:**\n1. What product or service are you selling?\n2. Who is your ideal customer? (role, industry, company size)\n3. Where do your ideal customers hang out online?\n4. What signals tell you someone is ready to buy?\n5. Who should I NOT target? (competitors, wrong market, etc.)\n\nThe more detail you give, the better I'll be at finding and qualifying leads. I'll save everything to your project files so I always stay on strategy.",
+          text: "Welcome! I'm your AI assistant. I can browse the web, manage files, run code, schedule tasks, and more.\n\nTo get started, tell me about your project — what are you working on and how can I help?",
         },
       ],
     };
@@ -228,6 +192,73 @@ export async function handleDeleteProject(request: Request): Promise<Response> {
       { success: true },
       { headers: corsHeaders },
     );
+  } catch (error) {
+    return handleError(error);
+  }
+}
+
+const DEFAULT_SOUL = `# Soul
+
+## Name & Role
+You are a helpful AI assistant.
+
+## Personality
+- Friendly and professional
+- Concise and clear communicator
+- Proactive in suggesting next steps
+
+## Rules
+- Always be honest about limitations
+- Never fabricate information
+- Ask for clarification when the request is ambiguous
+
+## Output Format
+- Use markdown formatting for structured content
+- Keep responses focused and actionable
+`;
+
+type RequestWithProjectId = Request & { params: { projectId: string } };
+
+export async function handleGetSoul(request: Request): Promise<Response> {
+  try {
+    const { userId } = await authenticateRequest(request);
+    const { projectId } = (request as RequestWithProjectId).params;
+    verifyProjectAccess(projectId, userId);
+
+    let content: string;
+    try {
+      content = await readFromS3(`projects/${projectId}/soul.md`);
+    } catch {
+      content = DEFAULT_SOUL;
+    }
+
+    return Response.json({ content }, { headers: corsHeaders });
+  } catch (error) {
+    return handleError(error);
+  }
+}
+
+export async function handleUpdateSoul(request: Request): Promise<Response> {
+  try {
+    const { userId } = await authenticateRequest(request);
+    const { projectId } = (request as RequestWithProjectId).params;
+    verifyProjectOwnership(projectId, userId);
+
+    const body = await validateBody(request, updateSoulSchema);
+    const s3Key = `projects/${projectId}/soul.md`;
+    const buffer = Buffer.from(body.content, "utf-8");
+    await writeToS3(s3Key, buffer);
+
+    // Upsert the file row
+    const existing = getFileByS3Key(projectId, s3Key);
+    if (existing) {
+      updateFileSize(existing.id, buffer.length);
+    } else {
+      const fileRow = insertFile(projectId, s3Key, "soul.md", "text/markdown", buffer.length, "/");
+      indexFileContent(fileRow.id, projectId, "soul.md", body.content);
+    }
+
+    return Response.json({ success: true }, { headers: corsHeaders });
   } catch (error) {
     return handleError(error);
   }

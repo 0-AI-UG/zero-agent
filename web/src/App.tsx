@@ -9,7 +9,6 @@ import { RegisterPage } from "@/pages/RegisterPage";
 import { DashboardPage } from "@/pages/DashboardPage";
 import { ProjectPage } from "@/pages/ProjectPage";
 import { FilesPage } from "@/pages/FilesPage";
-import { LeadsPage } from "@/pages/LeadsPage";
 import { TasksPage } from "@/pages/TasksPage";
 import { SettingsPage } from "@/pages/SettingsPage";
 import { SkillsPage } from "@/pages/SkillsPage";
@@ -34,7 +33,6 @@ export function App() {
               <Route index element={<ProjectPage />} />
               <Route path="c/:chatId" element={<ProjectPage />} />
               <Route path="files" element={<FilesPage />} />
-              <Route path="leads" element={<LeadsPage />} />
               <Route path="tasks" element={<TasksPage />} />
               <Route path="skills" element={<SkillsPage />} />
               <Route path="settings" element={<SettingsPage />} />

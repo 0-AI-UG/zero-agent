@@ -3,7 +3,7 @@ import { useAuthStore } from "@/stores/auth";
 import { useUIStore } from "@/stores/ui";
 import { useProject } from "@/api/projects";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, FolderOpen, Users, LogOut } from "lucide-react";
+import { ArrowLeft, FolderOpen, LogOut } from "lucide-react";
 
 export function AppLayout() {
   const logout = useAuthStore((s) => s.logout);
@@ -43,14 +43,6 @@ export function AppLayout() {
                 aria-label="Toggle files panel"
               >
                 <FolderOpen className="size-4" />
-              </Button>
-              <Button
-                variant={activeDrawer === "leads" ? "secondary" : "ghost"}
-                size="icon-sm"
-                onClick={() => toggleDrawer("leads")}
-                aria-label="Toggle leads panel"
-              >
-                <Users className="size-4" />
               </Button>
             </>
           )}

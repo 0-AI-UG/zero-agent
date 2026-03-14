@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useParams } from "react-router";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useParams, useSearchParams } from "react-router";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFilesStore } from "@/stores/files-store";
-import { useFiles, useSearchFiles } from "@/hooks/use-files";
+import { useFiles, useSearchFiles, type FileItem } from "@/hooks/use-files";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useDeleteFile } from "@/hooks/use-delete-file";
 import { useMoveFile, useMoveFolder } from "@/hooks/use-move-item";
@@ -29,6 +29,7 @@ import { cn } from "@/lib/utils";
 export function FilesPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const isMobile = useIsMobile();
+  const [searchParams, setSearchParams] = useSearchParams();
   const {
     selectedFileId,
     setSelectedFileId,
@@ -37,6 +38,15 @@ export function FilesPage() {
     sortBy,
     setSortBy,
   } = useFilesStore();
+
+  // Auto-select file from ?fileId= query param
+  useEffect(() => {
+    const fileId = searchParams.get("fileId");
+    if (fileId) {
+      setSelectedFileId(fileId);
+      setSearchParams({}, { replace: true });
+    }
+  }, [searchParams, setSelectedFileId, setSearchParams]);
 
   const {
     data,
@@ -49,9 +59,20 @@ export function FilesPage() {
   const files = data?.files;
   const folders = data?.folders;
 
-  const selectedFile = selectedFileId
+  const fileInCurrentFolder = selectedFileId
     ? files?.find((f) => f.id === selectedFileId)
     : undefined;
+
+  // If selected file isn't in current folder, fetch it directly
+  const { data: remoteFileData } = useQuery({
+    queryKey: ["file-detail", projectId, selectedFileId],
+    queryFn: () =>
+      apiFetch<{ file: FileItem }>(`/projects/${projectId}/files/${selectedFileId}/url`),
+    enabled: !!selectedFileId && !fileInCurrentFolder,
+    staleTime: 30_000,
+  });
+
+  const selectedFile = fileInCurrentFolder ?? remoteFileData?.file ?? undefined;
 
   // Search state
   const [searchInput, setSearchInput] = useState("");

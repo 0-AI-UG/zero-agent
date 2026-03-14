@@ -11,7 +11,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { FileTypeIcon } from "./file-type-icon";
+import { FileTypeIcon, getFileTypeInfo } from "./file-type-icon";
 import { usePresignedUrl } from "@/hooks/use-presigned-url";
 import type { FileItem } from "@/hooks/use-files";
 import { cn } from "@/lib/utils";
@@ -88,9 +88,23 @@ export function FileRow({
             <FileTypeIcon mimeType={file.mimeType} filename={file.filename} />
           )}
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium truncate">
-              {file.filename}
-            </p>
+            <div className="flex items-center gap-1.5">
+              <p className="text-sm font-medium truncate">
+                {file.filename}
+              </p>
+              {(() => {
+                const { extension, color } = getFileTypeInfo(file.mimeType, file.filename);
+                return extension ? (
+                  <span className={cn(
+                    "shrink-0 text-[10px] font-medium leading-none px-1 py-0.5 rounded",
+                    color,
+                    "bg-muted"
+                  )}>
+                    {extension}
+                  </span>
+                ) : null;
+              })()}
+            </div>
             <p className="text-xs text-muted-foreground">
               {formatBytes(file.sizeBytes)} &middot;{" "}
               {formatDistanceToNow(new Date(file.createdAt), { addSuffix: true })}

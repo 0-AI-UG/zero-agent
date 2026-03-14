@@ -1,33 +1,37 @@
 import { create } from "zustand";
 
 interface FilesState {
-  drawerOpen: boolean;
+  previewOpen: boolean;
+  previewFileId: string | null;
   selectedFileId: string | null;
   currentPath: string;
   sortBy: "newest" | "filename" | "size";
   viewMode: "list" | "grid";
   fileTypeFilter: string;
 
-  setDrawerOpen: (open: boolean) => void;
+  setPreviewOpen: (open: boolean) => void;
+  openFilePreview: (fileId: string) => void;
   setSelectedFileId: (id: string | null) => void;
   navigateTo: (path: string) => void;
   navigateUp: () => void;
   setSortBy: (sort: "newest" | "filename" | "size") => void;
-  openFileInDrawer: (fileId: string) => void;
   setViewMode: (mode: "list" | "grid") => void;
   setFileTypeFilter: (filter: string) => void;
   resetNavigation: () => void;
 }
 
 export const useFilesStore = create<FilesState>((set, get) => ({
-  drawerOpen: false,
+  previewOpen: false,
+  previewFileId: null,
   selectedFileId: null,
   currentPath: "/",
   sortBy: "newest",
   viewMode: "list",
   fileTypeFilter: "all",
 
-  setDrawerOpen: (open) => set({ drawerOpen: open }),
+  setPreviewOpen: (open) => set({ previewOpen: open, ...(!open && { previewFileId: null }) }),
+  openFilePreview: (fileId) =>
+    set({ previewOpen: true, previewFileId: fileId }),
   setSelectedFileId: (id) => set({ selectedFileId: id }),
   navigateTo: (path) => set({ currentPath: path, selectedFileId: null }),
   navigateUp: () => {
@@ -38,9 +42,7 @@ export const useFilesStore = create<FilesState>((set, get) => ({
     set({ currentPath: parent, selectedFileId: null });
   },
   setSortBy: (sort) => set({ sortBy: sort }),
-  openFileInDrawer: (fileId) =>
-    set({ drawerOpen: true, selectedFileId: fileId }),
   setViewMode: (mode) => set({ viewMode: mode }),
   setFileTypeFilter: (filter) => set({ fileTypeFilter: filter }),
-  resetNavigation: () => set({ currentPath: "/", selectedFileId: null, drawerOpen: false }),
+  resetNavigation: () => set({ currentPath: "/", selectedFileId: null, previewOpen: false, previewFileId: null }),
 }));

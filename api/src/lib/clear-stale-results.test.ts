@@ -65,21 +65,6 @@ describe("clearStaleToolResults", () => {
     });
   });
 
-  test("replaces listLeads after 1 assistant turn", () => {
-    const messages: ModelMessage[] = [
-      makeUserMsg(),
-      makeToolMsg("listLeads", { count: 5 }),
-      makeAssistantMsg(),
-      makeUserMsg(),
-      makeAssistantMsg(), // age 2, maxAge 1
-    ];
-
-    const result = clearStaleToolResults(messages);
-    expect(result).not.toBe(messages);
-    const output = getOutput(result[1]);
-    expect(output).toEqual({ type: "text", value: "[listed 5 leads]" });
-  });
-
   test("only keeps the most recent browser snapshot", () => {
     const messages: ModelMessage[] = [
       makeUserMsg(),
@@ -117,9 +102,9 @@ describe("clearStaleToolResults", () => {
 
   test("handles all results being stale", () => {
     const messages: ModelMessage[] = [
-      makeToolMsg("listLeads", { count: 3 }),
-      makeAssistantMsg(),
       makeToolMsg("listFiles", { currentPath: "/", files: [1, 2], folders: [] }),
+      makeAssistantMsg(),
+      makeToolMsg("fetchUrl", { url: "https://example.com", title: "Example" }),
       makeAssistantMsg(),
       makeUserMsg(),
       makeAssistantMsg(),
@@ -131,10 +116,10 @@ describe("clearStaleToolResults", () => {
     expect(result).not.toBe(messages);
 
     const out1 = getOutput(result[0]);
-    expect(out1).toEqual({ type: "text", value: "[listed 3 leads]" });
+    expect(out1).toEqual({ type: "text", value: "[listed 2 files in /]" });
 
     const out2 = getOutput(result[2]);
-    expect(out2).toEqual({ type: "text", value: "[listed 2 files in /]" });
+    expect(out2).toEqual({ type: "text", value: "[fetched https://example.com — Example]" });
   });
 
   test("handles mixed tool types correctly", () => {

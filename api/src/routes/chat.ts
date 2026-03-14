@@ -6,7 +6,7 @@ import { corsHeaders } from "@/lib/cors.ts";
 import { validateBody, chatRequestSchema } from "@/lib/validation.ts";
 import { handleError, verifyProjectAccess } from "@/routes/utils.ts";
 import { verifyChatOwnership } from "@/routes/chats.ts";
-import { createSalesAgent } from "@/lib/agent.ts";
+import { createAgent } from "@/lib/agent.ts";
 import { getModelContextWindow } from "@/config/models.ts";
 import { saveChatMessages } from "@/db/queries/messages.ts";
 import { touchChat, updateChat } from "@/db/queries/chats.ts";
@@ -57,7 +57,7 @@ export async function handleChat(request: BunRequest): Promise<Response> {
 
     // Create the agent for this project
     const cw = model ? getModelContextWindow(model) : 128_000;
-    const agent = await createSalesAgent(project, { language, disabledTools, chatId, userId, preActivateTools: usedToolNames, contextWindow: cw });
+    const agent = await createAgent(project, { language, disabledTools, chatId, userId, preActivateTools: usedToolNames, contextWindow: cw });
 
     // Predict whether compaction will trigger so we can send metadata early.
     // Use contextTokens (last step's actual input tokens) if available,

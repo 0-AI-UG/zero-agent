@@ -44,9 +44,23 @@ export async function installSkillFiles(
   // Write each file to S3 and create file DB entries
   for (const file of files) {
     const s3Key = `projects/${projectId}/skills/${skillName}/${file.path}`;
-    const folderPath = `/skills/${skillName}/`;
-    const mimeType = file.path.endsWith(".md") ? "text/markdown" : "text/plain";
+    const parts = file.path.split("/");
+    const folderPath = parts.length > 1
+      ? `/skills/${skillName}/${parts.slice(0, -1).join("/")}/`
+      : `/skills/${skillName}/`;
+    const mimeType = file.path.endsWith(".md") ? "text/markdown"
+      : file.path.endsWith(".html") ? "text/html"
+      : "text/plain";
     const sizeBytes = Buffer.from(file.content, "utf-8").byteLength;
+
+    // Ensure all ancestor subfolders exist (e.g., /skills/{name}/a/, /skills/{name}/a/b/)
+    if (parts.length > 1) {
+      let currentPath = `/skills/${skillName}/`;
+      for (const segment of parts.slice(0, -1)) {
+        currentPath += segment + "/";
+        ensureFolder(projectId, currentPath, segment);
+      }
+    }
 
     await writeToS3(s3Key, file.content);
     const fileRow = insertFile(projectId, s3Key, file.path, mimeType, sizeBytes, folderPath);
@@ -118,14 +132,27 @@ export async function loadBuiltInSkill(name: string): Promise<SkillFile[]> {
 
   try {
     const { readdirSync } = await import("node:fs");
-    const entries = readdirSync(skillDir, { withFileTypes: true });
 
-    for (const entry of entries) {
-      if (entry.isFile()) {
-        const file = Bun.file(`${skillDir}/${entry.name}`);
-        const content = await file.text();
-        files.push({ path: entry.name, content });
+    const readDir = (dir: string, prefix: string) => {
+      const entries = readdirSync(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        const relativePath = prefix ? `${prefix}/${entry.name}` : entry.name;
+        if (entry.isFile()) {
+          const file = Bun.file(`${dir}/${entry.name}`);
+          files.push({ path: relativePath, content: "" });
+          // Store index for async read
+          pendingReads.push({ index: files.length - 1, file });
+        } else if (entry.isDirectory()) {
+          readDir(`${dir}/${entry.name}`, relativePath);
+        }
       }
+    };
+
+    const pendingReads: { index: number; file: ReturnType<typeof Bun.file> }[] = [];
+    readDir(skillDir, "");
+
+    for (const { index, file } of pendingReads) {
+      files[index].content = await file.text();
     }
   } catch (err) {
     installLog.error("failed to load built-in skill", err, { name });

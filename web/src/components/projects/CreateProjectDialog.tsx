@@ -51,7 +51,7 @@ export function CreateProjectDialog() {
           <DialogHeader>
             <DialogTitle>Create Project</DialogTitle>
             <DialogDescription>
-              Start a new sales assistant project.
+              Start a new Zero Agent project.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
@@ -61,7 +61,7 @@ export function CreateProjectDialog() {
                 id="project-name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="My Sales Campaign"
+                placeholder="My Project"
                 required
                 maxLength={100}
               />

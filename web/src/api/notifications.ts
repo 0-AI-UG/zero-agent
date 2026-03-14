@@ -4,7 +4,7 @@ import { queryKeys } from "@/lib/query-keys";
 
 export interface Notification {
   id: string;
-  type: "invite" | "invite_accepted" | "member_removed" | "task_completed" | "task_failed" | "outreach_replied" | "lead_converted";
+  type: "invite" | "invite_accepted" | "member_removed" | "task_completed" | "task_failed";
   data: Record<string, string>;
   read: boolean;
   createdAt: string;

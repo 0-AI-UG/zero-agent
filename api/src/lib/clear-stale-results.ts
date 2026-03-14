@@ -78,49 +78,12 @@ const STALENESS_RULES: Record<string, StalenessRule> = {
       return `[searched "${val?.query ?? "?"}" → ${count} results]`;
     },
   },
-  listLeads: {
-    maxAge: 1,
-    summary: (output) => {
-      const val = getResultValue(output);
-      const count = val?.count ?? (Array.isArray(val) ? val.length : "?");
-      return `[listed ${count} leads]`;
-    },
-  },
   listFiles: {
     maxAge: 1,
     summary: (output) => {
       const val = getResultValue(output);
       const files = Array.isArray(val?.files) ? val.files.length : "?";
       return `[listed ${files} files in ${val?.currentPath ?? "/"}]`;
-    },
-  },
-  getOutreachHistory: {
-    maxAge: 1,
-    summary: (output) => {
-      const val = getResultValue(output);
-      const count = Array.isArray(val?.messages) ? val.messages.length : "?";
-      return `[outreach history: ${count} messages]`;
-    },
-  },
-  getApprovedMessages: {
-    maxAge: 1,
-    summary: (output) => {
-      const val = getResultValue(output);
-      const count = Array.isArray(val?.messages) ? val.messages.length : "?";
-      return `[approved messages: ${count}]`;
-    },
-  },
-  updateOutreachStatus: {
-    maxAge: 1,
-    summary: (output) => {
-      const val = getResultValue(output);
-      return `[outreach status: ${val?.status ?? "?"}]`;
-    },
-  },
-  recordOutreachReply: {
-    maxAge: 1,
-    summary: (output) => {
-      return `[reply recorded]`;
     },
   },
   loadSkill: {

@@ -5,7 +5,7 @@ const s3Log = log.child({ module: "s3" });
 
 export const s3 = new S3Client({
   endpoint: process.env.S3_ENDPOINT!,
-  bucket: process.env.S3_BUCKET ?? "sales-leads",
+  bucket: process.env.S3_BUCKET ?? "zero-agent",
   accessKeyId: process.env.S3_ACCESS_KEY_ID!,
   secretAccessKey: process.env.S3_SECRET_ACCESS_KEY!,
   region: process.env.S3_REGION ?? "us-east-1",

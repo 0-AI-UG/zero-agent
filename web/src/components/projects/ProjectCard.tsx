@@ -21,53 +21,6 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import { cn } from "@/lib/utils";
-
-const PIPELINE_COLORS: Record<string, string> = {
-  new: "bg-blue-500",
-  contacted: "bg-amber-500",
-  replied: "bg-purple-500",
-  converted: "bg-emerald-500",
-  dropped: "bg-zinc-400",
-};
-
-function PipelineMiniBar({ counts }: { counts: Record<string, number> }) {
-  const total = Object.values(counts).reduce((a, b) => a + b, 0);
-  if (total === 0) return null;
-
-  const segments = Object.entries(counts).filter(([, c]) => c > 0);
-
-  return (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <div className="flex h-1.5 w-full rounded-full overflow-hidden bg-muted">
-            {segments.map(([status, count]) => (
-              <div
-                key={status}
-                className={cn("h-full", PIPELINE_COLORS[status] ?? "bg-muted-foreground")}
-                style={{ width: `${(count / total) * 100}%` }}
-              />
-            ))}
-          </div>
-        </TooltipTrigger>
-        <TooltipContent side="bottom" className="text-xs">
-          {segments.map(([status, count]) => (
-            <span key={status} className="mr-2 capitalize">
-              {status}: {count}
-            </span>
-          ))}
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
-  );
-}
 
 interface ProjectCardProps {
   project: Project;
@@ -98,13 +51,6 @@ export function ProjectCard({ project }: ProjectCardProps) {
           <CardDescription className="line-clamp-2">
             {project.description || "No description"}
           </CardDescription>
-
-          {/* Pipeline mini bar */}
-          {project.leadCounts && Object.keys(project.leadCounts).length > 0 && (
-            <div className="mt-2">
-              <PipelineMiniBar counts={project.leadCounts} />
-            </div>
-          )}
 
           <div className="flex items-center justify-between mt-2">
             <p className="text-xs text-muted-foreground">
@@ -140,18 +86,6 @@ export function ProjectCard({ project }: ProjectCardProps) {
               <Button
                 variant="ghost"
                 size="icon-sm"
-                className="size-7 text-muted-foreground hover:text-foreground"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  navigate(`${basePath}/leads`);
-                }}
-                aria-label="Open leads"
-              >
-                <UsersIcon className="size-3.5" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon-sm"
                 className="size-7 text-muted-foreground hover:text-destructive"
                 onClick={(e) => {
                   e.stopPropagation();
@@ -172,7 +106,7 @@ export function ProjectCard({ project }: ProjectCardProps) {
             <AlertDialogTitle>Delete project</AlertDialogTitle>
             <AlertDialogDescription>
               This will permanently delete <strong>{project.name}</strong> and
-              all its chats, messages, leads, and files. This action cannot be
+              all its chats, messages, and files. This action cannot be
               undone.
             </AlertDialogDescription>
           </AlertDialogHeader>

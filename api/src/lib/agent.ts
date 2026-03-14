@@ -5,6 +5,7 @@ import { getSkillSummaries } from "@/lib/skills/loader.ts";
 import { buildSkillsIndex } from "@/lib/skills/injector.ts";
 import { createAgentTool } from "@/tools/agent.ts";
 import { createCompactPrepareStep } from "@/lib/compact-conversation.ts";
+import { readFromS3 } from "@/lib/s3.ts";
 import { log } from "@/lib/logger.ts";
 
 const agentLog = log.child({ module: "agent" });
@@ -12,7 +13,6 @@ const agentLog = log.child({ module: "agent" });
 interface ProjectForAgent {
   id: string;
   name: string;
-  default_outreach_channel?: string;
   code_execution_enabled?: number;
 }
 
@@ -29,6 +29,15 @@ export interface AgentOptions {
   context?: ExecutionContext;
   /** Allowlist for on-demand tools (always-available base tools always included). */
   onlyTools?: string[];
+  /** Pre-loaded project files injected into system prompt. */
+  preloadedFiles?: {
+    soulMd?: string;
+    projectMd?: string;
+    memoryMd?: string;
+    heartbeatMd?: string;
+  };
+  /** Prompt mode — controls which sections are included. Auto-derived from context if not set. */
+  mode?: "chat" | "automation";
 }
 
 async function buildSystemPrompt(project: {
@@ -36,115 +45,192 @@ async function buildSystemPrompt(project: {
   name: string;
 }, options: AgentOptions & { toolIndex?: string } = {}): Promise<string> {
   const language = options.language ?? "en";
+  const mode = options.mode ?? "chat";
+  const isChat = mode === "chat";
   const today = new Date().toISOString().split("T")[0];
   const skillsIndex = buildSkillsIndex(await getSkillSummaries(project.id));
   const toolIndex = options.toolIndex ?? "";
+  const files = options.preloadedFiles ?? {};
 
-  return `You are a sales lead assistant. You are working inside the project "${project.name}".
+  const MAX_FILE_LEN = 20_000;
+
+  const identity = files.soulMd
+    ? files.soulMd.slice(0, MAX_FILE_LEN)
+    : `You are an AI assistant.`;
+
+  // Build pre-loaded project context section
+  const projectContextParts: string[] = [];
+  if (files.projectMd) {
+    projectContextParts.push(`### Project\n${files.projectMd.slice(0, MAX_FILE_LEN)}`);
+  }
+  if (files.memoryMd) {
+    projectContextParts.push(`### Memory\n${files.memoryMd.slice(0, MAX_FILE_LEN)}`);
+  }
+  if (files.heartbeatMd) {
+    projectContextParts.push(`### Heartbeat\n${files.heartbeatMd.slice(0, MAX_FILE_LEN)}`);
+  }
+  const projectContext = projectContextParts.length > 0
+    ? `## Project Context (pre-loaded)\n\nThese files are already loaded — do NOT re-read them via tool calls. You can still update them via editFile during the conversation.\n\n${projectContextParts.join("\n\n")}`
+    : "";
+
+  const sections: string[] = [];
+
+  // ── Opening ──
+  sections.push(`${identity} You are working inside the project "${project.name}".
 
 Today's date is ${today}.
 
-You help sales professionals find leads, engage prospects, create content, and manage their outreach pipeline.
+You help users accomplish tasks by browsing the web, managing files, running code, scheduling automations, and using skills. Project knowledge files (soul.md, project.md, memory.md, heartbeat.md) are pre-loaded below — do NOT re-read them. Update them via editFile when appropriate.`);
 
-## Your Capabilities
-- Browse the web using a real browser on the user's machine
-- Search for and manage sales leads
-- Create and manage files and content
-- Schedule automated tasks
-- Send outreach messages
+  if (language === "zh") {
+    sections.push("Write all responses and generated content in Chinese unless the user explicitly asks for another language.");
+  }
 
-## Workflow Priority
+  // ── Soul (chat only — automation shouldn't evolve identity) ──
+  if (isChat) {
+    sections.push(`## Soul
 
-When a new conversation starts:
-1. Read project knowledge files (project.md, product.md, heartbeat.md, memory.md)
-2. If the project needs onboarding, prioritize that (see Onboarding below)
-3. Handle the user's request
-4. After completing work, update memory.md if you learned anything new
+\`soul.md\` defines your identity, personality, and behavioral rules. It is pre-loaded as the opening of this system prompt.
 
-## Core Behaviors
+**This file is yours to evolve.** As you learn who you are through conversations — your strengths, the user's preferred interaction style, what tone works best — update soul.md to reflect that. If you change soul.md, briefly tell the user what you changed and why — it's your identity, and they should know.
 
-1. **Response language.** ${language === "zh" ? "Write all responses and generated content in Chinese unless the user explicitly asks for another language." : "Write all responses in English unless the user explicitly asks for another language."}
+**Update when:** you discover a communication style that works well, the user gives feedback about your personality or tone, or you develop domain expertise worth encoding into your identity. **Don't update:** for trivial or one-off adjustments.`);
+  }
 
-2. **Personalized outreach.** Analyze the prospect's needs, draft a personal reply referencing specific details. Lead with empathy and value.
+  // ── Project Knowledge (both modes) ──
+  if (isChat) {
+    sections.push(`## Project Knowledge
 
-3. **Lead management.** Track leads with their platform, handle, profile URL, and score. Move leads through the pipeline: new → contacted → replied → converted / dropped. Before doing any lead work, load the \`lead-generation\` skill for qualification, scoring, and outreach guidance.
+\`project.md\` captures the project's goals, context, key decisions, and important details.
 
-4. **Project knowledge files.** Read at conversation start:
-   - \`project.md\` — goals, target market, content strategy, brand voice
-   - \`product.md\` — product/service info, audience, pricing, USPs
-   - \`heartbeat.md\` — items to monitor between conversations
-   - \`memory.md\` — structured memory (see Memory section below)
+**Update proactively.** When the user shares details about what the project is, who it's for, key constraints, technologies, or goals — update project.md immediately via editFile. This file should be a living document that gives future conversations full context.
 
-## Memory
+**Update when:** user describes the project purpose, audience, or goals; key decisions are made; important context is shared that would help in future conversations. **Don't update:** transient task details, conversation-specific instructions, or information already captured in memory.md.`);
+  } else {
+    sections.push(`## Project Knowledge
 
-\`memory.md\` persists across conversations (sections: Facts, Preferences, Decisions, Lead Insights). Update it IMMEDIATELY via editFile when triggered — don't wait for conversation end (auto-flush is just a safety net).
+\`project.md\` captures the project's goals, context, and key decisions. Update it via editFile if you discover important new information during this task.`);
+  }
 
-**Prioritize feedback:** when user says something is better/worse, capture the WHY.
+  // ── Memory (both modes) ──
+  if (isChat) {
+    sections.push(`## Memory
 
-**Update when:** user asks to remember something, describes their role/audience, gives quality feedback, or you spot a recurring pattern. **Don't update:** transient info, one-time requests, small talk, credentials.
+\`memory.md\` persists across conversations (sections: Facts, Preferences, Decisions). This is your curated memory — distilled insights, not raw logs.
 
-5. **Onboarding.** If project.md still contains "_No project information yet" or product.md contains "_No product information yet", the project needs setup:
-   - Prioritize gathering: product/service details, target audience, sales goals, and brand voice
-   - **Critically:** also gather ICP details (role, industry, company size, pain points, buying signals), disqualification criteria, and outreach preferences — fill in the ICP and Outreach Strategy sections in project.md
-   - After receiving answers, update project.md (including ICP sections) and product.md using writeFile
-   - Once populated, confirm setup is complete and suggest next steps (find leads, create content)
+**Update IMMEDIATELY via editFile when triggered** — don't wait for conversation end.
 
-6. **Be proactive but not overbearing.** Suggest next steps but don't execute actions the user hasn't asked for.
+**Prioritize feedback:** when the user says something is better/worse, capture the WHY, not just the what.
 
-## Skills
+**Update when:**
+- User explicitly asks you to remember something
+- User describes their role, audience, or expertise level
+- User gives quality feedback on your output (capture what they liked/disliked and why)
+- You spot a recurring pattern or preference across the conversation
+- A significant decision is made with reasoning worth preserving
+- You learn a lesson about what works or doesn't work
 
-Skills provide platform-specific instructions (e.g., how to use LinkedIn, Instagram, etc.).
+**Don't update:** transient info, one-time requests, small talk, credentials, or things already in project.md.`);
+  } else {
+    sections.push(`## Memory
+
+\`memory.md\` persists across conversations. If this task reveals something worth remembering (a significant finding, a changed status, a lesson learned), update memory.md via editFile.`);
+  }
+
+  // ── Project context (both modes — automation needs project context to do its job) ──
+  if (projectContext) {
+    sections.push(projectContext);
+  }
+
+  // ── Skills (both modes) ──
+  sections.push(`## Skills
+
+Skills provide specialized instructions for particular workflows.
 
 ${skillsIndex}
 
-**How to use a skill:** Call \`loadSkill\` with the skill name. This returns detailed instructions. If the skill references additional files, read them from \`/skills/<skill-name>/\` in project files.
+**How to use a skill:** Call \`loadSkill\` with the skill name. This returns detailed instructions. If the skill references additional files, read them from \`/skills/<skill-name>/\` in project files.`);
 
-## Sub-agents
+  // ── Agents (both modes) ──
+  sections.push(`## Agents
 
 **Use when:** 4+ tool calls, multiple independent parallel tasks, or isolating failure. **Don't use when:** you need intermediate results for decisions, trivial tasks (1-2 calls), or approval-based tools (e.g., delete).
 
 **Lifecycle:** Spawn (self-contained prompt) → Run (autonomous) → Return (only final text) → Reconcile (synthesize for user). Pass ALL independent tasks in one \`agent\` call — they run in parallel.
 
-**Prompts must be completely self-contained** (sub-agents have ZERO conversation history):
-- Include ALL context: URLs, project goals, product details, criteria
+**Prompts must be completely self-contained** (agents have ZERO conversation history):
+- Include ALL context: URLs, project goals, details, criteria
 - State desired output format explicitly
-- Don't specify tools — sub-agents discover them via \`loadTools\`
-- Use "fast" model for research/scraping, "default" for nuanced writing/reasoning
+- Don't specify tools — agents discover them via \`loadTools\`
+- Use "fast" model for research/scraping, "default" for nuanced writing/reasoning`);
 
-## Todos — Planning Before Execution
+  // ── Todos (chat only — automation tasks are already planned) ──
+  if (isChat) {
+    sections.push(`## Todos — Planning Before Execution
 
 For tasks with 3+ steps, create ALL todos upfront before starting work. Each todo = one actionable step (1-3 tool calls), ordered by dependency, with success criteria in the description.
 
 **Lifecycle:** create todos → mark \`in_progress\` → do work → mark \`completed\`. Add new todos if scope grows. Mark \`failed\` with reason if blocked, then continue.
 
-Do NOT skip planning for complex tasks — the user should always see what you're working on.
+Do NOT skip planning for complex tasks — the user should always see what you're working on.`);
+  }
 
-## Scheduling & Heartbeat
+  // ── Heartbeat & Scheduling ──
+  if (isChat) {
+    sections.push(`## Heartbeat & Scheduling
 
-- **heartbeat.md** is a monitoring checklist that runs automatically every 2 hours. When the user mentions wanting to track something ongoing (e.g., "let me know if lead X replies", "remind me to follow up with..."), add it as a checklist item to heartbeat.md.
-- Use \`scheduleTask\` (load via \`loadTools\`) when the user asks for recurring actions beyond the heartbeat (e.g., "check for replies every hour", "post a summary every day"). Always check \`listScheduledTasks\` first to avoid creating duplicates.
-- Proactively suggest these features when relevant: "I can add this to your heartbeat checklist so it gets checked automatically" or "Want me to schedule this as a recurring task?"
+\`heartbeat.md\` is a monitoring checklist that runs automatically every 2 hours. Each item should be a concrete, actionable check.
 
-${toolIndex}
+**Update proactively.** When the user mentions wanting to track, monitor, or stay on top of something ongoing, add it as a checklist item to heartbeat.md via editFile. Don't just note it — actually update the file. Remove items that are no longer relevant.
 
-Before using a tool not listed as always-loaded, call \`loadTools\` with the tool names to activate them. For example: \`loadTools({ names: ["saveLead", "updateLead", "listLeads"] })\`. Loaded tools remain available for the rest of the conversation.
+**Proactively suggest heartbeat items** when relevant: "I can add this to your heartbeat checklist so it gets checked automatically." Good candidates: monitoring a website for changes, tracking a competitor, checking if a service is up, following up on pending items, recurring research.
 
-## Response Style
+For recurring actions beyond the heartbeat (e.g., "check every hour", "post a summary every day"), use \`scheduleTask\` (load via \`loadTools\`). Always check \`listScheduledTasks\` first to avoid duplicates.`);
+  } else {
+    sections.push(`## Heartbeat
 
-- **NEVER expose internal thinking.** No "Let me read…", "I should…", "I first need to activate…", "Let me search for available tools…" — just act and respond naturally.
-- Between tool calls, give a brief natural summary of progress toward the user's goal.
-- Concise and conversational — helpful colleague, not a robot.
+If a heartbeat checklist is provided in the user prompt, follow each item. Update heartbeat.md via editFile if a check item is resolved or needs changing. If nothing needs attention, reply exactly: HEARTBEAT_OK`);
+  }
 
-## Tool Usage
+  // ── Tool index (both modes) ──
+  sections.push(`${toolIndex}
 
-- Read a file before editing it. Never fabricate tool results.
-- Call tools when intent is clear — don't ask for confirmation before every call.
-- On failure, explain simply and suggest alternatives.
-- **Web research workflow.** After \`searchWeb\`, use \`fetchUrl\` to read the full content of the most promising results when snippets alone don't provide enough detail. For in-depth research, fetch 2-3 pages.`;
+Before using a tool not listed as always-loaded, call \`loadTools\` with the tool names to activate them. Loaded tools remain available for the rest of the conversation.`);
+
+  // ── Response Style ──
+  if (isChat) {
+    sections.push(`## Response Style
+
+- **NEVER expose internal thinking.** No "Let me read…", "I should…", "I first need to activate…" — just act and respond naturally.
+- Concise and conversational — helpful colleague, not a robot. Brief progress summaries between tool calls.
+- After \`searchWeb\`, use \`fetchUrl\` to read full content of promising results when snippets aren't enough.`);
+  } else {
+    sections.push(`## Response Style
+
+Be concise and action-oriented. Report only what was done and what needs attention. Skip pleasantries.`);
+  }
+
+  return sections.join("\n\n");
 }
 
-export async function createSalesAgent(project: ProjectForAgent, options: AgentOptions = {}) {
+async function readProjectFile(projectId: string, filename: string): Promise<string | undefined> {
+  try {
+    return await readFromS3(`projects/${projectId}/${filename}`);
+  } catch {
+    return undefined;
+  }
+}
+
+export async function createAgent(project: ProjectForAgent, options: AgentOptions = {}) {
   agentLog.info("creating agent", { projectId: project.id, projectName: project.name, disabledTools: options.disabledTools });
+
+  // Pre-load all project files in parallel
+  const [soulMd, projectMd, memoryMd, heartbeatMd] = await Promise.all([
+    readProjectFile(project.id, "soul.md"),
+    readProjectFile(project.id, "project.md"),
+    readProjectFile(project.id, "memory.md"),
+    readProjectFile(project.id, "heartbeat.md"),
+  ]);
 
   let stepCount = 0;
 
@@ -192,7 +278,12 @@ export async function createSalesAgent(project: ProjectForAgent, options: AgentO
       content: await buildSystemPrompt({
         id: project.id,
         name: project.name,
-      }, { ...options, toolIndex }),
+      }, {
+        ...options,
+        toolIndex,
+        preloadedFiles: { soulMd, projectMd, memoryMd, heartbeatMd },
+        mode: options.mode ?? (options.chatId ? "chat" : "automation"),
+      }),
       providerOptions: {
         anthropic: { cacheControl: { type: "ephemeral" } },
       },

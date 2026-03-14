@@ -7,8 +7,6 @@ export interface Project {
   name: string;
   description: string;
   automationEnabled: boolean;
-  defaultOutreachChannel: string;
-  outreachApprovalRequired: boolean;
   codeExecutionEnabled: boolean;
   browserAutomationEnabled: boolean;
   showSkillsInFiles: boolean;
@@ -19,7 +17,6 @@ export interface Project {
   memberCount: number;
   createdAt: string;
   updatedAt: string;
-  leadCounts?: Record<string, number>;
   lastMessage?: string | null;
 }
 
@@ -63,7 +60,7 @@ export function useCreateProject() {
 export function useUpdateProject(id: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (data: { name?: string; description?: string; automationEnabled?: boolean; defaultOutreachChannel?: string; outreachApprovalRequired?: boolean; codeExecutionEnabled?: boolean; browserAutomationEnabled?: boolean; showSkillsInFiles?: boolean; assistantName?: string; assistantDescription?: string; assistantIcon?: string }) => {
+    mutationFn: async (data: { name?: string; description?: string; automationEnabled?: boolean; codeExecutionEnabled?: boolean; browserAutomationEnabled?: boolean; showSkillsInFiles?: boolean; assistantName?: string; assistantDescription?: string; assistantIcon?: string }) => {
       const res = await apiFetch<{ project: Project }>(`/projects/${id}`, {
         method: "PUT",
         body: JSON.stringify(data),

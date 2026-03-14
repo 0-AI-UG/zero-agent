@@ -3,10 +3,8 @@ import { tool } from "ai";
 import type { Tool } from "ai";
 import { createSearchWebTool } from "@/tools/searchWeb.ts";
 import { fetchUrlTool } from "@/tools/fetchUrl.ts";
-import { createLeadTools } from "@/tools/leads.ts";
 import { createFileTools } from "@/tools/files.ts";
 import { createGenerateImageTool } from "@/tools/generateImage.ts";
-import { createOutreachTools } from "@/tools/outreach.ts";
 import { createSchedulingTools } from "@/tools/scheduling.ts";
 import { createTodoTools } from "@/tools/todos.ts";
 import { createSkillTools } from "@/tools/skills.ts";
@@ -71,10 +69,8 @@ export function createToolRegistry(
   const registry: ToolRegistry = {
     searchWeb: createSearchWebTool(),
     fetchUrl: fetchUrlTool,
-    ...createLeadTools(projectId),
     ...createFileTools(projectId),
     ...createGenerateImageTool(projectId),
-    ...createOutreachTools(projectId),
     ...createSchedulingTools(projectId),
     ...(options.chatId ? createTodoTools(projectId, options.chatId) : {}),
     ...createSkillTools(projectId),

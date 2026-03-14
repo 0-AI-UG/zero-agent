@@ -21,7 +21,7 @@ export function createSchedulingTools(projectId: string) {
       description:
         "Create a new scheduled task that runs automatically on a recurring schedule. The task will execute the given prompt as an autonomous agent run. Use this when the user asks you to do something periodically (e.g., 'check for new comments every 2 hours', 'post a summary every day at 9am').",
       inputSchema: z.object({
-        name: z.string().describe("Short descriptive name for the task (e.g., 'Daily lead check')."),
+        name: z.string().describe("Short descriptive name for the task (e.g., 'Daily report')."),
         prompt: z.string().describe("The full prompt the autonomous agent will execute each run. Be specific and self-contained — the agent has no conversation history."),
         schedule: z.string().describe("Schedule expression: 'every 30m', 'every 2h', 'every 1d', or cron syntax like '0 9 * * *'. Minimum interval is 15 minutes."),
       }),

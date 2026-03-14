@@ -22,7 +22,7 @@ export interface AgentToolOptions {
 export function createAgentTool(projectId: string, toolOptions: AgentToolOptions) {
   return tool({
     description:
-      "Spawn one or more agents to handle tasks autonomously. Use for multi-step research, lead discovery, enrichment, or any task that needs its own tool loop. When you have multiple independent tasks, pass them all to run in parallel. Each agent has loadTools and can discover any tools it needs. Agents cannot use approval-based tools (e.g. delete) — handle those in the main conversation instead.",
+      "Spawn one or more agents to handle tasks autonomously. Use for multi-step research, data processing, content creation, or any task that needs its own tool loop. When you have multiple independent tasks, pass them all to run in parallel. Each agent has loadTools and can discover any tools it needs. Agents cannot use approval-based tools (e.g. delete) — handle those in the main conversation instead.",
     inputSchema: z.object({
       tasks: z
         .array(

@@ -30,56 +30,12 @@ export const updateProjectSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   description: z.string().max(500).optional(),
   automationEnabled: z.boolean().optional(),
-  defaultOutreachChannel: z.enum(["direct_message", "comment", "email", "manual"]).optional(),
-  outreachApprovalRequired: z.boolean().optional(),
   codeExecutionEnabled: z.boolean().optional(),
   browserAutomationEnabled: z.boolean().optional(),
   showSkillsInFiles: z.boolean().optional(),
   assistantName: z.string().min(1).max(100).optional(),
   assistantDescription: z.string().max(500).optional(),
   assistantIcon: z.string().min(1).max(50).optional(),
-});
-
-// Leads
-export const leadStatusSchema = z.enum([
-  "new",
-  "contacted",
-  "replied",
-  "converted",
-  "dropped",
-]);
-
-export const leadPrioritySchema = z.enum(["low", "medium", "high"]);
-
-export const createLeadSchema = z.object({
-  name: z.string().min(1, "Name is required").max(200),
-  source: z.string().max(500).optional(),
-  notes: z.string().optional(),
-  email: z.string().email().optional(),
-  followUpDate: z.iso.date("Invalid date format").optional(),
-  platform: z.string().max(200).optional(),
-  platformHandle: z.string().max(200).optional(),
-  profileUrl: z.string().max(1000).optional(),
-  interest: z.string().max(500).optional(),
-  priority: leadPrioritySchema.optional(),
-  tags: z.string().max(500).optional(),
-  score: z.number().int().min(0).max(100).optional(),
-});
-
-export const updateLeadSchema = z.object({
-  name: z.string().min(1).max(200).optional(),
-  source: z.string().max(500).optional(),
-  notes: z.string().optional(),
-  email: z.string().email().optional(),
-  status: leadStatusSchema.optional(),
-  followUpDate: z.iso.date("Invalid date format").nullable().optional(),
-  platform: z.string().max(200).optional(),
-  platformHandle: z.string().max(200).optional(),
-  profileUrl: z.string().max(1000).optional(),
-  interest: z.string().max(500).optional(),
-  priority: leadPrioritySchema.optional(),
-  tags: z.string().max(500).optional(),
-  score: z.number().int().min(0).max(100).nullable().optional(),
 });
 
 // Files
@@ -118,37 +74,6 @@ export const uploadRequestSchema = z.object({
     .max(50 * 1024 * 1024, "File too large (max 50 MB)"),
 });
 
-// Outreach
-export const outreachChannelSchema = z.enum(["direct_message", "comment", "email", "manual"]);
-
-export const approveMessageSchema = z.object({
-  action: z.enum(["approve", "reject"]),
-});
-
-export const editMessageSchema = z.object({
-  body: z.string().min(1, "Message body is required").max(5000),
-  subject: z.string().max(500).optional(),
-});
-
-export const recordReplySchema = z.object({
-  replyBody: z.string().min(1, "Reply body is required").max(5000),
-});
-
-// Channels (messaging integrations)
-export const createChannelSchema = z.object({
-  platform: z.enum(["telegram"]),
-  name: z.string().min(1, "Name is required").max(100),
-  credentials: z.record(z.string(), z.string()).default({}),
-  allowedSenders: z.array(z.string()).default([]),
-});
-
-export const updateChannelSchema = z.object({
-  name: z.string().min(1).max(100).optional(),
-  credentials: z.record(z.string(), z.string()).optional(),
-  allowedSenders: z.array(z.string()).optional(),
-  enabled: z.boolean().optional(),
-});
-
 // Companion tokens
 export const createCompanionTokenSchema = z.object({
   name: z.string().min(1, "Name is required").max(100),
@@ -176,6 +101,11 @@ export const publishSkillSchema = z.object({
 
 export const installCommunitySkillSchema = z.object({
   name: z.string().min(1, "Skill name is required"),
+});
+
+// Soul
+export const updateSoulSchema = z.object({
+  content: z.string().min(1).max(10000),
 });
 
 // Chat – keep permissive; the AI SDK controls part shapes and may add new types.

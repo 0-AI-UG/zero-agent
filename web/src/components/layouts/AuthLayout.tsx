@@ -1,6 +1,6 @@
 import { Navigate, Outlet } from "react-router";
 import { useAuthStore } from "@/stores/auth";
-import { MessageSquareIcon, UsersIcon, SparklesIcon } from "lucide-react";
+import { UsersIcon, BotIcon, ClockIcon } from "lucide-react";
 import logoSvg from "@/logo.svg";
 
 export function AuthLayout() {
@@ -21,9 +21,9 @@ export function AuthLayout() {
       <div className="relative z-10 flex flex-col items-center gap-8 w-full max-w-sm">
         {/* Branding */}
         <div className="text-center space-y-2 flex flex-col items-center">
-          <img src={logoSvg} alt="LeadBot" className="size-12" />
-          <h1 className="text-xl font-bold font-display tracking-tight">LeadBot</h1>
-          <p className="text-sm text-muted-foreground">AI-powered sales lead assistant</p>
+          <img src={logoSvg} alt="Zero Agent" className="size-12" />
+          <h1 className="text-xl font-bold font-display tracking-tight">Zero Agent</h1>
+          <p className="text-sm text-muted-foreground">AI agent for your projects</p>
         </div>
 
         <Outlet />
@@ -31,16 +31,16 @@ export function AuthLayout() {
         {/* Feature highlights */}
         <div className="flex items-center justify-center gap-6 text-muted-foreground">
           <div className="flex flex-col items-center gap-1">
-            <SparklesIcon className="size-4" />
-            <span className="text-[10px] font-medium">AI Assistant</span>
+            <BotIcon className="size-4" />
+            <span className="text-[10px] font-medium">Agent</span>
           </div>
           <div className="flex flex-col items-center gap-1">
             <UsersIcon className="size-4" />
-            <span className="text-[10px] font-medium">Lead Tracking</span>
+            <span className="text-[10px] font-medium">Collaboration</span>
           </div>
           <div className="flex flex-col items-center gap-1">
-            <MessageSquareIcon className="size-4" />
-            <span className="text-[10px] font-medium">Smart Chat</span>
+            <ClockIcon className="size-4" />
+            <span className="text-[10px] font-medium">Automation</span>
           </div>
         </div>
       </div>

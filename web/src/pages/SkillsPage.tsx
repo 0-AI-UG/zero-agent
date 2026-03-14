@@ -25,6 +25,7 @@ import { ImportDialog } from "@/components/skills/ImportDialog";
 import { CommunityBrowseModal } from "@/components/skills/CommunityBrowseModal";
 import { Input } from "@/components/ui/input";
 import { GithubIcon, SearchIcon, PlusIcon } from "lucide-react";
+import { toast } from "sonner";
 
 type SourceFilter = "all" | Exclude<SkillSource, "community">;
 
@@ -54,6 +55,9 @@ export function SkillsPage() {
   const [browseOpen, setBrowseOpen] = useState(false);
   const [detailSkill, setDetailSkill] = useState<UnifiedSkill | null>(null);
   const [confirmUninstall, setConfirmUninstall] = useState<string | null>(null);
+  const [installingName, setInstallingName] = useState<string | null>(null);
+  const [uninstallingName, setUninstallingName] = useState<string | null>(null);
+  const [publishingName, setPublishingName] = useState<string | null>(null);
 
   // Merge installed + available + community into unified list
   const unified = useMemo(() => {
@@ -132,7 +136,29 @@ export function SkillsPage() {
     : null;
 
   const handleInstall = (skill: UnifiedSkill) => {
-    installSkill.mutate({ builtIn: skill.name });
+    setInstallingName(skill.name);
+    installSkill.mutate({ builtIn: skill.name }, {
+      onError: (err) => {
+        toast.error(`Failed to install "${skill.name}"`, {
+          description: err instanceof Error ? err.message : "Unknown error",
+        });
+      },
+      onSettled: () => setInstallingName(null),
+    });
+  };
+
+  const handlePublish = (name: string) => {
+    setPublishingName(name);
+    publishSkill.mutate(name, {
+      onSettled: () => setPublishingName(null),
+    });
+  };
+
+  const handleUnpublish = (name: string) => {
+    setPublishingName(name);
+    unpublishSkill.mutate(name, {
+      onSettled: () => setPublishingName(null),
+    });
   };
 
   return (
@@ -220,12 +246,10 @@ export function SkillsPage() {
                   onClick={() => setDetailSkill(skill)}
                   onInstall={() => handleInstall(skill)}
                   onUninstall={() => setConfirmUninstall(skill.name)}
-                  onPublish={() => publishSkill.mutate(skill.name)}
-                  onUnpublish={() => unpublishSkill.mutate(skill.name)}
-                  isInstalling={installSkill.isPending}
-                  isPublishing={
-                    publishSkill.isPending || unpublishSkill.isPending
-                  }
+                  onPublish={() => handlePublish(skill.name)}
+                  onUnpublish={() => handleUnpublish(skill.name)}
+                  isInstalling={installingName === skill.name}
+                  isPublishing={publishingName === skill.name}
                 />
               ))}
           </div>
@@ -285,13 +309,13 @@ export function SkillsPage() {
           if (activeDetailSkill) setConfirmUninstall(activeDetailSkill.name);
         }}
         onPublish={() => {
-          if (activeDetailSkill) publishSkill.mutate(activeDetailSkill.name);
+          if (activeDetailSkill) handlePublish(activeDetailSkill.name);
         }}
         onUnpublish={() => {
-          if (activeDetailSkill) unpublishSkill.mutate(activeDetailSkill.name);
+          if (activeDetailSkill) handleUnpublish(activeDetailSkill.name);
         }}
-        isInstalling={installSkill.isPending}
-        isPublishing={publishSkill.isPending || unpublishSkill.isPending}
+        isInstalling={activeDetailSkill ? installingName === activeDetailSkill.name : false}
+        isPublishing={activeDetailSkill ? publishingName === activeDetailSkill.name : false}
       />
 
       {/* Browse community modal */}
@@ -327,19 +351,25 @@ export function SkillsPage() {
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               variant="destructive"
-              disabled={uninstallSkill.isPending}
+              disabled={uninstallingName !== null}
               onClick={() => {
                 if (confirmUninstall) {
-                  uninstallSkill.mutate(confirmUninstall, {
-                    onSuccess: () => {
-                      setConfirmUninstall(null);
-                      setDetailSkill(null);
+                  const name = confirmUninstall;
+                  setUninstallingName(name);
+                  uninstallSkill.mutate(name, {
+                    onError: (err) => {
+                      toast.error(`Failed to uninstall "${name}"`, {
+                        description: err instanceof Error ? err.message : "Unknown error",
+                      });
                     },
+                    onSettled: () => setUninstallingName(null),
                   });
+                  setConfirmUninstall(null);
+                  setDetailSkill(null);
                 }
               }}
             >
-              {uninstallSkill.isPending ? "Removing..." : "Uninstall"}
+              {uninstallingName !== null ? "Removing..." : "Uninstall"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

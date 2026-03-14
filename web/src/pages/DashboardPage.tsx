@@ -80,8 +80,7 @@ export function DashboardPage() {
               <EmptyProjectsIllustration className="mb-4" />
               <h2 className="text-sm font-medium mb-1">No projects yet</h2>
               <p className="text-sm text-muted-foreground mb-6">
-                Create your first project to get started with your sales
-                assistant.
+                Create your first project to get started.
               </p>
               <CreateProjectDialog />
             </div>

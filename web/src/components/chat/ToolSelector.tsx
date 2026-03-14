@@ -11,9 +11,7 @@ import {
   FolderOpenIcon,
   GlobeIcon,
   ImageIcon,
-  SendIcon,
   SparklesIcon,
-  UsersIcon,
   WrenchIcon,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -21,11 +19,9 @@ import { cn } from "@/lib/utils";
 
 const GROUP_ICONS: Record<string, LucideIcon> = {
   agent: SparklesIcon,
-  leads: UsersIcon,
   files: FolderOpenIcon,
   web: GlobeIcon,
   creative: ImageIcon,
-  outreach: SendIcon,
   scheduling: CalendarIcon,
 };
 

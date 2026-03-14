@@ -6,7 +6,7 @@ const PROJECT_ID = "test-project";
 describe("tool scoping by execution context", () => {
   test("chat context excludes nothing extra (all-scoped tools available)", () => {
     const registry = createToolRegistry(PROJECT_ID, { context: "chat" });
-    expect(registry.getApprovedMessages).toBeDefined();
+    expect(registry.searchWeb).toBeDefined();
     expect(registry.loadSkill).toBeDefined();
   });
 
@@ -37,16 +37,16 @@ describe("tool scoping by execution context", () => {
       userId: "user-1",
     });
     expect(registry.todoCreate).toBeDefined();
-    expect(registry.getApprovedMessages).toBeDefined();
+    expect(registry.searchWeb).toBeDefined();
   });
 
   test("onlyTools restricts to allowlist + base tools", () => {
     const registry = createToolRegistry(PROJECT_ID, {
       context: "automation",
-      onlyTools: ["getApprovedMessages"],
+      onlyTools: ["searchWeb"],
     });
     // Allowed tool present
-    expect(registry.getApprovedMessages).toBeDefined();
+    expect(registry.searchWeb).toBeDefined();
     // Base file tools always present
     expect(registry.readFile).toBeDefined();
     expect(registry.writeFile).toBeDefined();
@@ -55,7 +55,6 @@ describe("tool scoping by execution context", () => {
     // loadSkill always present (in ALWAYS_AVAILABLE_BASE)
     expect(registry.loadSkill).toBeDefined();
     // Other on-demand tools excluded
-    expect(registry.searchWeb).toBeUndefined();
     expect(registry.fetchUrl).toBeUndefined();
   });
 
@@ -66,7 +65,7 @@ describe("tool scoping by execution context", () => {
     expect(registry.searchWeb).toBeDefined();
     expect(registry.fetchUrl).toBeDefined();
     expect(registry.readFile).toBeDefined();
-    expect(registry.getApprovedMessages).toBeDefined();
+    expect(registry.searchWeb).toBeDefined();
   });
 });
 
@@ -107,10 +106,9 @@ describe("subagent context", () => {
 });
 
 describe("getAlwaysAvailable", () => {
-  test("chat context includes extra tools", () => {
+  test("chat context includes base tools", () => {
     const available = getAlwaysAvailable("chat");
     expect(available.has("readFile")).toBe(true);
-    expect(available.has("todoCreate")).toBe(true);
     expect(available.has("loadSkill")).toBe(true);
     expect(available.has("browser")).toBe(false);
   });

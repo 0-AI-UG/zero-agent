@@ -2,30 +2,7 @@ export const PLATFORM_CONFIG: Record<
   string,
   { color: string; label: string }
 > = {
-  linkedin: {
-    color: "bg-blue-600",
-    label: "LinkedIn",
-  },
-  instagram: {
-    color: "bg-pink-500",
-    label: "Instagram",
-  },
-  rednote: {
-    color: "bg-red-500",
-    label: "RedNote",
-  },
-  x: {
-    color: "bg-foreground",
-    label: "X",
-  },
-  "google-maps": {
-    color: "bg-green-500",
-    label: "Maps",
-  },
-  meta: {
-    color: "bg-purple-500",
-    label: "Meta",
-  },
+  visualizer: { color: "bg-violet-500", label: "Visualizer" },
 };
 
 export const DEFAULT_PLATFORM_CONFIG = {
@@ -36,7 +13,6 @@ export const DEFAULT_PLATFORM_CONFIG = {
 export const CAPABILITY_LABELS: Record<string, string> = {
   prospect: "Prospect",
   enrich: "Enrich",
-  outreach: "Outreach",
   scrape: "Scrape",
   engage: "Engage",
   analyze: "Analyze",

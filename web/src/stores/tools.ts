@@ -16,12 +16,6 @@ export const TOOL_GROUPS: ToolGroup[] = [
     tools: ["agent"],
   },
   {
-    id: "leads",
-    label: "Lead Management",
-    icon: "Users",
-    tools: ["saveLead", "updateLead", "appendLeadNote", "listLeads"],
-  },
-  {
     id: "files",
     label: "File Operations",
     icon: "FolderOpen",
@@ -55,18 +49,6 @@ export const TOOL_GROUPS: ToolGroup[] = [
     tools: ["runPython"],
   },
   {
-    id: "outreach",
-    label: "Outreach",
-    icon: "Send",
-    tools: [
-      "sendDirectMessage",
-      "getOutreachHistory",
-      "getApprovedMessages",
-      "updateOutreachStatus",
-      "recordOutreachReply",
-    ],
-  },
-  {
     id: "scheduling",
     label: "Scheduling",
     icon: "Calendar",
@@ -83,24 +65,6 @@ export const ALL_TOOL_NAMES = TOOL_GROUPS.flatMap((g) => g.tools);
 
 /** Tool groups available for automation tasks (includes automation-only tools). */
 export const AUTOMATION_TOOL_GROUPS: ToolGroup[] = [
-  {
-    id: "leads",
-    label: "Lead Management",
-    icon: "Users",
-    tools: ["saveLead", "updateLead", "appendLeadNote", "listLeads"],
-  },
-  {
-    id: "outreach",
-    label: "Outreach",
-    icon: "Send",
-    tools: [
-      "sendDirectMessage",
-      "getOutreachHistory",
-      "getApprovedMessages",
-      "updateOutreachStatus",
-      "recordOutreachReply",
-    ],
-  },
   {
     id: "web",
     label: "Web & Browse",

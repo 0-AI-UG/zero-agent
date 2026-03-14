@@ -54,7 +54,10 @@ export function FileList({
 }: FileListProps) {
   const { data: project } = useProject(projectId);
   const showSkillsInFiles = project?.showSkillsInFiles ?? true;
-  const isSkillsPath = currentPath === "/skills/" || currentPath.startsWith("/skills/");
+  // Protect skill name folders and SKILL.md, but allow editing other files inside skills
+  const isSkillsRoot = currentPath === "/skills/";
+  // Match /skills/{name}/ but not deeper paths like /skills/{name}/templates/
+  const isSkillFolder = /^\/skills\/[^/]+\/$/.test(currentPath);
   const sorted = useMemo(() => {
     if (!files) return [];
     const copy = [...files];
@@ -158,7 +161,11 @@ export function FileList({
             onDelete={onDeleteFolder}
             isDeleting={isDeletingFolder}
             onDropItem={onDropItem}
-            readOnly={isSkillsPath || folder.path.startsWith("/skills/")}
+            readOnly={
+              // The /skills/ root folder and skill name folders (e.g. /skills/visualizer/) are protected
+              folder.path === "/skills/" ||
+              (isSkillsRoot && folder.path.startsWith("/skills/"))
+            }
           />
         ))}
         {sorted.map((file) => (
@@ -170,7 +177,10 @@ export function FileList({
             onDelete={onDeleteFile}
             isDeleting={isDeletingFile}
             isSelected={file.id === selectedFileId}
-            readOnly={isSkillsPath}
+            readOnly={
+              // Only SKILL.md inside a skill folder is protected
+              isSkillFolder && file.filename === "SKILL.md"
+            }
           />
         ))}
       </div>

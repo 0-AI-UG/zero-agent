@@ -1,7 +1,6 @@
 import { Outlet, NavLink, useParams, useNavigate, useLocation } from "react-router";
 import { useProject } from "@/api/projects";
 import { useFiles } from "@/hooks/use-files";
-import { useLeads } from "@/api/leads";
 import { useAuthStore } from "@/stores/auth";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Button } from "@/components/ui/button";
@@ -23,12 +22,12 @@ import {
   MessageSquareIcon,
   PuzzleIcon,
   SettingsIcon,
-  UsersIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useEffect, useMemo } from "react";
+import { useEffect } from "react";
 import { useFilesStore } from "@/stores/files-store";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
+import { FilePreviewModal } from "@/components/files/file-preview-modal";
 
 function getProjectColor(name: string): string {
   let hash = 0;
@@ -160,20 +159,6 @@ export function ProjectLayout() {
 
   const { data: project, isLoading: projectLoading } = useProject(projectId!);
   const { data: files } = useFiles(projectId!);
-  const { data: leads } = useLeads(projectId!);
-
-  // Calculate overdue leads count
-  const overdueCount = useMemo(() => {
-    if (!leads) return 0;
-    const now = Date.now();
-    return leads.filter(
-      (l) =>
-        l.followUpDate &&
-        new Date(l.followUpDate).getTime() < now &&
-        l.status !== "converted" &&
-        l.status !== "dropped"
-    ).length;
-  }, [leads]);
 
   if (projectLoading) {
     return (
@@ -197,10 +182,9 @@ export function ProjectLayout() {
   const basePath = `/projects/${projectId}`;
   const projectColor = getProjectColor(project.name);
 
-  // Determine if we're on the chat tab (not on /files or /leads)
+  // Determine if we're on the chat tab (not on /files or other subpages)
   const isOnSubpage =
     location.pathname.includes("/files") ||
-    location.pathname.includes("/leads") ||
     location.pathname.includes("/tasks") ||
     location.pathname.includes("/skills") ||
     location.pathname.includes("/settings") ||
@@ -219,13 +203,6 @@ export function ProjectLayout() {
       icon: FolderIcon,
       label: "Files",
       count: files?.files?.length,
-    },
-    {
-      to: `${basePath}/leads`,
-      icon: UsersIcon,
-      label: "Leads",
-      count: leads?.length,
-      hasAlert: overdueCount > 0,
     },
     {
       to: `${basePath}/tasks`,
@@ -305,6 +282,7 @@ export function ProjectLayout() {
             <BottomTabItem key={item.to} {...item} />
           ))}
         </nav>
+        <FilePreviewModal projectId={projectId!} />
       </div>
     );
   }
@@ -365,6 +343,7 @@ export function ProjectLayout() {
       <main className="flex-1 overflow-hidden h-full">
         {outletContent}
       </main>
+      <FilePreviewModal projectId={projectId!} />
     </div>
   );
 }

@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Timeline</title>
+<style>
+  :root {
+    --color-bg: #ffffff;
+    --color-surface: #ffffff;
+    --color-surface-muted: #f5f5f5;
+    --color-border: #e5e5e5;
+    --color-text: #1b1b1b;
+    --color-text-muted: #737373;
+    --color-primary: #005bd9;
+    --color-success: #16a34a;
+    --color-danger: #dc2626;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: var(--color-bg);
+    color: var(--color-text);
+    padding: 1.5rem;
+  }
+  h1 { font-size: 1.5rem; font-weight: 700; margin-bottom: 1rem; }
+  .timeline {
+    position: relative;
+    padding-left: 2rem;
+  }
+  .timeline::before {
+    content: "";
+    position: absolute;
+    left: 0.5625rem;
+    top: 0.25rem;
+    bottom: 0.25rem;
+    width: 2px;
+    background: var(--color-border);
+  }
+  .timeline-item {
+    position: relative;
+    padding-bottom: 1.5rem;
+  }
+  .timeline-item:last-child { padding-bottom: 0; }
+  .timeline-dot {
+    position: absolute;
+    left: -1.6875rem;
+    top: 0.25rem;
+    width: 0.75rem;
+    height: 0.75rem;
+    border-radius: 50%;
+    border: 2px solid var(--color-bg);
+    box-shadow: 0 0 0 2px var(--color-border);
+  }
+  .timeline-card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 0.625rem;
+    padding: 1rem 1.25rem;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    transition: background 0.15s ease;
+  }
+  .timeline-card:hover { background: var(--color-surface-muted); }
+  .timeline-date { font-size: 0.75rem; color: var(--color-text-muted); margin-bottom: 0.25rem; }
+  .timeline-title { font-size: 0.875rem; font-weight: 600; margin-bottom: 0.25rem; }
+  .timeline-desc { font-size: 0.875rem; color: var(--color-text-muted); line-height: 1.5; }
+  .timeline-tag {
+    display: inline-block;
+    padding: 0.125rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.6875rem;
+    font-weight: 500;
+    margin-top: 0.5rem;
+  }
+</style>
+</head>
+<body>
+  <h1>Timeline</h1>
+  <div class="timeline" id="timeline" role="list" aria-label="Timeline of events"></div>
+
+  <script>
+    // <!-- DATA -->
+    const events = [
+      { date: "Mar 14, 2026", title: "v2.0 Released", desc: "Major update with new dashboard and reporting features.", color: "#005bd9", tag: "Release" },
+      { date: "Mar 10, 2026", title: "Security Audit Completed", desc: "Passed all compliance checks with zero critical findings.", color: "#005bd9", tag: "Security" },
+      { date: "Mar 5, 2026", title: "API Rate Limit Incident", desc: "Increased rate limits after traffic spike caused 429 errors for 12 minutes.", color: "#005bd9", tag: "Incident" },
+      { date: "Feb 28, 2026", title: "Team Offsite", desc: "Engineering and product alignment on Q2 roadmap priorities.", color: "#4d8ce8", tag: "Team" },
+      { date: "Feb 20, 2026", title: "Database Migration", desc: "Successfully migrated 2.4M records to the new schema with zero downtime.", color: "#4d8ce8", tag: "Infra" },
+      { date: "Feb 14, 2026", title: "Beta Program Launch", desc: "Opened early access to 200 users for the new analytics module.", color: "#94b8f0", tag: "Product" },
+    ];
+
+    const timeline = document.getElementById("timeline");
+
+    events.forEach(event => {
+      const item = document.createElement("div");
+      item.className = "timeline-item";
+      item.setAttribute("role", "listitem");
+
+      const bgLight = event.color + "18";
+      const tagStyle = `background:${bgLight};color:${event.color};`;
+
+      item.innerHTML = `
+        <div class="timeline-dot" style="background:${event.color};box-shadow:0 0 0 2px ${event.color}30;"></div>
+        <div class="timeline-card">
+          <div class="timeline-date">${event.date}</div>
+          <div class="timeline-title">${event.title}</div>
+          <div class="timeline-desc">${event.desc}</div>
+          <span class="timeline-tag" style="${tagStyle}">${event.tag}</span>
+        </div>
+      `;
+      timeline.appendChild(item);
+    });
+  </script>
+</body>
+</html>

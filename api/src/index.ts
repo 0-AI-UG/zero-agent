@@ -8,6 +8,8 @@ import {
   handleGetProject,
   handleUpdateProject,
   handleDeleteProject,
+  handleGetSoul,
+  handleUpdateSoul,
 } from "@/routes/projects.ts";
 import {
   handleListChats,
@@ -32,12 +34,6 @@ import {
   handleUpdateFileContent,
 } from "@/routes/files.ts";
 import {
-  handleListLeads,
-  handleCreateLead,
-  handleUpdateLead,
-  handleDeleteLead,
-} from "@/routes/leads.ts";
-import {
   handleListTasks,
   handleCreateTask,
   handleUpdateTask,
@@ -45,12 +41,6 @@ import {
   handleRunTaskNow,
   handleGetTaskRuns,
 } from "@/routes/scheduled-tasks.ts";
-import {
-  handleGetLeadOutreach,
-  handleApproveRejectMessage,
-  handleEditMessage,
-  handleRecordReply,
-} from "@/routes/outreach-messages.ts";
 import {
   handleListMembers,
   handleInviteMember,
@@ -123,16 +113,6 @@ import {
   handleUnpublishSkill,
 } from "@/routes/community.ts";
 import { startScheduler } from "@/lib/scheduler.ts";
-import {
-  handleListChannels,
-  handleCreateChannel,
-  handleUpdateChannel,
-  handleDeleteChannel,
-  handleStartChannel,
-  handleStopChannel,
-  handleChannelStatus,
-} from "@/routes/channels.ts";
-import { channelManager } from "@/lib/channels/manager.ts";
 
 const httpLog = log.child({ module: "http" });
 const PORT = parseInt(process.env.PORT ?? "3001");
@@ -176,6 +156,11 @@ const server = Bun.serve<{ userId: string; projectId: string; authenticated: boo
       GET: withLogging(handleGetProject),
       PUT: withLogging(handleUpdateProject),
       DELETE: withLogging(handleDeleteProject),
+    },
+    // Soul (identity)
+    "/api/projects/:projectId/soul": {
+      GET: withLogging(handleGetSoul),
+      PUT: withLogging(handleUpdateSoul),
     },
     // Chat CRUD
     "/api/projects/:projectId/chats": {
@@ -232,15 +217,6 @@ const server = Bun.serve<{ userId: string; projectId: string; authenticated: boo
       DELETE: withLogging(handleDeleteFolder),
       PATCH: withLogging(handleMoveFolder),
     },
-    // Leads
-    "/api/projects/:projectId/leads": {
-      GET: withLogging(handleListLeads),
-      POST: withLogging(handleCreateLead),
-    },
-    "/api/projects/:projectId/leads/:id": {
-      PUT: withLogging(handleUpdateLead),
-      DELETE: withLogging(handleDeleteLead),
-    },
     // Scheduled Tasks
     "/api/projects/:projectId/tasks": {
       GET: withLogging(handleListTasks),
@@ -255,19 +231,6 @@ const server = Bun.serve<{ userId: string; projectId: string; authenticated: boo
     },
     "/api/projects/:projectId/tasks/:taskId/runs": {
       GET: withLogging(handleGetTaskRuns),
-    },
-    // Lead outreach history
-    "/api/projects/:projectId/leads/:leadId/outreach": {
-      GET: withLogging(handleGetLeadOutreach),
-    },
-    // Outreach message approve/reject + edit
-    "/api/projects/:projectId/outreach/messages/:messageId": {
-      PATCH: withLogging(handleApproveRejectMessage),
-      PUT: withLogging(handleEditMessage),
-    },
-    // Record a lead's reply to an outreach message
-    "/api/projects/:projectId/outreach/messages/:messageId/reply": {
-      POST: withLogging(handleRecordReply),
     },
     // Members
     "/api/projects/:projectId/members": {
@@ -360,24 +323,6 @@ const server = Bun.serve<{ userId: string; projectId: string; authenticated: boo
     "/api/projects/:projectId/companion/status": {
       GET: withLogging(handleCompanionStatus),
     },
-    // Channels (messaging integrations)
-    "/api/projects/:projectId/channels": {
-      GET: withLogging(handleListChannels),
-      POST: withLogging(handleCreateChannel),
-    },
-    "/api/projects/:projectId/channels/:channelId": {
-      PUT: withLogging(handleUpdateChannel),
-      DELETE: withLogging(handleDeleteChannel),
-    },
-    "/api/projects/:projectId/channels/:channelId/start": {
-      POST: withLogging(handleStartChannel),
-    },
-    "/api/projects/:projectId/channels/:channelId/stop": {
-      POST: withLogging(handleStopChannel),
-    },
-    "/api/projects/:projectId/channels/:channelId/status": {
-      GET: withLogging(handleChannelStatus),
-    },
   },
   fetch(request, server) {
     // Handle CORS preflight
@@ -462,4 +407,3 @@ const server = Bun.serve<{ userId: string; projectId: string; authenticated: boo
 log.info("server started", { port: server.port, logLevel: process.env.LOG_LEVEL ?? "debug" });
 
 startScheduler();
-channelManager.startAll().catch((err) => log.error("failed to start channels", err));

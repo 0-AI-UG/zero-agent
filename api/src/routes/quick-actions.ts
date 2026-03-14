@@ -13,8 +13,8 @@ import { db } from "@/db/index.ts";
 import type { QuickActionRow } from "@/db/types.ts";
 
 const DEFAULT_QUICK_ACTIONS = [
-  { text: "Find leads interested in our product", icon: "search", description: "Search for potential leads" },
-  { text: "Draft a follow-up message", icon: "pen-line", description: "Write a personalized outreach message" },
+  { text: "Help me research a topic", icon: "search", description: "Browse the web and summarize findings" },
+  { text: "Draft a document", icon: "pen-line", description: "Write or edit a document" },
   { text: "Analyze recent conversations", icon: "bar-chart", description: "Review trends and insights" },
   { text: "Summarize today's activity", icon: "calendar", description: "Get a quick overview of progress" },
 ];

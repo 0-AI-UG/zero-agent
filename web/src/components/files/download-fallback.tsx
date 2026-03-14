@@ -1,7 +1,9 @@
+import { useEffect } from "react";
 import { DownloadIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { FileTypeIcon } from "./file-type-icon";
 import { formatBytes } from "./file-row";
+import { usePreviewActions } from "./preview-actions-context";
 import type { FileItem } from "@/hooks/use-files";
 
 function humanMimeType(mimeType: string): string {
@@ -24,6 +26,20 @@ interface DownloadFallbackProps {
 }
 
 export function DownloadFallback({ file, url }: DownloadFallbackProps) {
+  const { setActions } = usePreviewActions();
+
+  useEffect(() => {
+    setActions(
+      <Button variant="outline" size="sm" asChild>
+        <a href={url} download={file.filename}>
+          <DownloadIcon className="h-4 w-4 mr-1" />
+          Download
+        </a>
+      </Button>
+    );
+    return () => setActions(null);
+  }, [url, file.filename]);
+
   return (
     <div className="flex flex-col items-center gap-4 p-8 text-center">
       <FileTypeIcon
@@ -36,12 +52,6 @@ export function DownloadFallback({ file, url }: DownloadFallbackProps) {
           {humanMimeType(file.mimeType)} &middot; {formatBytes(file.sizeBytes)}
         </p>
       </div>
-      <Button asChild>
-        <a href={url} download={file.filename}>
-          <DownloadIcon className="h-4 w-4 mr-1" />
-          Download
-        </a>
-      </Button>
     </div>
   );
 }
