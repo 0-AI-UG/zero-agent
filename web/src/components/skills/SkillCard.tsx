@@ -1,0 +1,147 @@
+import type { SkillMetadata, SkillSource } from "@/api/skills";
+import { Badge } from "@/components/ui/badge";
+import { TrashIcon, DownloadIcon, GlobeIcon, Loader2Icon } from "lucide-react";
+import {
+  getPlatformConfig,
+  CAPABILITY_LABELS,
+  SOURCE_LABELS,
+} from "./constants";
+
+export interface UnifiedSkill {
+  name: string;
+  description: string;
+  metadata: SkillMetadata | null;
+  installed: boolean;
+  source: SkillSource | null;
+  published?: boolean;
+  downloads?: number;
+}
+
+interface SkillCardProps {
+  skill: UnifiedSkill;
+  onInstall?: () => void;
+  onUninstall?: () => void;
+  onPublish?: () => void;
+  onUnpublish?: () => void;
+  onClick?: () => void;
+  isInstalling?: boolean;
+  isPublishing?: boolean;
+}
+
+export function SkillCard({
+  skill,
+  onInstall,
+  onUninstall,
+  onPublish,
+  onUnpublish,
+  onClick,
+  isInstalling,
+  isPublishing,
+}: SkillCardProps) {
+  const platform = getPlatformConfig(skill.metadata?.platform);
+
+  return (
+    <div
+      onClick={onClick}
+      className={`relative flex flex-col rounded-lg border bg-card p-3.5 cursor-pointer hover:bg-accent/50 transition-all h-full ${!skill.installed ? "opacity-60 hover:opacity-100" : ""}`}
+    >
+      {/* Header: platform + source */}
+      <div className="flex items-center justify-between gap-2 mb-2 min-h-[18px]">
+        <div className="flex items-center gap-1.5">
+          {skill.installed && (
+            <span className="size-1.5 rounded-full shrink-0 bg-green-500" />
+          )}
+          <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
+            {platform.label}
+          </span>
+        </div>
+        <div className="flex items-center gap-1.5 ml-auto">
+          {skill.downloads != null && (
+            <span className="text-[10px] text-muted-foreground">
+              {skill.downloads} {skill.downloads === 1 ? "install" : "installs"}
+            </span>
+          )}
+          {skill.source && (
+            <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+              {SOURCE_LABELS[skill.source] ?? skill.source}
+            </Badge>
+          )}
+        </div>
+      </div>
+
+      {/* Name + description */}
+      <p className="text-sm font-semibold truncate">{skill.name}</p>
+      <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5 min-h-[2lh]">
+        {skill.description || "\u00A0"}
+      </p>
+
+      {/* Capabilities */}
+      <div className="flex flex-wrap gap-1 mt-2 min-h-[22px] flex-1">
+        {skill.metadata?.capabilities?.map((cap) => (
+          <Badge
+            key={cap}
+            variant="outline"
+            className="text-[10px] px-1.5 py-0 h-fit"
+          >
+            {CAPABILITY_LABELS[cap] ?? cap}
+          </Badge>
+        ))}
+      </div>
+
+      {/* Actions */}
+      <div
+        className="flex items-center gap-2 mt-3 pt-2 border-t"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {skill.installed ? (
+          <div className="ml-auto flex items-center gap-1">
+            {skill.source === "user" && !skill.published && onPublish && (
+              <button
+                onClick={onPublish}
+                disabled={isPublishing}
+                className="text-muted-foreground hover:text-foreground p-1 disabled:opacity-50"
+                aria-label={`Publish ${skill.name}`}
+              >
+                {isPublishing ? (
+                  <Loader2Icon className="size-3.5 animate-spin" />
+                ) : (
+                  <GlobeIcon className="size-3.5" />
+                )}
+              </button>
+            )}
+            {skill.published && onUnpublish && (
+              <button
+                onClick={onUnpublish}
+                disabled={isPublishing}
+                className="text-muted-foreground hover:text-foreground p-1 disabled:opacity-50"
+                aria-label={`Unpublish ${skill.name}`}
+              >
+                {isPublishing ? (
+                  <Loader2Icon className="size-3.5 animate-spin" />
+                ) : (
+                  <GlobeIcon className="size-3.5 text-green-500" />
+                )}
+              </button>
+            )}
+            <button
+              onClick={onUninstall}
+              className="text-muted-foreground hover:text-destructive p-1"
+              aria-label={`Uninstall ${skill.name}`}
+            >
+              <TrashIcon className="size-3.5" />
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={onInstall}
+            disabled={isInstalling}
+            className="flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs font-medium hover:bg-muted disabled:opacity-50"
+          >
+            <DownloadIcon className="size-3" />
+            Install
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}

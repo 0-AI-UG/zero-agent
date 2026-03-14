@@ -1,0 +1,66 @@
+export const queryKeys = {
+  projects: {
+    all: ["projects"] as const,
+    detail: (id: string) => ["project", id] as const,
+  },
+  chats: {
+    byProject: (projectId: string) => ["chats", projectId] as const,
+  },
+  messages: {
+    byProject: (projectId: string) => ["messages", projectId] as const,
+    byChat: (projectId: string, chatId: string) =>
+      ["messages", projectId, chatId] as const,
+  },
+  leads: {
+    byProject: (projectId: string, status?: string) =>
+      status
+        ? (["leads", projectId, status] as const)
+        : (["leads", projectId] as const),
+  },
+  files: {
+    byProject: (projectId: string, folderPath?: string) =>
+      folderPath
+        ? (["files", projectId, folderPath] as const)
+        : (["files", projectId] as const),
+    search: (projectId: string, query: string) =>
+      ["files", "search", projectId, query] as const,
+  },
+  tasks: {
+    byProject: (projectId: string) => ["tasks", projectId] as const,
+    runs: (projectId: string, taskId: string) =>
+      ["task-runs", projectId, taskId] as const,
+  },
+  outreach: {
+    leadHistory: (projectId: string, leadId: string) =>
+      ["outreach", "lead", projectId, leadId] as const,
+  },
+  members: {
+    byProject: (projectId: string) => ["members", projectId] as const,
+  },
+  invitations: {
+    mine: ["invitations"] as const,
+  },
+  notifications: {
+    mine: ["notifications"] as const,
+  },
+  todos: {
+    byChat: (projectId: string, chatId: string) =>
+      ["todos", projectId, chatId] as const,
+  },
+  skills: {
+    byProject: (projectId: string) => ["skills", projectId] as const,
+    available: (projectId: string) => ["skills", "available", projectId] as const,
+    community: (search?: string) => search ? ["skills", "community", search] as const : ["skills", "community"] as const,
+  },
+  quickActions: {
+    byProject: (projectId: string) => ["quick-actions", projectId] as const,
+  },
+  companion: {
+    tokens: (projectId: string) => ["companion", "tokens", projectId] as const,
+    status: (projectId: string) => ["companion", "status", projectId] as const,
+  },
+  channels: {
+    byProject: (projectId: string) => ["channels", projectId] as const,
+    status: (projectId: string, channelId: string) => ["channels", "status", projectId, channelId] as const,
+  },
+} as const;

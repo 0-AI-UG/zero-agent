@@ -1,0 +1,244 @@
+import { generateText } from "ai";
+import type { UIMessage } from "ai";
+import { enrichModel } from "@/lib/openrouter.ts";
+import { readFromS3, writeToS3 } from "@/lib/s3.ts";
+import { log } from "@/lib/logger.ts";
+
+const memLog = log.child({ module: "memory-flush" });
+
+const MEMORY_SECTIONS = [
+  "facts",
+  "preferences",
+  "decisions",
+  "lead_insights",
+] as const;
+
+type MemorySection = (typeof MEMORY_SECTIONS)[number];
+
+const SECTION_HEADERS: Record<MemorySection, string> = {
+  facts: "## Facts",
+  preferences: "## Preferences",
+  decisions: "## Decisions",
+  lead_insights: "## Lead Insights",
+};
+
+function extractTextFromMessage(message: UIMessage): string {
+  if (Array.isArray(message.parts)) {
+    return message.parts
+      .filter((p): p is { type: "text"; text: string } => p.type === "text")
+      .map((p) => p.text)
+      .join("\n");
+  }
+  return "";
+}
+
+/** Parse existing memory.md into section -> entries map */
+function parseMemory(
+  raw: string,
+): Record<MemorySection, string[]> {
+  const sections: Record<MemorySection, string[]> = {
+    facts: [],
+    preferences: [],
+    decisions: [],
+    lead_insights: [],
+  };
+
+  let current: MemorySection | null = null;
+
+  for (const line of raw.split("\n")) {
+    const trimmed = line.trim();
+
+    // Match section headers
+    for (const [key, header] of Object.entries(SECTION_HEADERS)) {
+      if (trimmed === header) {
+        current = key as MemorySection;
+        break;
+      }
+    }
+
+    // Collect bullet entries under current section
+    if (current && trimmed.startsWith("- ")) {
+      sections[current].push(trimmed.slice(2));
+    }
+  }
+
+  return sections;
+}
+
+/** Render sections back to memory.md format */
+function renderMemory(sections: Record<MemorySection, string[]>): string {
+  let out = "# Memory\n";
+
+  for (const key of MEMORY_SECTIONS) {
+    out += `\n${SECTION_HEADERS[key]}\n\n`;
+    if (sections[key].length === 0) {
+      out += "_No entries yet._\n";
+    } else {
+      for (const entry of sections[key]) {
+        out += `- ${entry}\n`;
+      }
+    }
+  }
+
+  return out;
+}
+
+/** Parse the LLM text response into memory items */
+function parseMemoryResponse(text: string): { section: MemorySection; content: string }[] {
+  const items: { section: MemorySection; content: string }[] = [];
+  const validSections = new Set<string>(MEMORY_SECTIONS);
+
+  for (const line of text.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed === "NONE") continue;
+
+    // Expected format: "section: content"
+    const colonIdx = trimmed.indexOf(":");
+    if (colonIdx === -1) continue;
+
+    const section = trimmed.slice(0, colonIdx).trim().toLowerCase();
+    const content = trimmed.slice(colonIdx + 1).trim();
+
+    if (validSections.has(section) && content.length > 0) {
+      items.push({ section: section as MemorySection, content });
+    }
+  }
+
+  return items;
+}
+
+const MAX_MEMORY_ENTRIES = 100;
+
+/**
+ * Run after a conversation finishes. Extracts key facts/preferences/decisions
+ * from the recent messages and merges them into memory.md.
+ */
+export async function flushConversationMemory(
+  projectId: string,
+  messages: UIMessage[],
+): Promise<void> {
+  // Only analyze the last 10 messages to keep cost/latency low
+  const recent = messages.slice(-10);
+  const conversationText = recent
+    .map((m) => `${m.role}: ${extractTextFromMessage(m)}`)
+    .filter((t) => t.length > 5)
+    .join("\n\n");
+
+  if (conversationText.length < 50) {
+    memLog.debug("conversation too short for memory flush", { projectId });
+    return;
+  }
+
+  // Read existing memory
+  let existingRaw = "";
+  try {
+    existingRaw = await readFromS3(`projects/${projectId}/memory.md`);
+  } catch {
+    memLog.debug("no existing memory.md", { projectId });
+  }
+
+  const existingSections = parseMemory(existingRaw);
+  const existingBullets = Object.values(existingSections).flat().join("\n");
+
+  // Ask LLM to extract new memories (with retry for transient API errors)
+  const callLLM = () =>
+    generateText({
+      model: enrichModel,
+      system: `You extract important information from conversations. Output new memory entries, one per line, in the format:
+section: content
+
+Valid sections: facts, preferences, decisions, lead_insights
+
+Categories:
+- facts: Concrete facts about the user, their business, market, or product
+- preferences: User preferences for workflow, communication, content style
+- decisions: Strategic decisions made during the conversation
+- lead_insights: Patterns or insights about specific leads or lead segments
+
+Rules:
+- Only extract information worth remembering across conversations
+- Each entry: one line, format "section: content"
+- Do NOT duplicate information already in existing memory
+- If nothing new to remember, output exactly: NONE
+- Maximum 5 new items`,
+      prompt: `## Existing Memory Entries
+${existingBullets || "(empty)"}
+
+## Recent Conversation
+${conversationText}`,
+    });
+
+  let result: Awaited<ReturnType<typeof callLLM>> | undefined;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      result = await callLLM();
+      break;
+    } catch (error) {
+      memLog.warn("memory flush LLM call failed", {
+        projectId,
+        attempt: attempt + 1,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      if (attempt < 2) {
+        await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)));
+      } else {
+        memLog.error("memory flush failed after 3 attempts, skipping", {
+          projectId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return;
+      }
+    }
+  }
+
+  const text = result!.text.trim();
+  if (text === "NONE" || text.length === 0) {
+    memLog.debug("no new memories extracted", { projectId });
+    return;
+  }
+
+  const items = parseMemoryResponse(text);
+  if (items.length === 0) {
+    memLog.debug("no parseable memories in response", { projectId });
+    return;
+  }
+
+  // Merge new items into existing sections
+  for (const item of items) {
+    const section = existingSections[item.section];
+    // Simple dedup: skip if an existing entry contains the same content
+    const isDuplicate = section.some(
+      (existing) =>
+        existing.toLowerCase().includes(item.content.toLowerCase()) ||
+        item.content.toLowerCase().includes(existing.toLowerCase()),
+    );
+    if (!isDuplicate) {
+      section.push(item.content);
+    }
+  }
+
+  // Cap total entries
+  const totalEntries = Object.values(existingSections).flat().length;
+  if (totalEntries > MAX_MEMORY_ENTRIES) {
+    memLog.warn("memory entries exceed cap, truncating oldest", {
+      projectId,
+      total: totalEntries,
+    });
+    // Trim from each section proportionally
+    for (const key of MEMORY_SECTIONS) {
+      const max = Math.ceil(MAX_MEMORY_ENTRIES / MEMORY_SECTIONS.length);
+      if (existingSections[key].length > max) {
+        existingSections[key] = existingSections[key].slice(-max);
+      }
+    }
+  }
+
+  const newMemoryMd = renderMemory(existingSections);
+  await writeToS3(`projects/${projectId}/memory.md`, newMemoryMd);
+
+  memLog.info("memory flushed", {
+    projectId,
+    newItems: items.length,
+    totalEntries: Object.values(existingSections).flat().length,
+  });
+}

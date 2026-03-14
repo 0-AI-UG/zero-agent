@@ -1,0 +1,42 @@
+@import "../styles/globals.css";
+
+@layer base {
+  :root {
+    @apply font-sans;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-feature-settings: "cv11", "ss01";
+  }
+
+  body {
+    @apply min-w-[320px] min-h-screen m-0 bg-background text-foreground;
+    padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+
+  .dark body {
+    background: radial-gradient(ellipse at top, oklch(0.17 0.01 270) 0%, var(--background) 70%);
+  }
+}
+
+.font-display {
+  font-family: var(--font-display);
+}
+
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+.scroll-shadow {
+  background:
+    linear-gradient(var(--background) 30%, transparent),
+    linear-gradient(transparent, var(--background) 70%) 0 100%,
+    radial-gradient(farthest-side at 50% 0, oklch(0 0 0 / 15%), transparent),
+    radial-gradient(farthest-side at 50% 100%, oklch(0 0 0 / 15%), transparent) 0 100%;
+  background-repeat: no-repeat;
+  background-size: 100% 40px, 100% 40px, 100% 14px, 100% 14px;
+  background-attachment: local, local, scroll, scroll;
+}

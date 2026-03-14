@@ -1,0 +1,14 @@
+{
+  "name": "leadbot",
+  "private": true,
+  "workspaces": ["api", "web"],
+  "scripts": {
+    "dev": "concurrently --kill-others -n api,web -c blue,green \"cd api && bun --env-file=../.env --hot src/index.ts\" \"cd web && PORT=3000 bun --env-file=../.env --hot src/index.ts\"",
+    "build": "bun run --cwd web build",
+    "minio": "docker compose up minio minio-init -d",
+    "minio:stop": "docker compose down minio"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}

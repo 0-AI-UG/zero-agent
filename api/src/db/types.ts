@@ -1,0 +1,248 @@
+export interface UserRow {
+  id: string;
+  email: string;
+  password_hash: string;
+  created_at: string;
+}
+
+export interface ProjectRow {
+  id: string;
+  user_id: string;
+  name: string;
+  description: string;
+  automation_enabled: number;
+  default_outreach_channel: string;
+  outreach_approval_required: number;
+  browser_search_fallback: number;
+  code_execution_enabled: number;
+  browser_automation_enabled: number;
+  show_skills_in_files: number;
+  assistant_name: string;
+  assistant_description: string;
+  assistant_icon: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ChatRow {
+  id: string;
+  project_id: string;
+  title: string;
+  is_autonomous: number;
+  created_by: string | null;
+  source: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MessageRow {
+  id: string;
+  project_id: string;
+  chat_id: string;
+  role: "user" | "assistant";
+  content: string;
+  user_id: string | null;
+  created_at: string;
+}
+
+export interface FileRow {
+  id: string;
+  project_id: string;
+  s3_key: string;
+  filename: string;
+  mime_type: string;
+  size_bytes: number;
+  folder_path: string;
+  thumbnail_s3_key: string | null;
+  created_at: string;
+}
+
+export interface FolderRow {
+  id: string;
+  project_id: string;
+  path: string;
+  name: string;
+  created_at: string;
+}
+
+export interface ScheduledTaskRow {
+  id: string;
+  project_id: string;
+  user_id: string;
+  name: string;
+  prompt: string;
+  schedule: string;
+  enabled: number;
+  last_run_at: string | null;
+  next_run_at: string;
+  run_count: number;
+  required_tools: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TaskRunRow {
+  id: string;
+  task_id: string;
+  project_id: string;
+  chat_id: string | null;
+  status: "running" | "completed" | "failed";
+  summary: string;
+  started_at: string;
+  finished_at: string | null;
+  error: string | null;
+}
+
+export type OutreachChannel = "direct_message" | "comment" | "email" | "manual";
+export type OutreachMessageStatus = "pending" | "approved" | "sent" | "delivered" | "failed" | "replied" | "rejected";
+
+export interface OutreachMessageRow {
+  id: string;
+  lead_id: string;
+  project_id: string;
+  channel: string;
+  subject: string;
+  body: string;
+  status: OutreachMessageStatus;
+  sent_at: string | null;
+  replied_at: string | null;
+  reply_body: string | null;
+  error: string | null;
+  created_at: string;
+}
+
+export interface ProjectMemberRow {
+  id: string;
+  project_id: string;
+  user_id: string;
+  role: "owner" | "member";
+  created_at: string;
+}
+
+export interface InvitationRow {
+  id: string;
+  project_id: string;
+  inviter_id: string;
+  invitee_email: string;
+  invitee_id: string | null;
+  status: "pending" | "accepted" | "declined";
+  created_at: string;
+  responded_at: string | null;
+}
+
+export type NotificationType = "invite" | "invite_accepted" | "member_removed" | "task_completed" | "task_failed" | "outreach_replied" | "lead_converted";
+
+export interface NotificationRow {
+  id: string;
+  user_id: string;
+  type: NotificationType;
+  data: string;
+  read: number;
+  created_at: string;
+}
+
+export interface TodoRow {
+  id: string;
+  project_id: string;
+  chat_id: string | null;
+  title: string;
+  description: string;
+  status: "pending" | "in_progress" | "completed" | "failed";
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SkillRow {
+  id: string;
+  project_id: string;
+  name: string;
+  description: string;
+  s3_key: string;
+  enabled: number;
+  metadata: string | null;
+  source: "built-in" | "user" | "github" | "community";
+  installed_at: string;
+  updated_at: string;
+}
+
+export interface CompanionTokenRow {
+  id: string;
+  user_id: string;
+  project_id: string;
+  token: string;
+  name: string;
+  last_connected_at: string | null;
+  expires_at: string;
+  created_at: string;
+}
+
+export interface QuickActionRow {
+  id: string;
+  project_id: string;
+  text: string;
+  icon: string;
+  description: string;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ChannelRow {
+  id: string;
+  project_id: string;
+  platform: string;
+  name: string;
+  credentials: string;
+  allowed_senders: string;
+  enabled: number;
+  last_message_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ChannelMessageRow {
+  id: string;
+  channel_id: string;
+  project_id: string;
+  chat_id: string;
+  external_chat_id: string;
+  external_message_id: string | null;
+  sender_identifier: string;
+  direction: "inbound" | "outbound";
+  content_text: string;
+  created_at: string;
+}
+
+export interface PublishedSkillRow {
+  id: string;
+  name: string;
+  description: string;
+  s3_key: string;
+  metadata: string | null;
+  publisher_id: string;
+  project_id: string;
+  downloads: number;
+  published_at: string;
+  updated_at: string;
+}
+
+export interface LeadRow {
+  id: string;
+  project_id: string;
+  name: string;
+  source: string;
+  notes: string;
+  email: string;
+  status: "new" | "contacted" | "replied" | "converted" | "dropped";
+  follow_up_date: string | null;
+  platform: string | null;
+  platform_handle: string | null;
+  profile_url: string;
+  interest: string;
+  priority: "low" | "medium" | "high";
+  last_interaction: string | null;
+  tags: string;
+  score: number | null;
+  created_at: string;
+  updated_at: string;
+}

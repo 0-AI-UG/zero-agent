@@ -1,0 +1,1 @@
+When working with the ai sdk always use the ai sdk skill. 
