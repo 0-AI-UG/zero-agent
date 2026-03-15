@@ -1,5 +1,5 @@
 import { CdpClient } from "./cdp.ts";
-import type { CompanionControl, CompanionMessage, BrowserResponse } from "./protocol.ts";
+import type { CompanionControl, CompanionMessage, BrowserResponse, WebAuthnSubCommand } from "./protocol.ts";
 import { executeAction, type RefMap } from "./actions.ts";
 import { SandboxManager } from "./sandbox.ts";
 import { enableDomainsStealthy } from "./stealth.ts";
@@ -136,6 +136,49 @@ export function createWsClient(options: WsClientOptions) {
       destroySessionInternal(data.sessionId);
       const msg: CompanionMessage = { type: "sessionDestroyed", sessionId: data.sessionId };
       ws?.send(JSON.stringify(msg));
+      return;
+    }
+
+    // ── WebAuthn handlers ──
+
+    if (data.type === "webauthn") {
+      const { subCommand } = data;
+      const cdp = options.getCdp();
+      (async () => {
+        try {
+          let result: unknown;
+          switch (subCommand.type) {
+            case "enable":
+              result = await cdp.send("WebAuthn.enable");
+              break;
+            case "addAuthenticator":
+              result = await cdp.send("WebAuthn.addVirtualAuthenticator", {
+                options: subCommand.options,
+              });
+              break;
+            case "addCredential":
+              result = await cdp.send("WebAuthn.addCredential", {
+                authenticatorId: subCommand.authenticatorId,
+                credential: subCommand.credential,
+              });
+              break;
+            case "getCredentials":
+              result = await cdp.send("WebAuthn.getCredentials", {
+                authenticatorId: subCommand.authenticatorId,
+              });
+              break;
+            case "removeAuthenticator":
+              result = await cdp.send("WebAuthn.removeVirtualAuthenticator", {
+                authenticatorId: subCommand.authenticatorId,
+              });
+              break;
+          }
+          ws?.send(JSON.stringify({ type: "webauthnResult", commandId: subCommand.commandId, result }));
+        } catch (err) {
+          ws?.send(JSON.stringify({ type: "webauthnError", commandId: subCommand.commandId,
+            error: err instanceof Error ? err.message : String(err) }));
+        }
+      })();
       return;
     }
 

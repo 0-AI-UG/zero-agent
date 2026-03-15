@@ -75,7 +75,7 @@ const server = serve({
       });
     },
 
-    ...(!IS_PROD ? { "/*": devIndex } : {}),
+    ...(!IS_PROD ? { "/*": devIndex } : {}) as Record<string, never>,
   },
 
   // In production, serve static files and SPA fallback

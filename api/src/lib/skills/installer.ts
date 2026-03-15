@@ -152,7 +152,7 @@ export async function loadBuiltInSkill(name: string): Promise<SkillFile[]> {
     readDir(skillDir, "");
 
     for (const { index, file } of pendingReads) {
-      files[index].content = await file.text();
+      files[index]!.content = await file.text();
     }
   } catch (err) {
     installLog.error("failed to load built-in skill", err, { name });

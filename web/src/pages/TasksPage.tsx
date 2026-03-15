@@ -43,7 +43,7 @@ import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
 import { AUTOMATION_TOOL_GROUPS } from "@/stores/tools";
 
-const SCHEDULE_PRESETS = [
+export const SCHEDULE_PRESETS = [
   { label: "Every 30 min", value: "every 30m" },
   { label: "Every 1 hour", value: "every 1h" },
   { label: "Every 2 hours", value: "every 2h" },
@@ -53,14 +53,14 @@ const SCHEDULE_PRESETS = [
   { label: "Daily at 9am UTC", value: "0 9 * * *" },
 ];
 
-interface TaskFormData {
+export interface TaskFormData {
   name: string;
   prompt: string;
   schedule: string;
   requiredTools?: string[] | null;
 }
 
-function ToolPicker({
+export function ToolPicker({
   selected,
   onChange,
 }: {

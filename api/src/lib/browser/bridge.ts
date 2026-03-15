@@ -6,6 +6,7 @@ import type {
   CompanionControl,
   CompanionMessage,
   CompanionStatus,
+  WebAuthnSubCommand,
 } from "./protocol.ts";
 import { nanoid } from "nanoid";
 import { log } from "@/lib/logger.ts";
@@ -24,6 +25,17 @@ interface CompanionConnection {
   pendingCommandIds: Set<string>;
   pendingSandboxIds: Set<string>;
   pendingSessionIds: Set<string>;
+  pendingWebAuthnIds: Set<string>;
+  /** Lazily-initialized virtual authenticator for passkey operations. */
+  authenticatorId?: string;
+  /** In-flight authenticator init promise (deduplicates concurrent calls). */
+  authenticatorInit?: Promise<string>;
+}
+
+interface PendingWebAuthnCommand {
+  resolve: (result: unknown) => void;
+  reject: (error: Error) => void;
+  timer: ReturnType<typeof setTimeout>;
 }
 
 interface PendingCommand {
@@ -53,6 +65,7 @@ class BrowserBridge {
   private pending = new Map<string, PendingCommand>();
   private pendingSessions = new Map<string, PendingSession>();
   private pendingSandbox = new Map<string, PendingSandboxCommand>();
+  private pendingWebAuthn = new Map<string, PendingWebAuthnCommand>();
 
   handleOpen(ws: ServerWebSocket<{ userId: string; projectId: string }>) {
     const { userId, projectId } = ws.data;
@@ -101,6 +114,7 @@ class BrowserBridge {
       pendingCommandIds: new Set(),
       pendingSandboxIds: new Set(),
       pendingSessionIds: new Set(),
+      pendingWebAuthnIds: new Set(),
     });
   }
 
@@ -223,6 +237,30 @@ class BrowserBridge {
         }
         return;
       }
+
+      // ── WebAuthn message handlers ──
+
+      if (data.type === "webauthnResult") {
+        const pending = this.pendingWebAuthn.get(data.commandId);
+        if (pending) {
+          this.pendingWebAuthn.delete(data.commandId);
+          this.companions.get(key)?.pendingWebAuthnIds.delete(data.commandId);
+          clearTimeout(pending.timer);
+          pending.resolve(data.result);
+        }
+        return;
+      }
+
+      if (data.type === "webauthnError") {
+        const pending = this.pendingWebAuthn.get(data.commandId);
+        if (pending) {
+          this.pendingWebAuthn.delete(data.commandId);
+          this.companions.get(key)?.pendingWebAuthnIds.delete(data.commandId);
+          clearTimeout(pending.timer);
+          pending.reject(new Error(data.error));
+        }
+        return;
+      }
     } catch (err) {
       bridgeLog.error("failed to parse companion message", err, { userId, projectId });
     }
@@ -261,6 +299,14 @@ class BrowserBridge {
           clearTimeout(pending.timer);
           pending.reject(new Error("Browser companion disconnected"));
           this.pendingSandbox.delete(id);
+        }
+      }
+      for (const id of conn.pendingWebAuthnIds) {
+        const pending = this.pendingWebAuthn.get(id);
+        if (pending) {
+          clearTimeout(pending.timer);
+          pending.reject(new Error("Browser companion disconnected"));
+          this.pendingWebAuthn.delete(id);
         }
       }
     }
@@ -406,6 +452,73 @@ class BrowserBridge {
       const msg: CompanionControl = { type: "destroySandbox", sandboxId };
       conn.ws.send(JSON.stringify(msg));
     });
+  }
+
+  async sendWebAuthnCommand(userId: string, projectId: string, subCommand: WebAuthnSubCommand): Promise<unknown> {
+    const key = connKey(userId, projectId);
+    const conn = this.companions.get(key);
+    if (!conn) {
+      throw new Error("Browser companion is not connected. Please start the companion agent on your machine.");
+    }
+
+    const { commandId } = subCommand;
+
+    return new Promise<unknown>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pendingWebAuthn.delete(commandId);
+        conn.pendingWebAuthnIds.delete(commandId);
+        reject(new Error(`WebAuthn command timed out after ${COMMAND_TIMEOUT / 1000}s`));
+      }, COMMAND_TIMEOUT);
+
+      this.pendingWebAuthn.set(commandId, { resolve, reject, timer });
+      conn.pendingWebAuthnIds.add(commandId);
+
+      const msg: CompanionControl = { type: "webauthn", subCommand };
+      conn.ws.send(JSON.stringify(msg));
+    });
+  }
+
+  /**
+   * Lazily enable WebAuthn and create a virtual authenticator on the companion.
+   * Returns the cached authenticator ID on subsequent calls.
+   */
+  async ensureAuthenticator(userId: string, projectId: string): Promise<string> {
+    const key = connKey(userId, projectId);
+    const conn = this.companions.get(key);
+    if (!conn) {
+      throw new Error("Browser companion is not connected. Please start the companion agent on your machine.");
+    }
+
+    if (conn.authenticatorId) return conn.authenticatorId;
+
+    // Deduplicate concurrent calls
+    if (conn.authenticatorInit) return conn.authenticatorInit;
+
+    conn.authenticatorInit = (async () => {
+      await this.sendWebAuthnCommand(userId, projectId, {
+        type: "enable",
+        commandId: nanoid(),
+      });
+
+      const result = await this.sendWebAuthnCommand(userId, projectId, {
+        type: "addAuthenticator",
+        commandId: nanoid(),
+        options: {
+          protocol: "ctap2",
+          transport: "internal",
+          hasResidentKey: true,
+          hasUserVerification: true,
+          isUserVerified: true,
+        },
+      }) as { authenticatorId: string };
+
+      conn.authenticatorId = result.authenticatorId;
+      conn.authenticatorInit = undefined;
+      bridgeLog.info("virtual authenticator ready", { userId, projectId, authenticatorId: result.authenticatorId });
+      return result.authenticatorId;
+    })();
+
+    return conn.authenticatorInit;
   }
 
   isConnected(userId: string, projectId: string): boolean {

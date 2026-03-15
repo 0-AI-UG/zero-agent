@@ -176,7 +176,6 @@ export function useUninstallSkill(projectId: string) {
 }
 
 export function useDiscoverSkills(projectId: string) {
-  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (url: string) =>
       apiFetch<{ skills: DiscoveredSkill[] }>(
@@ -229,44 +228,23 @@ export function useCommunitySkills(search?: string) {
     queryKey: queryKeys.skills.community(search),
     queryFn: async () => {
       const params = new URLSearchParams();
+      params.set("type", "skill");
       if (search) params.set("q", search);
-      const res = await apiFetch<{ skills: CommunitySkill[] }>(
-        `/community/skills?${params}`,
+      const res = await apiFetch<{ items: { id: string; name: string; description: string; metadata: SkillMetadata | null; publisherId: string; downloads: number; publishedAt: string; updatedAt: string }[] }>(
+        `/marketplace?${params}`,
       );
-      return res.skills;
+      return res.items as CommunitySkill[];
     },
     staleTime: 30_000,
-  });
-}
-
-export function usePublishSkill(projectId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (name: string) =>
-      apiFetch<{ skill: CommunitySkill }>(
-        `/projects/${projectId}/skills/publish`,
-        {
-          method: "POST",
-          body: JSON.stringify({ name }),
-        },
-      ),
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.skills.byProject(projectId),
-      });
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.skills.community(),
-      });
-    },
   });
 }
 
 export function useUnpublishSkill(projectId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (name: string) =>
+    mutationFn: (id: string) =>
       apiFetch<{ success: true }>(
-        `/community/skills/${encodeURIComponent(name)}`,
+        `/marketplace/${encodeURIComponent(id)}`,
         { method: "DELETE" },
       ),
     onSuccess: () => {
@@ -276,6 +254,7 @@ export function useUnpublishSkill(projectId: string) {
       queryClient.invalidateQueries({
         queryKey: queryKeys.skills.community(),
       });
+      queryClient.invalidateQueries({ queryKey: ["marketplace"] });
     },
   });
 }
@@ -283,12 +262,12 @@ export function useUnpublishSkill(projectId: string) {
 export function useInstallFromCommunity(projectId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (name: string) =>
-      apiFetch<{ skill: Skill }>(
-        `/projects/${projectId}/skills/install-community`,
+    mutationFn: (itemId: string) =>
+      apiFetch<{ installed: { name: string; type: string }[]; alreadyInstalled: string[] }>(
+        `/projects/${projectId}/marketplace/install`,
         {
           method: "POST",
-          body: JSON.stringify({ name }),
+          body: JSON.stringify({ itemId, confirm: true }),
         },
       ),
     onSuccess: () => {
@@ -301,6 +280,7 @@ export function useInstallFromCommunity(projectId: string) {
       queryClient.invalidateQueries({
         queryKey: queryKeys.skills.community(),
       });
+      queryClient.invalidateQueries({ queryKey: ["marketplace"] });
     },
   });
 }

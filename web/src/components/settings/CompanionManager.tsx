@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import {
   useCompanionTokens,
   useCreateCompanionToken,
@@ -6,15 +6,25 @@ import {
   useCompanionStatus,
 } from "@/api/companion";
 import {
+  useCredentials,
+  useCreateCredential,
+  useDeleteCredential,
+  useUpdateCredential,
+  type Credential,
+  type CreateCredentialInput,
+  type UpdateCredentialInput,
+} from "@/api/credentials";
+import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { MonitorIcon, TrashIcon, CopyIcon, CheckIcon, TerminalSquareIcon } from "lucide-react";
+import { MonitorIcon, TrashIcon, CopyIcon, CheckIcon, TerminalSquareIcon, KeyRoundIcon, ShieldCheckIcon, PencilIcon, EyeIcon, EyeOffIcon, FingerprintIcon, SmartphoneIcon, MessageSquareIcon, ImageIcon } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { type Project, useUpdateProject } from "@/api/projects";
+import { decodeQrImage } from "@/lib/qr-decode";
 
 interface CompanionManagerProps {
   projectId: string;
@@ -265,6 +275,504 @@ export function CompanionManager({ projectId, project, updateProject }: Companio
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <SavedLogins projectId={projectId} />
     </section>
+  );
+}
+
+// ── Saved Accounts ──
+
+interface CredentialFormState {
+  label: string;
+  siteUrl: string;
+  credType: "password" | "passkey";
+  username: string;
+  password: string;
+  totpSecret: string;
+  backupCodes: string[];
+}
+
+const EMPTY_FORM: CredentialFormState = {
+  label: "",
+  siteUrl: "",
+  credType: "password",
+  username: "",
+  password: "",
+  totpSecret: "",
+  backupCodes: [],
+};
+
+/** Try to extract a hostname for favicon lookup */
+function faviconUrl(siteUrl: string): string | null {
+  try {
+    const host = siteUrl.includes("://") ? new URL(siteUrl).hostname : siteUrl.replace(/\/.*$/, "");
+    return `https://www.google.com/s2/favicons?domain=${host}&sz=32`;
+  } catch {
+    return null;
+  }
+}
+
+function SavedLogins({ projectId }: { projectId: string }) {
+  const { data: credentials, isLoading } = useCredentials(projectId);
+  const createCred = useCreateCredential(projectId);
+  const updateCred = useUpdateCredential(projectId);
+  const deleteCred = useDeleteCredential(projectId);
+
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState<CredentialFormState>({ ...EMPTY_FORM });
+  const [formError, setFormError] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showTotpFields, setShowTotpFields] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [qrError, setQrError] = useState("");
+  const qrFileRef = useRef<HTMLInputElement>(null);
+
+
+  const openCreate = () => {
+    setEditingId(null);
+    setForm({ ...EMPTY_FORM });
+    setFormError("");
+    setShowPassword(false);
+    setShowTotpFields(false);
+    setQrError("");
+    setDialogOpen(true);
+  };
+
+  const openEdit = (cred: Credential) => {
+    setEditingId(cred.id);
+    setForm({
+      label: cred.label,
+      siteUrl: cred.siteUrl,
+      credType: cred.credType,
+      username: "",
+      password: "",
+      totpSecret: "",
+      backupCodes: [],
+    });
+    setShowTotpFields(cred.hasTotp);
+    setFormError("");
+    setShowPassword(false);
+    setQrError("");
+    setDialogOpen(true);
+  };
+
+  const handleClose = () => {
+    setDialogOpen(false);
+    setEditingId(null);
+    setForm({ ...EMPTY_FORM });
+    setFormError("");
+  };
+
+  const handleSave = () => {
+    if (!form.label.trim()) { setFormError("Give this account a name"); return; }
+    if (!form.siteUrl.trim()) { setFormError("Enter the website address"); return; }
+    if (form.credType === "password" && !form.username?.trim() && !editingId) { setFormError("Enter your username or email"); return; }
+    if (form.credType === "password" && !form.password?.trim() && !editingId) { setFormError("Enter your password"); return; }
+
+    let data: CreateCredentialInput | UpdateCredentialInput;
+
+    if (editingId) {
+      if (form.credType === "password") {
+        data = {
+          label: form.label,
+          siteUrl: form.siteUrl,
+          credType: "password" as const,
+          username: form.username || undefined,
+          password: form.password || undefined,
+          totpSecret: form.totpSecret?.trim() || undefined,
+          backupCodes: form.backupCodes?.length ? form.backupCodes : undefined,
+        };
+      } else {
+        data = {
+          label: form.label,
+          siteUrl: form.siteUrl,
+          credType: "passkey" as const,
+        };
+      }
+      updateCred.mutate({ id: editingId, data: data as UpdateCredentialInput }, {
+        onSuccess: () => handleClose(),
+        onError: (err: Error) => setFormError(err.message),
+      });
+    } else {
+      data = {
+        label: form.label,
+        siteUrl: form.siteUrl,
+        credType: "password" as const,
+        username: form.username,
+        password: form.password,
+        totpSecret: form.totpSecret?.trim() || undefined,
+        backupCodes: form.backupCodes?.length ? form.backupCodes : undefined,
+      };
+      createCred.mutate(data as CreateCredentialInput, {
+        onSuccess: () => handleClose(),
+        onError: (err: Error) => setFormError(err.message),
+      });
+    }
+  };
+
+  const handleQrUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setQrError("");
+    try {
+      const result = await decodeQrImage(file);
+      setForm((prev) => ({ ...prev, totpSecret: result.secret }));
+    } catch (err) {
+      setQrError(err instanceof Error ? err.message : "Failed to decode QR code");
+    }
+    // Reset file input so same file can be re-selected
+    if (qrFileRef.current) qrFileRef.current.value = "";
+  };
+
+  const isSaving = createCred.isPending || updateCred.isPending;
+
+  return (
+    <>
+      <div className="flex items-center gap-2 mt-6">
+        <KeyRoundIcon className="size-4 text-amber-500" />
+        <h3 className="text-sm font-semibold">Saved Accounts</h3>
+      </div>
+
+      <div className="rounded-lg border p-4 space-y-3">
+        {isLoading && (
+          <div className="flex items-center gap-2 py-3">
+            <div className="size-4 rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground animate-spin" />
+            <p className="text-xs text-muted-foreground">Loading accounts...</p>
+          </div>
+        )}
+
+        {!isLoading && (!credentials || credentials.length === 0) && (
+          <div className="text-center py-4 space-y-2">
+            <div className="mx-auto size-10 rounded-full bg-amber-500/10 flex items-center justify-center">
+              <KeyRoundIcon className="size-5 text-amber-500/70" />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              No accounts saved yet
+            </p>
+            <p className="text-[11px] text-muted-foreground/70">
+              Save your website logins so the assistant can sign in for you.
+            </p>
+          </div>
+        )}
+
+        {credentials && credentials.length > 0 && (
+          <div className="space-y-1">
+            {credentials.map((c) => {
+              const favicon = faviconUrl(c.siteUrl);
+              const isPasskey = c.credType === "passkey";
+              return (
+                <div
+                  key={c.id}
+                  className="group flex items-center gap-3 py-2 px-2 -mx-2 rounded-md hover:bg-muted/50 transition-colors"
+                >
+                  {/* Site icon */}
+                  <div className="size-8 rounded-md bg-muted flex items-center justify-center shrink-0 overflow-hidden">
+                    {isPasskey ? (
+                      <FingerprintIcon className="size-4 text-violet-500" />
+                    ) : favicon ? (
+                      <img
+                        src={favicon}
+                        alt=""
+                        className="size-4"
+                        onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                      />
+                    ) : (
+                      <KeyRoundIcon className="size-3.5 text-muted-foreground" />
+                    )}
+                  </div>
+
+                  {/* Info */}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-sm font-medium truncate">{c.label}</span>
+                      {c.hasTotp && (
+                        <span title="Two-factor enabled"><ShieldCheckIcon className="size-3 text-emerald-500" /></span>
+                      )}
+                      {isPasskey && (
+                        <span className="text-[10px] font-medium bg-violet-500/10 text-violet-600 px-1.5 py-0.5 rounded">
+                          Passkey
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-muted-foreground truncate">
+                      {c.siteUrl}
+                      <span className="mx-1.5 opacity-40">&middot;</span>
+                      {isPasskey ? "Passkey" : "Login & password"}
+                    </p>
+                  </div>
+
+                  {/* Actions — visible on hover */}
+                  <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      onClick={() => openEdit(c)}
+                      className="text-muted-foreground hover:text-foreground p-1.5 rounded-md hover:bg-muted"
+                      aria-label={`Edit ${c.label}`}
+                    >
+                      <PencilIcon className="size-3.5" />
+                    </button>
+                    {confirmDeleteId === c.id ? (
+                      <button
+                        onClick={() => { deleteCred.mutate(c.id); setConfirmDeleteId(null); }}
+                        className="text-destructive text-[10px] font-medium px-2 py-1 rounded-md hover:bg-destructive/10"
+                      >
+                        Remove?
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => setConfirmDeleteId(c.id)}
+                        className="text-muted-foreground hover:text-destructive p-1.5 rounded-md hover:bg-muted"
+                        aria-label={`Delete ${c.label}`}
+                      >
+                        <TrashIcon className="size-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        <div className="flex items-center gap-2 pt-2 border-t">
+          <button
+            onClick={openCreate}
+            className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+          >
+            Add account
+          </button>
+        </div>
+      </div>
+
+      {/* Add / Edit account dialog */}
+      <Dialog open={dialogOpen} onOpenChange={handleClose}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{editingId ? "Edit Account" : "Add Account"}</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            {/* Account name & website — side by side on wider screens */}
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label className="text-xs font-medium mb-1 block">Account name</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Work Gmail"
+                  value={form.label}
+                  onChange={(e) => { setForm({ ...form, label: e.target.value }); setFormError(""); }}
+                  className="w-full rounded-md border bg-background px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium mb-1 block">Website</label>
+                <input
+                  type="text"
+                  placeholder="e.g. accounts.google.com"
+                  value={form.siteUrl}
+                  onChange={(e) => { setForm({ ...form, siteUrl: e.target.value }); setFormError(""); }}
+                  className="w-full rounded-md border bg-background px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+                />
+              </div>
+            </div>
+
+            {/* Login type info */}
+
+            {form.credType === "passkey" ? (
+              <p className="text-xs text-muted-foreground">
+                Only the label and website URL can be edited for passkey credentials.
+              </p>
+            ) : (
+              <div className="space-y-4">
+                <div>
+                  <label className="text-xs font-medium mb-1 block">Username or email</label>
+                  <input
+                    type="text"
+                    placeholder={editingId ? "Leave blank to keep current" : ""}
+                    value={form.username ?? ""}
+                    onChange={(e) => setForm({ ...form, username: e.target.value })}
+                    className="w-full rounded-md border bg-background px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium mb-1 block">Password</label>
+                  <div className="relative">
+                    <input
+                      type={showPassword ? "text" : "password"}
+                      placeholder={editingId ? "Leave blank to keep current" : ""}
+                      value={form.password ?? ""}
+                      onChange={(e) => setForm({ ...form, password: e.target.value })}
+                      className="w-full rounded-md border bg-background px-3 py-1.5 text-xs pr-8 focus:outline-none focus:ring-1 focus:ring-ring"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      {showPassword ? <EyeOffIcon className="size-3.5" /> : <EyeIcon className="size-3.5" />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Extra verification section */}
+                <div className="pt-3 border-t">
+                  <button
+                    type="button"
+                    onClick={() => setShowTotpFields(!showTotpFields)}
+                    className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1.5 transition-colors"
+                  >
+                    <ShieldCheckIcon className="size-3.5" />
+                    {showTotpFields ? "Hide extra login steps" : "This site has extra login steps"}
+                  </button>
+
+                  {showTotpFields && (
+                    <div className="mt-3 space-y-3">
+                      <p className="text-[11px] text-muted-foreground">
+                        How does this site verify it's you after the password? Set up what applies — the assistant will handle the rest.
+                      </p>
+
+                      <input
+                        ref={qrFileRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={handleQrUpload}
+                      />
+
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {/* ── Authenticator app card ── */}
+                        <div className="rounded-lg border p-3 space-y-2">
+                          <div className="flex items-center gap-2">
+                            <div className="size-7 rounded-full bg-violet-500/10 flex items-center justify-center shrink-0">
+                              <SmartphoneIcon className="size-3.5 text-violet-500" />
+                            </div>
+                            <div>
+                              <p className="text-xs font-medium">Authenticator app</p>
+                              <p className="text-[10px] text-muted-foreground">Google Authenticator, Authy, etc.</p>
+                            </div>
+                          </div>
+
+                          {form.totpSecret?.trim() ? (
+                            <div className="rounded-md bg-emerald-500/5 border border-emerald-500/20 px-2.5 py-2 flex items-center gap-2">
+                              <CheckIcon className="size-3.5 text-emerald-600 shrink-0" />
+                              <span className="text-[11px] text-emerald-700 dark:text-emerald-400 font-medium">Linked</span>
+                              <button
+                                type="button"
+                                onClick={() => setForm({ ...form, totpSecret: "" })}
+                                className="text-[10px] text-muted-foreground hover:text-foreground ml-auto underline underline-offset-2"
+                              >
+                                Change
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="space-y-1.5">
+                              <div className="flex gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => qrFileRef.current?.click()}
+                                  className="flex-1 rounded-md border border-dashed px-2 py-1.5 text-[11px] text-muted-foreground hover:text-foreground hover:border-foreground/30 hover:bg-muted/50 transition-colors flex items-center justify-center gap-1.5"
+                                >
+                                  <ImageIcon className="size-3" />
+                                  Upload QR
+                                </button>
+                                <span className="text-[10px] text-muted-foreground self-center">or</span>
+                              </div>
+                              <input
+                                type="text"
+                                placeholder="Paste setup key"
+                                value={form.totpSecret ?? ""}
+                                onChange={(e) => setForm({ ...form, totpSecret: e.target.value })}
+                                className="w-full rounded-md border bg-background px-2.5 py-1.5 text-[11px] font-mono focus:outline-none focus:ring-1 focus:ring-ring"
+                              />
+                              {qrError && (
+                                <p className="text-[10px] text-destructive">{qrError}</p>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* ── Text message card ── */}
+                        <div className="rounded-lg border p-3">
+                          <div className="flex items-center gap-2">
+                            <div className="size-7 rounded-full bg-amber-500/10 flex items-center justify-center shrink-0">
+                              <MessageSquareIcon className="size-3.5 text-amber-500" />
+                            </div>
+                            <div>
+                              <p className="text-xs font-medium">Text message</p>
+                              <p className="text-[10px] text-muted-foreground">A code is sent to your phone</p>
+                            </div>
+                          </div>
+                          <div className="rounded-md bg-muted/50 px-2.5 py-2 mt-2">
+                            <p className="text-[10px] text-muted-foreground">
+                              The assistant will ask you in chat to type the code.
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* ── Backup codes card ── */}
+                        <div className="rounded-lg border p-3 space-y-2">
+                          <div className="flex items-center gap-2">
+                            <div className="size-7 rounded-full bg-zinc-500/10 flex items-center justify-center shrink-0">
+                              <KeyRoundIcon className="size-3.5 text-zinc-500" />
+                            </div>
+                            <div>
+                              <p className="text-xs font-medium">Backup codes</p>
+                              <p className="text-[10px] text-muted-foreground">One-time fallback codes</p>
+                            </div>
+                          </div>
+                          {(form.backupCodes ?? []).length > 0 ? (
+                            <div className="rounded-md bg-emerald-500/5 border border-emerald-500/20 px-2.5 py-2 flex items-center gap-2">
+                              <CheckIcon className="size-3.5 text-emerald-600 shrink-0" />
+                              <span className="text-[11px] text-emerald-700 dark:text-emerald-400 font-medium">{form.backupCodes!.length} codes saved</span>
+                              <button
+                                type="button"
+                                onClick={() => setForm({ ...form, backupCodes: [] })}
+                                className="text-[10px] text-muted-foreground hover:text-foreground ml-auto underline underline-offset-2"
+                              >
+                                Clear
+                              </button>
+                            </div>
+                          ) : (
+                            <textarea
+                              placeholder="Paste codes, one per line"
+                              value=""
+                              onChange={(e) => setForm({ ...form, backupCodes: e.target.value.split("\n").filter(Boolean) })}
+                              rows={2}
+                              className="w-full rounded-md border bg-background px-2.5 py-1.5 text-[11px] font-mono focus:outline-none focus:ring-1 focus:ring-ring resize-none"
+                            />
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {formError && (
+              <p className="text-[11px] text-destructive">{formError}</p>
+            )}
+          </div>
+
+          <DialogFooter>
+            <button
+              onClick={handleClose}
+              className="rounded-md border px-3 py-1.5 text-xs font-medium hover:bg-muted"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={isSaving}
+              className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            >
+              {isSaving ? "Saving..." : editingId ? "Update" : "Save"}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+    </>
   );
 }

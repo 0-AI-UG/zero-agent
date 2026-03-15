@@ -2,8 +2,8 @@ import { db, generateId } from "@/db/index.ts";
 import type { ScheduledTaskRow } from "@/db/types.ts";
 import { computeNextRun, formatDateForSQLite } from "@/lib/schedule-parser.ts";
 
-const insertStmt = db.query<ScheduledTaskRow, [string, string, string, string, string, string, string, number, string | null]>(
-  "INSERT INTO scheduled_tasks (id, project_id, user_id, name, prompt, schedule, next_run_at, enabled, required_tools) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *",
+const insertStmt = db.query<ScheduledTaskRow, [string, string, string, string, string, string, string, number, string | null, string | null]>(
+  "INSERT INTO scheduled_tasks (id, project_id, user_id, name, prompt, schedule, next_run_at, enabled, required_tools, required_skills) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *",
 );
 
 const byProjectStmt = db.query<ScheduledTaskRow, [string]>(
@@ -38,10 +38,11 @@ export function insertTask(
   schedule: string,
   enabled: boolean = true,
   requiredTools?: string[],
+  requiredSkills?: string[],
 ): ScheduledTaskRow {
   const id = generateId();
   const nextRunAt = formatDateForSQLite(computeNextRun(schedule));
-  return insertStmt.get(id, projectId, userId, name, prompt, schedule, nextRunAt, enabled ? 1 : 0, requiredTools ? JSON.stringify(requiredTools) : null)!;
+  return insertStmt.get(id, projectId, userId, name, prompt, schedule, nextRunAt, enabled ? 1 : 0, requiredTools ? JSON.stringify(requiredTools) : null, requiredSkills ? JSON.stringify(requiredSkills) : null)!;
 }
 
 export function getTasksByProject(projectId: string): ScheduledTaskRow[] {
@@ -54,7 +55,7 @@ export function getTaskById(id: string): ScheduledTaskRow | null {
 
 export function updateTask(
   id: string,
-  fields: Partial<Pick<ScheduledTaskRow, "name" | "prompt" | "schedule" | "enabled" | "required_tools">>,
+  fields: Partial<Pick<ScheduledTaskRow, "name" | "prompt" | "schedule" | "enabled" | "required_tools" | "required_skills">>,
 ): ScheduledTaskRow {
   const task = byIdStmt.get(id);
   if (!task) throw new Error("Task not found");
@@ -87,6 +88,14 @@ export function updateTask(
     } else {
       sets.push("required_tools = ?");
       values.push(fields.required_tools);
+    }
+  }
+  if (fields.required_skills !== undefined) {
+    if (fields.required_skills === null) {
+      sets.push("required_skills = NULL");
+    } else {
+      sets.push("required_skills = ?");
+      values.push(fields.required_skills);
     }
   }
 

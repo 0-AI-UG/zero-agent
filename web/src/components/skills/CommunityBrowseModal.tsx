@@ -50,6 +50,12 @@ export function CommunityBrowseModal({
     return () => clearTimeout(timer);
   }, [search]);
 
+  // Build ID map for marketplace install
+  const idMap = useMemo(
+    () => new Map((communitySkills ?? []).map((s) => [s.name, s.id])),
+    [communitySkills],
+  );
+
   // Map to UnifiedSkill + filter + sort
   const filtered = useMemo(() => {
     const publishedAtMap = new Map(
@@ -82,8 +88,10 @@ export function CommunityBrowseModal({
   }, [communitySkills, platformFilter, sortBy]);
 
   const handleInstall = (skill: UnifiedSkill) => {
+    const itemId = idMap.get(skill.name);
+    if (!itemId) return;
     setInstallingName(skill.name);
-    installFromCommunity.mutate(skill.name, {
+    installFromCommunity.mutate(itemId, {
       onSettled: () => setInstallingName(null),
     });
   };

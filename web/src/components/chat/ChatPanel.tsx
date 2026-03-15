@@ -69,8 +69,35 @@ import {
   SearchIcon,
   TargetIcon,
 } from "lucide-react";
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import logoSvg from "@/logo.svg";
+
+/** Replace [file: name] tokens with styled pill spans, matching the RichTextarea chip style */
+function renderFileChips(text: string): ReactNode {
+  const regex = /\[file:\s*(.+?)\]/g;
+  const parts: ReactNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = regex.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(text.slice(lastIndex, match.index));
+    }
+    parts.push(
+      <span
+        key={match.index}
+        className="inline-flex items-center gap-0.5 rounded bg-primary/10 text-primary px-1.5 py-px text-[13px] font-medium mx-0.5 align-baseline"
+      >
+        {match[1]}
+      </span>,
+    );
+    lastIndex = regex.lastIndex;
+  }
+
+  if (parts.length === 0) return null;
+  if (lastIndex < text.length) parts.push(text.slice(lastIndex));
+  return <>{parts}</>;
+}
 
 interface MessageMetadata {
   modelId?: string;
@@ -386,7 +413,12 @@ export function ChatPanel({ projectId, chatId, initialMessages }: ChatPanelProps
                             </span>
                           )}
                           <MessageContent>
-                            <MessageResponse>{part.text}</MessageResponse>
+                            {(() => {
+                              const chips = message.role === "user" ? renderFileChips(part.text) : null;
+                              return chips
+                                ? <div className="text-sm whitespace-pre-wrap">{chips}</div>
+                                : <MessageResponse>{part.text}</MessageResponse>;
+                            })()}
                           </MessageContent>
                           {message.role === "assistant" &&
                             partIndex === lastTextIndex &&

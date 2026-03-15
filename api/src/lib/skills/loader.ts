@@ -1,7 +1,7 @@
 import { readFromS3 } from "@/lib/s3.ts";
 import { getSkillFiles, getSkillFileByName, getFilesByFolder } from "@/db/queries/files.ts";
 import { getSkillsByProject, getSkillByName } from "@/db/queries/skills.ts";
-import { getPublishedByProject, getPublishedSkillByName } from "@/db/queries/published-skills.ts";
+import { getPublishedByProject, getMarketplaceItemByName } from "@/db/queries/marketplace.ts";
 import { parseSkillMd } from "./parser.ts";
 import type { SkillSummary, LoadedSkill, SkillMetadata, SkillSource } from "./types.ts";
 import { log } from "@/lib/logger.ts";
@@ -80,7 +80,7 @@ export async function loadFullSkill(projectId: string, name: string): Promise<Lo
       .map((f) => f.filename);
 
     const skillRow = getSkillByName(projectId, name);
-    const publishedRow = getPublishedSkillByName(name);
+    const publishedRow = getMarketplaceItemByName(name);
 
     return {
       ...frontmatter,

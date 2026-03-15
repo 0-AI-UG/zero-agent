@@ -50,6 +50,19 @@ export interface CompanionStatus {
   browserTitle?: string;
 }
 
+// ── WebAuthn Sub-Commands ──
+
+export type WebAuthnSubCommand =
+  | { type: "enable"; commandId: string }
+  | { type: "addAuthenticator"; commandId: string; options: {
+      protocol: "ctap2"; transport: "internal";
+      hasResidentKey: true; hasUserVerification: true; isUserVerified: true } }
+  | { type: "addCredential"; commandId: string; authenticatorId: string;
+      credential: { credentialId: string; rpId: string; privateKey: string;
+                    userHandle: string; signCount: number } }
+  | { type: "getCredentials"; commandId: string; authenticatorId: string }
+  | { type: "removeAuthenticator"; commandId: string; authenticatorId: string };
+
 // ── Control Messages (server → companion) ──
 
 export type CompanionControl =
@@ -59,7 +72,8 @@ export type CompanionControl =
   | { type: "destroySession"; sessionId: string }
   | { type: "createSandbox"; sandboxId: string }
   | { type: "runScript"; sandboxId: string; commandId: string; script: string; packages?: string[]; timeout?: number }
-  | { type: "destroySandbox"; sandboxId: string };
+  | { type: "destroySandbox"; sandboxId: string }
+  | { type: "webauthn"; subCommand: WebAuthnSubCommand };
 
 // ── Companion Messages (companion → server) ──
 
@@ -73,4 +87,6 @@ export type CompanionMessage =
   | { type: "sandboxCreated"; sandboxId: string; pythonVersion: string | null }
   | { type: "scriptResult"; commandId: string; sandboxId: string; stdout: string; stderr: string; exitCode: number; changedFiles?: Array<{ path: string; data: string; sizeBytes: number }>; skippedFiles?: Array<{ path: string; reason: string }> }
   | { type: "sandboxDestroyed"; sandboxId: string }
-  | { type: "sandboxError"; sandboxId: string; commandId?: string; error: string };
+  | { type: "sandboxError"; sandboxId: string; commandId?: string; error: string }
+  | { type: "webauthnResult"; commandId: string; result: unknown }
+  | { type: "webauthnError"; commandId: string; error: string };

@@ -78,6 +78,14 @@ export function updateFileFolderPath(id: string, folderPath: string): FileRow {
   return db.query<FileRow, [string]>("SELECT * FROM files WHERE id = ?").get(id)!;
 }
 
+export function updateFileRecord(id: string, filename: string, s3Key: string, mimeType: string, folderPath: string): FileRow {
+  db.query<void, [string, string, string, string, string]>(
+    "UPDATE files SET filename = ?, s3_key = ?, mime_type = ?, folder_path = ? WHERE id = ?",
+  ).run(filename, s3Key, mimeType, folderPath, id);
+  return db.query<FileRow, [string]>("SELECT * FROM files WHERE id = ?").get(id)!;
+}
+
+
 export function updateFileThumbnail(id: string, thumbnailS3Key: string): void {
   db.query<void, [string, string]>(
     "UPDATE files SET thumbnail_s3_key = ? WHERE id = ?",

@@ -153,10 +153,12 @@ export async function handleChat(request: BunRequest): Promise<Response> {
               (p: { type: string }) => p.type === "text",
             ) as { type: "text"; text: string } | undefined;
             if (textPart) {
+              const cleaned = textPart.text.replace(/\[file:\s*.+?\]/g, "").trim();
+              const titleText = cleaned || "File attachment";
               const title =
-                textPart.text.length > 50
-                  ? textPart.text.slice(0, 50) + "..."
-                  : textPart.text;
+                titleText.length > 50
+                  ? titleText.slice(0, 50) + "..."
+                  : titleText;
               updateChat(chatId, { title });
             }
           }

@@ -13,6 +13,7 @@ import { TasksPage } from "@/pages/TasksPage";
 import { SettingsPage } from "@/pages/SettingsPage";
 import { SkillsPage } from "@/pages/SkillsPage";
 import { HelpPage } from "@/pages/HelpPage";
+import { MarketplacePage } from "@/pages/MarketplacePage";
 import "./index.css";
 
 export function App() {
@@ -35,6 +36,7 @@ export function App() {
               <Route path="files" element={<FilesPage />} />
               <Route path="tasks" element={<TasksPage />} />
               <Route path="skills" element={<SkillsPage />} />
+              <Route path="marketplace" element={<MarketplacePage />} />
               <Route path="settings" element={<SettingsPage />} />
               <Route path="help" element={<HelpPage />} />
             </Route>

@@ -14,6 +14,7 @@ export interface ScheduledTask {
   nextRunAt: string;
   runCount: number;
   requiredTools: string[] | null;
+  requiredSkills: string[] | null;
   createdAt: string;
   updatedAt: string;
 }

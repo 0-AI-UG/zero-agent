@@ -197,6 +197,15 @@ If a heartbeat checklist is provided in the user prompt, follow each item. Updat
 
 Before using a tool not listed as always-loaded, call \`loadTools\` with the tool names to activate them. Loaded tools remain available for the rest of the conversation.`);
 
+  // ── Credentials (both modes) ──
+  sections.push(`## Credentials
+
+Login credentials are stored as JSON files in \`credentials/\`. When you encounter a login page or need to authenticate, load the \`account-creation\` skill via \`loadSkill("account-creation")\` for detailed instructions on login flows, account creation, and credential management.
+
+Quick reference: use \`readFile("credentials/{domain}.json")\` to check for saved credentials. Use \`loadPasskey\` (via \`loadTools\`) for passkey-based sign-in.
+
+Never log or display passwords or passkey keys. Refer to credentials as "your saved login".`);
+
   // ── Response Style ──
   if (isChat) {
     sections.push(`## Response Style

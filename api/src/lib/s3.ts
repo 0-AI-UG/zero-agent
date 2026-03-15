@@ -36,6 +36,20 @@ export function generateUploadUrl(s3Key: string, mimeType: string): string {
   });
 }
 
+export async function readBinaryFromS3(s3Key: string): Promise<Buffer> {
+  s3Log.debug("readBinary", { s3Key });
+  try {
+    const file = s3.file(s3Key);
+    const arrayBuf = await file.arrayBuffer();
+    const buf = Buffer.from(arrayBuf);
+    s3Log.debug("readBinary success", { s3Key, sizeBytes: buf.byteLength });
+    return buf;
+  } catch (err) {
+    s3Log.error("readBinary failed", err, { s3Key });
+    throw err;
+  }
+}
+
 export async function readFromS3(s3Key: string): Promise<string> {
   s3Log.debug("read", { s3Key });
   try {

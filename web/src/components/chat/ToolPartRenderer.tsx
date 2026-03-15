@@ -653,8 +653,7 @@ export function ToolCallPart({
   if (toolName === "loadTools") return null;
   if (toolName === "todoCreate" || toolName === "todoUpdate" || toolName === "todoList") return null;
 
-  // Silent tools: show thinking indicator instead of a tool-specific status line
-  if (toolName === "searchFiles" || toolName === "readFile") return null;
+
 
   const isLoading =
     part.state === "input-streaming" || part.state === "input-available";
@@ -704,6 +703,7 @@ export function ToolCallPart({
 
   // Custom rich rendering for specific tool results
   if (hasOutput) {
+    // readFile: fall through to default status line for both text and image
     if (toolName === "generateImage" && (part.output as any)?.fileId) {
       const output = part.output as any;
       return <GeneratedImageCard fileId={output.fileId} filename={output.filename} projectId={projectId} />;
@@ -751,9 +751,13 @@ export function ToolCallPart({
   // For browser tools, use the human-friendly step label
   const isBrowser = toolName === "browser";
   const browserLabel = isBrowser ? getBrowserStepLabel(part.input, part.output) : null;
+  // For readFile images, show "Viewed image" instead of "Read file"
+  const isImageRead = toolName === "readFile" && (part.output as any)?.type === "image";
   const displayLabel = isBrowser && browserLabel
     ? (isLoading ? config.activeLabel : browserLabel.label)
-    : isLoading ? config.activeLabel : config.label;
+    : isLoading
+      ? (isImageRead ? "Viewing image" : config.activeLabel)
+      : isImageRead ? "Viewed image" : config.label;
 
   return (
     <div
@@ -762,7 +766,7 @@ export function ToolCallPart({
         hasError ? "text-destructive" : "text-muted-foreground",
       )}
     >
-      {hasError ? <AlertCircleIcon className="size-4" /> : <Icon className={cn("size-4", hasOutput && "text-emerald-500")} />}
+      {hasError ? <AlertCircleIcon className="size-4" /> : isImageRead ? <ImageIcon className={cn("size-4", hasOutput && "text-emerald-500")} /> : <Icon className={cn("size-4", hasOutput && "text-emerald-500")} />}
       <span>
         {isLoading ? (
           <Shimmer className="text-sm" duration={1.5}>

@@ -70,6 +70,12 @@ import {
   handleDeleteCompanionToken,
   handleCompanionStatus,
 } from "@/routes/companion.ts";
+import {
+  handleListCredentials,
+  handleCreateCredential,
+  handleUpdateCredential,
+  handleDeleteCredential,
+} from "@/routes/credentials.ts";
 import { browserBridge } from "@/lib/browser/bridge.ts";
 import { getCompanionTokenByToken, touchCompanionToken } from "@/db/queries/companion-tokens.ts";
 
@@ -106,12 +112,15 @@ import {
   handleDeleteSkill,
 } from "@/routes/skills.ts";
 import {
-  handleListCommunitySkills,
-  handleGetCommunitySkill,
-  handlePublishSkill,
-  handleInstallCommunitySkill,
-  handleUnpublishSkill,
-} from "@/routes/community.ts";
+  handleListMarketplace,
+  handleGetMarketplaceItem,
+  handlePublishMarketplace,
+  handleInstallMarketplace,
+  handleDeleteMarketplaceItem,
+  handleAddReference,
+  handleRemoveReference,
+  handleSuggestReferences,
+} from "@/routes/marketplace.ts";
 import { startScheduler } from "@/lib/scheduler.ts";
 
 const httpLog = log.child({ module: "http" });
@@ -278,19 +287,28 @@ const server = Bun.serve<{ userId: string; projectId: string; authenticated: boo
       PUT: withLogging(handleUpdateQuickAction),
       DELETE: withLogging(handleDeleteQuickAction),
     },
-    // Community skills marketplace
-    "/api/community/skills": {
-      GET: withLogging(handleListCommunitySkills),
+    // Marketplace
+    "/api/marketplace": {
+      GET: withLogging(handleListMarketplace),
     },
-    "/api/community/skills/:name": {
-      GET: withLogging(handleGetCommunitySkill),
-      DELETE: withLogging(handleUnpublishSkill),
+    "/api/marketplace/suggest-references": {
+      GET: withLogging(handleSuggestReferences),
     },
-    "/api/projects/:projectId/skills/publish": {
-      POST: withLogging(handlePublishSkill),
+    "/api/marketplace/:id": {
+      GET: withLogging(handleGetMarketplaceItem),
+      DELETE: withLogging(handleDeleteMarketplaceItem),
     },
-    "/api/projects/:projectId/skills/install-community": {
-      POST: withLogging(handleInstallCommunitySkill),
+    "/api/marketplace/:id/references": {
+      POST: withLogging(handleAddReference),
+    },
+    "/api/marketplace/:id/references/:targetId": {
+      DELETE: withLogging(handleRemoveReference),
+    },
+    "/api/projects/:projectId/marketplace/publish": {
+      POST: withLogging(handlePublishMarketplace),
+    },
+    "/api/projects/:projectId/marketplace/install": {
+      POST: withLogging(handleInstallMarketplace),
     },
     // Skills
     "/api/projects/:projectId/skills": {
@@ -322,6 +340,15 @@ const server = Bun.serve<{ userId: string; projectId: string; authenticated: boo
     },
     "/api/projects/:projectId/companion/status": {
       GET: withLogging(handleCompanionStatus),
+    },
+    // Credentials (saved logins)
+    "/api/projects/:projectId/credentials": {
+      GET: withLogging(handleListCredentials),
+      POST: withLogging(handleCreateCredential),
+    },
+    "/api/projects/:projectId/credentials/:id": {
+      PUT: withLogging(handleUpdateCredential),
+      DELETE: withLogging(handleDeleteCredential),
     },
   },
   fetch(request, server) {

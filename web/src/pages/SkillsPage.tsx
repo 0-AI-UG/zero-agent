@@ -2,11 +2,7 @@ import { useMemo, useState } from "react";
 import { useParams } from "react-router";
 import {
   useSkills,
-  useAvailableSkills,
-  useInstallSkill,
   useUninstallSkill,
-  usePublishSkill,
-  useUnpublishSkill,
   type SkillSource,
 } from "@/api/skills";
 import {
@@ -22,48 +18,37 @@ import {
 import { SkillCard, type UnifiedSkill } from "@/components/skills/SkillCard";
 import { SkillDetail } from "@/components/skills/SkillDetail";
 import { ImportDialog } from "@/components/skills/ImportDialog";
-import { CommunityBrowseModal } from "@/components/skills/CommunityBrowseModal";
 import { Input } from "@/components/ui/input";
-import { GithubIcon, SearchIcon, PlusIcon } from "lucide-react";
+import { GithubIcon, SearchIcon, StoreIcon, PuzzleIcon } from "lucide-react";
+import { Link } from "react-router";
 import { toast } from "sonner";
 
-type SourceFilter = "all" | Exclude<SkillSource, "community">;
+type SourceFilter = "all" | SkillSource;
 
-const SOURCE_FILTER_LABELS: Record<SourceFilter, string> = {
+const SOURCE_FILTER_LABELS: Record<string, string> = {
   all: "All",
   "built-in": "Built-in",
   github: "GitHub",
   user: "My Skills",
+  community: "Community",
 };
-
-const SOURCE_FILTERS: SourceFilter[] = ["all", "built-in", "user", "github"];
 
 export function SkillsPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const pid = projectId!;
 
   const { data: skills, isLoading } = useSkills(pid);
-  const { data: available } = useAvailableSkills(pid);
-  const installSkill = useInstallSkill(pid);
   const uninstallSkill = useUninstallSkill(pid);
-  const publishSkill = usePublishSkill(pid);
-  const unpublishSkill = useUnpublishSkill(pid);
 
   const [search, setSearch] = useState("");
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
   const [importOpen, setImportOpen] = useState(false);
-  const [browseOpen, setBrowseOpen] = useState(false);
   const [detailSkill, setDetailSkill] = useState<UnifiedSkill | null>(null);
   const [confirmUninstall, setConfirmUninstall] = useState<string | null>(null);
-  const [installingName, setInstallingName] = useState<string | null>(null);
   const [uninstallingName, setUninstallingName] = useState<string | null>(null);
-  const [publishingName, setPublishingName] = useState<string | null>(null);
 
-  // Merge installed + available + community into unified list
   const unified = useMemo(() => {
-    const installedNames = new Set(skills?.map((s) => s.name) ?? []);
-
-    const installedSkills: UnifiedSkill[] = (skills ?? []).map((s) => ({
+    return (skills ?? []).map((s): UnifiedSkill => ({
       name: s.name,
       description: s.description,
       metadata: s.metadata,
@@ -72,30 +57,16 @@ export function SkillsPage() {
       published: s.published,
       downloads: s.downloads,
     }));
-
-    const availableSkills: UnifiedSkill[] = (available ?? [])
-      .filter((s) => !installedNames.has(s.name))
-      .map((s) => ({
-        name: s.name,
-        description: s.description,
-        metadata: s.metadata,
-        installed: false,
-        source: "built-in" as const,
-      }));
-
-    return [...installedSkills, ...availableSkills];
-  }, [skills, available]);
+  }, [skills]);
 
   // Filter
   const filtered = useMemo(() => {
     let result = unified;
 
-    // Source filter
     if (sourceFilter !== "all") {
       result = result.filter((s) => s.source === sourceFilter);
     }
 
-    // Text search
     const q = search.toLowerCase();
     if (q) {
       result = result.filter(
@@ -106,60 +77,25 @@ export function SkillsPage() {
       );
     }
 
-    // Sort: installed first, then by downloads desc, then name
     return result.sort((a, b) => {
-      if (a.installed !== b.installed) return a.installed ? -1 : 1;
       const dl = (b.downloads ?? 0) - (a.downloads ?? 0);
       if (dl !== 0) return dl;
       return a.name.localeCompare(b.name);
     });
   }, [unified, search, sourceFilter]);
 
-  // Count only installed skills per filter for badges
-  const filterCounts = useMemo(() => {
-    const installed = unified.filter((s) => s.installed);
-    const counts: Record<SourceFilter, number> = {
-      all: installed.length,
-      "built-in": 0,
-      user: 0,
-      github: 0,
-    };
-    for (const s of installed) {
-      if (s.source && s.source in counts) counts[s.source as SourceFilter]++;
+  // Source filter tabs — only show sources that have installed skills
+  const sourceCounts = useMemo(() => {
+    const counts: Record<string, number> = { all: unified.length };
+    for (const s of unified) {
+      if (s.source) counts[s.source] = (counts[s.source] ?? 0) + 1;
     }
     return counts;
   }, [unified]);
 
-  // Keep detail skill in sync with data changes
   const activeDetailSkill = detailSkill
     ? unified.find((s) => s.name === detailSkill.name) ?? detailSkill
     : null;
-
-  const handleInstall = (skill: UnifiedSkill) => {
-    setInstallingName(skill.name);
-    installSkill.mutate({ builtIn: skill.name }, {
-      onError: (err) => {
-        toast.error(`Failed to install "${skill.name}"`, {
-          description: err instanceof Error ? err.message : "Unknown error",
-        });
-      },
-      onSettled: () => setInstallingName(null),
-    });
-  };
-
-  const handlePublish = (name: string) => {
-    setPublishingName(name);
-    publishSkill.mutate(name, {
-      onSettled: () => setPublishingName(null),
-    });
-  };
-
-  const handleUnpublish = (name: string) => {
-    setPublishingName(name);
-    unpublishSkill.mutate(name, {
-      onSettled: () => setPublishingName(null),
-    });
-  };
 
   return (
     <div className="h-full overflow-y-auto">
@@ -171,17 +107,17 @@ export function SkillsPage() {
               Skills
             </h2>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Discover and manage capabilities
+              Manage installed capabilities
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => setBrowseOpen(true)}
+            <Link
+              to="marketplace"
               className="flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium hover:bg-muted shrink-0"
             >
-              <PlusIcon className="size-3.5" />
-              Add
-            </button>
+              <StoreIcon className="size-3.5" />
+              Marketplace
+            </Link>
             <button
               onClick={() => setImportOpen(true)}
               className="flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium hover:bg-muted shrink-0"
@@ -204,21 +140,20 @@ export function SkillsPage() {
             />
           </div>
           <div className="flex flex-wrap gap-1.5">
-            {SOURCE_FILTERS.map((filter) => {
-              const count = filterCounts[filter];
-              if (filter !== "all" && count === 0) return null;
-              const active = sourceFilter === filter;
+            {Object.entries(sourceCounts).map(([source, count]) => {
+              if (source !== "all" && count === 0) return null;
+              const active = sourceFilter === source;
               return (
                 <button
-                  key={filter}
-                  onClick={() => setSourceFilter(active ? "all" : filter)}
+                  key={source}
+                  onClick={() => setSourceFilter(active ? "all" : (source as SourceFilter))}
                   className={`flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-medium border transition-colors ${
                     active
                       ? "bg-primary text-primary-foreground border-primary"
                       : "text-muted-foreground hover:text-foreground border-border hover:bg-muted"
                   }`}
                 >
-                  {SOURCE_FILTER_LABELS[filter]}
+                  {SOURCE_FILTER_LABELS[source] ?? source}
                   <span
                     className={`text-[10px] ${active ? "text-primary-foreground/70" : "text-muted-foreground/60"}`}
                   >
@@ -234,64 +169,41 @@ export function SkillsPage() {
           <p className="text-xs text-muted-foreground">Loading skills...</p>
         )}
 
-        {/* Installed skills grid */}
-        {filtered.filter((s) => s.installed).length > 0 && (
+        {/* Skills grid */}
+        {filtered.length > 0 && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {filtered
-              .filter((s) => s.installed)
-              .map((skill) => (
-                <SkillCard
-                  key={skill.name}
-                  skill={skill}
-                  onClick={() => setDetailSkill(skill)}
-                  onInstall={() => handleInstall(skill)}
-                  onUninstall={() => setConfirmUninstall(skill.name)}
-                  onPublish={() => handlePublish(skill.name)}
-                  onUnpublish={() => handleUnpublish(skill.name)}
-                  isInstalling={installingName === skill.name}
-                  isPublishing={publishingName === skill.name}
-                />
-              ))}
-          </div>
-        )}
-
-        {/* Built-in / uninstalled skills */}
-        {filtered.filter((s) => !s.installed).length > 0 && (
-          <div className="space-y-3">
-            <div>
-              <h3 className="text-xs font-medium text-muted-foreground">
-                Built-in
-              </h3>
-              <p className="text-[11px] text-muted-foreground/60">
-                Ready to install
-              </p>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {filtered
-                .filter((s) => !s.installed)
-                .map((skill) => (
-                  <SkillCard
-                    key={skill.name}
-                    skill={skill}
-                    onClick={() => setDetailSkill(skill)}
-                    onInstall={() => handleInstall(skill)}
-                    onUninstall={() => setConfirmUninstall(skill.name)}
-                    onPublish={() => publishSkill.mutate(skill.name)}
-                    onUnpublish={() => unpublishSkill.mutate(skill.name)}
-                    isInstalling={installSkill.isPending}
-                    isPublishing={
-                      publishSkill.isPending || unpublishSkill.isPending
-                    }
-                  />
-                ))}
-            </div>
+            {filtered.map((skill) => (
+              <SkillCard
+                key={skill.name}
+                skill={skill}
+                onClick={() => setDetailSkill(skill)}
+                onUninstall={() => setConfirmUninstall(skill.name)}
+              />
+            ))}
           </div>
         )}
 
         {!isLoading && filtered.length === 0 && (
-          <p className="text-xs text-muted-foreground text-center py-8">
-            No skills match your filters.
-          </p>
+          <div className="flex flex-col items-center justify-center py-20 text-center">
+            <PuzzleIcon className="size-10 text-muted-foreground/40 mb-3" />
+            <p className="text-sm font-medium mb-1">
+              {unified.length === 0 ? "No skills installed" : "No skills match your filters"}
+            </p>
+            <p className="text-xs text-muted-foreground max-w-[280px]">
+              {unified.length === 0
+                ? "Browse the marketplace to discover and install skills."
+                : "Try a different search or filter."}
+            </p>
+            {unified.length === 0 && (
+              <Link
+                to="marketplace?type=skills"
+                className="mt-4 flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium hover:bg-muted"
+              >
+                <StoreIcon className="size-3.5" />
+                Browse Marketplace
+              </Link>
+            )}
+          </div>
         )}
       </div>
 
@@ -302,27 +214,9 @@ export function SkillsPage() {
         onOpenChange={(open) => {
           if (!open) setDetailSkill(null);
         }}
-        onInstall={() => {
-          if (activeDetailSkill) handleInstall(activeDetailSkill);
-        }}
         onUninstall={() => {
           if (activeDetailSkill) setConfirmUninstall(activeDetailSkill.name);
         }}
-        onPublish={() => {
-          if (activeDetailSkill) handlePublish(activeDetailSkill.name);
-        }}
-        onUnpublish={() => {
-          if (activeDetailSkill) handleUnpublish(activeDetailSkill.name);
-        }}
-        isInstalling={activeDetailSkill ? installingName === activeDetailSkill.name : false}
-        isPublishing={activeDetailSkill ? publishingName === activeDetailSkill.name : false}
-      />
-
-      {/* Browse community modal */}
-      <CommunityBrowseModal
-        projectId={pid}
-        open={browseOpen}
-        onOpenChange={setBrowseOpen}
       />
 
       {/* Import dialog */}
@@ -344,7 +238,7 @@ export function SkillsPage() {
             <AlertDialogTitle>Uninstall skill</AlertDialogTitle>
             <AlertDialogDescription>
               This will remove <strong>{confirmUninstall}</strong> from this
-              project. You can reinstall it later.
+              project. You can reinstall it later from the marketplace.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

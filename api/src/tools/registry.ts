@@ -10,6 +10,7 @@ import { createTodoTools } from "@/tools/todos.ts";
 import { createSkillTools } from "@/tools/skills.ts";
 import { createBrowserTool } from "@/tools/browser.ts";
 import { createPythonTools } from "@/tools/python.ts";
+import { createCredentialTools } from "@/tools/credentials.ts";
 
 export type ToolRegistry = Record<string, Tool<any, any>>;
 
@@ -76,6 +77,7 @@ export function createToolRegistry(
     ...createSkillTools(projectId),
     ...(options.userId ? createBrowserTool(options.userId, projectId, options.browserSessionId) : {}),
     ...(options.userId && options.codeExecutionEnabled ? createPythonTools(options.userId, projectId) : {}),
+    ...createCredentialTools(projectId, options.userId),
   };
 
   // 1. Scope filtering — remove tools not available in this context

@@ -22,6 +22,7 @@ import {
   MessageSquareIcon,
   PuzzleIcon,
   SettingsIcon,
+  StoreIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useEffect } from "react";
@@ -187,6 +188,7 @@ export function ProjectLayout() {
     location.pathname.includes("/files") ||
     location.pathname.includes("/tasks") ||
     location.pathname.includes("/skills") ||
+    location.pathname.includes("/marketplace") ||
     location.pathname.includes("/settings") ||
     location.pathname.includes("/help");
   const isChatTab = !isOnSubpage;
@@ -213,6 +215,11 @@ export function ProjectLayout() {
       to: `${basePath}/skills`,
       icon: PuzzleIcon,
       label: "Skills",
+    },
+    {
+      to: `${basePath}/marketplace`,
+      icon: StoreIcon,
+      label: "Market",
     },
     {
       to: `${basePath}/settings`,

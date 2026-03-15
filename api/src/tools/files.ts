@@ -1,16 +1,65 @@
 import { z } from "zod";
-import { tool } from "ai";
-import { getFilesByFolder, getFileById, getFileByS3Key, getFilesByFolderPath, insertFile, updateFileFolderPath, deleteFile as deleteFileRecord } from "@/db/queries/files.ts";
+import { tool, generateText } from "ai";
+import { getFilesByFolder, getFileById, getFileByS3Key, getFilesByFolderPath, insertFile, updateFileFolderPath, updateFileRecord, deleteFile as deleteFileRecord } from "@/db/queries/files.ts";
 import { createFolder as createFolderRecord, getFoldersByParent, getFolderByPath, deleteFolder as deleteFolderRecord, deleteFoldersByPathPrefix } from "@/db/queries/folders.ts";
-import { readFromS3, writeToS3, generateDownloadUrl, deleteFromS3, s3 } from "@/lib/s3.ts";
+import { readFromS3, readBinaryFromS3, writeToS3, generateDownloadUrl, deleteFromS3, s3 } from "@/lib/s3.ts";
 import { applyEdits } from "@/lib/apply-edits.ts";
 import { lintContent } from "@/lib/lint.ts";
 import { sanitizePath } from "@/lib/sanitize.ts";
 import { truncateText } from "@/lib/truncate-result.ts";
 import { indexFileContent, searchFileContent, removeFileIndex } from "@/db/queries/search.ts";
 import { log } from "@/lib/logger.ts";
+import { visionModel } from "@/lib/openrouter.ts";
+import sharp from "sharp";
 
 const MAX_READ_CHARS = 15_000;
+
+/** Max width for images sent to the model. Keeps base64 under ~100k tokens. */
+const MODEL_IMAGE_MAX_WIDTH = 768;
+const MODEL_IMAGE_QUALITY = 60;
+
+/**
+ * Resize an image for model consumption. Produces a smaller JPEG to avoid
+ * blowing up the context window with huge base64 strings.
+ */
+async function resizeImageForModel(imageData: Buffer, mediaType: string): Promise<{ buffer: Buffer; mediaType: string }> {
+  try {
+    // SVGs are text-based and small — skip resizing
+    if (mediaType === "image/svg+xml") {
+      return { buffer: imageData, mediaType };
+    }
+    const resized = await sharp(imageData)
+      .resize(MODEL_IMAGE_MAX_WIDTH, undefined, { withoutEnlargement: true })
+      .jpeg({ quality: MODEL_IMAGE_QUALITY })
+      .toBuffer();
+    return { buffer: resized, mediaType: "image/jpeg" };
+  } catch {
+    // If sharp fails (e.g. unsupported format), return original
+    return { buffer: imageData, mediaType };
+  }
+}
+
+const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp"]);
+
+const IMAGE_MEDIA_TYPES: Record<string, string> = {
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  gif: "image/gif",
+  webp: "image/webp",
+  svg: "image/svg+xml",
+  bmp: "image/bmp",
+};
+
+function isImageFile(path: string): boolean {
+  const ext = path.split(".").pop()?.toLowerCase() ?? "";
+  return IMAGE_EXTENSIONS.has(ext);
+}
+
+function getImageMediaType(path: string): string {
+  const ext = path.split(".").pop()?.toLowerCase() ?? "";
+  return IMAGE_MEDIA_TYPES[ext] ?? "image/png";
+}
 
 const toolLog = log.child({ module: "tool:files" });
 
@@ -86,7 +135,7 @@ export function createFileTools(projectId: string) {
   return {
     readFile: tool({
       description:
-        "Read the contents of a file from this project's storage. Use listFiles to find available files first. You must read a file before you can edit or overwrite it. Use offset/limit to read specific line ranges of large files.",
+        "Read the contents of a file from this project's storage. Supports text files and images (png, jpg, gif, webp) — images are returned visually. Use listFiles to find available files first. You must read a file before you can edit or overwrite it. Use offset/limit to read specific line ranges of large files.",
       inputSchema: z.object({
         path: z
           .string()
@@ -111,6 +160,38 @@ export function createFileTools(projectId: string) {
         toolLog.info("readFile", { projectId, path, offset, limit });
         try {
           const s3Key = `projects/${projectId}/${path}`;
+
+          // Image files: use vision model to describe the image
+          if (isImageFile(path)) {
+            const buffer = await readBinaryFromS3(s3Key);
+            readPaths.add(path);
+            const originalMediaType = getImageMediaType(path);
+            const { buffer: resized, mediaType } = await resizeImageForModel(buffer, originalMediaType);
+            const base64 = resized.toString("base64");
+            toolLog.info("readFile image: describing with vision model", {
+              projectId, path,
+              originalBytes: buffer.byteLength,
+              resizedBytes: resized.byteLength,
+              mediaType,
+            });
+
+            const { text: description } = await generateText({
+              model: visionModel,
+              messages: [{
+                role: "user",
+                content: [
+                  { type: "text", text: `Describe this image in detail. Include all visible text, layout, colors, and key visual elements. Be thorough but concise.` },
+                  { type: "image", image: `data:${mediaType};base64,${base64}` },
+                ],
+              }],
+              maxOutputTokens: 1024,
+            });
+
+            toolLog.info("readFile image described", { projectId, path, descriptionLength: description.length });
+            return { path, type: "image-description" as const, description };
+          }
+
+          // Text files: existing behavior
           let content = await readFromS3(s3Key);
           readPaths.add(path);
           const totalLength = content.length;
@@ -370,37 +451,74 @@ export function createFileTools(projectId: string) {
 
     moveFile: tool({
       description:
-        "Move a file to a different folder within the project. Use listFiles to find the file ID first.",
+        "Move or rename a file, like the `mv` command. If destination ends with '/' it is treated as a folder (moves the file there, keeping the name). Otherwise it is treated as a full file path (moves and/or renames). Examples: destination '/archive/' moves the file into /archive/. destination '/archive/old-name.png' moves and renames. destination 'new-name.png' renames in the same folder. Use listFiles to find the file ID first.",
       inputSchema: z.object({
         fileId: z
           .string()
-          .describe("The ID of the file to move."),
-        destinationPath: z
+          .describe("The ID of the file to move/rename."),
+        destination: z
           .string()
-          .describe("The destination folder path (e.g., '/posts/' or '/posts' or '/' for root)."),
+          .describe("Destination folder path (e.g., '/posts/') to move, or full file path (e.g., '/posts/new-name.md' or 'new-name.md') to rename/move+rename."),
       }),
-      execute: async ({ fileId, destinationPath: rawDest }) => {
-        // Normalize trailing slash
-        let destinationPath = rawDest;
-        if (destinationPath !== "/" && !destinationPath.endsWith("/")) {
-          destinationPath += "/";
-        }
-        if (!destinationPath.startsWith("/")) {
-          destinationPath = "/" + destinationPath;
-        }
-        toolLog.info("moveFile", { projectId, fileId, destinationPath });
+      execute: async ({ fileId, destination: rawDest }) => {
+        toolLog.info("moveFile", { projectId, fileId, destination: rawDest });
         try {
           const file = getFileById(fileId);
           if (!file || file.project_id !== projectId) {
             throw new Error(`File not found: ${fileId}`);
           }
-          if (file.folder_path === destinationPath) {
-            return { message: "File is already in that folder.", fileId, destinationPath };
+
+          let newFolder: string;
+          let newFilename: string;
+
+          if (rawDest.endsWith("/")) {
+            // Destination is a folder — keep original filename
+            newFolder = rawDest.startsWith("/") ? rawDest : "/" + rawDest;
+            newFilename = file.filename;
+          } else {
+            // Destination is a file path — extract folder and filename
+            const parts = rawDest.split("/");
+            newFilename = parts.pop()!;
+            if (parts.length === 0 || (parts.length === 1 && parts[0] === "")) {
+              // Just a filename, keep same folder
+              newFolder = file.folder_path;
+            } else {
+              newFolder = (rawDest.startsWith("/") ? "" : "/") + parts.join("/") + "/";
+            }
           }
-          ensureFoldersExist(projectId, destinationPath);
-          const updated = updateFileFolderPath(fileId, destinationPath);
-          toolLog.info("moveFile success", { projectId, fileId, destinationPath });
-          return { fileId: updated.id, filename: updated.filename, newPath: updated.folder_path };
+
+          // Normalize root
+          if (newFolder === "//") newFolder = "/";
+
+          const oldS3Key = file.s3_key;
+          const newS3Key = `projects/${projectId}/${newFolder === "/" ? "" : newFolder.slice(1)}${newFilename}`;
+
+          // Check if nothing changed
+          if (file.folder_path === newFolder && file.filename === newFilename) {
+            return { message: "File already has that name and location.", fileId, path: newFolder + newFilename };
+          }
+
+          // Copy S3 object to new key if the key changed
+          if (oldS3Key !== newS3Key) {
+            const data = await readBinaryFromS3(oldS3Key);
+            await writeToS3(newS3Key, data);
+            await deleteFromS3(oldS3Key);
+          }
+
+          ensureFoldersExist(projectId, newFolder);
+          const newMimeType = guessMimeType(newFilename);
+          const updated = updateFileRecord(fileId, newFilename, newS3Key, newMimeType, newFolder);
+
+          // Update FTS index with new filename
+          indexFileContent(updated.id, projectId, newFilename, "");
+
+          // Clean up empty ancestor folders from the old location
+          if (file.folder_path !== newFolder) {
+            cleanupEmptyFolders(projectId, file.folder_path);
+          }
+
+          toolLog.info("moveFile success", { projectId, fileId, newFolder, newFilename });
+          return { fileId: updated.id, filename: updated.filename, folder: updated.folder_path, s3Key: updated.s3_key };
         } catch (err) {
           toolLog.error("moveFile failed", err, { projectId, fileId });
           throw err;

@@ -2,6 +2,7 @@ import { Database } from "bun:sqlite";
 import { nanoid } from "nanoid";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
+import { BUILTIN_SKILLS, BUILTIN_TEMPLATES } from "./seed-data.ts";
 
 const DB_PATH = process.env.DB_PATH || "./data/app.db";
 
@@ -13,7 +14,8 @@ db.run("PRAGMA journal_mode = WAL");
 db.run("PRAGMA foreign_keys = ON");
 db.run("PRAGMA case_sensitive_like = ON");
 
-// Schema
+// ── Schema ──
+
 db.run(`
   CREATE TABLE IF NOT EXISTS users (
     id            TEXT PRIMARY KEY,
@@ -25,22 +27,33 @@ db.run(`
 
 db.run(`
   CREATE TABLE IF NOT EXISTS projects (
-    id              TEXT PRIMARY KEY,
-    user_id         TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    name            TEXT NOT NULL,
-    description     TEXT DEFAULT '',
-    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+    id                        TEXT PRIMARY KEY,
+    user_id                   TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name                      TEXT NOT NULL,
+    description               TEXT DEFAULT '',
+    automation_enabled        INTEGER NOT NULL DEFAULT 0,
+    browser_search_fallback   INTEGER NOT NULL DEFAULT 0,
+    code_execution_enabled    INTEGER NOT NULL DEFAULT 0,
+    browser_automation_enabled INTEGER NOT NULL DEFAULT 1,
+    show_skills_in_files      INTEGER NOT NULL DEFAULT 1,
+    assistant_name            TEXT NOT NULL DEFAULT 'Zero Agent',
+    assistant_description     TEXT NOT NULL DEFAULT 'Ask me anything — I can browse the web, manage files, run code, and automate tasks.',
+    assistant_icon            TEXT NOT NULL DEFAULT 'message',
+    created_at                TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at                TEXT NOT NULL DEFAULT (datetime('now'))
   )
 `);
 
 db.run(`
   CREATE TABLE IF NOT EXISTS chats (
-    id         TEXT PRIMARY KEY,
-    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    title      TEXT NOT NULL DEFAULT 'New Chat',
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    id            TEXT PRIMARY KEY,
+    project_id    TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    title         TEXT NOT NULL DEFAULT 'New Chat',
+    is_autonomous INTEGER NOT NULL DEFAULT 0,
+    created_by    TEXT REFERENCES users(id) ON DELETE SET NULL,
+    source        TEXT,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
   )
 `);
 
@@ -51,52 +64,22 @@ db.run(`
     chat_id    TEXT REFERENCES chats(id) ON DELETE CASCADE,
     role       TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
     content    TEXT NOT NULL,
+    user_id    TEXT REFERENCES users(id) ON DELETE SET NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   )
 `);
 
-// Migration: add chat_id column if it doesn't exist (existing DBs)
-{
-  const cols = db.query<{ name: string }, []>(
-    "SELECT name FROM pragma_table_info('messages')",
-  ).all();
-  if (!cols.some((c) => c.name === "chat_id")) {
-    db.run("ALTER TABLE messages ADD COLUMN chat_id TEXT REFERENCES chats(id) ON DELETE CASCADE");
-  }
-}
-
-// Migration: assign orphaned messages (no chat_id) to auto-created chats
-{
-  const orphanedProjects = db.query<{ project_id: string }, []>(
-    "SELECT DISTINCT project_id FROM messages WHERE chat_id IS NULL",
-  ).all();
-  if (orphanedProjects.length > 0) {
-    const insertChat = db.query<void, [string, string]>(
-      "INSERT INTO chats (id, project_id, title) VALUES (?, ?, 'General')",
-    );
-    const assignMessages = db.query<void, [string, string]>(
-      "UPDATE messages SET chat_id = ? WHERE project_id = ? AND chat_id IS NULL",
-    );
-    db.transaction(() => {
-      for (const { project_id } of orphanedProjects) {
-        const chatId = nanoid();
-        insertChat.run(chatId, project_id);
-        assignMessages.run(chatId, project_id);
-      }
-    })();
-  }
-}
-
 db.run(`
   CREATE TABLE IF NOT EXISTS files (
-    id          TEXT PRIMARY KEY,
-    project_id  TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    s3_key      TEXT NOT NULL,
-    filename    TEXT NOT NULL,
-    mime_type   TEXT NOT NULL DEFAULT 'application/octet-stream',
-    size_bytes  INTEGER DEFAULT 0,
-    folder_path TEXT NOT NULL DEFAULT '/',
-    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    id              TEXT PRIMARY KEY,
+    project_id      TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    s3_key          TEXT NOT NULL,
+    filename        TEXT NOT NULL,
+    mime_type       TEXT NOT NULL DEFAULT 'application/octet-stream',
+    size_bytes      INTEGER DEFAULT 0,
+    folder_path     TEXT NOT NULL DEFAULT '/',
+    thumbnail_s3_key TEXT,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now'))
   )
 `);
 
@@ -111,85 +94,39 @@ db.run(`
   )
 `);
 
-// Migration: drop category column from files if it exists
-{
-  const cols = db.query<{ name: string }, []>(
-    "SELECT name FROM pragma_table_info('files')",
-  ).all();
-  if (cols.some((c) => c.name === "category")) {
-    db.transaction(() => {
-      db.run(`CREATE TABLE files_new (
-        id          TEXT PRIMARY KEY,
-        project_id  TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-        s3_key      TEXT NOT NULL,
-        filename    TEXT NOT NULL,
-        mime_type   TEXT NOT NULL DEFAULT 'application/octet-stream',
-        size_bytes  INTEGER DEFAULT 0,
-        folder_path TEXT NOT NULL DEFAULT '/',
-        created_at  TEXT NOT NULL DEFAULT (datetime('now'))
-      )`);
-      db.run("INSERT INTO files_new (id, project_id, s3_key, filename, mime_type, size_bytes, folder_path, created_at) SELECT id, project_id, s3_key, filename, mime_type, size_bytes, folder_path, created_at FROM files");
-      db.run("DROP TABLE files");
-      db.run("ALTER TABLE files_new RENAME TO files");
-      db.run("CREATE INDEX IF NOT EXISTS idx_files_project_folder ON files(project_id, folder_path)");
-    })();
-  }
-}
-
-
-// Migration: add automation_enabled column to projects
-{
-  const cols = db.query<{ name: string }, []>(
-    "SELECT name FROM pragma_table_info('projects')",
-  ).all();
-  if (!cols.some((c) => c.name === "automation_enabled")) {
-    db.run("ALTER TABLE projects ADD COLUMN automation_enabled INTEGER NOT NULL DEFAULT 0");
-  }
-}
-
-// Scheduled tasks
 db.run(`
   CREATE TABLE IF NOT EXISTS scheduled_tasks (
-    id            TEXT PRIMARY KEY,
-    project_id    TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    user_id       TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    name          TEXT NOT NULL,
-    prompt        TEXT NOT NULL,
-    schedule      TEXT NOT NULL,
-    enabled       INTEGER NOT NULL DEFAULT 1,
-    last_run_at   TEXT,
-    next_run_at   TEXT NOT NULL,
-    run_count     INTEGER NOT NULL DEFAULT 0,
-    created_at    TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    id              TEXT PRIMARY KEY,
+    project_id      TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    user_id         TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name            TEXT NOT NULL,
+    prompt          TEXT NOT NULL,
+    schedule        TEXT NOT NULL,
+    enabled         INTEGER NOT NULL DEFAULT 1,
+    last_run_at     TEXT,
+    next_run_at     TEXT NOT NULL,
+    run_count       INTEGER NOT NULL DEFAULT 0,
+    required_tools  TEXT,
+    required_skills TEXT,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
   )
 `);
 
 db.run(`
   CREATE TABLE IF NOT EXISTS task_runs (
-    id            TEXT PRIMARY KEY,
-    task_id       TEXT NOT NULL REFERENCES scheduled_tasks(id) ON DELETE CASCADE,
-    project_id    TEXT NOT NULL,
-    chat_id       TEXT,
-    status        TEXT NOT NULL DEFAULT 'running',
-    summary       TEXT DEFAULT '',
-    started_at    TEXT NOT NULL DEFAULT (datetime('now')),
-    finished_at   TEXT,
-    error         TEXT
+    id          TEXT PRIMARY KEY,
+    task_id     TEXT NOT NULL REFERENCES scheduled_tasks(id) ON DELETE CASCADE,
+    project_id  TEXT NOT NULL,
+    chat_id     TEXT,
+    status      TEXT NOT NULL DEFAULT 'running',
+    summary     TEXT DEFAULT '',
+    started_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    finished_at TEXT,
+    error       TEXT
   )
 `);
 
-// Migration: add is_autonomous column to chats
-{
-  const cols = db.query<{ name: string }, []>(
-    "SELECT name FROM pragma_table_info('chats')",
-  ).all();
-  if (!cols.some((c) => c.name === "is_autonomous")) {
-    db.run("ALTER TABLE chats ADD COLUMN is_autonomous INTEGER NOT NULL DEFAULT 0");
-  }
-}
-
-// FTS5 full-text search index for file content
 db.run(`
   CREATE VIRTUAL TABLE IF NOT EXISTS fts_files USING fts5(
     file_id UNINDEXED,
@@ -200,108 +137,41 @@ db.run(`
   )
 `);
 
-// Migration: add feature columns to projects
-{
-  const cols = db.query<{ name: string }, []>(
-    "SELECT name FROM pragma_table_info('projects')",
-  ).all();
-  if (!cols.some((c) => c.name === "browser_search_fallback")) {
-    db.run("ALTER TABLE projects ADD COLUMN browser_search_fallback INTEGER NOT NULL DEFAULT 0");
-  }
-  if (!cols.some((c) => c.name === "code_execution_enabled")) {
-    db.run("ALTER TABLE projects ADD COLUMN code_execution_enabled INTEGER NOT NULL DEFAULT 0");
-  }
-  if (!cols.some((c) => c.name === "browser_automation_enabled")) {
-    db.run("ALTER TABLE projects ADD COLUMN browser_automation_enabled INTEGER NOT NULL DEFAULT 1");
-  }
-}
-
-// Migration: add thumbnail_s3_key column to files
-{
-  const cols = db.query<{ name: string }, []>(
-    "SELECT name FROM pragma_table_info('files')",
-  ).all();
-  if (!cols.some((c) => c.name === "thumbnail_s3_key")) {
-    db.run("ALTER TABLE files ADD COLUMN thumbnail_s3_key TEXT");
-  }
-}
-
-// Project members
 db.run(`
   CREATE TABLE IF NOT EXISTS project_members (
-    id TEXT PRIMARY KEY,
+    id         TEXT PRIMARY KEY,
     project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    role TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('owner', 'member')),
+    user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    role       TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('owner', 'member')),
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE(project_id, user_id)
   )
 `);
 
-// Invitations
 db.run(`
   CREATE TABLE IF NOT EXISTS invitations (
-    id TEXT PRIMARY KEY,
-    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    inviter_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    id            TEXT PRIMARY KEY,
+    project_id    TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    inviter_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     invitee_email TEXT NOT NULL,
-    invitee_id TEXT REFERENCES users(id) ON DELETE CASCADE,
-    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'accepted', 'declined')),
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    responded_at TEXT
+    invitee_id    TEXT REFERENCES users(id) ON DELETE CASCADE,
+    status        TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'accepted', 'declined')),
+    created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    responded_at  TEXT
   )
 `);
 
-// Notifications
 db.run(`
   CREATE TABLE IF NOT EXISTS notifications (
-    id TEXT PRIMARY KEY,
-    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    type TEXT NOT NULL CHECK (type IN ('invite', 'invite_accepted', 'member_removed')),
-    data TEXT NOT NULL DEFAULT '{}',
-    read INTEGER NOT NULL DEFAULT 0,
+    id         TEXT PRIMARY KEY,
+    user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    type       TEXT NOT NULL CHECK (type IN ('invite', 'invite_accepted', 'member_removed', 'task_completed', 'task_failed')),
+    data       TEXT NOT NULL DEFAULT '{}',
+    read       INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   )
 `);
 
-// Migration: add created_by column to chats
-{
-  const cols = db.query<{ name: string }, []>(
-    "SELECT name FROM pragma_table_info('chats')",
-  ).all();
-  if (!cols.some((c) => c.name === "created_by")) {
-    db.run("ALTER TABLE chats ADD COLUMN created_by TEXT REFERENCES users(id) ON DELETE SET NULL");
-  }
-}
-
-// Migration: add user_id column to messages
-{
-  const cols = db.query<{ name: string }, []>(
-    "SELECT name FROM pragma_table_info('messages')",
-  ).all();
-  if (!cols.some((c) => c.name === "user_id")) {
-    db.run("ALTER TABLE messages ADD COLUMN user_id TEXT REFERENCES users(id) ON DELETE SET NULL");
-  }
-}
-
-// Migration: seed project_members from existing projects (owner role)
-{
-  const unseeded = db.query<{ id: string; user_id: string }, []>(
-    "SELECT p.id, p.user_id FROM projects p LEFT JOIN project_members pm ON pm.project_id = p.id AND pm.role = 'owner' WHERE pm.id IS NULL",
-  ).all();
-  if (unseeded.length > 0) {
-    const insertMember = db.query<void, [string, string, string]>(
-      "INSERT OR IGNORE INTO project_members (id, project_id, user_id, role) VALUES (?, ?, ?, 'owner')",
-    );
-    db.transaction(() => {
-      for (const { id: projectId, user_id: userId } of unseeded) {
-        insertMember.run(nanoid(), projectId, userId);
-      }
-    })();
-  }
-}
-
-// Todos (agent-managed within-conversation progress tracking)
 db.run(`
   CREATE TABLE IF NOT EXISTS todos (
     id          TEXT PRIMARY KEY,
@@ -316,7 +186,6 @@ db.run(`
   )
 `);
 
-// Skills
 db.run(`
   CREATE TABLE IF NOT EXISTS skills (
     id           TEXT PRIMARY KEY,
@@ -326,29 +195,13 @@ db.run(`
     s3_key       TEXT NOT NULL,
     enabled      INTEGER NOT NULL DEFAULT 1,
     metadata     TEXT,
+    source       TEXT NOT NULL DEFAULT 'user',
     installed_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at   TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE(project_id, name)
   )
 `);
 
-// Published skills (community marketplace)
-db.run(`
-  CREATE TABLE IF NOT EXISTS published_skills (
-    id           TEXT PRIMARY KEY,
-    name         TEXT NOT NULL UNIQUE,
-    description  TEXT DEFAULT '',
-    s3_key       TEXT NOT NULL,
-    metadata     TEXT,
-    publisher_id TEXT NOT NULL,
-    project_id   TEXT NOT NULL,
-    downloads    INTEGER NOT NULL DEFAULT 0,
-    published_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
-  )
-`);
-
-// Companion tokens
 db.run(`
   CREATE TABLE IF NOT EXISTS companion_tokens (
     id                TEXT PRIMARY KEY,
@@ -362,79 +215,6 @@ db.run(`
   )
 `);
 
-// Migration: add expires_at column to companion_tokens
-{
-  const cols = db.query<{ name: string }, []>(
-    "SELECT name FROM pragma_table_info('companion_tokens')",
-  ).all();
-  if (!cols.some((c) => c.name === "expires_at")) {
-    db.run("ALTER TABLE companion_tokens ADD COLUMN expires_at TEXT NOT NULL DEFAULT (datetime('now', '+30 days'))");
-    // Set expiry for existing tokens to 30 days from now
-    db.run("UPDATE companion_tokens SET expires_at = datetime('now', '+30 days') WHERE expires_at IS NULL OR expires_at = ''");
-  }
-}
-
-// Migration: add project_id column to companion_tokens
-{
-  const cols = db.query<{ name: string }, []>(
-    "SELECT name FROM pragma_table_info('companion_tokens')",
-  ).all();
-  if (!cols.some((c) => c.name === "project_id")) {
-    // Drop all existing tokens since they have no project association
-    db.run("DELETE FROM companion_tokens");
-    db.run("ALTER TABLE companion_tokens ADD COLUMN project_id TEXT NOT NULL DEFAULT '' REFERENCES projects(id) ON DELETE CASCADE");
-  }
-}
-
-// Migration: add source column to skills
-{
-  const cols = db.query<{ name: string }, []>(
-    "SELECT name FROM pragma_table_info('skills')",
-  ).all();
-  if (!cols.some((c) => c.name === "source")) {
-    db.run("ALTER TABLE skills ADD COLUMN source TEXT NOT NULL DEFAULT 'user'");
-  }
-}
-
-// Migration: add required_tools column to scheduled_tasks
-{
-  const cols = db.query<{ name: string }, []>(
-    "SELECT name FROM pragma_table_info('scheduled_tasks')",
-  ).all();
-  if (!cols.some((c) => c.name === "required_tools")) {
-    db.run("ALTER TABLE scheduled_tasks ADD COLUMN required_tools TEXT");
-  }
-}
-
-// Migration: add show_skills_in_files column to projects
-{
-  const cols = db.query<{ name: string }, []>(
-    "SELECT name FROM pragma_table_info('projects')",
-  ).all();
-  if (!cols.some((c) => c.name === "show_skills_in_files")) {
-    db.run("ALTER TABLE projects ADD COLUMN show_skills_in_files INTEGER NOT NULL DEFAULT 1");
-  }
-}
-
-// Migration: add assistant customization columns to projects
-{
-  const cols = db.query<{ name: string }, []>(
-    "SELECT name FROM pragma_table_info('projects')",
-  ).all();
-  if (!cols.some((c) => c.name === "assistant_name")) {
-    db.run("ALTER TABLE projects ADD COLUMN assistant_name TEXT NOT NULL DEFAULT 'Zero Agent'");
-  }
-  if (!cols.some((c) => c.name === "assistant_description")) {
-    db.run("ALTER TABLE projects ADD COLUMN assistant_description TEXT NOT NULL DEFAULT 'Ask me anything — I can browse the web, manage files, run code, and automate tasks.'");
-  }
-  if (!cols.some((c) => c.name === "assistant_icon")) {
-    db.run("ALTER TABLE projects ADD COLUMN assistant_icon TEXT NOT NULL DEFAULT 'message'");
-  }
-  // Migrate old default name
-  db.run("UPDATE projects SET assistant_name = 'Zero Agent' WHERE assistant_name = 'AI Assistant'");
-}
-
-// Quick actions (user-managed starter suggestions)
 db.run(`
   CREATE TABLE IF NOT EXISTS quick_actions (
     id          TEXT PRIMARY KEY,
@@ -448,17 +228,38 @@ db.run(`
   )
 `);
 
-// Migration: add source column to chats
-{
-  const cols = db.query<{ name: string }, []>(
-    "SELECT name FROM pragma_table_info('chats')",
-  ).all();
-  if (!cols.some((c) => c.name === "source")) {
-    db.run("ALTER TABLE chats ADD COLUMN source TEXT");
-  }
-}
+db.run(`
+  CREATE TABLE IF NOT EXISTS marketplace_items (
+    id           TEXT PRIMARY KEY,
+    type         TEXT NOT NULL CHECK (type IN ('skill', 'template')),
+    name         TEXT UNIQUE NOT NULL,
+    description  TEXT NOT NULL DEFAULT '',
+    s3_key       TEXT,
+    metadata     TEXT,
+    prompt       TEXT,
+    schedule     TEXT,
+    required_tools TEXT,
+    category     TEXT NOT NULL DEFAULT 'general',
+    publisher_id TEXT NOT NULL,
+    project_id   TEXT NOT NULL DEFAULT '',
+    downloads    INTEGER NOT NULL DEFAULT 0,
+    published_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
+  )
+`);
 
-// Indexes
+db.run(`
+  CREATE TABLE IF NOT EXISTS marketplace_references (
+    source_id      TEXT NOT NULL REFERENCES marketplace_items(id) ON DELETE CASCADE,
+    target_id      TEXT NOT NULL REFERENCES marketplace_items(id) ON DELETE CASCADE,
+    reference_type TEXT NOT NULL CHECK (reference_type IN ('mandatory', 'recommendation')),
+    PRIMARY KEY (source_id, target_id),
+    CHECK (source_id != target_id)
+  )
+`);
+
+// ── Indexes ──
+
 db.run(`CREATE INDEX IF NOT EXISTS idx_projects_user_id ON projects(user_id)`);
 db.run(`CREATE INDEX IF NOT EXISTS idx_chats_project ON chats(project_id, updated_at)`);
 db.run(`CREATE INDEX IF NOT EXISTS idx_messages_project_created ON messages(project_id, created_at)`);
@@ -478,9 +279,48 @@ db.run(`CREATE INDEX IF NOT EXISTS idx_skills_project ON skills(project_id)`);
 db.run(`CREATE INDEX IF NOT EXISTS idx_companion_tokens_user ON companion_tokens(user_id)`);
 db.run(`CREATE INDEX IF NOT EXISTS idx_companion_tokens_project ON companion_tokens(project_id)`);
 db.run(`CREATE INDEX IF NOT EXISTS idx_companion_tokens_token ON companion_tokens(token)`);
-db.run(`CREATE INDEX IF NOT EXISTS idx_published_skills_name ON published_skills(name)`);
-db.run(`CREATE INDEX IF NOT EXISTS idx_published_skills_downloads ON published_skills(downloads DESC)`);
 db.run(`CREATE INDEX IF NOT EXISTS idx_quick_actions_project ON quick_actions(project_id, sort_order)`);
+db.run(`CREATE INDEX IF NOT EXISTS idx_marketplace_items_type ON marketplace_items(type)`);
+db.run(`CREATE INDEX IF NOT EXISTS idx_marketplace_items_name ON marketplace_items(name)`);
+db.run(`CREATE INDEX IF NOT EXISTS idx_marketplace_items_downloads ON marketplace_items(downloads DESC)`);
+db.run(`CREATE INDEX IF NOT EXISTS idx_marketplace_items_category ON marketplace_items(category)`);
+db.run(`CREATE INDEX IF NOT EXISTS idx_marketplace_refs_source ON marketplace_references(source_id)`);
+db.run(`CREATE INDEX IF NOT EXISTS idx_marketplace_refs_target ON marketplace_references(target_id)`);
+
+// ── Seed built-in marketplace data ──
+
+// Re-seed on every startup: upsert skills and templates (preserves download counts)
+{
+  for (const skill of BUILTIN_SKILLS) {
+    db.run(
+      `INSERT INTO marketplace_items (id, type, name, description, s3_key, publisher_id, project_id)
+       VALUES (?, 'skill', ?, ?, 'built-in', 'system', 'system')
+       ON CONFLICT(name) DO UPDATE SET description = excluded.description`,
+      [skill.id, skill.name, skill.description],
+    );
+  }
+
+  for (const t of BUILTIN_TEMPLATES) {
+    db.run(
+      `INSERT INTO marketplace_items (id, type, name, description, prompt, schedule, category, publisher_id, project_id)
+       VALUES (?, 'template', ?, ?, ?, ?, ?, 'system', 'system')
+       ON CONFLICT(name) DO UPDATE SET
+         description = excluded.description,
+         prompt = excluded.prompt,
+         schedule = excluded.schedule,
+         category = excluded.category`,
+      [t.id, t.name, t.description, t.prompt, t.schedule, t.category],
+    );
+    for (const targetId of t.requiredSkillIds) {
+      db.run(
+        "INSERT OR IGNORE INTO marketplace_references (source_id, target_id, reference_type) VALUES (?, ?, 'mandatory')",
+        [t.id, targetId],
+      );
+    }
+  }
+}
+
+// ── Exports ──
 
 export function generateId(): string {
   return nanoid();

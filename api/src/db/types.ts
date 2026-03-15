@@ -75,6 +75,7 @@ export interface ScheduledTaskRow {
   next_run_at: string;
   run_count: number;
   required_tools: string | null;
+  required_skills: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -167,16 +168,27 @@ export interface QuickActionRow {
   updated_at: string;
 }
 
-export interface PublishedSkillRow {
+export interface MarketplaceItemRow {
   id: string;
+  type: "skill" | "template";
   name: string;
   description: string;
-  s3_key: string;
+  s3_key: string | null;
   metadata: string | null;
+  prompt: string | null;
+  schedule: string | null;
+  required_tools: string | null;
+  category: string;
   publisher_id: string;
   project_id: string;
   downloads: number;
   published_at: string;
   updated_at: string;
+}
+
+export interface MarketplaceReferenceRow {
+  source_id: string;
+  target_id: string;
+  reference_type: "mandatory" | "recommendation";
 }
 

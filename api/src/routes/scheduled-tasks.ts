@@ -32,6 +32,7 @@ function formatTask(row: ScheduledTaskRow) {
     nextRunAt: toUTC(row.next_run_at),
     runCount: row.run_count,
     requiredTools: row.required_tools ? JSON.parse(row.required_tools) as string[] : null,
+    requiredSkills: row.required_skills ? JSON.parse(row.required_skills) as string[] : null,
     createdAt: toUTC(row.created_at),
     updatedAt: toUTC(row.updated_at),
   };
@@ -81,7 +82,7 @@ export async function handleCreateTask(request: BunRequest): Promise<Response> {
     const { projectId } = request.params as { projectId: string };
     verifyProjectAccess(projectId, userId);
 
-    const body = await request.json() as { name?: string; prompt?: string; schedule?: string; requiredTools?: string[] | null };
+    const body = await request.json() as { name?: string; prompt?: string; schedule?: string; requiredTools?: string[] | null; requiredSkills?: string[] | null };
 
     if (!body.name || !body.prompt || !body.schedule) {
       throw new ValidationError("name, prompt, and schedule are required");
@@ -96,7 +97,11 @@ export async function handleCreateTask(request: BunRequest): Promise<Response> {
       ? body.requiredTools
       : undefined;
 
-    const task = insertTask(projectId, userId, body.name, body.prompt, body.schedule, true, requiredTools);
+    const requiredSkills = Array.isArray(body.requiredSkills) && body.requiredSkills.length > 0
+      ? body.requiredSkills
+      : undefined;
+
+    const task = insertTask(projectId, userId, body.name, body.prompt, body.schedule, true, requiredTools, requiredSkills);
     return Response.json(
       { task: formatTask(task) },
       { status: 201, headers: corsHeaders },
@@ -119,6 +124,7 @@ export async function handleUpdateTask(request: BunRequest): Promise<Response> {
       schedule?: string;
       enabled?: boolean;
       requiredTools?: string[] | null;
+      requiredSkills?: string[] | null;
     };
 
     if (body.schedule !== undefined) {
@@ -136,6 +142,11 @@ export async function handleUpdateTask(request: BunRequest): Promise<Response> {
       required_tools: body.requiredTools !== undefined
         ? (Array.isArray(body.requiredTools) && body.requiredTools.length > 0
           ? JSON.stringify(body.requiredTools)
+          : null)
+        : undefined,
+      required_skills: body.requiredSkills !== undefined
+        ? (Array.isArray(body.requiredSkills) && body.requiredSkills.length > 0
+          ? JSON.stringify(body.requiredSkills)
           : null)
         : undefined,
     });

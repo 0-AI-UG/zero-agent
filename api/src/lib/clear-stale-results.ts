@@ -66,8 +66,16 @@ const STALENESS_RULES: Record<string, StalenessRule> = {
     maxAge: 2,
     summary: (output) => {
       const val = getResultValue(output);
+      // Image reads should be cleared immediately (maxAge handled by readFileImage rule)
       const len = typeof val?.content === "string" ? val.content.length : val?.totalLength ?? "?";
       return `[read ${val?.path ?? "?"} (${len} chars)]`;
+    },
+  },
+  readFileImage: {
+    maxAge: 1,
+    summary: (output) => {
+      const val = getResultValue(output);
+      return `[read image: ${val?.path ?? "?"}]`;
     },
   },
   searchWeb: {
@@ -121,6 +129,13 @@ const STALENESS_RULES: Record<string, StalenessRule> = {
  * tool name "browser" but we want different rules for snapshot vs screenshot.
  */
 function resolveToolName(toolName: string, output: unknown): string {
+  if (toolName === "readFile") {
+    const val = getResultValue(output);
+    if (val?.type === "image") {
+      return "readFileImage";
+    }
+    return "readFile";
+  }
   if (toolName === "browser") {
     const val = getResultValue(output);
     // Check if this was a snapshot or screenshot based on the result content

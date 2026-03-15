@@ -37,6 +37,17 @@ export interface BrowserResponse {
   error?: string;
 }
 
+export type WebAuthnSubCommand =
+  | { type: "enable"; commandId: string }
+  | { type: "addAuthenticator"; commandId: string; options: {
+      protocol: "ctap2"; transport: "internal";
+      hasResidentKey: true; hasUserVerification: true; isUserVerified: true } }
+  | { type: "addCredential"; commandId: string; authenticatorId: string;
+      credential: { credentialId: string; rpId: string; privateKey: string;
+                    userHandle: string; signCount: number } }
+  | { type: "getCredentials"; commandId: string; authenticatorId: string }
+  | { type: "removeAuthenticator"; commandId: string; authenticatorId: string };
+
 export type CompanionControl =
   | { type: "ping" }
   | { type: "command"; command: BrowserCommand }
@@ -44,7 +55,8 @@ export type CompanionControl =
   | { type: "destroySession"; sessionId: string }
   | { type: "createSandbox"; sandboxId: string }
   | { type: "runScript"; sandboxId: string; commandId: string; script: string; files?: Record<string, string>; packages?: string[]; timeout?: number; outputFiles?: Record<string, string> }
-  | { type: "destroySandbox"; sandboxId: string };
+  | { type: "destroySandbox"; sandboxId: string }
+  | { type: "webauthn"; subCommand: WebAuthnSubCommand };
 
 export type CompanionMessage =
   | { type: "pong" }
@@ -56,4 +68,6 @@ export type CompanionMessage =
   | { type: "sandboxCreated"; sandboxId: string; pythonVersion: string | null }
   | { type: "scriptResult"; commandId: string; sandboxId: string; stdout: string; stderr: string; exitCode: number; outputFiles?: Array<{ path: string; data: string; sizeBytes: number; error?: string }> }
   | { type: "sandboxDestroyed"; sandboxId: string }
-  | { type: "sandboxError"; sandboxId: string; commandId?: string; error: string };
+  | { type: "sandboxError"; sandboxId: string; commandId?: string; error: string }
+  | { type: "webauthnResult"; commandId: string; result: unknown }
+  | { type: "webauthnError"; commandId: string; error: string };
