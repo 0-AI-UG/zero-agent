@@ -6,13 +6,9 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import {
-  getPlatformConfig,
-  CAPABILITY_LABELS,
-  SOURCE_LABELS,
-} from "./constants";
+import { getPlatformConfig, CAPABILITY_LABELS } from "./constants";
 import type { UnifiedSkill } from "./SkillCard";
-import { DownloadIcon, TrashIcon, KeyIcon, TerminalIcon, GlobeIcon, ArrowDownToLineIcon } from "lucide-react";
+import { DownloadIcon, TrashIcon, KeyIcon, TerminalIcon } from "lucide-react";
 
 interface SkillDetailProps {
   skill: UnifiedSkill | null;
@@ -20,10 +16,7 @@ interface SkillDetailProps {
   onOpenChange: (open: boolean) => void;
   onInstall?: () => void;
   onUninstall?: () => void;
-  onPublish?: () => void;
-  onUnpublish?: () => void;
   isInstalling?: boolean;
-  isPublishing?: boolean;
 }
 
 export function SkillDetail({
@@ -32,10 +25,7 @@ export function SkillDetail({
   onOpenChange,
   onInstall,
   onUninstall,
-  onPublish,
-  onUnpublish,
   isInstalling,
-  isPublishing,
 }: SkillDetailProps) {
   if (!skill) return null;
 
@@ -48,24 +38,11 @@ export function SkillDetail({
         <DialogHeader>
           <div className="flex items-center gap-2">
             {skill.metadata?.platform && (
-              <span
-                className={`size-2 rounded-full ${platform.color}`}
-              />
+              <span className={`size-2 rounded-full ${platform.color}`} />
             )}
             <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
               {platform.label}
             </span>
-            {skill.source && (
-              <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-                {SOURCE_LABELS[skill.source] ?? skill.source}
-              </Badge>
-            )}
-            {(skill.downloads ?? 0) > 0 && (
-              <span className="flex items-center gap-1 text-[11px] text-muted-foreground ml-auto">
-                <ArrowDownToLineIcon className="size-3" />
-                {skill.downloads}
-              </span>
-            )}
           </div>
           <DialogTitle className="text-lg">{skill.name}</DialogTitle>
           {skill.description && (
@@ -170,35 +147,13 @@ export function SkillDetail({
           {/* Actions */}
           <div className="flex items-center gap-2 pt-3 border-t">
             {skill.installed ? (
-              <>
-                {skill.source === "user" && !skill.published && onPublish && (
-                  <button
-                    onClick={onPublish}
-                    disabled={isPublishing}
-                    className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-                  >
-                    <GlobeIcon className="size-3.5" />
-                    {isPublishing ? "Publishing..." : "Publish to community"}
-                  </button>
-                )}
-                {skill.published && onUnpublish && (
-                  <button
-                    onClick={onUnpublish}
-                    disabled={isPublishing}
-                    className="flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-50"
-                  >
-                    <GlobeIcon className="size-3.5" />
-                    {isPublishing ? "Unpublishing..." : "Unpublish"}
-                  </button>
-                )}
-                <button
-                  onClick={onUninstall}
-                  className="flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/10 ml-auto"
-                >
-                  <TrashIcon className="size-3.5" />
-                  Uninstall
-                </button>
-              </>
+              <button
+                onClick={onUninstall}
+                className="flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/10 ml-auto"
+              >
+                <TrashIcon className="size-3.5" />
+                Uninstall
+              </button>
             ) : (
               <button
                 onClick={onInstall}

@@ -27,6 +27,7 @@ import {
 import { generateDownloadUrl, generateUploadUrl, deleteFromS3, writeToS3 } from "@/lib/s3.ts";
 import { generateId } from "@/db/index.ts";
 import { searchFileContent } from "@/db/queries/search.ts";
+import { events } from "@/lib/events.ts";
 import { generateText } from "ai";
 import { visionModel } from "@/lib/openrouter.ts";
 
@@ -133,6 +134,8 @@ export async function handleUploadRequest(request: BunRequest): Promise<Response
     // Generate presigned upload URL
     const url = generateUploadUrl(s3Key, body.mimeType);
 
+    events.emit("file.created", { fileId: fileRow.id, projectId, path: body.folderPath });
+
     return Response.json(
       {
         url,
@@ -166,6 +169,7 @@ export async function handleDeleteFile(request: BunRequest): Promise<Response> {
     // Delete metadata and FTS index
     removeFileIndex(id);
     deleteFileRecord(id);
+    events.emit("file.deleted", { fileId: id, projectId });
 
     return Response.json({ success: true }, { headers: corsHeaders });
   } catch (error) {
@@ -188,6 +192,7 @@ export async function handleCreateFolder(request: BunRequest): Promise<Response>
     }
 
     const folder = createFolder(projectId, body.path, body.name);
+    events.emit("folder.created", { projectId, path: body.path });
     return Response.json(
       { folder: formatFolder(folder) },
       { status: 201, headers: corsHeaders },
@@ -294,6 +299,7 @@ export async function handleUpdateFileContent(request: BunRequest): Promise<Resp
     await writeToS3(file.s3_key, buffer);
     const updated = updateFileSize(id, buffer.length);
     indexFileContent(id, projectId, file.filename, body.content);
+    events.emit("file.updated", { fileId: id, projectId });
 
     return Response.json({ success: true, file: formatFile(updated) }, { headers: corsHeaders });
   } catch (error) {
@@ -321,7 +327,9 @@ export async function handleMoveFile(request: BunRequest): Promise<Response> {
       }
     }
 
+    const oldPath = file.folder_path;
     const updated = updateFileFolderPath(id, body.destinationPath);
+    events.emit("file.moved", { fileId: id, projectId, oldPath, newPath: body.destinationPath });
     return Response.json({ file: formatFile(updated) }, { headers: corsHeaders });
   } catch (error) {
     return handleError(error);
@@ -402,6 +410,7 @@ export async function handleDeleteFolder(request: BunRequest): Promise<Response>
 
     // Delete this folder and all child folders
     deleteFoldersByPathPrefix(projectId, folder.path);
+    events.emit("folder.deleted", { projectId, path: folder.path });
 
     return Response.json({ success: true }, { headers: corsHeaders });
   } catch (error) {

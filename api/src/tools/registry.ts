@@ -9,8 +9,9 @@ import { createSchedulingTools } from "@/tools/scheduling.ts";
 import { createTodoTools } from "@/tools/todos.ts";
 import { createSkillTools } from "@/tools/skills.ts";
 import { createBrowserTool } from "@/tools/browser.ts";
-import { createPythonTools } from "@/tools/python.ts";
+import { createCodeTools } from "@/tools/code.ts";
 import { createCredentialTools } from "@/tools/credentials.ts";
+import { createTelegramTools } from "@/tools/telegram.ts";
 
 export type ToolRegistry = Record<string, Tool<any, any>>;
 
@@ -61,23 +62,26 @@ export function createToolRegistry(
   options: {
     chatId?: string;
     userId?: string;
+    modelId?: string;
     browserSessionId?: string;
     context?: ExecutionContext;
     onlyTools?: string[];
+    onlySkills?: string[];
     codeExecutionEnabled?: boolean;
   },
 ): ToolRegistry {
   const registry: ToolRegistry = {
     searchWeb: createSearchWebTool(),
     fetchUrl: fetchUrlTool,
-    ...createFileTools(projectId),
+    ...createFileTools(projectId, { modelId: options.modelId }),
     ...createGenerateImageTool(projectId),
     ...createSchedulingTools(projectId),
     ...(options.chatId ? createTodoTools(projectId, options.chatId) : {}),
     ...createSkillTools(projectId),
     ...(options.userId ? createBrowserTool(options.userId, projectId, options.browserSessionId) : {}),
-    ...(options.userId && options.codeExecutionEnabled ? createPythonTools(options.userId, projectId) : {}),
+    ...(options.userId && options.codeExecutionEnabled ? createCodeTools(options.userId, projectId) : {}),
     ...createCredentialTools(projectId, options.userId),
+    ...createTelegramTools(projectId),
   };
 
   // 1. Scope filtering — remove tools not available in this context
@@ -135,10 +139,12 @@ export function createDiscoverableToolset(
   options: {
     chatId?: string;
     userId?: string;
+    modelId?: string;
     browserSessionId?: string;
     excludeTools?: string[];
     context?: ExecutionContext;
     onlyTools?: string[];
+    onlySkills?: string[];
     codeExecutionEnabled?: boolean;
   },
 ): { activeTools: ToolRegistry; fullRegistry: ToolRegistry; toolIndex: string } {

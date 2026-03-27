@@ -1,5 +1,6 @@
 import { jwtVerify, SignJWT } from "jose";
 import { AuthError } from "@/lib/errors.ts";
+import { getUserById } from "@/db/queries/users.ts";
 
 export interface TokenPayload {
   userId: string;
@@ -7,7 +8,9 @@ export interface TokenPayload {
 }
 
 // HS256 requires at least 256 bits (32 bytes). Hash the secret to guarantee length.
-const rawSecret = new TextEncoder().encode(process.env.JWT_SECRET!);
+const rawSecret = new TextEncoder().encode(
+  process.env.JWT_SECRET ?? `zero-agent-${process.env.DB_PATH ?? "./data/app.db"}`
+);
 const JWT_SECRET = new Uint8Array(
   await crypto.subtle.digest("SHA-256", rawSecret),
 );
@@ -34,4 +37,13 @@ export async function createToken(payload: TokenPayload): Promise<string> {
     .setIssuedAt()
     .setExpirationTime("7d")
     .sign(JWT_SECRET);
+}
+
+export async function requireAdmin(request: Request): Promise<TokenPayload> {
+  const payload = await authenticateRequest(request);
+  const user = getUserById(payload.userId);
+  if (!user?.is_admin) {
+    throw new AuthError("Admin access required");
+  }
+  return payload;
 }

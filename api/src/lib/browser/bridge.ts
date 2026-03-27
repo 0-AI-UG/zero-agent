@@ -23,8 +23,9 @@ interface CompanionConnection {
   pingTimer: ReturnType<typeof setInterval>;
   pongTimer?: ReturnType<typeof setTimeout>;
   pendingCommandIds: Set<string>;
-  pendingSandboxIds: Set<string>;
   pendingSessionIds: Set<string>;
+  pendingWorkspaceIds: Set<string>;
+  pendingCodeIds: Set<string>;
   pendingWebAuthnIds: Set<string>;
   /** Lazily-initialized virtual authenticator for passkey operations. */
   authenticatorId?: string;
@@ -50,7 +51,7 @@ interface PendingSession {
   timer: ReturnType<typeof setTimeout>;
 }
 
-interface PendingSandboxCommand {
+interface PendingWorkspaceOp {
   resolve: (result: any) => void;
   reject: (error: Error) => void;
   timer: ReturnType<typeof setTimeout>;
@@ -64,7 +65,8 @@ class BrowserBridge {
   private companions = new Map<string, CompanionConnection>();
   private pending = new Map<string, PendingCommand>();
   private pendingSessions = new Map<string, PendingSession>();
-  private pendingSandbox = new Map<string, PendingSandboxCommand>();
+  private pendingWorkspace = new Map<string, PendingWorkspaceOp>();
+  private pendingCode = new Map<string, PendingWorkspaceOp>();
   private pendingWebAuthn = new Map<string, PendingWebAuthnCommand>();
 
   handleOpen(ws: ServerWebSocket<{ userId: string; projectId: string }>) {
@@ -112,8 +114,9 @@ class BrowserBridge {
       status: { connected: true },
       pingTimer,
       pendingCommandIds: new Set(),
-      pendingSandboxIds: new Set(),
       pendingSessionIds: new Set(),
+      pendingWorkspaceIds: new Set(),
+      pendingCodeIds: new Set(),
       pendingWebAuthnIds: new Set(),
     });
   }
@@ -184,54 +187,67 @@ class BrowserBridge {
         return;
       }
 
-      // ── Sandbox message handlers ──
+      // ── Workspace lifecycle handlers ──
 
-      if (data.type === "sandboxCreated") {
-        const pending = this.pendingSandbox.get(data.sandboxId);
+      if (data.type === "workspaceCreated" || data.type === "workspaceSynced") {
+        const pending = this.pendingWorkspace.get(data.workspaceId);
         if (pending) {
-          this.pendingSandbox.delete(data.sandboxId);
-          this.companions.get(key)?.pendingSandboxIds.delete(data.sandboxId);
-          clearTimeout(pending.timer);
-          pending.resolve({ pythonVersion: data.pythonVersion });
-        }
-        return;
-      }
-
-      if (data.type === "scriptResult") {
-        const pending = this.pendingSandbox.get(data.commandId);
-        if (pending) {
-          this.pendingSandbox.delete(data.commandId);
-          this.companions.get(key)?.pendingSandboxIds.delete(data.commandId);
-          clearTimeout(pending.timer);
-          pending.resolve({
-            stdout: data.stdout,
-            stderr: data.stderr,
-            exitCode: data.exitCode,
-            ...(data.changedFiles ? { changedFiles: data.changedFiles } : {}),
-            ...(data.skippedFiles ? { skippedFiles: data.skippedFiles } : {}),
-          });
-        }
-        return;
-      }
-
-      if (data.type === "sandboxDestroyed") {
-        const pending = this.pendingSandbox.get(data.sandboxId);
-        if (pending) {
-          this.pendingSandbox.delete(data.sandboxId);
-          this.companions.get(key)?.pendingSandboxIds.delete(data.sandboxId);
+          this.pendingWorkspace.delete(data.workspaceId);
+          this.companions.get(key)?.pendingWorkspaceIds.delete(data.workspaceId);
           clearTimeout(pending.timer);
           pending.resolve(undefined);
         }
         return;
       }
 
-      if (data.type === "sandboxError") {
-        // Try commandId first, then sandboxId
-        const errKey = data.commandId ?? data.sandboxId;
-        const pending = this.pendingSandbox.get(errKey);
+      if (data.type === "workspaceDestroyed") {
+        const pending = this.pendingWorkspace.get(data.workspaceId);
         if (pending) {
-          this.pendingSandbox.delete(errKey);
-          this.companions.get(key)?.pendingSandboxIds.delete(errKey);
+          this.pendingWorkspace.delete(data.workspaceId);
+          this.companions.get(key)?.pendingWorkspaceIds.delete(data.workspaceId);
+          clearTimeout(pending.timer);
+          pending.resolve(undefined);
+        }
+        return;
+      }
+
+      // ── Code execution result ──
+
+      if (data.type === "commandResult") {
+        const pending = this.pendingCode.get(data.commandId);
+        if (pending) {
+          this.pendingCode.delete(data.commandId);
+          this.companions.get(key)?.pendingCodeIds.delete(data.commandId);
+          clearTimeout(pending.timer);
+          pending.resolve({
+            stdout: data.stdout,
+            stderr: data.stderr,
+            exitCode: data.exitCode,
+            ...(data.changedFiles ? { changedFiles: data.changedFiles } : {}),
+            ...(data.deletedFiles ? { deletedFiles: data.deletedFiles } : {}),
+          });
+        }
+        return;
+      }
+
+      // ── Workspace error (covers both lifecycle and code execution errors) ──
+
+      if (data.type === "workspaceError") {
+        // Try commandId first (code execution error), then workspaceId (lifecycle error)
+        if (data.commandId) {
+          const pending = this.pendingCode.get(data.commandId);
+          if (pending) {
+            this.pendingCode.delete(data.commandId);
+            this.companions.get(key)?.pendingCodeIds.delete(data.commandId);
+            clearTimeout(pending.timer);
+            pending.reject(new Error(data.error));
+            return;
+          }
+        }
+        const pending = this.pendingWorkspace.get(data.workspaceId);
+        if (pending) {
+          this.pendingWorkspace.delete(data.workspaceId);
+          this.companions.get(key)?.pendingWorkspaceIds.delete(data.workspaceId);
           clearTimeout(pending.timer);
           pending.reject(new Error(data.error));
         }
@@ -276,12 +292,14 @@ class BrowserBridge {
       this.companions.delete(key);
       bridgeLog.info("companion disconnected", { userId, projectId });
 
+      const disconnectError = new Error("Browser companion disconnected");
+
       // Reject only this connection's pending commands so other users aren't affected
       for (const id of conn.pendingCommandIds) {
         const pending = this.pending.get(id);
         if (pending) {
           clearTimeout(pending.timer);
-          pending.reject(new Error("Browser companion disconnected"));
+          pending.reject(disconnectError);
           this.pending.delete(id);
         }
       }
@@ -289,23 +307,31 @@ class BrowserBridge {
         const pending = this.pendingSessions.get(id);
         if (pending) {
           clearTimeout(pending.timer);
-          pending.reject(new Error("Browser companion disconnected"));
+          pending.reject(disconnectError);
           this.pendingSessions.delete(id);
         }
       }
-      for (const id of conn.pendingSandboxIds) {
-        const pending = this.pendingSandbox.get(id);
+      for (const id of conn.pendingWorkspaceIds) {
+        const pending = this.pendingWorkspace.get(id);
         if (pending) {
           clearTimeout(pending.timer);
-          pending.reject(new Error("Browser companion disconnected"));
-          this.pendingSandbox.delete(id);
+          pending.reject(disconnectError);
+          this.pendingWorkspace.delete(id);
+        }
+      }
+      for (const id of conn.pendingCodeIds) {
+        const pending = this.pendingCode.get(id);
+        if (pending) {
+          clearTimeout(pending.timer);
+          pending.reject(disconnectError);
+          this.pendingCode.delete(id);
         }
       }
       for (const id of conn.pendingWebAuthnIds) {
         const pending = this.pendingWebAuthn.get(id);
         if (pending) {
           clearTimeout(pending.timer);
-          pending.reject(new Error("Browser companion disconnected"));
+          pending.reject(disconnectError);
           this.pendingWebAuthn.delete(id);
         }
       }
@@ -379,77 +405,84 @@ class BrowserBridge {
     });
   }
 
-  // ── Sandbox Methods ──
+  // ── Workspace Methods ──
 
-  async createSandbox(userId: string, projectId: string, sandboxId: string): Promise<{ pythonVersion: string | null }> {
+  async createWorkspace(userId: string, projectId: string, workspaceId: string, manifest: Record<string, string>): Promise<void> {
     const key = connKey(userId, projectId);
     const conn = this.companions.get(key);
     if (!conn) throw new Error("Browser companion is not connected.");
 
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
-        this.pendingSandbox.delete(sandboxId);
-        conn.pendingSandboxIds.delete(sandboxId);
-        reject(new Error("Sandbox creation timed out"));
-      }, 30_000);
+        this.pendingWorkspace.delete(workspaceId);
+        conn.pendingWorkspaceIds.delete(workspaceId);
+        reject(new Error("Workspace creation timed out"));
+      }, 60_000);
 
-      this.pendingSandbox.set(sandboxId, { resolve, reject, timer });
-      conn.pendingSandboxIds.add(sandboxId);
-      const msg: CompanionControl = { type: "createSandbox", sandboxId };
+      this.pendingWorkspace.set(workspaceId, { resolve, reject, timer });
+      conn.pendingWorkspaceIds.add(workspaceId);
+      const msg: CompanionControl = { type: "createWorkspace", workspaceId, manifest };
       conn.ws.send(JSON.stringify(msg));
     });
   }
 
-  async runScript(
+  async syncWorkspace(userId: string, projectId: string, workspaceId: string, manifest: Record<string, string>): Promise<void> {
+    const key = connKey(userId, projectId);
+    const conn = this.companions.get(key);
+    if (!conn) throw new Error("Browser companion is not connected.");
+
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pendingWorkspace.delete(workspaceId);
+        conn.pendingWorkspaceIds.delete(workspaceId);
+        reject(new Error("Workspace sync timed out"));
+      }, 60_000);
+
+      this.pendingWorkspace.set(workspaceId, { resolve, reject, timer });
+      conn.pendingWorkspaceIds.add(workspaceId);
+      const msg: CompanionControl = { type: "syncWorkspace", workspaceId, manifest };
+      conn.ws.send(JSON.stringify(msg));
+    });
+  }
+
+  async runCode(
     userId: string,
     projectId: string,
-    sandboxId: string,
-    script: string,
-    packages?: string[],
+    workspaceId: string,
+    code?: string,
+    entrypoint?: string,
     timeout?: number,
   ): Promise<{
     stdout: string;
     stderr: string;
     exitCode: number;
     changedFiles?: Array<{ path: string; data: string; sizeBytes: number }>;
-    skippedFiles?: Array<{ path: string; reason: string }>;
+    deletedFiles?: string[];
   }> {
     const key = connKey(userId, projectId);
     const conn = this.companions.get(key);
     if (!conn) throw new Error("Browser companion is not connected.");
 
     const commandId = nanoid();
-    const bridgeTimeout = (timeout ?? 60_000) + 10_000; // extra buffer for snapshot diff
+    const bridgeTimeout = (timeout ?? 60_000) + 10_000;
 
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
-        this.pendingSandbox.delete(commandId);
-        conn.pendingSandboxIds.delete(commandId);
-        reject(new Error(`Script execution timed out after ${bridgeTimeout / 1000}s`));
+        this.pendingCode.delete(commandId);
+        conn.pendingCodeIds.delete(commandId);
+        reject(new Error("Code execution timed out"));
       }, bridgeTimeout);
 
-      this.pendingSandbox.set(commandId, { resolve, reject, timer });
-      conn.pendingSandboxIds.add(commandId);
-      const msg: CompanionControl = { type: "runScript", sandboxId, commandId, script, packages, timeout };
-      conn.ws.send(JSON.stringify(msg));
-    });
-  }
-
-  async destroySandbox(userId: string, projectId: string, sandboxId: string): Promise<void> {
-    const key = connKey(userId, projectId);
-    const conn = this.companions.get(key);
-    if (!conn) return;
-
-    return new Promise((resolve) => {
-      const timer = setTimeout(() => {
-        this.pendingSandbox.delete(sandboxId);
-        conn.pendingSandboxIds.delete(sandboxId);
-        resolve(); // Best-effort
-      }, 30_000);
-
-      this.pendingSandbox.set(sandboxId, { resolve, reject: () => resolve(), timer });
-      conn.pendingSandboxIds.add(sandboxId);
-      const msg: CompanionControl = { type: "destroySandbox", sandboxId };
+      this.pendingCode.set(commandId, { resolve, reject, timer });
+      conn.pendingCodeIds.add(commandId);
+      const msg: CompanionControl = {
+        type: "runCode",
+        workspaceId,
+        commandId,
+        ...(code ? { code } : {}),
+        ...(entrypoint ? { entrypoint } : {}),
+        timeout,
+      };
       conn.ws.send(JSON.stringify(msg));
     });
   }

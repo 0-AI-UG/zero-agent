@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Funnel Chart</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --bg-secondary: #f8f7f5;
+    --bg-tertiary: #f1efe8;
+    --text: #2c2c2a;
+    --text-secondary: #5f5e5a;
+    --text-tertiary: #888780;
+    --border: rgba(0, 0, 0, 0.12);
+    --border-emphasis: rgba(0, 0, 0, 0.25);
+    --info: #378add;
+    --success: #639922;
+    --warning: #ef9f27;
+    --danger: #e24b4a;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 0.75rem;
+    display: flex;
+    flex-direction: column;
+  }
+  h1 { font-size: 0.875rem; font-weight: 500; margin-bottom: 0.5rem; }
+  .chart-container {
+    background: var(--bg);
+    border: 0.5px solid var(--border);
+    border-radius: 12px;
+    padding: 0.75rem;
+    display: flex;
+    justify-content: center;
+    flex: 1;
+    min-height: 0;
+  }
+  .funnel-wrapper {
+    position: relative;
+    width: 100%;
+    max-width: 500px;
+    display: flex;
+  }
+  svg { width: 100%; flex: 1; min-height: 0; display: block; }
+  .funnel-stage { cursor: pointer; opacity: 0; }
+  .funnel-stage:hover polygon { filter: brightness(1.12); }
+  .tooltip-box {
+    position: fixed;
+    display: none;
+    background: var(--text);
+    color: var(--bg);
+    padding: 0.5rem 0.75rem;
+    border-radius: 8px;
+    font-size: 0.75rem;
+    line-height: 1.5;
+    white-space: nowrap;
+    pointer-events: none;
+    z-index: 100;
+    animation: tooltipFade 0.15s ease;
+  }
+  .tooltip-box::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 5px solid transparent;
+    border-top-color: var(--text);
+  }
+  @keyframes tooltipFade {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateX(-24px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+  .label-left {
+    font-size: 13px;
+    font-weight: 500;
+    fill: var(--text);
+  }
+  .label-right-value {
+    font-size: 13px;
+    font-weight: 500;
+    fill: var(--text);
+  }
+  .label-right-pct {
+    font-size: 11px;
+    fill: var(--text-secondary);
+  }
+</style>
+</head>
+<body>
+  <h1>Conversion Funnel</h1>
+  <div class="chart-container">
+    <div class="funnel-wrapper">
+      <svg id="funnel" viewBox="0 0 500 400" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Funnel chart showing conversion stages"></svg>
+      <div class="tooltip-box" id="tooltip"></div>
+    </div>
+  </div>
+
+  <script>
+    // <!-- DATA -->
+    const chartData = {
+      stages: [
+        { name: "Visitors", value: 12000 },
+        { name: "Sign-ups", value: 5200 },
+        { name: "Activated", value: 3100 },
+        { name: "Subscribed", value: 1800 },
+        { name: "Retained", value: 1200 },
+      ],
+    };
+
+    const colors = ["#26215C", "#3C3489", "#534AB7", "#7F77DD", "#AFA9EC", "#CECBF6"];
+
+    function fmtCompact(n) {
+      if (n >= 1e6) return (n / 1e6).toFixed(1) + "M";
+      if (n >= 1e3) return (n / 1e3).toFixed(1) + "K";
+      return n.toString();
+    }
+
+    const svg = document.getElementById("funnel");
+    const tooltip = document.getElementById("tooltip");
+    const stages = chartData.stages;
+    const n = stages.length;
+    const maxValue = stages[0].value;
+
+    const svgW = 500;
+    const maxBarWidth = 280;
+    const labelPadLeft = 10;
+    const labelPadRight = 10;
+    const centerX = svgW / 2;
+    const gap = 4;
+
+    // Compute heights
+    const totalAvailHeight = 400 - 20; // top/bottom padding 10 each
+    const stageHeight = (totalAvailHeight - gap * (n - 1)) / n;
+    const startY = 10;
+
+    function widthFor(value) {
+      return (value / maxValue) * maxBarWidth;
+    }
+
+    stages.forEach((stage, i) => {
+      const topW = widthFor(stage.value);
+      const bottomW = i < n - 1 ? widthFor(stages[i + 1].value) : topW * 0.6;
+      const y = startY + i * (stageHeight + gap);
+
+      const x1 = centerX - topW / 2;
+      const x2 = centerX + topW / 2;
+      const x3 = centerX + bottomW / 2;
+      const x4 = centerX - bottomW / 2;
+
+      const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+      g.setAttribute("class", "funnel-stage");
+      g.style.animation = `slideIn 0.4s ease ${i * 80}ms forwards`;
+
+      const poly = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+      poly.setAttribute("points", `${x1},${y} ${x2},${y} ${x3},${y + stageHeight} ${x4},${y + stageHeight}`);
+      poly.setAttribute("fill", colors[i]);
+      poly.setAttribute("role", "graphics-symbol");
+      poly.setAttribute("aria-label", `${stage.name}: ${fmtCompact(stage.value)}`);
+      g.appendChild(poly);
+
+      // Left label: stage name
+      const labelLeft = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      labelLeft.setAttribute("class", "label-left");
+      labelLeft.setAttribute("x", labelPadLeft);
+      labelLeft.setAttribute("y", y + stageHeight / 2 + 5);
+      labelLeft.setAttribute("text-anchor", "start");
+      labelLeft.textContent = stage.name;
+      g.appendChild(labelLeft);
+
+      // Right labels: value + conversion rate
+      const convRate = i === 0 ? "100%" : ((stage.value / stages[i - 1].value) * 100).toFixed(1) + "%";
+
+      const labelValue = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      labelValue.setAttribute("class", "label-right-value");
+      labelValue.setAttribute("x", svgW - labelPadRight);
+      labelValue.setAttribute("y", y + stageHeight / 2);
+      labelValue.setAttribute("text-anchor", "end");
+      labelValue.textContent = fmtCompact(stage.value);
+      g.appendChild(labelValue);
+
+      const labelPct = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      labelPct.setAttribute("class", "label-right-pct");
+      labelPct.setAttribute("x", svgW - labelPadRight);
+      labelPct.setAttribute("y", y + stageHeight / 2 + 15);
+      labelPct.setAttribute("text-anchor", "end");
+      labelPct.textContent = convRate;
+      g.appendChild(labelPct);
+
+      // Tooltip
+      const pctOfTotal = ((stage.value / maxValue) * 100).toFixed(1);
+      const dropOff = i === 0 ? null : stages[i - 1].value - stage.value;
+
+      g.addEventListener("mouseenter", (e) => {
+        let html = `<strong>${stage.name}</strong><br>`;
+        html += `Value: ${fmtCompact(stage.value)}<br>`;
+        html += `% of total: ${pctOfTotal}%`;
+        if (dropOff !== null) {
+          html += `<br>Drop-off: -${fmtCompact(dropOff)} (${convRate})`;
+        }
+        tooltip.innerHTML = html;
+        tooltip.style.display = "block";
+        positionTooltip(e);
+      });
+      g.addEventListener("mousemove", positionTooltip);
+      g.addEventListener("mouseleave", () => { tooltip.style.display = "none"; });
+
+      svg.appendChild(g);
+    });
+
+    function positionTooltip(e) {
+      const tw = tooltip.offsetWidth;
+      const th = tooltip.offsetHeight;
+      tooltip.style.left = (e.clientX - tw / 2) + "px";
+      tooltip.style.top = (e.clientY - th - 14) + "px";
+    }
+  </script>
+</body>
+</html>

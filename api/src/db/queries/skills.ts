@@ -8,14 +8,13 @@ export function insertSkill(
     description?: string;
     s3Key: string;
     metadata?: string;
-    source?: "built-in" | "user" | "github" | "community";
   },
 ): SkillRow {
   const id = generateId();
   db.run(
-    `INSERT INTO skills (id, project_id, name, description, s3_key, metadata, source)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [id, projectId, data.name, data.description ?? "", data.s3Key, data.metadata ?? null, data.source ?? "user"],
+    `INSERT INTO skills (id, project_id, name, description, s3_key, metadata)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [id, projectId, data.name, data.description ?? "", data.s3Key, data.metadata ?? null],
   );
   return db.query<SkillRow, [string]>("SELECT * FROM skills WHERE id = ?").get(id)!;
 }

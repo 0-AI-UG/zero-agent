@@ -51,7 +51,7 @@ import { useProject } from "@/api/projects";
 import { useCompanionStatus } from "@/api/companion";
 import { useMembers } from "@/api/members";
 import { useAuthStore } from "@/stores/auth";
-import { useModelStore, getSelectedModel } from "@/stores/model";
+import { useModelStore, getSelectedModel, models } from "@/stores/model";
 import { useToolsStore } from "@/stores/tools";
 import { useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
@@ -106,6 +106,8 @@ interface MessageMetadata {
 }
 
 type ChatMessage = UIMessage<MessageMetadata>;
+
+const MODEL_DISPLAY_NAMES = new Map(models.map((m) => [m.id, m.name]));
 
 const ONBOARDING_SUGGESTIONS = [
   {
@@ -371,7 +373,14 @@ export function ChatPanel({ projectId, chatId, initialMessages }: ChatPanelProps
           )}
           {messages.map((message) => {
             const textParts = message.parts.filter((p) => p.type === "text");
-            const fullText = textParts.map((p) => p.text).join("\n");
+            // Deduplicate for copy (stream resume can replay parts)
+            const uniqueTexts: string[] = [];
+            const seen = new Set<string>();
+            for (const p of textParts) {
+              const key = p.text.trim();
+              if (key && !seen.has(key)) { seen.add(key); uniqueTexts.push(p.text); }
+            }
+            const fullText = uniqueTexts.join("\n");
             const lastTextIndex = message.parts.findLastIndex(
               (p) => p.type === "text" || isToolUIPart(p),
             );
@@ -380,6 +389,8 @@ export function ChatPanel({ projectId, chatId, initialMessages }: ChatPanelProps
               <Fragment key={message.id}>
                 {(() => {
                   const elements: React.ReactNode[] = [];
+                  // Track seen text to skip duplicates caused by stream resume replay
+                  const seenText = message.role === "assistant" ? new Set<string>() : null;
                   let i = 0;
                   while (i < message.parts.length) {
                     const part = message.parts[i]!;
@@ -398,6 +409,14 @@ export function ChatPanel({ projectId, chatId, initialMessages }: ChatPanelProps
                     }
 
                     if (part.type === "text") {
+                      // Skip duplicate text parts (stream resume can replay already-seen parts)
+                      const textKey = part.text.trim();
+                      if (seenText && textKey && seenText.has(textKey)) {
+                        i++;
+                        continue;
+                      }
+                      seenText?.add(textKey);
+
                       const msgUserId = (message as any).userId as string | undefined;
                       const senderEmail = msgUserId ? memberMap.get(msgUserId) : undefined;
                       const partIndex = i;
@@ -437,8 +456,12 @@ export function ChatPanel({ projectId, chatId, initialMessages }: ChatPanelProps
                                   >
                                     <RefreshCcwIcon className="size-3.5" />
                                   </MessageAction>
+                                  {message.metadata?.modelId && (
+                                    <span className="text-[10px] text-muted-foreground/50 font-mono ml-1">
+                                      {MODEL_DISPLAY_NAMES.get(message.metadata.modelId) ?? message.metadata.modelId.split("/").pop()}
+                                    </span>
+                                  )}
                                 </MessageActions>
-                                <div />
                               </MessageToolbar>
                             )}
                         </Message>

@@ -11,6 +11,7 @@ import { getModelContextWindow } from "@/config/models.ts";
 import { saveChatMessages } from "@/db/queries/messages.ts";
 import { touchChat, updateChat } from "@/db/queries/chats.ts";
 import { flushConversationMemory } from "@/lib/memory-flush.ts";
+import { detectExploreItems } from "@/lib/heartbeat-explore.ts";
 import { log } from "@/lib/logger.ts";
 import { streamContext, setActiveStreamId, clearActiveStreamId, getActiveStreamId } from "@/lib/resumable-stream.ts";
 import { ConflictError } from "@/lib/errors.ts";
@@ -57,7 +58,7 @@ export async function handleChat(request: BunRequest): Promise<Response> {
 
     // Create the agent for this project
     const cw = model ? getModelContextWindow(model) : 128_000;
-    const agent = await createAgent(project, { language, disabledTools, chatId, userId, preActivateTools: usedToolNames, contextWindow: cw });
+    const agent = await createAgent(project, { model, language, disabledTools, chatId, userId, preActivateTools: usedToolNames, contextWindow: cw });
 
     // Predict whether compaction will trigger so we can send metadata early.
     // Use contextTokens (last step's actual input tokens) if available,
@@ -177,6 +178,14 @@ export async function handleChat(request: BunRequest): Promise<Response> {
             projectId,
             error: err instanceof Error ? err.message : String(err),
             errorName: err?.constructor?.name,
+          }),
+        );
+
+        // Detect knowledge gaps and add explore items to heartbeat.md (fire and forget)
+        detectExploreItems(projectId, finalMessages).catch((err) =>
+          chatLog.error("heartbeat explore detection failed", {
+            projectId,
+            error: err instanceof Error ? err.message : String(err),
           }),
         );
       },

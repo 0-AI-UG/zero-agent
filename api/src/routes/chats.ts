@@ -11,6 +11,7 @@ import {
   deleteChat,
 } from "@/db/queries/chats.ts";
 import type { ChatRow } from "@/db/types.ts";
+import { events } from "@/lib/events.ts";
 
 function formatChat(row: ChatRow) {
   return {
@@ -57,6 +58,7 @@ export async function handleCreateChat(request: BunRequest): Promise<Response> {
 
     const body = (await request.json().catch(() => ({}))) as { title?: string };
     const chat = insertChat(projectId, body.title, userId);
+    events.emit("chat.created", { chatId: chat.id, projectId });
 
     return Response.json(
       { chat: formatChat(chat) },
@@ -100,6 +102,7 @@ export async function handleDeleteChat(request: BunRequest): Promise<Response> {
     verifyChatOwnership(chatId, projectId);
 
     deleteChat(chatId);
+    events.emit("chat.deleted", { chatId, projectId });
     return Response.json({ ok: true }, { headers: corsHeaders });
   } catch (error) {
     return handleError(error);

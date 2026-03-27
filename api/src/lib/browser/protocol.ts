@@ -70,9 +70,10 @@ export type CompanionControl =
   | { type: "command"; command: BrowserCommand }
   | { type: "createSession"; sessionId: string }
   | { type: "destroySession"; sessionId: string }
-  | { type: "createSandbox"; sandboxId: string }
-  | { type: "runScript"; sandboxId: string; commandId: string; script: string; packages?: string[]; timeout?: number }
-  | { type: "destroySandbox"; sandboxId: string }
+  | { type: "createWorkspace"; workspaceId: string; manifest: Record<string, string> }
+  | { type: "syncWorkspace"; workspaceId: string; manifest: Record<string, string> }
+  | { type: "runCode"; workspaceId: string; commandId: string; code?: string; entrypoint?: string; timeout?: number }
+  | { type: "destroyWorkspace"; workspaceId: string }
   | { type: "webauthn"; subCommand: WebAuthnSubCommand };
 
 // ── Companion Messages (companion → server) ──
@@ -84,9 +85,10 @@ export type CompanionMessage =
   | { type: "sessionCreated"; sessionId: string }
   | { type: "sessionDestroyed"; sessionId: string }
   | { type: "sessionError"; sessionId: string; error: string }
-  | { type: "sandboxCreated"; sandboxId: string; pythonVersion: string | null }
-  | { type: "scriptResult"; commandId: string; sandboxId: string; stdout: string; stderr: string; exitCode: number; changedFiles?: Array<{ path: string; data: string; sizeBytes: number }>; skippedFiles?: Array<{ path: string; reason: string }> }
-  | { type: "sandboxDestroyed"; sandboxId: string }
-  | { type: "sandboxError"; sandboxId: string; commandId?: string; error: string }
+  | { type: "workspaceCreated"; workspaceId: string }
+  | { type: "workspaceSynced"; workspaceId: string }
+  | { type: "commandResult"; commandId: string; workspaceId: string; stdout: string; stderr: string; exitCode: number; changedFiles?: Array<{ path: string; data: string; sizeBytes: number }>; deletedFiles?: string[] }
+  | { type: "workspaceDestroyed"; workspaceId: string }
+  | { type: "workspaceError"; workspaceId: string; commandId?: string; error: string }
   | { type: "webauthnResult"; commandId: string; result: unknown }
   | { type: "webauthnError"; commandId: string; error: string };

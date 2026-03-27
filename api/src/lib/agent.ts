@@ -1,5 +1,5 @@
 import { ToolLoopAgent } from "ai";
-import { chatModel } from "@/lib/openrouter.ts";
+import { chatModel, createChatModel } from "@/lib/openrouter.ts";
 import { createDiscoverableToolset, type ExecutionContext } from "@/tools/registry.ts";
 import { getSkillSummaries } from "@/lib/skills/loader.ts";
 import { buildSkillsIndex } from "@/lib/skills/injector.ts";
@@ -17,6 +17,8 @@ interface ProjectForAgent {
 }
 
 export interface AgentOptions {
+  /** OpenRouter model ID to use for chat. Falls back to the default chatModel if not set. */
+  model?: string;
   language?: "en" | "zh";
   disabledTools?: string[];
   chatId?: string;
@@ -29,6 +31,8 @@ export interface AgentOptions {
   context?: ExecutionContext;
   /** Allowlist for on-demand tools (always-available base tools always included). */
   onlyTools?: string[];
+  /** Allowlist for skills — only these skills appear in the index and can be loaded. */
+  onlySkills?: string[];
   /** Pre-loaded project files injected into system prompt. */
   preloadedFiles?: {
     soulMd?: string;
@@ -48,7 +52,12 @@ async function buildSystemPrompt(project: {
   const mode = options.mode ?? "chat";
   const isChat = mode === "chat";
   const today = new Date().toISOString().split("T")[0];
-  const skillsIndex = buildSkillsIndex(await getSkillSummaries(project.id));
+  let skillSummaries = await getSkillSummaries(project.id);
+  if (options.onlySkills?.length) {
+    const allowed = new Set(options.onlySkills);
+    skillSummaries = skillSummaries.filter(s => allowed.has(s.name));
+  }
+  const skillsIndex = buildSkillsIndex(skillSummaries);
   const toolIndex = options.toolIndex ?? "";
   const files = options.preloadedFiles ?? {};
 
@@ -185,6 +194,8 @@ Do NOT skip planning for complex tasks — the user should always see what you'r
 
 **Proactively suggest heartbeat items** when relevant: "I can add this to your heartbeat checklist so it gets checked automatically." Good candidates: monitoring a website for changes, tracking a competitor, checking if a service is up, following up on pending items, recurring research.
 
+**Explore items.** heartbeat.md also has an \`## Explore\` section for self-directed investigations — knowledge gaps and unanswered questions worth looking into. When you notice something worth investigating later (a question you can't answer now, a topic worth researching, a connection worth verifying), add it under \`## Explore\` via editFile. These get investigated automatically during heartbeat runs.
+
 For recurring actions beyond the heartbeat (e.g., "check every hour", "post a summary every day"), use \`scheduleTask\` (load via \`loadTools\`). Always check \`listScheduledTasks\` first to avoid duplicates.`);
   } else {
     sections.push(`## Heartbeat
@@ -250,7 +261,9 @@ export async function createAgent(project: ProjectForAgent, options: AgentOption
     userId: options.userId,
     context,
     onlyTools: options.onlyTools,
+    onlySkills: options.onlySkills,
     codeExecutionEnabled: project.code_execution_enabled === 1,
+    modelId: options.model,
   });
 
   // Pre-activate tools that appear in message history so the AI SDK
@@ -268,6 +281,7 @@ export async function createAgent(project: ProjectForAgent, options: AgentOption
     userId: options.userId,
     projectId: project.id,
     onlyTools: options.onlyTools,
+    modelId: options.model,
   };
   activeTools.agent = createAgentTool(project.id, subagentToolOptions);
 
@@ -280,8 +294,10 @@ export async function createAgent(project: ProjectForAgent, options: AgentOption
     }
   }
 
+  const model = options.model ? createChatModel(options.model) : chatModel;
+
   return new ToolLoopAgent({
-    model: chatModel,
+    model,
     instructions: {
       role: "system",
       content: await buildSystemPrompt({

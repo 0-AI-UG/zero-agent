@@ -304,7 +304,7 @@ export function HelpPage() {
             <H3>Available skills</H3>
             <P>
               Skills can be installed from the Skills page. You can also create
-              custom skills or install them from GitHub and the community marketplace.
+              custom skills or install them from GitHub.
             </P>
 
             <div className="flex items-start gap-2 mt-4 text-muted-foreground">

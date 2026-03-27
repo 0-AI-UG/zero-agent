@@ -1,7 +1,5 @@
 import { corsHeaders } from "@/lib/cors.ts";
 import {
-  AuthError,
-  ValidationError,
   NotFoundError,
   ConflictError,
 } from "@/lib/errors.ts";
@@ -15,39 +13,27 @@ import { log } from "@/lib/logger.ts";
 const routeLog = log.child({ module: "routes" });
 
 export function handleError(error: unknown): Response {
-  if (error instanceof AuthError) {
-    routeLog.warn("auth error", { status: 401, error: error.message });
-    return Response.json(
-      { error: error.message },
-      { status: 401, headers: corsHeaders },
-    );
-  }
-  if (error instanceof ValidationError) {
-    routeLog.warn("validation error", { status: 400, error: error.message });
-    return Response.json(
-      { error: error.message },
-      { status: 400, headers: corsHeaders },
-    );
-  }
-  if (error instanceof NotFoundError) {
-    routeLog.warn("not found", { status: 404, error: error.message });
-    return Response.json(
-      { error: error.message },
-      { status: 404, headers: corsHeaders },
-    );
-  }
-  if (error instanceof ConflictError) {
-    routeLog.warn("conflict", { status: 409, error: error.message });
-    return Response.json(
-      { error: error.message },
-      { status: 409, headers: corsHeaders },
-    );
+  if (error instanceof Error) {
+    const name = error.constructor.name;
+    if (name === "AuthError") {
+      routeLog.warn("auth error", { status: 401, error: error.message });
+      return Response.json({ error: error.message }, { status: 401, headers: corsHeaders });
+    }
+    if (name === "ValidationError") {
+      routeLog.warn("validation error", { status: 400, error: error.message });
+      return Response.json({ error: error.message }, { status: 400, headers: corsHeaders });
+    }
+    if (name === "NotFoundError") {
+      routeLog.warn("not found", { status: 404, error: error.message });
+      return Response.json({ error: error.message }, { status: 404, headers: corsHeaders });
+    }
+    if (error instanceof ConflictError) {
+      routeLog.warn("conflict", { status: 409, error: error.message });
+      return Response.json({ error: error.message }, { status: 409, headers: corsHeaders });
+    }
   }
   routeLog.error("unhandled error", error);
-  return Response.json(
-    { error: "Internal server error" },
-    { status: 500, headers: corsHeaders },
-  );
+  return Response.json({ error: "Internal server error" }, { status: 500, headers: corsHeaders });
 }
 
 /**

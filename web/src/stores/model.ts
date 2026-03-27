@@ -11,6 +11,7 @@ export interface ModelConfig {
   pricing: { input: number; output: number };
   tags: string[];
   default?: boolean;
+  multimodal: boolean;
 }
 
 export const models: ModelConfig[] = modelsConfig.models as ModelConfig[];

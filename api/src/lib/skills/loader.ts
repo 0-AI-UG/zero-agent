@@ -1,9 +1,7 @@
 import { readFromS3 } from "@/lib/s3.ts";
 import { getSkillFiles, getSkillFileByName, getFilesByFolder } from "@/db/queries/files.ts";
-import { getSkillsByProject, getSkillByName } from "@/db/queries/skills.ts";
-import { getPublishedByProject, getMarketplaceItemByName } from "@/db/queries/marketplace.ts";
 import { parseSkillMd } from "./parser.ts";
-import type { SkillSummary, LoadedSkill, SkillMetadata, SkillSource } from "./types.ts";
+import type { SkillSummary, LoadedSkill, SkillMetadata } from "./types.ts";
 import { log } from "@/lib/logger.ts";
 
 const skillLog = log.child({ module: "skills" });
@@ -28,11 +26,6 @@ export async function getSkillSummaries(projectId: string): Promise<SkillSummary
     return [];
   }
 
-  // Build a map of skill name -> source from the skills table
-  const skillRows = getSkillsByProject(projectId);
-  const sourceMap = new Map(skillRows.map((r) => [r.name, r.source as SkillSource]));
-  const publishedMap = getPublishedByProject(projectId);
-
   const summaries = await Promise.all(
     rows.map(async (row): Promise<SkillSummary | null> => {
       try {
@@ -46,9 +39,6 @@ export async function getSkillSummaries(projectId: string): Promise<SkillSummary
           description: frontmatter.description || "",
           metadata: frontmatter.metadata,
           s3Key: row.s3_key,
-          source: sourceMap.get(resolvedName) ?? "user",
-          published: publishedMap.has(resolvedName),
-          downloads: publishedMap.get(resolvedName) ?? 0,
         };
       } catch (err) {
         skillLog.error("failed to parse skill", err, { s3Key: row.s3_key });
@@ -79,15 +69,9 @@ export async function loadFullSkill(projectId: string, name: string): Promise<Lo
       .filter((f) => f.filename !== "SKILL.md")
       .map((f) => f.filename);
 
-    const skillRow = getSkillByName(projectId, name);
-    const publishedRow = getMarketplaceItemByName(name);
-
     return {
       ...frontmatter,
       s3Key: row.s3_key,
-      source: (skillRow?.source as SkillSource) ?? "user",
-      published: publishedRow?.project_id === projectId,
-      downloads: publishedRow?.downloads ?? 0,
       instructions: body,
       files,
     };

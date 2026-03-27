@@ -5,7 +5,6 @@ import { AuthLayout } from "@/components/layouts/AuthLayout";
 import { ProtectedRoute } from "@/components/layouts/ProtectedRoute";
 import { ProjectLayout } from "@/components/layouts/ProjectLayout";
 import { LoginPage } from "@/pages/LoginPage";
-import { RegisterPage } from "@/pages/RegisterPage";
 import { DashboardPage } from "@/pages/DashboardPage";
 import { ProjectPage } from "@/pages/ProjectPage";
 import { FilesPage } from "@/pages/FilesPage";
@@ -13,7 +12,8 @@ import { TasksPage } from "@/pages/TasksPage";
 import { SettingsPage } from "@/pages/SettingsPage";
 import { SkillsPage } from "@/pages/SkillsPage";
 import { HelpPage } from "@/pages/HelpPage";
-import { MarketplacePage } from "@/pages/MarketplacePage";
+import { AdminPage } from "@/pages/AdminPage";
+import { SetupPage } from "@/pages/SetupPage";
 import "./index.css";
 
 export function App() {
@@ -24,19 +24,19 @@ export function App() {
           {/* Public routes */}
           <Route element={<AuthLayout />}>
             <Route path="/login" element={<LoginPage />} />
-            <Route path="/register" element={<RegisterPage />} />
+            <Route path="/setup" element={<SetupPage />} />
           </Route>
 
           {/* Protected routes */}
           <Route element={<ProtectedRoute />}>
             <Route path="/" element={<DashboardPage />} />
+            <Route path="/admin" element={<AdminPage />} />
             <Route path="/projects/:projectId" element={<ProjectLayout />}>
               <Route index element={<ProjectPage />} />
               <Route path="c/:chatId" element={<ProjectPage />} />
               <Route path="files" element={<FilesPage />} />
               <Route path="tasks" element={<TasksPage />} />
               <Route path="skills" element={<SkillsPage />} />
-              <Route path="marketplace" element={<MarketplacePage />} />
               <Route path="settings" element={<SettingsPage />} />
               <Route path="help" element={<HelpPage />} />
             </Route>

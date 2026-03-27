@@ -23,6 +23,7 @@ import { TextPreview } from "./text-preview";
 import { CodePreview } from "./code-preview";
 import { CsvPreview } from "./csv-preview";
 import { HtmlPreview } from "./html-preview";
+import { VizPreview } from "./viz-preview";
 import { DownloadFallback } from "./download-fallback";
 
 interface FilePreviewModalProps {
@@ -123,6 +124,9 @@ function ModalPreviewContent({
   if (file.mimeType.startsWith("image/") && url) {
     return <ImagePreview file={file} url={url} thumbnailUrl={thumbnailUrl} />;
   }
+  if (isVizFile(file) && content !== undefined) {
+    return <VizPreview file={file} content={content} />;
+  }
   if (isHtmlFile(file) && content !== undefined) {
     return <HtmlPreview file={file} content={content} />;
   }
@@ -147,16 +151,32 @@ function ModalPreviewContent({
 function isMarkdownFile(file: FileItem) {
   return file.mimeType === "text/markdown" || file.filename.endsWith(".md");
 }
+function isVizFile(file: FileItem) {
+  return file.mimeType === "text/html+viz" || file.filename.endsWith(".viz");
+}
 function isHtmlFile(file: FileItem) {
   return file.mimeType === "text/html" || file.filename.endsWith(".html");
 }
 function isPlainTextFile(file: FileItem) {
-  return (file.mimeType === "text/plain" || file.filename.endsWith(".txt")) && !isMarkdownFile(file) && !isCodeFile(file) && !isHtmlFile(file);
+  return (file.mimeType === "text/plain" || file.filename.endsWith(".txt")) && !isMarkdownFile(file) && !isCodeFile(file) && !isHtmlFile(file) && !isVizFile(file);
 }
 function isCsvFile(file: FileItem) {
   return file.mimeType === "text/csv" || file.filename.endsWith(".csv");
 }
-const CODE_EXTENSIONS = [".py", ".json"];
+const CODE_EXTENSIONS = [
+  ".py", ".json", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs",
+  ".css", ".scss", ".less",
+  ".xml", ".svg", ".yaml", ".yml", ".toml",
+  ".sql", ".rs", ".c", ".h", ".cpp", ".hpp", ".cc",
+  ".java", ".php", ".go", ".rb", ".swift", ".kt",
+  ".sh", ".bash", ".zsh",
+  ".env", ".gitignore", ".dockerignore",
+];
+const CODE_FILENAMES = ["dockerfile", "makefile"];
 function isCodeFile(file: FileItem) {
-  return CODE_EXTENSIONS.some((ext) => file.filename.endsWith(ext));
+  return CODE_EXTENSIONS.some((ext) => file.filename.endsWith(ext))
+    || CODE_FILENAMES.includes(file.filename.toLowerCase())
+    || file.mimeType === "application/javascript"
+    || file.mimeType === "application/typescript"
+    || file.mimeType === "application/x-sh";
 }

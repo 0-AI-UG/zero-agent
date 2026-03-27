@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate, useLocation, Link } from "react-router";
+import { useNavigate, useLocation } from "react-router";
 import { useAuthStore } from "@/stores/auth";
 import { loginApi } from "@/api/auth";
 import { Button } from "@/components/ui/button";
@@ -78,12 +78,6 @@ export function LoginPage() {
           <Button type="submit" className="w-full" disabled={loading}>
             {loading ? "Signing in..." : "Sign In"}
           </Button>
-          <p className="text-sm text-center text-muted-foreground">
-            No account?{" "}
-            <Link to="/register" className="text-primary underline">
-              Register
-            </Link>
-          </p>
         </form>
       </CardContent>
     </Card>

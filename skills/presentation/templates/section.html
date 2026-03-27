@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=1920, initial-scale=1" />
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg:        #0A0A0A;
+    --text:      #F5F5F5;
+    --text-dim:  #A3A3A3;
+    --accent:    #3B82F6;
+  }
+
+  body {
+    background: #000;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .slide {
+    position: relative;
+    width: 1920px;
+    height: 1080px;
+    overflow: hidden;
+    font-family: 'Inter', sans-serif;
+    color: var(--text);
+    background: linear-gradient(160deg, #0A0A0A 0%, #0A1628 100%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .section-number {
+    font-size: 120px;
+    font-weight: 700;
+    color: var(--accent);
+    opacity: 0.15;
+    line-height: 1;
+    margin-bottom: 16px;
+  }
+
+  .section-title {
+    font-size: 80px;
+    font-weight: 700;
+    line-height: 1.1;
+    text-align: center;
+    max-width: 1200px;
+  }
+
+  .section-subtitle {
+    margin-top: 24px;
+    font-size: 28px;
+    font-weight: 400;
+    color: var(--text-dim);
+    text-align: center;
+    max-width: 800px;
+  }
+
+  .accent-bar {
+    width: 80px;
+    height: 4px;
+    background: var(--accent);
+    margin-top: 48px;
+    border-radius: 2px;
+  }
+</style>
+</head>
+<body>
+
+<div class="slide" aria-label="Section divider slide">
+  <div class="section-number">01</div>
+  <div class="section-title">Section Title</div>
+  <div class="section-subtitle">A brief description of what this section covers and why it matters.</div>
+  <div class="accent-bar"></div>
+</div>
+
+</body>
+</html>

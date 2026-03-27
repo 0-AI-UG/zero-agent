@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=1920, initial-scale=1" />
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg:        #0A0A0A;
+    --surface:   #141414;
+    --surface-2: #1E1E1E;
+    --text:      #F5F5F5;
+    --text-dim:  #A3A3A3;
+    --text-mute: #525252;
+    --accent:    #3B82F6;
+    --accent-2:  #8B5CF6;
+    --success:   #22C55E;
+    --danger:    #EF4444;
+    --border:    #262626;
+  }
+
+  body {
+    background: #000;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .slide {
+    position: relative;
+    width: 1920px;
+    height: 1080px;
+    overflow: hidden;
+    font-family: 'Inter', sans-serif;
+    color: var(--text);
+    background: var(--bg);
+    padding: 100px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .heading {
+    font-size: 56px;
+    font-weight: 600;
+    line-height: 1.1;
+    margin-bottom: 64px;
+  }
+
+  .metrics-grid {
+    display: flex;
+    gap: 40px;
+    margin-bottom: 64px;
+  }
+
+  .metric-card {
+    flex: 1;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 40px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .metric-value {
+    font-size: 56px;
+    font-weight: 700;
+    color: var(--accent);
+    line-height: 1;
+  }
+
+  .metric-label {
+    font-size: 20px;
+    font-weight: 500;
+    color: var(--text-dim);
+  }
+
+  .metric-change {
+    font-size: 18px;
+    font-weight: 500;
+    margin-top: 4px;
+  }
+
+  .metric-change.up { color: var(--success); }
+  .metric-change.down { color: var(--danger); }
+
+  /* Bar chart using pure CSS */
+  .chart-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .chart-title {
+    font-size: 24px;
+    font-weight: 500;
+    color: var(--text-dim);
+    margin-bottom: 24px;
+  }
+
+  .chart-bars {
+    flex: 1;
+    display: flex;
+    align-items: flex-end;
+    gap: 24px;
+    padding-bottom: 40px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .chart-bar-group {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .chart-bar {
+    width: 100%;
+    max-width: 80px;
+    border-radius: 8px 8px 0 0;
+    background: var(--accent);
+  }
+
+  .chart-bar-label {
+    font-size: 18px;
+    font-weight: 400;
+    color: var(--text-mute);
+  }
+
+  .slide-number {
+    position: absolute;
+    bottom: 48px;
+    right: 100px;
+    font-size: 18px;
+    font-weight: 400;
+    color: var(--text-mute);
+  }
+</style>
+</head>
+<body>
+
+<div class="slide" aria-label="Data and metrics slide">
+  <div class="heading">Key Metrics</div>
+
+  <div class="metrics-grid">
+    <div class="metric-card">
+      <div class="metric-value">$2.4M</div>
+      <div class="metric-label">Revenue</div>
+      <div class="metric-change up">+18% YoY</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-value">12.5K</div>
+      <div class="metric-label">Active Users</div>
+      <div class="metric-change up">+32% YoY</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-value">94%</div>
+      <div class="metric-label">Retention Rate</div>
+      <div class="metric-change up">+5pts YoY</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-value">840ms</div>
+      <div class="metric-label">Avg Response</div>
+      <div class="metric-change down">-23% YoY</div>
+    </div>
+  </div>
+
+  <div class="chart-area">
+    <div class="chart-title">Monthly Revenue (thousands)</div>
+    <div class="chart-bars">
+      <div class="chart-bar-group">
+        <div class="chart-bar" style="height: 120px;"></div>
+        <div class="chart-bar-label">Jan</div>
+      </div>
+      <div class="chart-bar-group">
+        <div class="chart-bar" style="height: 160px;"></div>
+        <div class="chart-bar-label">Feb</div>
+      </div>
+      <div class="chart-bar-group">
+        <div class="chart-bar" style="height: 140px;"></div>
+        <div class="chart-bar-label">Mar</div>
+      </div>
+      <div class="chart-bar-group">
+        <div class="chart-bar" style="height: 200px;"></div>
+        <div class="chart-bar-label">Apr</div>
+      </div>
+      <div class="chart-bar-group">
+        <div class="chart-bar" style="height: 180px;"></div>
+        <div class="chart-bar-label">May</div>
+      </div>
+      <div class="chart-bar-group">
+        <div class="chart-bar" style="height: 240px;"></div>
+        <div class="chart-bar-label">Jun</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="slide-number">04</div>
+</div>
+
+</body>
+</html>

@@ -8,6 +8,7 @@ export const BUILTIN_SKILL_IDS: Record<string, string> = {
   "leads-finder": "builtin-leads-finder",
   "account-creation": "builtin-account-creation",
   "skill-creator": "builtin-skill-creator",
+  "presentation": "builtin-presentation",
 };
 
 export const BUILTIN_SKILLS: { id: string; name: string; description: string }[] = [
@@ -15,6 +16,7 @@ export const BUILTIN_SKILLS: { id: string; name: string; description: string }[]
   { id: "builtin-leads-finder", name: "leads-finder", description: "Find and qualify leads from the web — potential customers, partners, investors, or candidates." },
   { id: "builtin-account-creation", name: "account-creation", description: "Create new accounts on websites, generate secure passwords, set up TOTP, and manage credential files." },
   { id: "builtin-skill-creator", name: "skill-creator", description: "Create new skills for any platform or workflow." },
+  { id: "builtin-presentation", name: "presentation", description: "Create professional slide decks and presentations that can be exported to PPTX." },
 ];
 
 export const BUILTIN_TEMPLATES: {
@@ -45,7 +47,7 @@ Step 4 — Quote:
 Search the web for an inspirational or motivational quote. Pick one that's concise and energizing.
 
 Step 5 — Build dashboard:
-Using the visualizer skill, build an interactive HTML dashboard saved as morning-dashboard.html with these sections:
+Using the visualizer skill, build an interactive HTML dashboard saved as morning-dashboard.viz with these sections:
 - KPI row at top: current temperature, number of open tasks, number of news stories
 - Weather widget: temperature, conditions icon, high/low, humidity, wind
 - News feed: each headline as a card with title, source, summary — sorted by relevance
@@ -82,7 +84,7 @@ Step 4 — Score and deduplicate:
 Use Python following the lead scoring section of the skill. Read existing leads/leads.csv and deduplicate new leads against it by website domain. Append only genuinely new leads.
 
 Step 5 — Generate dashboard:
-Run the Python pipeline script from the leads-finder skill to compute all stats from the current leads/leads.csv. Load the visualizer skill and build visualizations/leads-dashboard.html with the full pipeline dashboard (KPIs, funnel, score distribution, top leads table, source breakdown, weekly trend).
+Run the Python pipeline script from the leads-finder skill to compute all stats from the current leads/leads.csv. Load the visualizer skill and build visualizations/leads-dashboard.viz with the full pipeline dashboard (KPIs, funnel, score distribution, top leads table, source breakdown, weekly trend).
 
 Step 6 — Write summary:
 Write leads/run-summary-{today's date}.md with: how many new leads found, top 3 by score, pipeline totals, and any notable findings.`,

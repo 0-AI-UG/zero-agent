@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=1920, initial-scale=1" />
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg:        #0A0A0A;
+    --surface:   #141414;
+    --surface-2: #1E1E1E;
+    --text:      #F5F5F5;
+    --text-dim:  #A3A3A3;
+    --text-mute: #525252;
+    --accent:    #3B82F6;
+    --accent-2:  #8B5CF6;
+    --border:    #262626;
+  }
+
+  body {
+    background: #000;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .slide {
+    position: relative;
+    width: 1920px;
+    height: 1080px;
+    overflow: hidden;
+    font-family: 'Inter', sans-serif;
+    color: var(--text);
+    background: var(--bg);
+    padding: 100px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .heading {
+    font-size: 56px;
+    font-weight: 600;
+    line-height: 1.1;
+    margin-bottom: 64px;
+  }
+
+  .columns {
+    display: flex;
+    gap: 80px;
+    flex: 1;
+  }
+
+  .column {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+  }
+
+  .column-title {
+    font-size: 28px;
+    font-weight: 600;
+    color: var(--accent);
+    padding-bottom: 16px;
+    border-bottom: 2px solid var(--border);
+  }
+
+  .column:nth-child(2) .column-title {
+    color: var(--accent-2);
+  }
+
+  .column-item {
+    font-size: 24px;
+    font-weight: 400;
+    color: var(--text-dim);
+    line-height: 1.5;
+    padding-left: 20px;
+    border-left: 3px solid var(--border);
+  }
+
+  .slide-number {
+    position: absolute;
+    bottom: 48px;
+    right: 100px;
+    font-size: 18px;
+    font-weight: 400;
+    color: var(--text-mute);
+  }
+</style>
+</head>
+<body>
+
+<div class="slide" aria-label="Two-column comparison slide">
+  <div class="heading">Before vs After</div>
+  <div class="columns">
+    <div class="column">
+      <div class="column-title">Current State</div>
+      <div class="column-item">Manual processes that require significant time and effort from the team</div>
+      <div class="column-item">Fragmented data across multiple systems with no single source of truth</div>
+      <div class="column-item">Reactive approach to issues as they arise with limited visibility</div>
+    </div>
+    <div class="column">
+      <div class="column-title">Proposed Solution</div>
+      <div class="column-item">Automated workflows that reduce manual effort by 80% and minimize errors</div>
+      <div class="column-item">Unified platform with real-time dashboards and centralized reporting</div>
+      <div class="column-item">Proactive monitoring with alerts and predictive analytics built in</div>
+    </div>
+  </div>
+  <div class="slide-number">03</div>
+</div>
+
+</body>
+</html>

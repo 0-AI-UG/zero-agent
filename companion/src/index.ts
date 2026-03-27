@@ -142,6 +142,7 @@ program
     const client = createWsClient({
       serverUrl: opts.server,
       token: opts.token,
+      logger,
       getCdp: () => {
         if (!currentCdp || !currentCdp.connected) {
           throw new Error("Chrome is not connected (restarting/crashed). Retrying shortly...");
@@ -159,7 +160,7 @@ program
     });
 
     // Handle shutdown
-    const shutdown = () => {
+    const shutdown = async () => {
       logger.info("\nShutting down...");
       if (cdpHealthTimer) clearInterval(cdpHealthTimer);
       client.stop();

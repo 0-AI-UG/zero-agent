@@ -16,13 +16,8 @@ export interface SkillFrontmatter {
   metadata: SkillMetadata;
 }
 
-export type SkillSource = "built-in" | "user" | "github" | "community";
-
 export interface SkillSummary extends SkillFrontmatter {
   s3Key: string;
-  source: SkillSource;
-  published: boolean;
-  downloads: number;
 }
 
 export interface LoadedSkill extends SkillSummary {

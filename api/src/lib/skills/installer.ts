@@ -4,7 +4,7 @@ import { createFolder, getFolderByPath, deleteFoldersByPathPrefix } from "@/db/q
 import { insertSkill, deleteSkill } from "@/db/queries/skills.ts";
 import { indexFileContent } from "@/db/queries/search.ts";
 import { parseSkillMd } from "./parser.ts";
-import type { SkillSource, SkillFrontmatter } from "./types.ts";
+import type { SkillFrontmatter } from "./types.ts";
 import { log } from "@/lib/logger.ts";
 
 const installLog = log.child({ module: "skills:installer" });
@@ -25,7 +25,6 @@ export interface InstallResult {
   name: string;
   description: string;
   s3Key: string;
-  source: SkillSource;
   metadata: SkillFrontmatter["metadata"];
 }
 
@@ -33,7 +32,6 @@ export async function installSkillFiles(
   projectId: string,
   skillName: string,
   files: SkillFile[],
-  source: SkillSource,
 ): Promise<InstallResult> {
   // Ensure /skills/ folder exists
   ensureFolder(projectId, "/skills/", "skills");
@@ -77,26 +75,24 @@ export async function installSkillFiles(
   const s3Key = `projects/${projectId}/skills/${skillName}/SKILL.md`;
   const resolvedName = frontmatter.name || skillName;
 
-  // Upsert skills table to persist source
+  // Upsert skills table
   try {
     insertSkill(projectId, {
       name: resolvedName,
       description: frontmatter.description,
       s3Key,
       metadata: JSON.stringify(frontmatter.metadata),
-      source,
     });
   } catch {
-    // UNIQUE constraint — skill already exists, source stays as-is
+    // UNIQUE constraint — skill already exists
   }
 
-  installLog.info("skill installed", { projectId, name: resolvedName, source });
+  installLog.info("skill installed", { projectId, name: resolvedName });
 
   return {
     name: resolvedName,
     description: frontmatter.description,
     s3Key,
-    source,
     metadata: frontmatter.metadata,
   };
 }

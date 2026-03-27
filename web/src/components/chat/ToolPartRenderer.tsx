@@ -2,7 +2,6 @@ import { isToolUIPart, getToolName } from "ai";
 import type { UIMessage } from "ai";
 import { Shimmer } from "@/components/ai/shimmer";
 import {
-  AlertCircleIcon,
   CheckCircleIcon,
   ClockIcon,
   DownloadIcon,
@@ -23,16 +22,8 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePresignedUrl } from "@/hooks/use-presigned-url";
-import { useFilesStore } from "@/stores/files-store";
 import { FileArtifact } from "@/components/files/file-artifact";
-import {
-  Artifact,
-  ArtifactHeader,
-  ArtifactTitle,
-  ArtifactContent,
-  ArtifactActions,
-  ArtifactAction,
-} from "@/components/ai/artifact";
+import { findWriteFileRenderer } from "@/components/chat/write-file-renderers";
 import { ParallelSubagentCard } from "./ParallelSubagentCard";
 import {
   Confirmation,
@@ -148,9 +139,9 @@ const TOOL_CONFIG: Record<
     activeLabel: "Loading skill",
     icon: DownloadIcon,
   },
-  runPython: {
-    label: "Ran Python script",
-    activeLabel: "Running Python script",
+  runCode: {
+    label: "Ran code",
+    activeLabel: "Running code",
     icon: TerminalSquareIcon,
   },
 };
@@ -218,8 +209,13 @@ function getToolDetail(toolName: string, input: unknown): string | null {
     }
     case "loadSkill":
       return typeof inp.name === "string" ? inp.name : null;
-    case "runPython":
+    case "runCode": {
+      const code = (inp as any).code;
+      if (typeof code === "string") {
+        return code.length > 60 ? code.slice(0, 60) + "…" : code;
+      }
       return null;
+    }
     default:
       return null;
   }
@@ -287,6 +283,13 @@ function WriteFileCard({ output, projectId }: { output: any; projectId?: string 
         <p className="text-sm font-medium">{filename}</p>
       </div>
     );
+  }
+
+  // Check registry for custom renderer (e.g. .viz, .slides)
+  const renderer = findWriteFileRenderer(filename);
+  if (renderer) {
+    const Component = renderer.component;
+    return <Component fileId={output.fileId} projectId={projectId} filename={filename} output={output} />;
   }
 
   return (
@@ -465,7 +468,7 @@ function CodeTable({ lines, lineOffset = 0, className }: { lines: string[]; line
   );
 }
 
-function PythonResultCard({ output, script }: { output: any; script?: string }) {
+function BashResultCard({ output, command }: { output: any; command?: string }) {
   const exitCode = output.exitCode ?? output.exit_code;
   const stdout = output.stdout ?? "";
   const stderr = output.stderr ?? "";
@@ -479,10 +482,8 @@ function PythonResultCard({ output, script }: { output: any; script?: string }) 
         : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400";
 
   const outputContent = [error, stdout, stderr].filter(Boolean).join("\n");
-  const scriptLines = script ? script.split("\n") : [];
   const outputLines = outputContent ? outputContent.split("\n") : [];
 
-  // Determine which lines in output are errors (for red coloring)
   const errorLineCount = error ? (error as string).split("\n").length : 0;
   const stderrLineCount = stderr ? stderr.split("\n").length : 0;
 
@@ -491,43 +492,35 @@ function PythonResultCard({ output, script }: { output: any; script?: string }) 
       <div className="flex items-center justify-between text-xs text-muted-foreground px-3 py-2 border-b bg-muted/50">
         <div className="flex items-center gap-1.5">
           <TerminalSquareIcon className="size-3" />
-          <span className="font-medium">Python script</span>
+          <span className="font-medium font-mono truncate max-w-md">{command ? `$ ${command}` : "Terminal"}</span>
         </div>
         {exitCode != null && (
-          <span className={cn("text-xs px-1.5 py-0.5 rounded-full font-medium", exitBadgeColor)}>
+          <span className={cn("text-xs px-1.5 py-0.5 rounded-full font-medium ml-2 shrink-0", exitBadgeColor)}>
             {exitCode === -1 ? "timeout" : `exit ${exitCode}`}
           </span>
         )}
       </div>
-      <div className="max-h-80 overflow-auto">
-        {scriptLines.length > 0 && (
-          <CodeTable lines={scriptLines} />
-        )}
-        {outputLines.length > 0 && (
-          <>
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground px-3 py-1.5 border-t border-b bg-muted/30">
-              <span className="font-medium">Output</span>
-            </div>
-            <table className="w-full text-xs font-mono border-collapse">
-              <tbody>
-                {outputLines.map((line, i) => (
-                  <tr key={i} className="leading-5">
-                    <td className="select-none text-right text-muted-foreground/50 px-3 align-top w-10 min-w-10 whitespace-nowrap">{i + 1}</td>
-                    <td className={cn(
-                      "pr-3 whitespace-pre",
-                      i < errorLineCount
+      {outputLines.length > 0 && (
+        <div className="max-h-80 overflow-auto">
+          <table className="w-full text-xs font-mono border-collapse">
+            <tbody>
+              {outputLines.map((line, i) => (
+                <tr key={i} className="leading-5">
+                  <td className="select-none text-right text-muted-foreground/50 px-3 align-top w-10 min-w-10 whitespace-nowrap">{i + 1}</td>
+                  <td className={cn(
+                    "pr-3 whitespace-pre",
+                    i < errorLineCount
+                      ? "text-red-500 dark:text-red-400"
+                      : i >= outputLines.length - stderrLineCount
                         ? "text-red-500 dark:text-red-400"
-                        : i >= outputLines.length - stderrLineCount
-                          ? "text-red-500 dark:text-red-400"
-                          : "",
-                    )}>{line}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </>
-        )}
-      </div>
+                        : "",
+                  )}>{line}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
@@ -687,16 +680,29 @@ export function ToolCallPart({
   }
 
   // Streaming input display for content-heavy tools
-  if (isLoading && (toolName === "writeFile" || toolName === "runPython")) {
+  // Streaming input display for content-heavy tools
+  if (isLoading && toolName === "writeFile") {
     const inp = (part.input ?? {}) as Record<string, unknown>;
-    if (toolName === "writeFile" && typeof inp.content === "string" && inp.content) {
+    // Check for custom loading state based on filename (e.g. .viz, .slides)
+    if (typeof inp.path === "string") {
+      const fname = inp.path.split("/").pop() ?? "";
+      const customRenderer = findWriteFileRenderer(fname);
+      if (customRenderer) {
+        const CustomIcon = customRenderer.loading.icon;
+        return (
+          <div className="flex items-center gap-2 text-sm py-1 text-muted-foreground animate-in fade-in-0 slide-in-from-top-1">
+            <CustomIcon className="size-4" />
+            <Shimmer className="text-sm" duration={1.5}>{customRenderer.loading.activeLabel}</Shimmer>
+            <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{fname}</span>
+          </div>
+        );
+      }
+    }
+    if (typeof inp.content === "string" && inp.content) {
       const filename = typeof inp.path === "string" ? inp.path.split("/").pop() : "file";
       const ext = filename?.split(".").pop() ?? "";
       const langMap: Record<string, string> = { py: "python", js: "javascript", ts: "typescript", json: "json", md: "markdown", css: "css", html: "html" };
       return <StreamingContentCard title={filename ?? "file"} content={inp.content} language={langMap[ext] ?? ext} />;
-    }
-    if (toolName === "runPython" && typeof inp.script === "string" && inp.script) {
-      return <StreamingContentCard title="Python Script" content={inp.script} language="python" />;
     }
     // Fall through to default shimmer if content field hasn't started streaming yet
   }
@@ -736,9 +742,9 @@ export function ToolCallPart({
       const output = part.output as any;
       if (output?.url) return <FetchUrlCard output={output} />;
     }
-    if (toolName === "runPython") {
+    if (toolName === "runCode") {
       const output = part.output as any;
-      if (output) return <PythonResultCard output={output} script={(part.input as any)?.script} />;
+      if (output) return <BashResultCard output={output} command={(part.input as any)?.code} />;
     }
     // Browser tool: skip hidden actions, show status line for visible ones
     if (toolName === "browser") {
@@ -766,14 +772,12 @@ export function ToolCallPart({
         hasError ? "text-destructive" : "text-muted-foreground",
       )}
     >
-      {hasError ? <AlertCircleIcon className="size-4" /> : isImageRead ? <ImageIcon className={cn("size-4", hasOutput && "text-emerald-500")} /> : <Icon className={cn("size-4", hasOutput && "text-emerald-500")} />}
+      {isImageRead ? <ImageIcon className={cn("size-4", hasError ? "text-destructive" : hasOutput && "text-emerald-500")} /> : <Icon className={cn("size-4", hasError ? "text-destructive" : hasOutput && "text-emerald-500")} />}
       <span>
         {isLoading ? (
           <Shimmer className="text-sm" duration={1.5}>
             {displayLabel}
           </Shimmer>
-        ) : hasError ? (
-          <>{config.label} — failed</>
         ) : (
           displayLabel
         )}

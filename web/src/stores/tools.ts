@@ -46,7 +46,7 @@ export const TOOL_GROUPS: ToolGroup[] = [
     id: "code",
     label: "Code Execution",
     icon: "Terminal",
-    tools: ["runPython"],
+    tools: ["runCode"],
   },
   {
     id: "scheduling",
@@ -63,35 +63,10 @@ export const TOOL_GROUPS: ToolGroup[] = [
 
 export const ALL_TOOL_NAMES = TOOL_GROUPS.flatMap((g) => g.tools);
 
-/** Tool groups available for automation tasks (includes automation-only tools). */
-export const AUTOMATION_TOOL_GROUPS: ToolGroup[] = [
-  {
-    id: "web",
-    label: "Web & Browse",
-    icon: "Globe",
-    tools: ["searchWeb", "fetchUrl", "browser"],
-  },
-  {
-    id: "files",
-    label: "File Operations",
-    icon: "FolderOpen",
-    tools: ["readFile", "writeFile", "editFile", "listFiles", "searchFiles"],
-  },
-  {
-    id: "creative",
-    label: "Image Generation",
-    icon: "Image",
-    tools: ["generateImage"],
-  },
-  {
-    id: "code",
-    label: "Code Execution",
-    icon: "Terminal",
-    tools: ["runPython"],
-  },
-];
-
-export const ALL_AUTOMATION_TOOL_NAMES = AUTOMATION_TOOL_GROUPS.flatMap((g) => g.tools);
+/** Tool groups available to automation/scheduled tasks (excludes chat-only tools like todos). */
+export const AUTOMATION_TOOL_GROUPS: ToolGroup[] = TOOL_GROUPS.filter(
+  (g) => g.id !== "agent",
+);
 
 interface ToolsState {
   /** Tools that are disabled (all enabled by default) */

@@ -42,8 +42,6 @@ const providerLabels: Record<string, string> = {
   alibaba: "Alibaba / Qwen",
   zhipuai: "Zhipu AI",
   moonshotai: "Moonshot",
-  "bytedance-seed": "ByteDance",
-  stepfun: "StepFun",
   anthropic: "Anthropic",
   google: "Google",
   openai: "OpenAI",
@@ -87,7 +85,7 @@ export function ModelSection() {
                 <ModelSelectorItem
                   key={model.id}
                   value={model.id}
-                  keywords={[model.name, model.provider, ...model.tags]}
+                  keywords={[model.name, model.provider, ...model.tags, ...(model.multimodal ? ["vision"] : [])]}
                   onSelect={() => {
                     setSelectedModelId(model.id);
                     setOpen(false);
@@ -106,6 +104,11 @@ export function ModelSection() {
                       {model.tags.includes("recommended") && (
                         <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
                           Default
+                        </span>
+                      )}
+                      {model.multimodal && (
+                        <span className="rounded-full bg-violet-500/10 px-1.5 py-0.5 text-[10px] font-medium text-violet-600 dark:text-violet-400">
+                          Vision
                         </span>
                       )}
                     </div>

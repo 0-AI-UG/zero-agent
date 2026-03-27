@@ -11,16 +11,11 @@ export interface SkillMetadata {
   tags: string[];
 }
 
-export type SkillSource = "built-in" | "user" | "github" | "community";
-
 export interface Skill {
   name: string;
   description: string;
   s3Key: string;
   metadata: SkillMetadata | null;
-  source: SkillSource;
-  published: boolean;
-  downloads: number;
 }
 
 export interface AvailableSkill {
@@ -75,56 +70,9 @@ export function useInstallSkill(projectId: string) {
         method: "POST",
         body: JSON.stringify(payload),
       }),
-    onMutate: async (payload) => {
-      await queryClient.cancelQueries({ queryKey: skillsKey });
-      await queryClient.cancelQueries({ queryKey: availableKey });
-
-      const prevSkills = queryClient.getQueryData<Skill[]>(skillsKey);
-      const prevAvailable = queryClient.getQueryData<AvailableSkill[]>(availableKey);
-
-      const name = "builtIn" in payload ? payload.builtIn : undefined;
-      const matched = prevAvailable?.find((s) => s.name === name);
-
-      if (name && matched) {
-        // Move from available → installed
-        queryClient.setQueryData<Skill[]>(skillsKey, (old) => [
-          ...(old ?? []),
-          {
-            name: matched.name,
-            description: matched.description,
-            s3Key: "",
-            metadata: matched.metadata,
-            source: "built-in",
-            published: false,
-            downloads: 0,
-          },
-        ]);
-        queryClient.setQueryData<AvailableSkill[]>(availableKey, (old) =>
-          (old ?? []).filter((s) => s.name !== name),
-        );
-      }
-
-      return { prevSkills, prevAvailable };
-    },
-    onSuccess: (data, payload) => {
-      // Merge the server-returned skill into the cache directly
-      const name = "builtIn" in payload ? payload.builtIn : undefined;
-      queryClient.setQueryData<Skill[]>(skillsKey, (old) => {
-        const without = (old ?? []).filter((s) => s.name !== data.skill.name);
-        return [...without, data.skill];
-      });
-      if (name) {
-        queryClient.setQueryData<AvailableSkill[]>(availableKey, (old) =>
-          (old ?? []).filter((s) => s.name !== name),
-        );
-      }
-      // Mark stale for next access, but don't refetch now (avoids flicker from stale backend cache)
-      queryClient.invalidateQueries({ queryKey: skillsKey, refetchType: "none" });
-      queryClient.invalidateQueries({ queryKey: availableKey, refetchType: "none" });
-    },
-    onError: (_err, _payload, context) => {
-      if (context?.prevSkills) queryClient.setQueryData(skillsKey, context.prevSkills);
-      if (context?.prevAvailable) queryClient.setQueryData(availableKey, context.prevAvailable);
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: skillsKey });
+      queryClient.invalidateQueries({ queryKey: availableKey });
     },
   });
 }
@@ -139,38 +87,9 @@ export function useUninstallSkill(projectId: string) {
       apiFetch<{ success: true }>(`/projects/${projectId}/skills/${encodeURIComponent(name)}`, {
         method: "DELETE",
       }),
-    onMutate: async (name) => {
-      await queryClient.cancelQueries({ queryKey: skillsKey });
-      await queryClient.cancelQueries({ queryKey: availableKey });
-
-      const prevSkills = queryClient.getQueryData<Skill[]>(skillsKey);
-      const prevAvailable = queryClient.getQueryData<AvailableSkill[]>(availableKey);
-
-      const removed = prevSkills?.find((s) => s.name === name);
-
-      // Remove from installed
-      queryClient.setQueryData<Skill[]>(skillsKey, (old) =>
-        (old ?? []).filter((s) => s.name !== name),
-      );
-
-      // Add back to available if it was built-in
-      if (removed && removed.source === "built-in") {
-        queryClient.setQueryData<AvailableSkill[]>(availableKey, (old) => [
-          ...(old ?? []),
-          { name: removed.name, description: removed.description, metadata: removed.metadata },
-        ]);
-      }
-
-      return { prevSkills, prevAvailable };
-    },
     onSuccess: () => {
-      // Cache was already updated optimistically in onMutate — just mark stale for next access
-      queryClient.invalidateQueries({ queryKey: skillsKey, refetchType: "none" });
-      queryClient.invalidateQueries({ queryKey: availableKey, refetchType: "none" });
-    },
-    onError: (_err, _name, context) => {
-      if (context?.prevSkills) queryClient.setQueryData(skillsKey, context.prevSkills);
-      if (context?.prevAvailable) queryClient.setQueryData(availableKey, context.prevAvailable);
+      queryClient.invalidateQueries({ queryKey: skillsKey });
+      queryClient.invalidateQueries({ queryKey: availableKey });
     },
   });
 }
@@ -206,81 +125,6 @@ export function useInstallFromGithub(projectId: string) {
       queryClient.invalidateQueries({
         queryKey: queryKeys.skills.available(projectId),
       });
-    },
-  });
-}
-
-// Community marketplace
-
-export interface CommunitySkill {
-  id: string;
-  name: string;
-  description: string;
-  metadata: SkillMetadata | null;
-  publisherId: string;
-  downloads: number;
-  publishedAt: string;
-  updatedAt: string;
-}
-
-export function useCommunitySkills(search?: string) {
-  return useQuery({
-    queryKey: queryKeys.skills.community(search),
-    queryFn: async () => {
-      const params = new URLSearchParams();
-      params.set("type", "skill");
-      if (search) params.set("q", search);
-      const res = await apiFetch<{ items: { id: string; name: string; description: string; metadata: SkillMetadata | null; publisherId: string; downloads: number; publishedAt: string; updatedAt: string }[] }>(
-        `/marketplace?${params}`,
-      );
-      return res.items as CommunitySkill[];
-    },
-    staleTime: 30_000,
-  });
-}
-
-export function useUnpublishSkill(projectId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (id: string) =>
-      apiFetch<{ success: true }>(
-        `/marketplace/${encodeURIComponent(id)}`,
-        { method: "DELETE" },
-      ),
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.skills.byProject(projectId),
-      });
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.skills.community(),
-      });
-      queryClient.invalidateQueries({ queryKey: ["marketplace"] });
-    },
-  });
-}
-
-export function useInstallFromCommunity(projectId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (itemId: string) =>
-      apiFetch<{ installed: { name: string; type: string }[]; alreadyInstalled: string[] }>(
-        `/projects/${projectId}/marketplace/install`,
-        {
-          method: "POST",
-          body: JSON.stringify({ itemId, confirm: true }),
-        },
-      ),
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.skills.byProject(projectId),
-      });
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.skills.available(projectId),
-      });
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.skills.community(),
-      });
-      queryClient.invalidateQueries({ queryKey: ["marketplace"] });
     },
   });
 }

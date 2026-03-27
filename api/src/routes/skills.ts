@@ -27,7 +27,6 @@ function formatInstallResult(result: InstallResult) {
     description: result.description,
     s3Key: result.s3Key,
     metadata: result.metadata,
-    source: result.source,
   };
 }
 
@@ -105,11 +104,11 @@ export async function handleInstallSkill(request: Request): Promise<Response> {
 
     if ("builtIn" in body) {
       const files = await loadBuiltInSkill(body.builtIn);
-      result = await installSkillFiles(projectId, body.builtIn, files, "built-in");
+      result = await installSkillFiles(projectId, body.builtIn, files);
     } else {
       const { frontmatter } = parseSkillMd(body.content);
       const files = [{ path: "SKILL.md", content: body.content }];
-      result = await installSkillFiles(projectId, frontmatter.name, files, "user");
+      result = await installSkillFiles(projectId, frontmatter.name, files);
     }
 
     skillLog.info("skill installed", { projectId, name: result.name });
@@ -159,7 +158,7 @@ export async function handleInstallFromGithub(request: Request): Promise<Respons
     const installed: InstallResult[] = [];
     for (const skill of toInstall) {
       const files = await fetchSkillFiles(owner, repo, branch, skill.path);
-      const result = await installSkillFiles(projectId, skill.name, files, "github");
+      const result = await installSkillFiles(projectId, skill.name, files);
       installed.push(result);
     }
 

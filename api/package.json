@@ -16,7 +16,8 @@
     "typescript": "^5"
   },
   "dependencies": {
-    "@ai-sdk/openai": "^3.0.41",
+    "@0-ai/s3lite": "^0.1.1",
+    "@0-ai/slide-gen": "^0.1.0",
     "@ai-sdk/react": "^3.0.109",
     "@mozilla/readability": "^0.6.0",
     "@openrouter/ai-sdk-provider": "^2.2.3",

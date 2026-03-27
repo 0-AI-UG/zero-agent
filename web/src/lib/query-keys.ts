@@ -40,22 +40,18 @@ export const queryKeys = {
   skills: {
     byProject: (projectId: string) => ["skills", projectId] as const,
     available: (projectId: string) => ["skills", "available", projectId] as const,
-    community: (search?: string) => search ? ["skills", "community", search] as const : ["skills", "community"] as const,
   },
   templates: {
     community: (search?: string, category?: string) =>
       ["templates", "community", search ?? "", category ?? ""] as const,
   },
-  marketplace: {
-    all: (opts?: { type?: string; search?: string; category?: string }) =>
-      ["marketplace", opts?.type ?? "", opts?.search ?? "", opts?.category ?? ""] as const,
-    detail: (id: string) => ["marketplace", "detail", id] as const,
-    references: (query: string) => ["marketplace", "references", query] as const,
+  telegram: {
+    status: (projectId: string) => ["telegram", "status", projectId] as const,
   },
   quickActions: {
     byProject: (projectId: string) => ["quick-actions", projectId] as const,
   },
-credentials: {
+  credentials: {
     byProject: (projectId: string) => ["credentials", projectId] as const,
   },
   companion: {

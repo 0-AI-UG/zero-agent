@@ -36,7 +36,7 @@ export async function runAutonomousTask(
   project: { id: string; name: string },
   taskName: string,
   prompt: string,
-  options?: { onlyTools?: string[]; userId?: string },
+  options?: { onlyTools?: string[]; onlySkills?: string[]; userId?: string },
 ): Promise<RunResult> {
   const chat = getOrCreateAutonomousChat(project.id);
 
@@ -51,7 +51,7 @@ export async function runAutonomousTask(
 
   let fullPrompt = prompt;
   if (checklist) {
-    fullPrompt = `${prompt}\n\n## Current heartbeat.md checklist\n\n${checklist}`;
+    fullPrompt = `${prompt}\n\n## Current heartbeat.md checklist\n\n${checklist}\n\n---\nItems under "## Explore" are self-directed investigations added automatically from past conversations. Pick ONE explore item to investigate using available tools. If the finding is interesting, report it. If not worth reporting, remove the item from heartbeat.md via editFile. Mark completed explore items with [x] or remove them.`;
     autoLog.info("injected heartbeat checklist", {
       projectId: project.id,
       checklistLength: checklist.length,
@@ -62,6 +62,7 @@ export async function runAutonomousTask(
 
   const agent = await createAgent(project, {
     onlyTools: options?.onlyTools,
+    onlySkills: options?.onlySkills,
     userId: options?.userId,
   });
 

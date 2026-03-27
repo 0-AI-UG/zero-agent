@@ -2,6 +2,7 @@ import { generateText } from "ai";
 import type { UIMessage } from "ai";
 import { enrichModel } from "@/lib/openrouter.ts";
 import { readFromS3, writeToS3 } from "@/lib/s3.ts";
+import { extractConversationText } from "@/lib/message-utils.ts";
 import { log } from "@/lib/logger.ts";
 
 const memLog = log.child({ module: "memory-flush" });
@@ -19,16 +20,6 @@ const SECTION_HEADERS: Record<MemorySection, string> = {
   preferences: "## Preferences",
   decisions: "## Decisions",
 };
-
-function extractTextFromMessage(message: UIMessage): string {
-  if (Array.isArray(message.parts)) {
-    return message.parts
-      .filter((p): p is { type: "text"; text: string } => p.type === "text")
-      .map((p) => p.text)
-      .join("\n");
-  }
-  return "";
-}
 
 /** Parse existing memory.md into section -> entries map */
 function parseMemory(
@@ -115,11 +106,7 @@ export async function flushConversationMemory(
   messages: UIMessage[],
 ): Promise<void> {
   // Only analyze the last 10 messages to keep cost/latency low
-  const recent = messages.slice(-10);
-  const conversationText = recent
-    .map((m) => `${m.role}: ${extractTextFromMessage(m)}`)
-    .filter((t) => t.length > 5)
-    .join("\n\n");
+  const conversationText = extractConversationText(messages, 10);
 
   if (conversationText.length < 50) {
     memLog.debug("conversation too short for memory flush", { projectId });

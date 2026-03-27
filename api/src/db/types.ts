@@ -2,6 +2,7 @@ export interface UserRow {
   id: string;
   email: string;
   password_hash: string;
+  is_admin?: number;
   created_at: string;
 }
 
@@ -141,7 +142,7 @@ export interface SkillRow {
   s3_key: string;
   enabled: number;
   metadata: string | null;
-  source: "built-in" | "user" | "github" | "community";
+  source: string;
   installed_at: string;
   updated_at: string;
 }
@@ -168,27 +169,20 @@ export interface QuickActionRow {
   updated_at: string;
 }
 
-export interface MarketplaceItemRow {
-  id: string;
-  type: "skill" | "template";
-  name: string;
-  description: string;
-  s3_key: string | null;
-  metadata: string | null;
-  prompt: string | null;
-  schedule: string | null;
-  required_tools: string | null;
-  category: string;
-  publisher_id: string;
-  project_id: string;
-  downloads: number;
-  published_at: string;
+export interface SettingRow {
+  key: string;
+  value: string;
   updated_at: string;
 }
 
-export interface MarketplaceReferenceRow {
-  source_id: string;
-  target_id: string;
-  reference_type: "mandatory" | "recommendation";
+export interface TelegramBindingRow {
+  id: string;
+  project_id: string;
+  telegram_chat_id: string;
+  chat_id: string | null;
+  chat_title: string;
+  enabled: number;
+  created_at: string;
+  updated_at: string;
 }
 

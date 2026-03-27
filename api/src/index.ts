@@ -1,7 +1,7 @@
 import { corsHeaders } from "@/lib/cors.ts";
 import { log } from "@/lib/logger.ts";
 import { handleHealth } from "@/routes/health.ts";
-import { handleRegister, handleLogin } from "@/routes/auth.ts";
+import { handleLogin } from "@/routes/auth.ts";
 import {
   handleListProjects,
   handleCreateProject,
@@ -76,8 +76,17 @@ import {
   handleUpdateCredential,
   handleDeleteCredential,
 } from "@/routes/credentials.ts";
+import {
+  handleTelegramWebhook,
+  handleTelegramSetup,
+  handleTelegramTeardown,
+  handleTelegramStatus,
+  handleUpdateTelegramAllowlist,
+  handleListTelegramBindings,
+} from "@/routes/telegram.ts";
 import { browserBridge } from "@/lib/browser/bridge.ts";
 import { getCompanionTokenByToken, touchCompanionToken } from "@/db/queries/companion-tokens.ts";
+import { presignHandler } from "@/lib/s3.ts";
 
 // ── Rate limiter for WebSocket upgrade attempts ──
 const WS_RATE_WINDOW = 60_000; // 1 minute
@@ -104,24 +113,24 @@ function isWsRateLimited(ip: string): boolean {
 }
 import {
   handleListSkills,
-  handleListAvailableSkills,
   handleInstallSkill,
   handleDiscoverSkills,
   handleInstallFromGithub,
   handleGetSkill,
   handleDeleteSkill,
 } from "@/routes/skills.ts";
+
 import {
-  handleListMarketplace,
-  handleGetMarketplaceItem,
-  handlePublishMarketplace,
-  handleInstallMarketplace,
-  handleDeleteMarketplaceItem,
-  handleAddReference,
-  handleRemoveReference,
-  handleSuggestReferences,
-} from "@/routes/marketplace.ts";
+  handleConvertSlides,
+  handleConvertSlidesPdf,
+  handleSlidePreviews,
+} from "@/routes/slides.ts";
 import { startScheduler } from "@/lib/scheduler.ts";
+import { handleListUsers, handleCreateUser, handleDeleteUser, handleUpdateUser } from "@/routes/admin.ts";
+import { handleSetupStatus, handleSetupComplete } from "@/routes/setup.ts";
+import { handleGetSettings, handleUpdateSettings } from "@/routes/settings.ts";
+import { startAllPollers } from "@/lib/telegram-polling.ts";
+import { processIncomingUpdate } from "@/routes/telegram.ts";
 
 const httpLog = log.child({ module: "http" });
 const PORT = parseInt(process.env.PORT ?? "3001");
@@ -150,9 +159,6 @@ const server = Bun.serve<{ userId: string; projectId: string; authenticated: boo
   routes: {
     "/api/health": {
       GET: withLogging(handleHealth),
-    },
-    "/api/auth/register": {
-      POST: withLogging(handleRegister),
     },
     "/api/auth/login": {
       POST: withLogging(handleLogin),
@@ -287,35 +293,9 @@ const server = Bun.serve<{ userId: string; projectId: string; authenticated: boo
       PUT: withLogging(handleUpdateQuickAction),
       DELETE: withLogging(handleDeleteQuickAction),
     },
-    // Marketplace
-    "/api/marketplace": {
-      GET: withLogging(handleListMarketplace),
-    },
-    "/api/marketplace/suggest-references": {
-      GET: withLogging(handleSuggestReferences),
-    },
-    "/api/marketplace/:id": {
-      GET: withLogging(handleGetMarketplaceItem),
-      DELETE: withLogging(handleDeleteMarketplaceItem),
-    },
-    "/api/marketplace/:id/references": {
-      POST: withLogging(handleAddReference),
-    },
-    "/api/marketplace/:id/references/:targetId": {
-      DELETE: withLogging(handleRemoveReference),
-    },
-    "/api/projects/:projectId/marketplace/publish": {
-      POST: withLogging(handlePublishMarketplace),
-    },
-    "/api/projects/:projectId/marketplace/install": {
-      POST: withLogging(handleInstallMarketplace),
-    },
     // Skills
     "/api/projects/:projectId/skills": {
       GET: withLogging(handleListSkills),
-    },
-    "/api/projects/:projectId/skills/available": {
-      GET: withLogging(handleListAvailableSkills),
     },
     "/api/projects/:projectId/skills/install": {
       POST: withLogging(handleInstallSkill),
@@ -340,6 +320,57 @@ const server = Bun.serve<{ userId: string; projectId: string; authenticated: boo
     },
     "/api/projects/:projectId/companion/status": {
       GET: withLogging(handleCompanionStatus),
+    },
+    // Telegram webhook (unauthenticated — secret token verified)
+    "/api/telegram/webhook/:projectId": {
+      POST: withLogging(handleTelegramWebhook),
+    },
+    // Telegram management (authenticated)
+    "/api/projects/:projectId/telegram/setup": {
+      POST: withLogging(handleTelegramSetup),
+      DELETE: withLogging(handleTelegramTeardown),
+    },
+    "/api/projects/:projectId/telegram/status": {
+      GET: withLogging(handleTelegramStatus),
+    },
+    "/api/projects/:projectId/telegram/allowlist": {
+      PUT: withLogging(handleUpdateTelegramAllowlist),
+    },
+    "/api/projects/:projectId/telegram/bindings": {
+      GET: withLogging(handleListTelegramBindings),
+    },
+    // Setup (no auth required)
+    "/api/setup/status": {
+      GET: withLogging(handleSetupStatus),
+    },
+    "/api/setup/complete": {
+      POST: withLogging(handleSetupComplete),
+    },
+    // Admin
+    "/api/admin/users": {
+      GET: withLogging(handleListUsers),
+      POST: withLogging(handleCreateUser),
+    },
+    "/api/admin/users/:userId": {
+      PUT: withLogging(handleUpdateUser),
+      DELETE: withLogging(handleDeleteUser),
+    },
+    // Settings
+    "/api/settings": {
+      GET: withLogging(handleGetSettings),
+    },
+    "/api/settings/:key": {
+      PUT: withLogging(handleUpdateSettings),
+    },
+    // Slides
+    "/api/projects/:projectId/slides/convert": {
+      POST: withLogging(handleConvertSlides),
+    },
+    "/api/projects/:projectId/slides/convert-pdf": {
+      POST: withLogging(handleConvertSlidesPdf),
+    },
+    "/api/projects/:projectId/slides/previews": {
+      POST: withLogging(handleSlidePreviews),
     },
     // Credentials (saved logins)
     "/api/projects/:projectId/credentials": {
@@ -374,6 +405,10 @@ const server = Bun.serve<{ userId: string; projectId: string; authenticated: boo
         return Response.json({ error: "WebSocket upgrade failed" }, { status: 500, headers: corsHeaders });
       }
       return undefined as unknown as Response;
+    }
+
+    if (url.pathname.startsWith("/api/s3/")) {
+      return presignHandler.handleRequest(request);
     }
 
     httpLog.warn("not found", { method: request.method, path: url.pathname });
@@ -434,3 +469,8 @@ const server = Bun.serve<{ userId: string; projectId: string; authenticated: boo
 log.info("server started", { port: server.port, logLevel: process.env.LOG_LEVEL ?? "debug" });
 
 startScheduler();
+
+// Start Telegram polling for all configured bots (only when webhooks are not configured)
+if (!process.env.TELEGRAM_WEBHOOK_BASE_URL) {
+  startAllPollers(processIncomingUpdate);
+}

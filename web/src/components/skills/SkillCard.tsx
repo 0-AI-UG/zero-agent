@@ -1,43 +1,30 @@
-import type { SkillMetadata, SkillSource } from "@/api/skills";
+import type { SkillMetadata } from "@/api/skills";
 import { Badge } from "@/components/ui/badge";
-import { TrashIcon, DownloadIcon, GlobeIcon, Loader2Icon } from "lucide-react";
+import { TrashIcon, DownloadIcon, Loader2Icon } from "lucide-react";
 import type { MouseEvent } from "react";
-import {
-  getPlatformConfig,
-  CAPABILITY_LABELS,
-  SOURCE_LABELS,
-} from "./constants";
+import { getPlatformConfig, CAPABILITY_LABELS } from "./constants";
 
 export interface UnifiedSkill {
   name: string;
   description: string;
   metadata: SkillMetadata | null;
   installed: boolean;
-  source: SkillSource | null;
-  published?: boolean;
-  downloads?: number;
 }
 
 interface SkillCardProps {
   skill: UnifiedSkill;
   onInstall?: () => void;
   onUninstall?: () => void;
-  onPublish?: () => void;
-  onUnpublish?: () => void;
   onClick?: () => void;
   isInstalling?: boolean;
-  isPublishing?: boolean;
 }
 
 export function SkillCard({
   skill,
   onInstall,
   onUninstall,
-  onPublish,
-  onUnpublish,
   onClick,
   isInstalling,
-  isPublishing,
 }: SkillCardProps) {
   const platform = getPlatformConfig(skill.metadata?.platform);
 
@@ -46,7 +33,7 @@ export function SkillCard({
       onClick={onClick}
       className={`relative flex flex-col rounded-lg border bg-card p-3.5 cursor-pointer hover:bg-accent/50 transition-all h-full ${!skill.installed ? "opacity-60 hover:opacity-100" : ""}`}
     >
-      {/* Header: platform + source */}
+      {/* Header: platform + status */}
       <div className="flex items-center justify-between gap-2 mb-2 min-h-[18px]">
         <div className="flex items-center gap-1.5">
           {skill.installed && (
@@ -55,18 +42,6 @@ export function SkillCard({
           <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
             {platform.label}
           </span>
-        </div>
-        <div className="flex items-center gap-1.5 ml-auto">
-          {skill.downloads != null && (
-            <span className="text-[10px] text-muted-foreground">
-              {skill.downloads} {skill.downloads === 1 ? "install" : "installs"}
-            </span>
-          )}
-          {skill.source && (
-            <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-              {SOURCE_LABELS[skill.source] ?? skill.source}
-            </Badge>
-          )}
         </div>
       </div>
 
@@ -93,40 +68,6 @@ export function SkillCard({
       <div className="flex items-center gap-2 mt-3 pt-2 border-t">
         {skill.installed ? (
           <div className="ml-auto flex items-center gap-1">
-            {skill.source === "user" && !skill.published && onPublish && (
-              <button
-                onClick={(e: MouseEvent) => {
-                  e.stopPropagation();
-                  onPublish();
-                }}
-                disabled={isPublishing}
-                className="text-muted-foreground hover:text-foreground p-1 disabled:opacity-50"
-                aria-label={`Publish ${skill.name}`}
-              >
-                {isPublishing ? (
-                  <Loader2Icon className="size-3.5 animate-spin" />
-                ) : (
-                  <GlobeIcon className="size-3.5" />
-                )}
-              </button>
-            )}
-            {skill.published && onUnpublish && (
-              <button
-                onClick={(e: MouseEvent) => {
-                  e.stopPropagation();
-                  onUnpublish();
-                }}
-                disabled={isPublishing}
-                className="text-muted-foreground hover:text-foreground p-1 disabled:opacity-50"
-                aria-label={`Unpublish ${skill.name}`}
-              >
-                {isPublishing ? (
-                  <Loader2Icon className="size-3.5 animate-spin" />
-                ) : (
-                  <GlobeIcon className="size-3.5 text-green-500" />
-                )}
-              </button>
-            )}
             <button
               onClick={(e: MouseEvent) => {
                 e.stopPropagation();

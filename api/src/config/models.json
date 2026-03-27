@@ -9,6 +9,7 @@
       "pricing": { "input": 0.295, "output": 1.20 },
       "tags": ["chinese", "recommended", "function-calling"],
       "default": true,
+      "multimodal": false,
       "providerRouting": {
         "order": ["minimax"],
         "allow_fallbacks": false
@@ -22,6 +23,7 @@
       "contextWindow": 163840,
       "pricing": { "input": 0.25, "output": 0.40 },
       "tags": ["chinese", "value", "coding"],
+      "multimodal": false,
       "providerRouting": {
         "order": ["deepseek"],
         "allow_fallbacks": true
@@ -35,6 +37,7 @@
       "contextWindow": 1000000,
       "pricing": { "input": 0.26, "output": 1.56 },
       "tags": ["chinese", "long-context", "reasoning"],
+      "multimodal": true,
       "providerRouting": {
         "order": ["alibaba"],
         "allow_fallbacks": true
@@ -48,6 +51,7 @@
       "contextWindow": 1000000,
       "pricing": { "input": 0.10, "output": 0.40 },
       "tags": ["chinese", "value", "fast", "long-context"],
+      "multimodal": true,
       "providerRouting": {
         "order": ["alibaba"],
         "allow_fallbacks": true
@@ -61,19 +65,7 @@
       "contextWindow": 202752,
       "pricing": { "input": 0.80, "output": 2.56 },
       "tags": ["chinese", "reasoning"],
-      "providerRouting": {
-        "order": ["zhipuai"],
-        "allow_fallbacks": false
-      }
-    },
-    {
-      "id": "z-ai/glm-4.7-flash",
-      "name": "GLM-4.7 Flash",
-      "provider": "zhipuai",
-      "description": "Ultra-fast and nearly free. Good for simple Chinese tasks.",
-      "contextWindow": 202752,
-      "pricing": { "input": 0.06, "output": 0.40 },
-      "tags": ["chinese", "value", "fast"],
+      "multimodal": true,
       "providerRouting": {
         "order": ["zhipuai"],
         "allow_fallbacks": false
@@ -87,34 +79,9 @@
       "contextWindow": 262144,
       "pricing": { "input": 0.45, "output": 2.20 },
       "tags": ["chinese", "long-context", "agents"],
+      "multimodal": true,
       "providerRouting": {
         "order": ["moonshotai"],
-        "allow_fallbacks": false
-      }
-    },
-    {
-      "id": "bytedance-seed/seed-2.0-mini",
-      "name": "Seed 2.0 Mini",
-      "provider": "bytedance-seed",
-      "description": "ByteDance's fast model. Built by the team behind Douyin/TikTok.",
-      "contextWindow": 262144,
-      "pricing": { "input": 0.10, "output": 0.40 },
-      "tags": ["chinese", "value", "fast"],
-      "providerRouting": {
-        "order": ["bytedance-seed"],
-        "allow_fallbacks": false
-      }
-    },
-    {
-      "id": "stepfun/step-3.5-flash",
-      "name": "Step 3.5 Flash",
-      "provider": "stepfun",
-      "description": "StepFun's budget model. Extremely cheap Chinese inference.",
-      "contextWindow": 256000,
-      "pricing": { "input": 0.10, "output": 0.30 },
-      "tags": ["chinese", "value", "fast"],
-      "providerRouting": {
-        "order": ["stepfun"],
         "allow_fallbacks": false
       }
     },
@@ -126,6 +93,7 @@
       "contextWindow": 1000000,
       "pricing": { "input": 3.00, "output": 15.00 },
       "tags": ["premium", "reasoning", "writing"],
+      "multimodal": true,
       "providerRouting": {
         "order": ["anthropic"],
         "allow_fallbacks": true
@@ -139,6 +107,7 @@
       "contextWindow": 1048576,
       "pricing": { "input": 0.50, "output": 3.00 },
       "tags": ["value", "fast", "long-context"],
+      "multimodal": true,
       "providerRouting": {
         "order": ["google-ai-studio", "google-vertex"],
         "allow_fallbacks": true
@@ -152,6 +121,7 @@
       "contextWindow": 1050000,
       "pricing": { "input": 2.50, "output": 15.00 },
       "tags": ["premium", "reasoning", "coding", "long-context"],
+      "multimodal": true,
       "providerRouting": {
         "order": ["openai"],
         "allow_fallbacks": true

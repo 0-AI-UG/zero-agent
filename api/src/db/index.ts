@@ -2,8 +2,6 @@ import { Database } from "bun:sqlite";
 import { nanoid } from "nanoid";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import { BUILTIN_SKILLS, BUILTIN_TEMPLATES } from "./seed-data.ts";
-
 const DB_PATH = process.env.DB_PATH || "./data/app.db";
 
 mkdirSync(dirname(DB_PATH), { recursive: true });
@@ -21,6 +19,7 @@ db.run(`
     id            TEXT PRIMARY KEY,
     email         TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
+    is_admin      INTEGER NOT NULL DEFAULT 0,
     created_at    TEXT NOT NULL DEFAULT (datetime('now'))
   )
 `);
@@ -229,32 +228,24 @@ db.run(`
 `);
 
 db.run(`
-  CREATE TABLE IF NOT EXISTS marketplace_items (
-    id           TEXT PRIMARY KEY,
-    type         TEXT NOT NULL CHECK (type IN ('skill', 'template')),
-    name         TEXT UNIQUE NOT NULL,
-    description  TEXT NOT NULL DEFAULT '',
-    s3_key       TEXT,
-    metadata     TEXT,
-    prompt       TEXT,
-    schedule     TEXT,
-    required_tools TEXT,
-    category     TEXT NOT NULL DEFAULT 'general',
-    publisher_id TEXT NOT NULL,
-    project_id   TEXT NOT NULL DEFAULT '',
-    downloads    INTEGER NOT NULL DEFAULT 0,
-    published_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
+  CREATE TABLE IF NOT EXISTS telegram_bindings (
+    id               TEXT PRIMARY KEY,
+    project_id       TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    telegram_chat_id TEXT NOT NULL,
+    chat_id          TEXT REFERENCES chats(id) ON DELETE SET NULL,
+    chat_title       TEXT DEFAULT '',
+    enabled          INTEGER NOT NULL DEFAULT 1,
+    created_at       TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at       TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(project_id, telegram_chat_id)
   )
 `);
 
 db.run(`
-  CREATE TABLE IF NOT EXISTS marketplace_references (
-    source_id      TEXT NOT NULL REFERENCES marketplace_items(id) ON DELETE CASCADE,
-    target_id      TEXT NOT NULL REFERENCES marketplace_items(id) ON DELETE CASCADE,
-    reference_type TEXT NOT NULL CHECK (reference_type IN ('mandatory', 'recommendation')),
-    PRIMARY KEY (source_id, target_id),
-    CHECK (source_id != target_id)
+  CREATE TABLE IF NOT EXISTS settings (
+    key        TEXT PRIMARY KEY,
+    value      TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
   )
 `);
 
@@ -280,45 +271,7 @@ db.run(`CREATE INDEX IF NOT EXISTS idx_companion_tokens_user ON companion_tokens
 db.run(`CREATE INDEX IF NOT EXISTS idx_companion_tokens_project ON companion_tokens(project_id)`);
 db.run(`CREATE INDEX IF NOT EXISTS idx_companion_tokens_token ON companion_tokens(token)`);
 db.run(`CREATE INDEX IF NOT EXISTS idx_quick_actions_project ON quick_actions(project_id, sort_order)`);
-db.run(`CREATE INDEX IF NOT EXISTS idx_marketplace_items_type ON marketplace_items(type)`);
-db.run(`CREATE INDEX IF NOT EXISTS idx_marketplace_items_name ON marketplace_items(name)`);
-db.run(`CREATE INDEX IF NOT EXISTS idx_marketplace_items_downloads ON marketplace_items(downloads DESC)`);
-db.run(`CREATE INDEX IF NOT EXISTS idx_marketplace_items_category ON marketplace_items(category)`);
-db.run(`CREATE INDEX IF NOT EXISTS idx_marketplace_refs_source ON marketplace_references(source_id)`);
-db.run(`CREATE INDEX IF NOT EXISTS idx_marketplace_refs_target ON marketplace_references(target_id)`);
-
-// ── Seed built-in marketplace data ──
-
-// Re-seed on every startup: upsert skills and templates (preserves download counts)
-{
-  for (const skill of BUILTIN_SKILLS) {
-    db.run(
-      `INSERT INTO marketplace_items (id, type, name, description, s3_key, publisher_id, project_id)
-       VALUES (?, 'skill', ?, ?, 'built-in', 'system', 'system')
-       ON CONFLICT(name) DO UPDATE SET description = excluded.description`,
-      [skill.id, skill.name, skill.description],
-    );
-  }
-
-  for (const t of BUILTIN_TEMPLATES) {
-    db.run(
-      `INSERT INTO marketplace_items (id, type, name, description, prompt, schedule, category, publisher_id, project_id)
-       VALUES (?, 'template', ?, ?, ?, ?, ?, 'system', 'system')
-       ON CONFLICT(name) DO UPDATE SET
-         description = excluded.description,
-         prompt = excluded.prompt,
-         schedule = excluded.schedule,
-         category = excluded.category`,
-      [t.id, t.name, t.description, t.prompt, t.schedule, t.category],
-    );
-    for (const targetId of t.requiredSkillIds) {
-      db.run(
-        "INSERT OR IGNORE INTO marketplace_references (source_id, target_id, reference_type) VALUES (?, ?, 'mandatory')",
-        [t.id, targetId],
-      );
-    }
-  }
-}
+db.run(`CREATE INDEX IF NOT EXISTS idx_tg_bind_chat ON telegram_bindings(telegram_chat_id)`);
 
 // ── Exports ──
 

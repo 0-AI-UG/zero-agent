@@ -1,8 +1,10 @@
 import { CdpClient } from "./cdp.ts";
 import type { CompanionControl, CompanionMessage, BrowserResponse, WebAuthnSubCommand } from "./protocol.ts";
 import { executeAction, type RefMap } from "./actions.ts";
-import { SandboxManager } from "./sandbox.ts";
+import { WorkspaceManager } from "./workspace.ts";
+import { runCodeInWorker } from "./worker-runner.ts";
 import { enableDomainsStealthy } from "./stealth.ts";
+import type { Logger } from "./logger.ts";
 
 const RECONNECT_BASE = 1000;
 const RECONNECT_MAX = 30000;
@@ -22,6 +24,7 @@ interface SessionState {
 interface WsClientOptions {
   serverUrl: string;
   token: string;
+  logger: Logger;
   getCdp: () => CdpClient;
   getDefaultRefMap: () => RefMap;
   cdpPort: number;
@@ -35,7 +38,21 @@ export function createWsClient(options: WsClientOptions) {
   let stopped = false;
   let serverPingTimer: ReturnType<typeof setTimeout> | null = null;
   const sessions = new Map<string, SessionState>();
-  const sandboxManager = new SandboxManager();
+  const workspaceManager = new WorkspaceManager({
+    logger: options.logger,
+    backend: {
+      async initWorkspace() {},
+      async runCommand(_workspaceId, dir, command, timeout) {
+        // Command is encoded as "entrypoint:<path>" or raw code
+        if (command.startsWith("entrypoint:")) {
+          const entrypoint = command.slice("entrypoint:".length);
+          return runCodeInWorker(null, dir, timeout, entrypoint);
+        }
+        return runCodeInWorker(command, dir, timeout);
+      },
+      async destroyWorkspace() {},
+    },
+  });
 
   // Session idle reaper — runs every 60s, cleans up sessions idle for 5+ min
   const sessionReaper = setInterval(() => {
@@ -182,36 +199,48 @@ export function createWsClient(options: WsClientOptions) {
       return;
     }
 
-    // ── Sandbox handlers ──
+    // ── Workspace handlers ──
 
-    if (data.type === "createSandbox") {
-      sandboxManager.createSandbox(data.sandboxId).then(({ pythonVersion }) => {
-        const msg: CompanionMessage = { type: "sandboxCreated", sandboxId: data.sandboxId, pythonVersion };
+    if (data.type === "createWorkspace") {
+      workspaceManager.createWorkspace(data.workspaceId, data.manifest).then(() => {
+        const msg: CompanionMessage = { type: "workspaceCreated", workspaceId: data.workspaceId };
         ws?.send(JSON.stringify(msg));
       }).catch((err) => {
-        const msg: CompanionMessage = { type: "sandboxError", sandboxId: data.sandboxId, error: err instanceof Error ? err.message : String(err) };
+        const msg: CompanionMessage = { type: "workspaceError", workspaceId: data.workspaceId, error: err instanceof Error ? err.message : String(err) };
         ws?.send(JSON.stringify(msg));
       });
       return;
     }
 
-    if (data.type === "runScript") {
-      sandboxManager.runScript(data.sandboxId, data.script, data.packages, data.timeout).then((result) => {
-        const msg: CompanionMessage = { type: "scriptResult", commandId: data.commandId, sandboxId: data.sandboxId, ...result };
+    if (data.type === "syncWorkspace") {
+      workspaceManager.syncWorkspace(data.workspaceId, data.manifest).then(() => {
+        const msg: CompanionMessage = { type: "workspaceSynced", workspaceId: data.workspaceId };
         ws?.send(JSON.stringify(msg));
       }).catch((err) => {
-        const msg: CompanionMessage = { type: "sandboxError", sandboxId: data.sandboxId, commandId: data.commandId, error: err instanceof Error ? err.message : String(err) };
+        const msg: CompanionMessage = { type: "workspaceError", workspaceId: data.workspaceId, error: err instanceof Error ? err.message : String(err) };
         ws?.send(JSON.stringify(msg));
       });
       return;
     }
 
-    if (data.type === "destroySandbox") {
-      sandboxManager.destroySandbox(data.sandboxId).then(() => {
-        const msg: CompanionMessage = { type: "sandboxDestroyed", sandboxId: data.sandboxId };
+    if (data.type === "runCode") {
+      const command = data.entrypoint ? `entrypoint:${data.entrypoint}` : (data.code ?? "");
+      workspaceManager.runCommand(data.workspaceId, command, data.timeout).then((result) => {
+        const msg: CompanionMessage = { type: "commandResult", commandId: data.commandId, workspaceId: data.workspaceId, ...result };
         ws?.send(JSON.stringify(msg));
       }).catch((err) => {
-        const msg: CompanionMessage = { type: "sandboxError", sandboxId: data.sandboxId, error: err instanceof Error ? err.message : String(err) };
+        const msg: CompanionMessage = { type: "workspaceError", workspaceId: data.workspaceId, commandId: data.commandId, error: err instanceof Error ? err.message : String(err) };
+        ws?.send(JSON.stringify(msg));
+      });
+      return;
+    }
+
+    if (data.type === "destroyWorkspace") {
+      workspaceManager.destroyWorkspace(data.workspaceId).then(() => {
+        const msg: CompanionMessage = { type: "workspaceDestroyed", workspaceId: data.workspaceId };
+        ws?.send(JSON.stringify(msg));
+      }).catch((err) => {
+        const msg: CompanionMessage = { type: "workspaceError", workspaceId: data.workspaceId, error: err instanceof Error ? err.message : String(err) };
         ws?.send(JSON.stringify(msg));
       });
       return;
@@ -355,7 +384,7 @@ export function createWsClient(options: WsClientOptions) {
     stopped = true;
     clearInterval(sessionReaper);
     destroyAllSessions();
-    sandboxManager.stop();
+    workspaceManager.stop();
     ws?.close();
   }
 

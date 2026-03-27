@@ -1,18 +1,21 @@
 import { useState, useMemo } from "react";
+import { Link } from "react-router";
 import { useProjects } from "@/api/projects";
 import { useAuthStore } from "@/stores/auth";
+import { useIsAdmin } from "@/api/admin";
 import { ProjectCard } from "@/components/projects/ProjectCard";
 import { CreateProjectDialog } from "@/components/projects/CreateProjectDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { LogOutIcon, SearchIcon } from "lucide-react";
+import { LogOutIcon, SearchIcon, ShieldIcon } from "lucide-react";
 import { EmptyProjectsIllustration } from "@/components/ui/illustrations";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
 
 export function DashboardPage() {
   const { data: projects, isLoading, error } = useProjects();
   const logout = useAuthStore((s) => s.logout);
+  const { data: isAdmin } = useIsAdmin();
   const [search, setSearch] = useState("");
 
   const filtered = useMemo(() => {
@@ -33,6 +36,13 @@ export function DashboardPage() {
           <h1 className="text-sm font-semibold tracking-tight font-display">Projects</h1>
           <div className="flex items-center gap-2">
             <CreateProjectDialog />
+            {isAdmin && (
+              <Button variant="ghost" size="icon-sm" asChild aria-label="Admin settings">
+                <Link to="/admin">
+                  <ShieldIcon className="size-4" />
+                </Link>
+              </Button>
+            )}
             <NotificationBell />
             <Button
               variant="ghost"

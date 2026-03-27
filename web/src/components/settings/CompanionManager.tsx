@@ -181,7 +181,7 @@ export function CompanionManager({ projectId, project, updateProject }: Companio
               <p className="text-sm font-medium">Code execution</p>
             </div>
             <p className="text-xs text-muted-foreground">
-              Allow the assistant to run Python scripts on the companion machine.
+              Allow the assistant to run JavaScript/TypeScript code on the companion machine.
             </p>
           </div>
           <Switch

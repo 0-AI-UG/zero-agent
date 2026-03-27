@@ -130,30 +130,6 @@ export const updateCredentialSchema = z.discriminatedUnion("credType", [
   }),
 ]);
 
-// Unified marketplace
-export const publishMarketplaceSchema = z.object({
-  type: z.enum(["skill", "template"]),
-  skillName: z.string().min(1).optional(),
-  taskId: z.string().min(1).optional(),
-  name: z.string().min(1).max(100).optional(),
-  description: z.string().max(500).optional(),
-  category: z.string().min(1).max(50).optional(),
-  references: z.array(z.object({
-    targetId: z.string().min(1),
-    referenceType: z.enum(["mandatory", "recommendation"]),
-  })).optional(),
-});
-
-export const installMarketplaceSchema = z.object({
-  itemId: z.string().min(1, "Item ID is required"),
-  confirm: z.boolean().optional(),
-});
-
-export const addReferenceSchema = z.object({
-  targetId: z.string().min(1, "Target ID is required"),
-  referenceType: z.enum(["mandatory", "recommendation"]),
-});
-
 // Soul
 export const updateSoulSchema = z.object({
   content: z.string().min(1).max(10000),

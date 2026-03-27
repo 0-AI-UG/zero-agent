@@ -9,6 +9,7 @@ import { sanitizePath } from "@/lib/sanitize.ts";
 import { truncateText } from "@/lib/truncate-result.ts";
 import { indexFileContent, searchFileContent, removeFileIndex } from "@/db/queries/search.ts";
 import { log } from "@/lib/logger.ts";
+import { isModelMultimodal } from "@/config/models.ts";
 import { visionModel } from "@/lib/openrouter.ts";
 import sharp from "sharp";
 
@@ -77,6 +78,8 @@ function guessMimeType(filename: string): string {
     gif: "image/gif",
     pdf: "application/pdf",
     html: "text/html",
+    slides: "text/html+slides",
+    viz: "text/html+viz",
   };
   return map[ext ?? ""] ?? "application/octet-stream";
 }
@@ -129,7 +132,7 @@ function cleanupEmptyFolders(projectId: string, folderPath: string) {
   }
 }
 
-export function createFileTools(projectId: string) {
+export function createFileTools(projectId: string, options?: { modelId?: string }) {
   const readPaths = new Set<string>();
 
   return {
@@ -161,34 +164,38 @@ export function createFileTools(projectId: string) {
         try {
           const s3Key = `projects/${projectId}/${path}`;
 
-          // Image files: use vision model to describe the image
           if (isImageFile(path)) {
             const buffer = await readBinaryFromS3(s3Key);
             readPaths.add(path);
             const originalMediaType = getImageMediaType(path);
             const { buffer: resized, mediaType } = await resizeImageForModel(buffer, originalMediaType);
+
+            const modelId = options?.modelId;
+            if (modelId && !isModelMultimodal(modelId)) {
+              toolLog.info("readFile image captioning", { projectId, path, modelId });
+              const base64 = resized.toString("base64");
+              const { text: caption } = await generateText({
+                model: visionModel,
+                messages: [{
+                  role: "user",
+                  content: [
+                    { type: "text", text: "Describe this image in detail. Include all visible text, layout, colors, and key elements." },
+                    { type: "image", image: base64, mediaType },
+                  ],
+                }],
+              });
+              toolLog.info("readFile image captioned", { projectId, path, captionLength: caption.length });
+              return { path, type: "caption" as const, caption };
+            }
+
             const base64 = resized.toString("base64");
-            toolLog.info("readFile image: describing with vision model", {
+            toolLog.info("readFile image", {
               projectId, path,
               originalBytes: buffer.byteLength,
               resizedBytes: resized.byteLength,
               mediaType,
             });
-
-            const { text: description } = await generateText({
-              model: visionModel,
-              messages: [{
-                role: "user",
-                content: [
-                  { type: "text", text: `Describe this image in detail. Include all visible text, layout, colors, and key visual elements. Be thorough but concise.` },
-                  { type: "image", image: `data:${mediaType};base64,${base64}` },
-                ],
-              }],
-              maxOutputTokens: 1024,
-            });
-
-            toolLog.info("readFile image described", { projectId, path, descriptionLength: description.length });
-            return { path, type: "image-description" as const, description };
+            return { path, type: "image" as const, base64, mediaType };
           }
 
           // Text files: existing behavior
@@ -220,6 +227,27 @@ export function createFileTools(projectId: string) {
           toolLog.error("readFile failed", err, { projectId, path });
           throw err;
         }
+      },
+      toModelOutput({ output }: { output: any }): any {
+        if (output?.type === "caption" && typeof output.caption === "string") {
+          return {
+            type: "text" as const,
+            value: `Image file: ${output.path}\n\n[Image description]\n${output.caption}`,
+          };
+        }
+        if (output?.type === "image" && typeof output.base64 === "string") {
+          return {
+            type: "content" as const,
+            value: [
+              { type: "text" as const, text: `Image file: ${output.path}` },
+              { type: "image-data" as const, data: output.base64 as string, mediaType: output.mediaType as string },
+            ],
+          };
+        }
+        return {
+          type: "text" as const,
+          value: JSON.stringify(output),
+        };
       },
     }),
 

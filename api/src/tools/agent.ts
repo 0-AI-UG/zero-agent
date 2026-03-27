@@ -17,6 +17,7 @@ export interface AgentToolOptions {
   userId?: string;
   projectId?: string;
   onlyTools?: string[];
+  modelId?: string;
 }
 
 export function createAgentTool(projectId: string, toolOptions: AgentToolOptions) {
@@ -71,6 +72,7 @@ export function createAgentTool(projectId: string, toolOptions: AgentToolOptions
           excludeTools: AGENT_EXCLUDED_TOOLS,
           context: "subagent",
           onlyTools: toolOptions.onlyTools,
+          modelId: toolOptions.modelId,
         });
 
         const selectedModel = task.model === "default" ? chatModel : enrichModel;

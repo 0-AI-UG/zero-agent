@@ -30,7 +30,6 @@ export const SOURCE_LABELS: Record<string, string> = {
   "built-in": "built-in",
   user: "custom",
   github: "github",
-  community: "community",
 };
 
 export function getPlatformConfig(platform: string | undefined) {
