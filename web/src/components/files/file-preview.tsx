@@ -23,6 +23,7 @@ import { TextPreview } from "./text-preview";
 import { CodePreview } from "./code-preview";
 import { PackageJsonPreview } from "./package-json-preview";
 import { CsvPreview } from "./csv-preview";
+import { XlsxPreview } from "./xlsx-preview";
 import { HtmlPreview } from "./html-preview";
 import { VizPreview } from "./viz-preview";
 import { DownloadFallback } from "./download-fallback";
@@ -127,6 +128,15 @@ function isCsvFile(file: FileItem): boolean {
   return file.mimeType === "text/csv" || file.filename.endsWith(".csv");
 }
 
+function isExcelFile(file: FileItem): boolean {
+  return (
+    file.mimeType === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
+    file.mimeType === "application/vnd.ms-excel" ||
+    file.filename.endsWith(".xlsx") ||
+    file.filename.endsWith(".xls")
+  );
+}
+
 const CODE_EXTENSIONS = [
   ".py", ".json", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs",
   ".css", ".scss", ".less",
@@ -178,6 +188,10 @@ function FilePreviewContent({
 
   if (isCsvFile(file) && content !== undefined) {
     return <CsvPreview file={file} content={content} projectId={projectId} />;
+  }
+
+  if (isExcelFile(file) && url) {
+    return <XlsxPreview file={file} url={url} projectId={projectId} />;
   }
 
   if (file.filename === "package.json" && content !== undefined) {

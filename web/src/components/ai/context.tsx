@@ -2,7 +2,7 @@ import type { LanguageModelUsage } from "ai"
 import { type ComponentProps, createContext, useContext } from "react"
 import { AlertTriangleIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { models } from "@/stores/model"
+import { getModelsCache } from "@/stores/model"
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card"
 import { Progress } from "@/components/ui/progress"
 import { cn } from "@/lib/utils"
@@ -28,7 +28,7 @@ function calcCost(
   tokens: { input?: number; output?: number; reasoning?: number; cache?: number },
 ): number | undefined {
   if (!modelId) return undefined
-  const model = models.find((m) => m.id === modelId)
+  const model = getModelsCache().find((m) => m.id === modelId)
   if (!model) return undefined
   const { input: inputPrice, output: outputPrice } = model.pricing
   const inputCost = ((tokens.input ?? 0) + (tokens.cache ?? 0)) * (inputPrice / 1_000_000)

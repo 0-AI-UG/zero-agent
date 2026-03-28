@@ -28,7 +28,6 @@ export function useAcceptInvitation() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.invitations.mine });
-      queryClient.invalidateQueries({ queryKey: queryKeys.notifications.mine });
       queryClient.invalidateQueries({ queryKey: queryKeys.projects.all });
     },
   });
@@ -42,7 +41,6 @@ export function useDeclineInvitation() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.invitations.mine });
-      queryClient.invalidateQueries({ queryKey: queryKeys.notifications.mine });
     },
   });
 }

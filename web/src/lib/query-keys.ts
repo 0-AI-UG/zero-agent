@@ -30,9 +30,6 @@ export const queryKeys = {
   invitations: {
     mine: ["invitations"] as const,
   },
-  notifications: {
-    mine: ["notifications"] as const,
-  },
   todos: {
     byChat: (projectId: string, chatId: string) =>
       ["todos", projectId, chatId] as const,

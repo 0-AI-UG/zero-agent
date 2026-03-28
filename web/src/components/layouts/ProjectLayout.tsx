@@ -15,7 +15,6 @@ import { ChatSidebar } from "@/components/chat/ChatSidebar";
 import { Loader } from "@/components/ai/loader";
 import {
   ArrowLeftIcon,
-  CircleHelpIcon,
   ClockIcon,
   FolderIcon,
   LogOutIcon,
@@ -26,7 +25,6 @@ import {
 import { cn } from "@/lib/utils";
 import { useEffect } from "react";
 import { useFilesStore } from "@/stores/files-store";
-import { NotificationBell } from "@/components/notifications/NotificationBell";
 import { FilePreviewModal } from "@/components/files/file-preview-modal";
 
 function getProjectColor(name: string): string {
@@ -187,8 +185,7 @@ export function ProjectLayout() {
     location.pathname.includes("/files") ||
     location.pathname.includes("/tasks") ||
     location.pathname.includes("/skills") ||
-    location.pathname.includes("/settings") ||
-    location.pathname.includes("/help");
+    location.pathname.includes("/settings");
   const isChatTab = !isOnSubpage;
 
   const navItems = [
@@ -218,11 +215,6 @@ export function ProjectLayout() {
       to: `${basePath}/settings`,
       icon: SettingsIcon,
       label: "Settings",
-    },
-    {
-      to: `${basePath}/help`,
-      icon: CircleHelpIcon,
-      label: "Help",
     },
   ] as const;
 
@@ -260,7 +252,6 @@ export function ProjectLayout() {
           <span className="text-sm font-semibold truncate flex-1">
             {project.name}
           </span>
-          <NotificationBell />
           <Button
             variant="ghost"
             size="icon-sm"
@@ -317,8 +308,7 @@ export function ProjectLayout() {
           ))}
         </nav>
 
-        {/* Notifications + Logout */}
-        <NotificationBell />
+        {/* Logout */}
         <TooltipProvider>
           <Tooltip>
             <TooltipTrigger asChild>

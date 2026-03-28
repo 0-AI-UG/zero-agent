@@ -1,7 +1,7 @@
 import { corsHeaders } from "@/lib/cors.ts";
 import { log } from "@/lib/logger.ts";
 import { handleHealth } from "@/routes/health.ts";
-import { handleLogin } from "@/routes/auth.ts";
+import { handleLogin, handleMe } from "@/routes/auth.ts";
 import {
   handleListProjects,
   handleCreateProject,
@@ -32,6 +32,8 @@ import {
   handleSearchFiles,
   handleParseScreenshot,
   handleUpdateFileContent,
+  handleGetUploadUrl,
+  handleUpdateFileBinary,
 } from "@/routes/files.ts";
 import {
   handleListTasks,
@@ -52,11 +54,6 @@ import {
   handleAcceptInvitation,
   handleDeclineInvitation,
 } from "@/routes/invitations.ts";
-import {
-  handleListNotifications,
-  handleMarkRead,
-  handleMarkAllRead,
-} from "@/routes/notifications.ts";
 import { handleListTodos } from "@/routes/todos.ts";
 import {
   handleListQuickActions,
@@ -129,6 +126,14 @@ import { startScheduler } from "@/lib/scheduler.ts";
 import { handleListUsers, handleCreateUser, handleDeleteUser, handleUpdateUser } from "@/routes/admin.ts";
 import { handleSetupStatus, handleSetupComplete } from "@/routes/setup.ts";
 import { handleGetSettings, handleUpdateSettings } from "@/routes/settings.ts";
+import {
+  handleListEnabledModels,
+  handleListAllModels,
+  handleCreateModel,
+  handleUpdateModel,
+  handleDeleteModel,
+} from "@/routes/models.ts";
+import { handleUsageSummary, handleUsageByModel, handleUsageByUser } from "@/routes/usage.ts";
 import { startAllPollers } from "@/lib/telegram-polling.ts";
 import { processIncomingUpdate } from "@/routes/telegram.ts";
 
@@ -162,6 +167,9 @@ const server = Bun.serve<{ userId: string; projectId: string; authenticated: boo
     },
     "/api/auth/login": {
       POST: withLogging(handleLogin),
+    },
+    "/api/me": {
+      GET: withLogging(handleMe),
     },
     "/api/projects": {
       GET: withLogging(handleListProjects),
@@ -214,6 +222,12 @@ const server = Bun.serve<{ userId: string; projectId: string; authenticated: boo
     },
     "/api/projects/:projectId/files/:id/url": {
       GET: withLogging(handleGetFileUrl),
+    },
+    "/api/projects/:projectId/files/:id/upload-url": {
+      POST: withLogging(handleGetUploadUrl),
+    },
+    "/api/projects/:projectId/files/:id/binary": {
+      POST: withLogging(handleUpdateFileBinary),
     },
     "/api/projects/:projectId/files/:id": {
       DELETE: withLogging(handleDeleteFile),
@@ -269,16 +283,6 @@ const server = Bun.serve<{ userId: string; projectId: string; authenticated: boo
     },
     "/api/invitations/:id/decline": {
       POST: withLogging(handleDeclineInvitation),
-    },
-    // Notifications
-    "/api/notifications": {
-      GET: withLogging(handleListNotifications),
-    },
-    "/api/notifications/:id/read": {
-      POST: withLogging(handleMarkRead),
-    },
-    "/api/notifications/read-all": {
-      POST: withLogging(handleMarkAllRead),
     },
     // Todos
     "/api/projects/:projectId/todos": {
@@ -354,6 +358,26 @@ const server = Bun.serve<{ userId: string; projectId: string; authenticated: boo
     "/api/admin/users/:userId": {
       PUT: withLogging(handleUpdateUser),
       DELETE: withLogging(handleDeleteUser),
+    },
+    // Models
+    "/api/models": {
+      GET: withLogging(handleListEnabledModels),
+    },
+    "/api/admin/models": {
+      GET: withLogging(handleListAllModels),
+      POST: withLogging(handleCreateModel),
+      PUT: withLogging(handleUpdateModel),
+      DELETE: withLogging(handleDeleteModel),
+    },
+    // Usage
+    "/api/admin/usage/summary": {
+      GET: withLogging(handleUsageSummary),
+    },
+    "/api/admin/usage/by-model": {
+      GET: withLogging(handleUsageByModel),
+    },
+    "/api/admin/usage/by-user": {
+      GET: withLogging(handleUsageByUser),
     },
     // Settings
     "/api/settings": {
@@ -469,6 +493,9 @@ const server = Bun.serve<{ userId: string; projectId: string; authenticated: boo
 log.info("server started", { port: server.port, logLevel: process.env.LOG_LEVEL ?? "debug" });
 
 startScheduler();
+
+import { startEventTriggers } from "@/lib/event-trigger.ts";
+startEventTriggers();
 
 // Start Telegram polling for all configured bots (only when webhooks are not configured)
 if (!process.env.TELEGRAM_WEBHOOK_BASE_URL) {

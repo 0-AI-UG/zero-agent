@@ -3,6 +3,7 @@ export interface UserRow {
   email: string;
   password_hash: string;
   is_admin?: number;
+  can_create_projects?: number;
   created_at: string;
 }
 
@@ -77,6 +78,10 @@ export interface ScheduledTaskRow {
   run_count: number;
   required_tools: string | null;
   required_skills: string | null;
+  trigger_type: "schedule" | "event";
+  trigger_event: string | null;
+  trigger_filter: string | null;
+  cooldown_seconds: number;
   created_at: string;
   updated_at: string;
 }
@@ -110,17 +115,6 @@ export interface InvitationRow {
   status: "pending" | "accepted" | "declined";
   created_at: string;
   responded_at: string | null;
-}
-
-export type NotificationType = "invite" | "invite_accepted" | "member_removed" | "task_completed" | "task_failed";
-
-export interface NotificationRow {
-  id: string;
-  user_id: string;
-  type: NotificationType;
-  data: string;
-  read: number;
-  created_at: string;
 }
 
 export interface TodoRow {
@@ -184,5 +178,39 @@ export interface TelegramBindingRow {
   enabled: number;
   created_at: string;
   updated_at: string;
+}
+
+export interface ModelRow {
+  id: string;
+  name: string;
+  provider: string;
+  description: string;
+  context_window: number;
+  pricing_input: number;
+  pricing_output: number;
+  tags: string;
+  is_default: number;
+  multimodal: number;
+  provider_routing: string | null;
+  enabled: number;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface UsageLogRow {
+  id: string;
+  user_id: string;
+  project_id: string;
+  chat_id: string | null;
+  model_id: string;
+  input_tokens: number;
+  output_tokens: number;
+  reasoning_tokens: number;
+  cached_tokens: number;
+  cost_input: number;
+  cost_output: number;
+  duration_ms: number | null;
+  created_at: string;
 }
 

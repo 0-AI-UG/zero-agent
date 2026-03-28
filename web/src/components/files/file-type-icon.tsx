@@ -36,6 +36,9 @@ export function getFileTypeInfo(mimeType: string, filename?: string): FileTypeIn
   if (mimeType === "text/csv" || filename?.endsWith(".csv")) {
     return { icon: TableIcon, color: "text-green-500", extension: "CSV" };
   }
+  if (filename?.endsWith(".xlsx") || filename?.endsWith(".xls") || mimeType === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" || mimeType === "application/vnd.ms-excel") {
+    return { icon: TableIcon, color: "text-emerald-500", extension: filename?.endsWith(".xls") ? "XLS" : "XLSX" };
+  }
   if (filename?.endsWith(".py") || mimeType === "text/x-python") {
     return { icon: FileCodeIcon, color: "text-yellow-500", extension: "PY" };
   }

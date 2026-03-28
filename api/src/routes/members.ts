@@ -5,10 +5,8 @@ import { handleError, verifyProjectAccess, verifyProjectOwnership, toUTC } from 
 import { ValidationError, ConflictError, NotFoundError } from "@/lib/errors.ts";
 import { getProjectMembers, getMemberRole, removeProjectMember, insertProjectMember } from "@/db/queries/members.ts";
 import { hasPendingInvitation, insertInvitation, getPendingByProject } from "@/db/queries/invitations.ts";
-import { insertNotification } from "@/db/queries/notifications.ts";
 import { getUserByEmail } from "@/db/queries/users.ts";
 import { isProjectMember } from "@/db/queries/members.ts";
-import { getProjectById } from "@/db/queries/projects.ts";
 
 export async function handleListMembers(request: BunRequest): Promise<Response> {
   try {
@@ -67,15 +65,6 @@ export async function handleInviteMember(request: BunRequest): Promise<Response>
       existingUser?.id ?? null,
     );
 
-    // Create notification if user exists
-    if (existingUser) {
-      const project = getProjectById(projectId)!;
-      insertNotification(existingUser.id, "invite", {
-        invitationId: invitation.id,
-        projectId,
-        projectName: project.name,
-      });
-    }
 
     return Response.json(
       { invitation: { id: invitation.id, email: normalizedEmail, createdAt: toUTC(invitation.created_at) } },
@@ -106,12 +95,6 @@ export async function handleRemoveMember(request: BunRequest): Promise<Response>
 
     removeProjectMember(projectId, targetUserId);
 
-    // Notify removed member
-    const project = getProjectById(projectId)!;
-    insertNotification(targetUserId, "member_removed", {
-      projectId,
-      projectName: project.name,
-    });
 
     return Response.json({ ok: true }, { headers: corsHeaders });
   } catch (error) {

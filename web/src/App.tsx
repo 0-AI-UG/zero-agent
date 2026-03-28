@@ -30,6 +30,7 @@ export function App() {
           {/* Protected routes */}
           <Route element={<ProtectedRoute />}>
             <Route path="/" element={<DashboardPage />} />
+            <Route path="/help" element={<HelpPage />} />
             <Route path="/admin" element={<AdminPage />} />
             <Route path="/projects/:projectId" element={<ProjectLayout />}>
               <Route index element={<ProjectPage />} />
@@ -38,7 +39,6 @@ export function App() {
               <Route path="tasks" element={<TasksPage />} />
               <Route path="skills" element={<SkillsPage />} />
               <Route path="settings" element={<SettingsPage />} />
-              <Route path="help" element={<HelpPage />} />
             </Route>
           </Route>
 

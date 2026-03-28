@@ -134,7 +134,7 @@ export async function handleUploadRequest(request: BunRequest): Promise<Response
     // Generate presigned upload URL
     const url = generateUploadUrl(s3Key, body.mimeType);
 
-    events.emit("file.created", { fileId: fileRow.id, projectId, path: body.folderPath });
+    events.emit("file.created", { projectId, path: body.folderPath, filename: body.filename, mimeType: body.mimeType, sizeBytes: body.sizeBytes });
 
     return Response.json(
       {
@@ -144,6 +144,55 @@ export async function handleUploadRequest(request: BunRequest): Promise<Response
       },
       { headers: corsHeaders },
     );
+  } catch (error) {
+    return handleError(error);
+  }
+}
+
+export async function handleGetUploadUrl(request: BunRequest): Promise<Response> {
+  try {
+    const { userId } = await authenticateRequest(request);
+    const { projectId, id } = request.params as { projectId: string; id: string };
+    verifyProjectAccess(projectId, userId);
+
+    const file = getFileById(id);
+    if (!file || file.project_id !== projectId) {
+      throw new NotFoundError("File not found");
+    }
+
+    const url = generateUploadUrl(file.s3_key, file.mime_type);
+    return Response.json({ url }, { headers: corsHeaders });
+  } catch (error) {
+    return handleError(error);
+  }
+}
+
+export async function handleUpdateFileBinary(request: BunRequest): Promise<Response> {
+  try {
+    const { userId } = await authenticateRequest(request);
+    const { projectId, id } = request.params as { projectId: string; id: string };
+    verifyProjectAccess(projectId, userId);
+
+    const file = getFileById(id);
+    if (!file || file.project_id !== projectId) {
+      throw new NotFoundError("File not found");
+    }
+
+    const body = await request.json() as { textContent?: string; sizeBytes?: number };
+
+    // Update file size if provided
+    if (typeof body.sizeBytes === "number") {
+      updateFileSize(id, body.sizeBytes);
+    }
+
+    // Index text content for FTS if provided (extracted by client from XLSX sheets)
+    if (typeof body.textContent === "string") {
+      indexFileContent(id, projectId, file.filename, body.textContent);
+    }
+
+    events.emit("file.updated", { projectId, path: file.folder_path, filename: file.filename, mimeType: file.mime_type });
+
+    return Response.json({ success: true }, { headers: corsHeaders });
   } catch (error) {
     return handleError(error);
   }
@@ -169,7 +218,7 @@ export async function handleDeleteFile(request: BunRequest): Promise<Response> {
     // Delete metadata and FTS index
     removeFileIndex(id);
     deleteFileRecord(id);
-    events.emit("file.deleted", { fileId: id, projectId });
+    events.emit("file.deleted", { projectId, path: file.folder_path, filename: file.filename });
 
     return Response.json({ success: true }, { headers: corsHeaders });
   } catch (error) {
@@ -299,7 +348,7 @@ export async function handleUpdateFileContent(request: BunRequest): Promise<Resp
     await writeToS3(file.s3_key, buffer);
     const updated = updateFileSize(id, buffer.length);
     indexFileContent(id, projectId, file.filename, body.content);
-    events.emit("file.updated", { fileId: id, projectId });
+    events.emit("file.updated", { projectId, path: file.folder_path, filename: file.filename, mimeType: file.mime_type });
 
     return Response.json({ success: true, file: formatFile(updated) }, { headers: corsHeaders });
   } catch (error) {
@@ -329,7 +378,7 @@ export async function handleMoveFile(request: BunRequest): Promise<Response> {
 
     const oldPath = file.folder_path;
     const updated = updateFileFolderPath(id, body.destinationPath);
-    events.emit("file.moved", { fileId: id, projectId, oldPath, newPath: body.destinationPath });
+    events.emit("file.moved", { projectId, fromPath: oldPath, toPath: body.destinationPath, filename: file.filename });
     return Response.json({ file: formatFile(updated) }, { headers: corsHeaders });
   } catch (error) {
     return handleError(error);

@@ -89,7 +89,7 @@ const imageToolResultMiddleware: LanguageModelV3Middleware = {
 };
 
 const baseChatModel = openrouterWithRouting(
-  process.env.OPENROUTER_MODEL ?? "minimax/minimax-m2.5",
+  process.env.OPENROUTER_MODEL ?? "minimax/minimax-m2.7",
 );
 
 export const chatModel = wrapLanguageModel({
@@ -123,7 +123,7 @@ export function createImageModelInstance(modelId?: string) {
 export const searchParseModel = openrouterWithRouting(
   process.env.SEARCH_PARSE_MODEL ??
     process.env.OPENROUTER_MODEL ??
-    "minimax/minimax-m2.5",
+    "minimax/minimax-m2.7",
 );
 
 export const editApplyModel = openrouterWithRouting(

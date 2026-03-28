@@ -5,6 +5,7 @@ export interface AdminUser {
   id: string;
   email: string;
   isAdmin: boolean;
+  canCreateProjects: boolean;
   createdAt: string;
 }
 
@@ -71,6 +72,39 @@ export function useUpdateSettings() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin", "settings"] });
     },
+  });
+}
+
+export function useUpdateUser() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ userId, password, canCreateProjects }: { userId: string; password?: string; canCreateProjects?: boolean }) => {
+      return apiFetch<{ success: boolean }>(`/admin/users/${userId}`, {
+        method: "PUT",
+        body: JSON.stringify({ password, canCreateProjects }),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin", "users"] });
+    },
+  });
+}
+
+export interface CurrentUser {
+  id: string;
+  email: string;
+  isAdmin: boolean;
+  canCreateProjects: boolean;
+}
+
+export function useCurrentUser() {
+  return useQuery({
+    queryKey: ["me"],
+    queryFn: async () => {
+      const res = await apiFetch<{ user: CurrentUser }>("/me");
+      return res.user;
+    },
+    staleTime: 60_000,
   });
 }
 

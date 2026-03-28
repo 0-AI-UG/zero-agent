@@ -2,6 +2,8 @@ import { Navigate, Outlet, useLocation } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useAuthStore } from "@/stores/auth";
 import { getSetupStatus } from "@/api/setup";
+import { useModels } from "@/api/models";
+import { setModelsCache } from "@/stores/model";
 
 export function ProtectedRoute() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
@@ -24,5 +26,11 @@ export function ProtectedRoute() {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
+  return <ModelsCacheSync />;
+}
+
+function ModelsCacheSync() {
+  const { data: models } = useModels();
+  if (models) setModelsCache(models);
   return <Outlet />;
 }

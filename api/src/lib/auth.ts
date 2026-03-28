@@ -1,5 +1,5 @@
 import { jwtVerify, SignJWT } from "jose";
-import { AuthError } from "@/lib/errors.ts";
+import { AuthError, ForbiddenError } from "@/lib/errors.ts";
 import { getUserById } from "@/db/queries/users.ts";
 
 export interface TokenPayload {
@@ -43,7 +43,7 @@ export async function requireAdmin(request: Request): Promise<TokenPayload> {
   const payload = await authenticateRequest(request);
   const user = getUserById(payload.userId);
   if (!user?.is_admin) {
-    throw new AuthError("Admin access required");
+    throw new ForbiddenError("Admin access required");
   }
   return payload;
 }

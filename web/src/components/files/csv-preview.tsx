@@ -1,29 +1,16 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import Papa from "papaparse";
-import { SaveIcon, PlusIcon, XIcon, Trash2Icon, UndoIcon } from "lucide-react";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+  SaveIcon,
+  UndoIcon,
+  DownloadIcon,
+  FileSpreadsheetIcon,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import { useUpdateFileContent } from "@/hooks/use-update-file-content";
 import { usePreviewActions } from "./preview-actions-context";
+import { SpreadsheetTable } from "./spreadsheet-table";
 import type { FileItem } from "@/hooks/use-files";
 
 interface CsvPreviewProps {
@@ -83,31 +70,45 @@ export function CsvPreview({ file, content, projectId }: CsvPreviewProps) {
     setRows(initial.rows);
   }, [initial]);
 
-  useEffect(() => {
-    setActions(
-      <>
-        {isDirty && (
-          <Button variant="ghost" size="icon-sm" onClick={handleReset} title="Reset changes">
-            <UndoIcon className="h-3.5 w-3.5" />
-          </Button>
-        )}
-        <Button
-          variant="default"
-          size="sm"
-          onClick={handleSave}
-          disabled={!isDirty || updateFile.isPending}
-        >
-          <SaveIcon className="h-3.5 w-3.5 mr-1" />
-          {updateFile.isPending ? "Saving..." : "Save"}
-        </Button>
-        <span className="text-xs text-muted-foreground">
-          {rows.length} row{rows.length !== 1 ? "s" : ""} · {headers.length} col{headers.length !== 1 ? "s" : ""}
-        </span>
-      </>
-    );
-    return () => setActions(null);
-  }, [isDirty, updateFile.isPending, rows.length, headers.length]);
+  const handleExportXlsx = useCallback(async () => {
+    try {
+      const XLSX = await import("xlsx");
+      const wb = XLSX.utils.book_new();
+      const data = rows.map((row) => {
+        const obj: Record<string, string> = {};
+        headers.forEach((h, i) => {
+          obj[h || `Column ${i + 1}`] = row[i] ?? "";
+        });
+        return obj;
+      });
+      const ws = XLSX.utils.json_to_sheet(data);
+      const cols = headers.map((h, i) => ({
+        wch: Math.max(
+          (h || `Column ${i + 1}`).length,
+          ...rows.slice(0, 100).map((r) => (r[i] ?? "").length),
+        ) + 2,
+      }));
+      ws["!cols"] = cols;
+      XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
+      XLSX.writeFile(wb, file.filename.replace(/\.csv$/i, ".xlsx"));
+      toast("Exported as Excel");
+    } catch {
+      toast.error("Failed to export as Excel");
+    }
+  }, [headers, rows, file.filename]);
 
+  const handleDownloadCsv = useCallback(() => {
+    const csv = serializeCSV(headers, rows);
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = file.filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [headers, rows, file.filename]);
+
+  // Editing callbacks
   const handleCellChange = useCallback(
     (rowIdx: number, colIdx: number, value: string) => {
       setRows((prev) => {
@@ -145,114 +146,67 @@ export function CsvPreview({ file, content, projectId }: CsvPreviewProps) {
     setRows((prev) => prev.map((r) => r.filter((_, i) => i !== colIdx)));
   }, []);
 
-  if (headers.length === 0) {
-    return (
-      <div className="p-4 text-sm text-muted-foreground">
-        No data found in CSV file.
-      </div>
+  // Preview header actions
+  useEffect(() => {
+    setActions(
+      <div className="flex items-center gap-1.5">
+        {isDirty && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={handleReset}
+            title="Reset changes"
+          >
+            <UndoIcon className="h-3.5 w-3.5" />
+          </Button>
+        )}
+        <Button
+          variant="default"
+          size="sm"
+          onClick={handleSave}
+          disabled={!isDirty || updateFile.isPending}
+        >
+          <SaveIcon className="h-3.5 w-3.5 mr-1" />
+          {updateFile.isPending ? "Saving..." : "Save"}
+        </Button>
+      </div>,
     );
-  }
+    return () => setActions(null);
+  }, [isDirty, updateFile.isPending]);
 
   return (
-    <div className="p-4">
-      <div className="rounded-md border overflow-auto max-h-[70vh]">
-        <Table>
-          <TableHeader className="sticky top-0 bg-muted z-10">
-            <TableRow>
-              <TableHead className="w-8 p-0" />
-              {headers.map((header, i) => (
-                <TableHead key={i} className="p-0 group/col relative min-w-[150px]">
-                  <input
-                    className="w-full bg-transparent px-2 py-1.5 text-xs font-medium outline-none focus:ring-1 focus:ring-ring rounded-sm"
-                    value={header}
-                    onChange={(e) => handleHeaderChange(i, e.target.value)}
-                  />
-                  {headers.length > 1 && (
-                    <AlertDialog>
-                      <AlertDialogTrigger asChild>
-                        <button
-                          type="button"
-                          className="absolute -top-0.5 right-0.5 opacity-0 group-hover/col:opacity-100 transition-opacity p-0.5 rounded-full bg-muted-foreground/10 hover:bg-destructive/20 text-muted-foreground hover:text-destructive"
-                          title="Delete column"
-                        >
-                          <Trash2Icon className="h-2.5 w-2.5" />
-                        </button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent size="sm">
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>Delete column</AlertDialogTitle>
-                          <AlertDialogDescription>
-                            Are you sure you want to delete the column "{header || `Column ${i + 1}`}"? This will remove the column and all its data.
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel>Cancel</AlertDialogCancel>
-                          <AlertDialogAction
-                            variant="destructive"
-                            onClick={() => handleDeleteColumn(i)}
-                          >
-                            Delete
-                          </AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
-                  )}
-                </TableHead>
-              ))}
-              <TableHead className="w-8 p-0">
-                <button
-                  type="button"
-                  className="flex items-center justify-center w-full h-full p-1.5 text-muted-foreground hover:text-foreground transition-colors"
-                  onClick={handleAddColumn}
-                  title="Add column"
-                >
-                  <PlusIcon className="h-3.5 w-3.5" />
-                </button>
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.map((row, rowIdx) => (
-              <TableRow key={rowIdx} className="group/row">
-                <TableCell className="p-0 w-8">
-                  <button
-                    type="button"
-                    className="flex items-center justify-center w-full p-1.5 opacity-0 group-hover/row:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
-                    onClick={() => handleDeleteRow(rowIdx)}
-                    title="Delete row"
-                  >
-                    <XIcon className="h-3 w-3" />
-                  </button>
-                </TableCell>
-                {headers.map((_, colIdx) => (
-                  <TableCell key={colIdx} className="p-0 min-w-[150px]">
-                    <input
-                      className="w-full bg-transparent px-2 py-1.5 text-sm outline-none focus:ring-1 focus:ring-ring rounded-sm"
-                      value={row[colIdx] ?? ""}
-                      onChange={(e) =>
-                        handleCellChange(rowIdx, colIdx, e.target.value)
-                      }
-                    />
-                  </TableCell>
-                ))}
-                <TableCell className="w-8 p-0" />
-              </TableRow>
-            ))}
-            <TableRow>
-              <TableCell className="p-0" colSpan={headers.length + 2}>
-                <button
-                  type="button"
-                  className="flex items-center justify-center w-full py-1.5 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
-                  onClick={handleAddRow}
-                  title="Add row"
-                >
-                  <PlusIcon className="h-3.5 w-3.5" />
-                </button>
-              </TableCell>
-            </TableRow>
-          </TableBody>
-        </Table>
-      </div>
-    </div>
+    <SpreadsheetTable
+      headers={headers}
+      rows={rows}
+      editable
+      onCellChange={handleCellChange}
+      onHeaderChange={handleHeaderChange}
+      onAddRow={handleAddRow}
+      onAddColumn={handleAddColumn}
+      onDeleteRow={handleDeleteRow}
+      onDeleteColumn={handleDeleteColumn}
+      toolbarActions={
+        <>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={handleDownloadCsv}
+            title="Download CSV"
+            className="h-7 w-7"
+          >
+            <DownloadIcon className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={handleExportXlsx}
+            title="Export as Excel"
+            className="h-7 w-7"
+          >
+            <FileSpreadsheetIcon className="h-3.5 w-3.5" />
+          </Button>
+        </>
+      }
+    />
   );
 }

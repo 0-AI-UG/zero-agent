@@ -16,6 +16,8 @@ function humanMimeType(mimeType: string): string {
     "image/png": "PNG Image",
     "image/jpeg": "JPEG Image",
     "image/webp": "WebP Image",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "Excel Spreadsheet",
+    "application/vnd.ms-excel": "Excel Spreadsheet",
   };
   return map[mimeType] ?? mimeType;
 }

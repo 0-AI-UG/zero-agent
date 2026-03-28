@@ -2,7 +2,6 @@ import { getDueTasks, markTaskRun, skipTaskRun } from "@/db/queries/scheduled-ta
 import { insertTaskRun, updateTaskRun } from "@/db/queries/task-runs.ts";
 import { getProjectById } from "@/db/queries/projects.ts";
 import { getProjectMembers } from "@/db/queries/members.ts";
-import { insertNotification } from "@/db/queries/notifications.ts";
 import { runAutonomousTask } from "@/lib/autonomous-agent.ts";
 import { browserBridge } from "@/lib/browser/bridge.ts";
 import { formatDateForSQLite } from "@/lib/schedule-parser.ts";
@@ -69,17 +68,6 @@ async function tick() {
 
         markTaskRun(task.id, task.schedule);
 
-        // Notify all project members about task completion
-        for (const member of members) {
-          insertNotification(member.user_id, "task_completed", {
-            projectId: task.project_id,
-            projectName: project.name,
-            taskName: task.name,
-            runId: run.id,
-            chatId: result.suppressed ? null : result.chatId,
-            summary: result.summary,
-          });
-        }
 
         schedLog.info("task completed", { taskId: task.id, taskName: task.name, runId: run.id });
       } catch (err) {
@@ -92,16 +80,6 @@ async function tick() {
           finished_at: formatDateForSQLite(new Date()),
         });
 
-        // Notify all project members about task failure
-        for (const member of members) {
-          insertNotification(member.user_id, "task_failed", {
-            projectId: task.project_id,
-            projectName: project.name,
-            taskName: task.name,
-            runId: run.id,
-            error: errorMsg,
-          });
-        }
 
         // Still advance next_run_at so we don't retry immediately
         markTaskRun(task.id, task.schedule);

@@ -9,10 +9,13 @@ import {
 import {
   insertProject,
   getProjectsByUser,
+  getAllProjects,
   updateProject,
   deleteProject,
   getLastMessageByProject,
 } from "@/db/queries/projects.ts";
+import { getUserById } from "@/db/queries/users.ts";
+import { ForbiddenError } from "@/lib/errors.ts";
 import { insertFile, getFileByS3Key, updateFileSize } from "@/db/queries/files.ts";
 import { indexFileContent } from "@/db/queries/search.ts";
 import { insertChat } from "@/db/queries/chats.ts";
@@ -29,9 +32,12 @@ type RequestWithId = Request & { params: { id: string } };
 export async function handleListProjects(request: Request): Promise<Response> {
   try {
     const { userId } = await authenticateRequest(request);
-    const rows = getProjectsByUser(userId);
+    const user = getUserById(userId);
+    const isAdmin = user?.is_admin === 1;
+    const rows = isAdmin ? getAllProjects() : getProjectsByUser(userId);
     const projects = rows.map((row) => {
-      const role = getMemberRole(row.id, userId) ?? "owner";
+      const memberRole = getMemberRole(row.id, userId);
+      const role = memberRole ?? (isAdmin ? "admin" : "owner");
       const memberCount = getMemberCount(row.id);
       const project = formatProject(row, { role, memberCount });
       const lastMessage = getLastMessageByProject(row.id);
@@ -115,6 +121,10 @@ You are a helpful AI assistant.
 export async function handleCreateProject(request: Request): Promise<Response> {
   try {
     const { userId } = await authenticateRequest(request);
+    const creator = getUserById(userId);
+    if (!creator || creator.can_create_projects === 0) {
+      throw new ForbiddenError("You do not have permission to create projects");
+    }
     const body = await validateBody(request, createProjectSchema);
     const row = insertProject(userId, body.name, body.description ?? "");
     insertProjectMember(row.id, userId, "owner");
@@ -155,7 +165,9 @@ export async function handleGetProject(request: Request): Promise<Response> {
     const { userId } = await authenticateRequest(request);
     const { id } = (request as RequestWithId).params;
     const project = verifyProjectAccess(id, userId);
-    const role = getMemberRole(id, userId) ?? "owner";
+    const user = getUserById(userId);
+    const memberRole = getMemberRole(id, userId);
+    const role = memberRole ?? (user?.is_admin === 1 ? "admin" : "owner");
     const memberCount = getMemberCount(id);
     return Response.json(
       { project: formatProject(project, { role, memberCount }) },

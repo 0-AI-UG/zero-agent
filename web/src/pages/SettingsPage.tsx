@@ -5,6 +5,7 @@ import { Switch } from "@/components/ui/switch";
 import {
   FolderIcon,
 } from "lucide-react";
+import { MembersManager } from "@/components/settings/MembersManager";
 import { CompanionManager } from "@/components/settings/CompanionManager";
 import { TelegramManager } from "@/components/settings/TelegramManager";
 
@@ -24,6 +25,9 @@ export function SettingsPage() {
             Configure project behavior
           </p>
         </div>
+
+        {/* Members section */}
+        <MembersManager projectId={projectId!} project={project} />
 
         {/* Browser Companion section */}
         <CompanionManager projectId={projectId!} project={project} updateProject={updateProject} />

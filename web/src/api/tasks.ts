@@ -15,6 +15,10 @@ export interface ScheduledTask {
   runCount: number;
   requiredTools: string[] | null;
   requiredSkills: string[] | null;
+  triggerType: "schedule" | "event";
+  triggerEvent: string | null;
+  triggerFilter: Record<string, string> | null;
+  cooldownSeconds: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -47,7 +51,16 @@ export function useTasks(projectId: string) {
 export function useCreateTask(projectId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (data: { name: string; prompt: string; schedule: string; requiredTools?: string[] | null }) =>
+    mutationFn: (data: {
+      name: string;
+      prompt: string;
+      schedule?: string;
+      requiredTools?: string[] | null;
+      triggerType?: "schedule" | "event";
+      triggerEvent?: string;
+      triggerFilter?: Record<string, string> | null;
+      cooldownSeconds?: number;
+    }) =>
       apiFetch<{ task: ScheduledTask }>(`/projects/${projectId}/tasks`, {
         method: "POST",
         body: JSON.stringify(data),
@@ -73,6 +86,10 @@ export function useUpdateTask(projectId: string) {
       schedule?: string;
       enabled?: boolean;
       requiredTools?: string[] | null;
+      triggerType?: "schedule" | "event";
+      triggerEvent?: string;
+      triggerFilter?: Record<string, string> | null;
+      cooldownSeconds?: number;
     }) =>
       apiFetch<{ task: ScheduledTask }>(
         `/projects/${projectId}/tasks/${taskId}`,

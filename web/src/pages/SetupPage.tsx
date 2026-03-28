@@ -171,7 +171,7 @@ export function SetupPage() {
                     type="text"
                     value={openrouterModel}
                     onChange={(e) => setOpenrouterModel(e.target.value)}
-                    placeholder="minimax/minimax-m2.5"
+                    placeholder="minimax/minimax-m2.7"
                   />
                 </div>
                 <div className="flex gap-2">

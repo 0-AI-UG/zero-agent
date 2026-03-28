@@ -58,7 +58,7 @@ export async function handleCreateChat(request: BunRequest): Promise<Response> {
 
     const body = (await request.json().catch(() => ({}))) as { title?: string };
     const chat = insertChat(projectId, body.title, userId);
-    events.emit("chat.created", { chatId: chat.id, projectId });
+    events.emit("chat.created", { chatId: chat.id, projectId, title: chat.title ?? "" });
 
     return Response.json(
       { chat: formatChat(chat) },

@@ -100,7 +100,7 @@ export function UploadButton({ projectId, currentPath }: UploadButtonProps) {
         type="file"
         className="hidden"
         onChange={handleFileSelect}
-        accept="image/*,.pdf,.csv,.txt,.json,.md"
+        accept="image/*,.pdf,.csv,.txt,.json,.md,.xlsx,.xls"
       />
     </>
   );

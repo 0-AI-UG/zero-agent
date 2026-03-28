@@ -15,9 +15,19 @@ import { runAutonomousTask } from "@/lib/autonomous-agent.ts";
 import { markTaskRun } from "@/db/queries/scheduled-tasks.ts";
 import { parseSchedule } from "@/lib/schedule-parser.ts";
 import { formatDateForSQLite } from "@/lib/schedule-parser.ts";
-import { insertNotification } from "@/db/queries/notifications.ts";
-import { getProjectMembers } from "@/db/queries/members.ts";
+import { registerEventTask, unregisterEventTask, refreshEventTask } from "@/lib/event-trigger.ts";
 import type { ScheduledTaskRow, TaskRunRow } from "@/db/types.ts";
+import type { EventName } from "@/lib/events.ts";
+
+const VALID_TRIGGER_EVENTS: EventName[] = [
+  "file.created", "file.updated", "file.deleted", "file.moved",
+  "folder.created", "folder.deleted",
+  "chat.created", "chat.deleted",
+  "message.received", "message.sent",
+  "task.started", "task.completed", "task.failed",
+  "companion.connected", "companion.disconnected",
+  "skill.loaded", "skill.installed", "skill.uninstalled",
+];
 
 function formatTask(row: ScheduledTaskRow) {
   return {
@@ -33,6 +43,10 @@ function formatTask(row: ScheduledTaskRow) {
     runCount: row.run_count,
     requiredTools: row.required_tools ? JSON.parse(row.required_tools) as string[] : null,
     requiredSkills: row.required_skills ? JSON.parse(row.required_skills) as string[] : null,
+    triggerType: row.trigger_type,
+    triggerEvent: row.trigger_event,
+    triggerFilter: row.trigger_filter ? JSON.parse(row.trigger_filter) : null,
+    cooldownSeconds: row.cooldown_seconds,
     createdAt: toUTC(row.created_at),
     updatedAt: toUTC(row.updated_at),
   };
@@ -82,15 +96,39 @@ export async function handleCreateTask(request: BunRequest): Promise<Response> {
     const { projectId } = request.params as { projectId: string };
     verifyProjectAccess(projectId, userId);
 
-    const body = await request.json() as { name?: string; prompt?: string; schedule?: string; requiredTools?: string[] | null; requiredSkills?: string[] | null };
+    const body = await request.json() as {
+      name?: string;
+      prompt?: string;
+      schedule?: string;
+      requiredTools?: string[] | null;
+      requiredSkills?: string[] | null;
+      triggerType?: "schedule" | "event";
+      triggerEvent?: string;
+      triggerFilter?: Record<string, string>;
+      cooldownSeconds?: number;
+    };
 
-    if (!body.name || !body.prompt || !body.schedule) {
-      throw new ValidationError("name, prompt, and schedule are required");
+    const triggerType = body.triggerType || "schedule";
+
+    if (!body.name || !body.prompt) {
+      throw new ValidationError("name and prompt are required");
     }
 
-    const validation = parseSchedule(body.schedule);
-    if (!validation.valid) {
-      throw new ValidationError(validation.error!);
+    if (triggerType === "event") {
+      if (!body.triggerEvent) {
+        throw new ValidationError("triggerEvent is required for event-triggered tasks");
+      }
+      if (!VALID_TRIGGER_EVENTS.includes(body.triggerEvent as EventName)) {
+        throw new ValidationError(`Invalid trigger event. Valid events: ${VALID_TRIGGER_EVENTS.join(", ")}`);
+      }
+    } else {
+      if (!body.schedule) {
+        throw new ValidationError("schedule is required for schedule-triggered tasks");
+      }
+      const validation = parseSchedule(body.schedule);
+      if (!validation.valid) {
+        throw new ValidationError(validation.error!);
+      }
     }
 
     const requiredTools = Array.isArray(body.requiredTools) && body.requiredTools.length > 0
@@ -101,7 +139,18 @@ export async function handleCreateTask(request: BunRequest): Promise<Response> {
       ? body.requiredSkills
       : undefined;
 
-    const task = insertTask(projectId, userId, body.name, body.prompt, body.schedule, true, requiredTools, requiredSkills);
+    const schedule = triggerType === "event" ? "event" : body.schedule!;
+
+    const task = insertTask(
+      projectId, userId, body.name, body.prompt, schedule, true,
+      requiredTools, requiredSkills,
+      triggerType, body.triggerEvent, body.triggerFilter, body.cooldownSeconds ?? 0,
+    );
+
+    if (triggerType === "event") {
+      registerEventTask(task);
+    }
+
     return Response.json(
       { task: formatTask(task) },
       { status: 201, headers: corsHeaders },
@@ -125,12 +174,22 @@ export async function handleUpdateTask(request: BunRequest): Promise<Response> {
       enabled?: boolean;
       requiredTools?: string[] | null;
       requiredSkills?: string[] | null;
+      triggerType?: "schedule" | "event";
+      triggerEvent?: string;
+      triggerFilter?: Record<string, string> | null;
+      cooldownSeconds?: number;
     };
 
     if (body.schedule !== undefined) {
       const validation = parseSchedule(body.schedule);
       if (!validation.valid) {
         throw new ValidationError(validation.error!);
+      }
+    }
+
+    if (body.triggerEvent !== undefined && body.triggerEvent !== null) {
+      if (!VALID_TRIGGER_EVENTS.includes(body.triggerEvent as EventName)) {
+        throw new ValidationError(`Invalid trigger event. Valid events: ${VALID_TRIGGER_EVENTS.join(", ")}`);
       }
     }
 
@@ -149,7 +208,18 @@ export async function handleUpdateTask(request: BunRequest): Promise<Response> {
           ? JSON.stringify(body.requiredSkills)
           : null)
         : undefined,
+      trigger_type: body.triggerType,
+      trigger_event: body.triggerEvent !== undefined ? (body.triggerEvent ?? null) : undefined,
+      trigger_filter: body.triggerFilter !== undefined
+        ? (body.triggerFilter ? JSON.stringify(body.triggerFilter) : null)
+        : undefined,
+      cooldown_seconds: body.cooldownSeconds,
     });
+
+    // Re-register event listener if trigger config changed
+    if (body.triggerType !== undefined || body.triggerEvent !== undefined || body.enabled !== undefined) {
+      refreshEventTask(taskId);
+    }
 
     return Response.json(
       { task: formatTask(task) },
@@ -167,6 +237,7 @@ export async function handleDeleteTask(request: BunRequest): Promise<Response> {
     verifyProjectAccess(projectId, userId);
     verifyTaskOwnership(taskId, projectId);
 
+    unregisterEventTask(taskId);
     deleteTask(taskId);
     return Response.json({ ok: true }, { headers: corsHeaders });
   } catch (error) {
@@ -199,17 +270,6 @@ export async function handleRunTaskNow(request: BunRequest): Promise<Response> {
           chat_id: result.chatId,
           finished_at: formatDateForSQLite(new Date()),
         });
-        const members = getProjectMembers(projectId);
-        for (const member of members) {
-          insertNotification(member.user_id, "task_completed", {
-            projectId,
-            projectName: project.name,
-            taskName: task.name,
-            runId: run.id,
-            chatId: result.chatId,
-            summary: result.summary,
-          });
-        }
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : String(err);
         updateTaskRun(run.id, {
@@ -217,16 +277,6 @@ export async function handleRunTaskNow(request: BunRequest): Promise<Response> {
           error: errorMsg,
           finished_at: formatDateForSQLite(new Date()),
         });
-        const members = getProjectMembers(projectId);
-        for (const member of members) {
-          insertNotification(member.user_id, "task_failed", {
-            projectId,
-            projectName: project.name,
-            taskName: task.name,
-            runId: run.id,
-            error: errorMsg,
-          });
-        }
       }
     })();
 

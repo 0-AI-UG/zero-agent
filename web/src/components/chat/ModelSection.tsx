@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { CheckIcon, ChevronDownIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,7 +13,8 @@ import {
   ModelSelectorLogo,
   ModelSelectorName,
 } from "@/components/ai/model-selector";
-import { models, useModelStore, type ModelConfig } from "@/stores/model";
+import { useModelStore, type ModelConfig } from "@/stores/model";
+import { useModels } from "@/api/models";
 import { cn } from "@/lib/utils";
 
 function formatContext(tokens: number): string {
@@ -51,9 +52,20 @@ export function ModelSection() {
   const [open, setOpen] = useState(false);
   const selectedModelId = useModelStore((s) => s.selectedModelId);
   const setSelectedModelId = useModelStore((s) => s.setSelectedModelId);
+  const { data: models = [] } = useModels();
 
-  const selectedModel = models.find((m) => m.id === selectedModelId) ?? models[0]!;
+  const selectedModel = models.find((m) => m.id === selectedModelId) ?? models[0];
+
+  // Sync store when persisted selectedModelId no longer exists in the models list
+  useEffect(() => {
+    if (models.length > 0 && !models.find((m) => m.id === selectedModelId) && selectedModel) {
+      setSelectedModelId(selectedModel.id);
+    }
+  }, [models, selectedModelId, selectedModel, setSelectedModelId]);
+
   const grouped = groupByProvider(models);
+
+  if (!selectedModel) return null;
 
   return (
     <ModelSelector open={open} onOpenChange={setOpen}>

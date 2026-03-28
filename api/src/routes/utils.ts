@@ -5,6 +5,7 @@ import {
 } from "@/lib/errors.ts";
 import { getProjectById } from "@/db/queries/projects.ts";
 import { isProjectMember, getMemberRole, getMemberCount } from "@/db/queries/members.ts";
+import { getUserById } from "@/db/queries/users.ts";
 import type {
   ProjectRow,
 } from "@/db/types.ts";
@@ -18,6 +19,10 @@ export function handleError(error: unknown): Response {
     if (name === "AuthError") {
       routeLog.warn("auth error", { status: 401, error: error.message });
       return Response.json({ error: error.message }, { status: 401, headers: corsHeaders });
+    }
+    if (name === "ForbiddenError") {
+      routeLog.warn("forbidden", { status: 403, error: error.message });
+      return Response.json({ error: error.message }, { status: 403, headers: corsHeaders });
     }
     if (name === "ValidationError") {
       routeLog.warn("validation error", { status: 400, error: error.message });
@@ -68,26 +73,30 @@ export function formatProject(row: ProjectRow, opts?: { role?: string; memberCou
   };
 }
 
-/** Verify the user is a member of the project (any role). */
+/** Verify the user is a member of the project (any role). Admins bypass membership check. */
 export function verifyProjectAccess(
   projectId: string,
   userId: string,
 ): ProjectRow {
   const project = getProjectById(projectId);
   if (!project) throw new NotFoundError("Project not found");
+  const user = getUserById(userId);
+  if (user?.is_admin === 1) return project;
   if (!isProjectMember(projectId, userId)) {
     throw new NotFoundError("Project not found");
   }
   return project;
 }
 
-/** Verify the user is the owner of the project. */
+/** Verify the user is the owner of the project. Admins bypass ownership check. */
 export function verifyProjectOwnership(
   projectId: string,
   userId: string,
 ): ProjectRow {
   const project = getProjectById(projectId);
   if (!project) throw new NotFoundError("Project not found");
+  const user = getUserById(userId);
+  if (user?.is_admin === 1) return project;
   const role = getMemberRole(projectId, userId);
   if (role !== "owner") {
     throw new NotFoundError("Project not found");

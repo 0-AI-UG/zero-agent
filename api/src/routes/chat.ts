@@ -15,6 +15,8 @@ import { detectExploreItems } from "@/lib/heartbeat-explore.ts";
 import { log } from "@/lib/logger.ts";
 import { streamContext, setActiveStreamId, clearActiveStreamId, getActiveStreamId } from "@/lib/resumable-stream.ts";
 import { ConflictError } from "@/lib/errors.ts";
+import { insertUsageLog } from "@/db/queries/usage-logs.ts";
+import { getModelPricing } from "@/config/models.ts";
 
 const chatLog = log.child({ module: "chat" });
 
@@ -80,6 +82,11 @@ export async function handleChat(request: BunRequest): Promise<Response> {
     // totalUsage accumulates inputTokens across all agent steps (tool calls),
     // but only the last step's inputTokens reflects the real context size.
     let lastStepUsage: Record<string, number> = {};
+    // Accumulate total usage across all agent steps for billing
+    let totalInputTokens = 0;
+    let totalOutputTokens = 0;
+    let totalReasoningTokens = 0;
+    let totalCachedTokens = 0;
 
     // Stream the response (returns Promise<Response>)
     return createAgentUIStreamResponse({
@@ -101,6 +108,10 @@ export async function handleChat(request: BunRequest): Promise<Response> {
           reasoningTokens: usage.reasoningTokens ?? 0,
           cachedInputTokens: usage.cachedInputTokens ?? 0,
         };
+        totalInputTokens += usage.inputTokens ?? 0;
+        totalOutputTokens += usage.outputTokens ?? 0;
+        totalReasoningTokens += usage.reasoningTokens ?? 0;
+        totalCachedTokens += usage.cachedInputTokens ?? 0;
       },
       messageMetadata: ({ part }) => {
         if (part.type === "start" && willCompact) {
@@ -168,6 +179,29 @@ export async function handleChat(request: BunRequest): Promise<Response> {
           chatLog.warn("failed to persist messages (chat/project may have been deleted)", {
             projectId,
             chatId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+
+        // Persist usage log
+        try {
+          const pricing = getModelPricing(model ?? "");
+          insertUsageLog({
+            userId,
+            projectId,
+            chatId,
+            modelId: model ?? "unknown",
+            inputTokens: totalInputTokens,
+            outputTokens: totalOutputTokens,
+            reasoningTokens: totalReasoningTokens,
+            cachedTokens: totalCachedTokens,
+            costInput: (totalInputTokens / 1_000_000) * (pricing?.input ?? 0),
+            costOutput: (totalOutputTokens / 1_000_000) * (pricing?.output ?? 0),
+            durationMs: Date.now() - start,
+          });
+        } catch (err) {
+          chatLog.warn("failed to persist usage log", {
+            projectId, chatId,
             error: err instanceof Error ? err.message : String(err),
           });
         }

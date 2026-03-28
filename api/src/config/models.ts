@@ -1,39 +1,32 @@
-import modelsJson from "./models.json" with { type: "json" };
+import { getModelById } from "@/db/queries/models.ts";
 
 interface ProviderRouting {
   order: string[];
   allow_fallbacks?: boolean;
 }
 
-interface ModelEntry {
-  id: string;
-  contextWindow: number;
-  multimodal: boolean;
-  providerRouting?: ProviderRouting;
-}
-
-const models = modelsJson.models as ModelEntry[];
-
-const contextWindowMap = new Map<string, number>(
-  models.map((m) => [m.id, m.contextWindow]),
-);
-
-const providerRoutingMap = new Map<string, ProviderRouting>(
-  models.filter((m) => m.providerRouting).map((m) => [m.id, m.providerRouting!]),
-);
-
-const multimodalMap = new Map<string, boolean>(
-  models.map((m) => [m.id, m.multimodal]),
-);
-
 export function getModelContextWindow(modelId: string): number {
-  return contextWindowMap.get(modelId) ?? 128_000;
+  const model = getModelById(modelId);
+  return model?.context_window ?? 128_000;
 }
 
 export function getProviderRouting(modelId: string): ProviderRouting | undefined {
-  return providerRoutingMap.get(modelId);
+  const model = getModelById(modelId);
+  if (!model?.provider_routing) return undefined;
+  try {
+    return JSON.parse(model.provider_routing) as ProviderRouting;
+  } catch {
+    return undefined;
+  }
 }
 
 export function isModelMultimodal(modelId: string): boolean {
-  return multimodalMap.get(modelId) ?? false;
+  const model = getModelById(modelId);
+  return model?.multimodal === 1;
+}
+
+export function getModelPricing(modelId: string): { input: number; output: number } | null {
+  const model = getModelById(modelId);
+  if (!model) return null;
+  return { input: model.pricing_input, output: model.pricing_output };
 }

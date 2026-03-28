@@ -28,6 +28,8 @@ function guessMimeType(filename: string): string {
     txt: "text/plain",
     json: "application/json",
     csv: "text/csv",
+    xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    xls: "application/vnd.ms-excel",
     png: "image/png",
     jpg: "image/jpeg",
     jpeg: "image/jpeg",

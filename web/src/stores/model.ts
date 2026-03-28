@@ -1,6 +1,5 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import modelsConfig from "@/config/models.json";
 
 export interface ModelConfig {
   id: string;
@@ -14,10 +13,6 @@ export interface ModelConfig {
   multimodal: boolean;
 }
 
-export const models: ModelConfig[] = modelsConfig.models as ModelConfig[];
-
-const defaultModel = models.find((m) => m.default) ?? models[0]!;
-
 export type Language = "en" | "zh";
 
 interface ModelState {
@@ -30,7 +25,7 @@ interface ModelState {
 export const useModelStore = create<ModelState>()(
   persist(
     (set) => ({
-      selectedModelId: defaultModel!.id,
+      selectedModelId: "minimax/minimax-m2.7",
       setSelectedModelId: (id) => set({ selectedModelId: id }),
       language: "zh" as Language,
       setLanguage: (language) => set({ language }),
@@ -39,7 +34,30 @@ export const useModelStore = create<ModelState>()(
   ),
 );
 
+// Global models cache — populated by useModels() hook, readable synchronously
+let _modelsCache: ModelConfig[] = [];
+
+export function setModelsCache(models: ModelConfig[]) {
+  _modelsCache = models;
+}
+
+export function getModelsCache(): ModelConfig[] {
+  return _modelsCache;
+}
+
 export function getSelectedModel(): ModelConfig {
   const { selectedModelId } = useModelStore.getState();
-  return models.find((m) => m.id === selectedModelId) ?? defaultModel!;
+  const found = _modelsCache.find((m) => m.id === selectedModelId);
+  if (found) return found;
+  const defaultModel = _modelsCache.find((m) => m.default);
+  return defaultModel ?? _modelsCache[0] ?? {
+    id: selectedModelId,
+    name: selectedModelId,
+    provider: "unknown",
+    description: "",
+    contextWindow: 128000,
+    pricing: { input: 0, output: 0 },
+    tags: [],
+    multimodal: false,
+  };
 }

@@ -1,8 +1,8 @@
 {
   "models": [
     {
-      "id": "minimax/minimax-m2.5",
-      "name": "MiniMax M2.5",
+      "id": "minimax/minimax-m2.7",
+      "name": "MiniMax M2.7",
       "provider": "minimax",
       "description": "Top Chinese-language model with strong function calling.",
       "contextWindow": 196608,

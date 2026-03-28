@@ -12,7 +12,7 @@ export async function handleListUsers(request: Request): Promise<Response> {
     await requireAdmin(request);
 
     const users = db.query<UserRow, []>(
-      "SELECT id, email, is_admin, created_at FROM users ORDER BY created_at"
+      "SELECT id, email, is_admin, can_create_projects, created_at FROM users ORDER BY created_at"
     ).all();
 
     return Response.json(
@@ -21,6 +21,7 @@ export async function handleListUsers(request: Request): Promise<Response> {
           id: u.id,
           email: u.email,
           isAdmin: (u as any).is_admin === 1,
+          canCreateProjects: u.can_create_projects !== 0,
           createdAt: u.created_at,
         })),
       },
@@ -57,15 +58,16 @@ export async function handleCreateUser(request: Request): Promise<Response> {
 
     const id = generateId();
     const passwordHash = await Bun.password.hash(password, "bcrypt");
+    const canCreate = body.canCreateProjects !== false ? 1 : 0;
     db.run(
-      "INSERT INTO users (id, email, password_hash, is_admin) VALUES (?, ?, ?, 0)",
-      [id, email, passwordHash]
+      "INSERT INTO users (id, email, password_hash, is_admin, can_create_projects) VALUES (?, ?, ?, 0, ?)",
+      [id, email, passwordHash, canCreate]
     );
 
     adminLog.info("user created by admin", { createdBy: userId, newUser: id, email });
 
     return Response.json(
-      { id, email, isAdmin: false, createdAt: new Date().toISOString() },
+      { id, email, isAdmin: false, canCreateProjects: canCreate === 1, createdAt: new Date().toISOString() },
       { status: 201, headers: corsHeaders }
     );
   } catch (error) {
@@ -125,6 +127,10 @@ export async function handleUpdateUser(request: Request): Promise<Response> {
     if (body.password) {
       const passwordHash = await Bun.password.hash(body.password, "bcrypt");
       db.run("UPDATE users SET password_hash = ? WHERE id = ?", [passwordHash, targetId]);
+    }
+
+    if (body.canCreateProjects !== undefined) {
+      db.run("UPDATE users SET can_create_projects = ? WHERE id = ?", [body.canCreateProjects ? 1 : 0, targetId]);
     }
 
     return Response.json({ success: true }, { headers: corsHeaders });

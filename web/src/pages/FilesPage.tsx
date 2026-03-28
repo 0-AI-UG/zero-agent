@@ -20,11 +20,12 @@ import {
   DialogFooter,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { FolderPlusIcon, RefreshCwIcon, SearchIcon, UploadIcon, XIcon } from "lucide-react";
+import { FilePlusIcon, FolderPlusIcon, RefreshCwIcon, SearchIcon, UploadIcon, XIcon } from "lucide-react";
 import { apiFetch } from "@/api/client";
 import { queryKeys } from "@/lib/query-keys";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { useCreateFile } from "@/hooks/use-create-file";
 
 export function FilesPage() {
   const { projectId } = useParams<{ projectId: string }>();
@@ -96,6 +97,33 @@ export function FilesPage() {
   const [folderDialogOpen, setFolderDialogOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
   const queryClient = useQueryClient();
+
+  // New file dialog state
+  const [fileDialogOpen, setFileDialogOpen] = useState(false);
+  const [newFileName, setNewFileName] = useState("");
+  const createFileMutation = useCreateFile(projectId!);
+
+  function getMimeType(filename: string): string {
+    const ext = filename.split(".").pop()?.toLowerCase();
+    const map: Record<string, string> = {
+      txt: "text/plain",
+      md: "text/markdown",
+      json: "application/json",
+      csv: "text/csv",
+      html: "text/html",
+      css: "text/css",
+      js: "text/javascript",
+      ts: "text/typescript",
+      tsx: "text/typescript",
+      jsx: "text/javascript",
+      py: "text/x-python",
+      sql: "text/x-sql",
+      xml: "text/xml",
+      yaml: "text/yaml",
+      yml: "text/yaml",
+    };
+    return map[ext ?? ""] ?? "text/plain";
+  }
 
   const createFolderMutation = useMutation({
     mutationFn: async (name: string) => {
@@ -247,6 +275,14 @@ export function FilesPage() {
               <Button
                 variant="outline"
                 size="sm"
+                onClick={() => setFileDialogOpen(true)}
+              >
+                <FilePlusIcon className="h-4 w-4 mr-1" />
+                File
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={() => setFolderDialogOpen(true)}
               >
                 <FolderPlusIcon className="h-4 w-4 mr-1" />
@@ -383,6 +419,66 @@ export function FilesPage() {
               </Button>
               <Button type="submit" disabled={createFolderMutation.isPending || !newFolderName.trim()}>
                 {createFolderMutation.isPending ? "Creating..." : "Create"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create file dialog */}
+      <Dialog open={fileDialogOpen} onOpenChange={setFileDialogOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>New file</DialogTitle>
+            <DialogDescription>
+              Create a file in {currentPath === "/" ? "root" : currentPath}
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              const name = newFileName.trim();
+              if (!name) return;
+              createFileMutation.mutate(
+                {
+                  filename: name,
+                  content: "",
+                  mimeType: getMimeType(name),
+                  folderPath: currentPath,
+                },
+                {
+                  onSuccess: (file) => {
+                    setFileDialogOpen(false);
+                    setNewFileName("");
+                    setSelectedFileId(file.id);
+                    toast(`File "${name}" created.`);
+                  },
+                  onError: () => {
+                    toast.error("Failed to create file.");
+                  },
+                }
+              );
+            }}
+          >
+            <Input
+              value={newFileName}
+              onChange={(e) => setNewFileName(e.target.value)}
+              placeholder="example.txt"
+              autoFocus
+            />
+            <DialogFooter className="mt-4">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setFileDialogOpen(false);
+                  setNewFileName("");
+                }}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={createFileMutation.isPending || !newFileName.trim()}>
+                {createFileMutation.isPending ? "Creating..." : "Create"}
               </Button>
             </DialogFooter>
           </form>

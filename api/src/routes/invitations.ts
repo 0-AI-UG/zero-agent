@@ -5,8 +5,6 @@ import { handleError, toUTC } from "@/routes/utils.ts";
 import { NotFoundError, ValidationError } from "@/lib/errors.ts";
 import { getPendingByUser, getInvitationById, updateInvitationStatus } from "@/db/queries/invitations.ts";
 import { insertProjectMember, isProjectMember } from "@/db/queries/members.ts";
-import { insertNotification } from "@/db/queries/notifications.ts";
-import { getProjectById } from "@/db/queries/projects.ts";
 
 export async function handleListInvitations(request: BunRequest): Promise<Response> {
   try {
@@ -42,13 +40,6 @@ export async function handleAcceptInvitation(request: BunRequest): Promise<Respo
       insertProjectMember(invitation.project_id, userId, "member");
     }
 
-    // Notify inviter
-    const project = getProjectById(invitation.project_id);
-    insertNotification(invitation.inviter_id, "invite_accepted", {
-      projectId: invitation.project_id,
-      projectName: project?.name ?? "Unknown",
-      acceptedByEmail: invitation.invitee_email,
-    });
 
     return Response.json({ ok: true }, { headers: corsHeaders });
   } catch (error) {

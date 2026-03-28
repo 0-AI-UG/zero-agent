@@ -2,20 +2,25 @@ import { useState, useMemo } from "react";
 import { Link } from "react-router";
 import { useProjects } from "@/api/projects";
 import { useAuthStore } from "@/stores/auth";
-import { useIsAdmin } from "@/api/admin";
+import { useCurrentUser } from "@/api/admin";
+import { useInvitations, useAcceptInvitation, useDeclineInvitation } from "@/api/invitations";
 import { ProjectCard } from "@/components/projects/ProjectCard";
 import { CreateProjectDialog } from "@/components/projects/CreateProjectDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { LogOutIcon, SearchIcon, ShieldIcon } from "lucide-react";
+import { CircleHelpIcon, LogOutIcon, MailIcon, SearchIcon, ShieldIcon } from "lucide-react";
 import { EmptyProjectsIllustration } from "@/components/ui/illustrations";
-import { NotificationBell } from "@/components/notifications/NotificationBell";
 
 export function DashboardPage() {
   const { data: projects, isLoading, error } = useProjects();
   const logout = useAuthStore((s) => s.logout);
-  const { data: isAdmin } = useIsAdmin();
+  const { data: currentUser } = useCurrentUser();
+  const { data: invitations } = useInvitations();
+  const acceptInvitation = useAcceptInvitation();
+  const declineInvitation = useDeclineInvitation();
+  const isAdmin = currentUser?.isAdmin;
+  const canCreateProjects = currentUser?.canCreateProjects !== false;
   const [search, setSearch] = useState("");
 
   const filtered = useMemo(() => {
@@ -35,7 +40,12 @@ export function DashboardPage() {
         <div className="flex items-center justify-between h-14 px-6 max-w-5xl mx-auto w-full">
           <h1 className="text-sm font-semibold tracking-tight font-display">Projects</h1>
           <div className="flex items-center gap-2">
-            <CreateProjectDialog />
+            {canCreateProjects && <CreateProjectDialog />}
+            <Button variant="ghost" size="icon-sm" asChild aria-label="Help">
+              <Link to="/help">
+                <CircleHelpIcon className="size-4" />
+              </Link>
+            </Button>
             {isAdmin && (
               <Button variant="ghost" size="icon-sm" asChild aria-label="Admin settings">
                 <Link to="/admin">
@@ -43,7 +53,6 @@ export function DashboardPage() {
                 </Link>
               </Button>
             )}
-            <NotificationBell />
             <Button
               variant="ghost"
               size="icon-sm"
@@ -58,6 +67,45 @@ export function DashboardPage() {
 
       <main className="flex-1 overflow-y-auto">
         <div className="max-w-5xl mx-auto px-6 py-8 space-y-6">
+          {/* Pending Invitations */}
+          {invitations && invitations.length > 0 && (
+            <div className="space-y-2">
+              {invitations.map((inv) => (
+                <div
+                  key={inv.id}
+                  className="rounded-lg border border-primary/20 bg-primary/5 p-4 flex items-center justify-between gap-4"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <MailIcon className="size-4 text-primary shrink-0" />
+                    <p className="text-sm truncate">
+                      <span className="text-muted-foreground">{inv.inviterEmail}</span>{" "}
+                      invited you to{" "}
+                      <span className="font-medium">{inv.projectName}</span>
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Button
+                      variant="default"
+                      size="sm"
+                      onClick={() => acceptInvitation.mutate(inv.id)}
+                      disabled={acceptInvitation.isPending || declineInvitation.isPending}
+                    >
+                      Accept
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => declineInvitation.mutate(inv.id)}
+                      disabled={acceptInvitation.isPending || declineInvitation.isPending}
+                    >
+                      Decline
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* Search */}
           {projects && projects.length > 0 && (
             <div className="relative max-w-xs">
@@ -90,9 +138,11 @@ export function DashboardPage() {
               <EmptyProjectsIllustration className="mb-4" />
               <h2 className="text-sm font-medium mb-1">No projects yet</h2>
               <p className="text-sm text-muted-foreground mb-6">
-                Create your first project to get started.
+                {canCreateProjects
+                  ? "Create your first project to get started."
+                  : "Ask an admin to add you to a project."}
               </p>
-              <CreateProjectDialog />
+              {canCreateProjects && <CreateProjectDialog />}
             </div>
           )}
 

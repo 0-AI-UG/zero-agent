@@ -1,8 +1,8 @@
 import { corsHeaders } from "@/lib/cors.ts";
-import { createToken } from "@/lib/auth.ts";
+import { authenticateRequest, createToken } from "@/lib/auth.ts";
 import { AuthError } from "@/lib/errors.ts";
 import { validateBody, loginSchema } from "@/lib/validation.ts";
-import { getUserByEmail } from "@/db/queries/users.ts";
+import { getUserByEmail, getUserById } from "@/db/queries/users.ts";
 import { handleError } from "@/routes/utils.ts";
 import { authRateLimiter } from "@/lib/rate-limit.ts";
 import { log } from "@/lib/logger.ts";
@@ -62,6 +62,27 @@ export async function handleLogin(request: Request): Promise<Response> {
       {
         token,
         user: { id: user.id, email: user.email },
+      },
+      { headers: corsHeaders },
+    );
+  } catch (error) {
+    return handleError(error);
+  }
+}
+
+export async function handleMe(request: Request): Promise<Response> {
+  try {
+    const { userId } = await authenticateRequest(request);
+    const user = getUserById(userId);
+    if (!user) throw new AuthError("Unauthorized");
+    return Response.json(
+      {
+        user: {
+          id: user.id,
+          email: user.email,
+          isAdmin: user.is_admin === 1,
+          canCreateProjects: user.can_create_projects !== 0,
+        },
       },
       { headers: corsHeaders },
     );

@@ -51,7 +51,7 @@ import { useProject } from "@/api/projects";
 import { useCompanionStatus } from "@/api/companion";
 import { useMembers } from "@/api/members";
 import { useAuthStore } from "@/stores/auth";
-import { useModelStore, getSelectedModel, models } from "@/stores/model";
+import { useModelStore, getSelectedModel, getModelsCache } from "@/stores/model";
 import { useToolsStore } from "@/stores/tools";
 import { useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
@@ -107,7 +107,10 @@ interface MessageMetadata {
 
 type ChatMessage = UIMessage<MessageMetadata>;
 
-const MODEL_DISPLAY_NAMES = new Map(models.map((m) => [m.id, m.name]));
+function getModelDisplayName(id: string): string {
+  const m = getModelsCache().find((m) => m.id === id);
+  return m?.name ?? id;
+}
 
 const ONBOARDING_SUGGESTIONS = [
   {
@@ -458,7 +461,7 @@ export function ChatPanel({ projectId, chatId, initialMessages }: ChatPanelProps
                                   </MessageAction>
                                   {message.metadata?.modelId && (
                                     <span className="text-[10px] text-muted-foreground/50 font-mono ml-1">
-                                      {MODEL_DISPLAY_NAMES.get(message.metadata.modelId) ?? message.metadata.modelId.split("/").pop()}
+                                      {getModelDisplayName(message.metadata.modelId)}
                                     </span>
                                   )}
                                 </MessageActions>

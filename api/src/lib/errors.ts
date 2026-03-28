@@ -16,6 +16,12 @@ export class NotFoundError extends Error {
   }
 }
 
+export class ForbiddenError extends Error {
+  constructor(message = "Forbidden") {
+    super(message);
+  }
+}
+
 export class ConflictError extends Error {
   constructor(message = "Conflict") {
     super(message);

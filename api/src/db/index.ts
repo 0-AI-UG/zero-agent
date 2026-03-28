@@ -161,17 +161,6 @@ db.run(`
 `);
 
 db.run(`
-  CREATE TABLE IF NOT EXISTS notifications (
-    id         TEXT PRIMARY KEY,
-    user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    type       TEXT NOT NULL CHECK (type IN ('invite', 'invite_accepted', 'member_removed', 'task_completed', 'task_failed')),
-    data       TEXT NOT NULL DEFAULT '{}',
-    read       INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )
-`);
-
-db.run(`
   CREATE TABLE IF NOT EXISTS todos (
     id          TEXT PRIMARY KEY,
     project_id  TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -249,6 +238,58 @@ db.run(`
   )
 `);
 
+db.run(`
+  CREATE TABLE IF NOT EXISTS models (
+    id               TEXT PRIMARY KEY,
+    name             TEXT NOT NULL,
+    provider         TEXT NOT NULL,
+    description      TEXT DEFAULT '',
+    context_window   INTEGER NOT NULL DEFAULT 128000,
+    pricing_input    REAL NOT NULL DEFAULT 0,
+    pricing_output   REAL NOT NULL DEFAULT 0,
+    tags             TEXT NOT NULL DEFAULT '[]',
+    is_default       INTEGER NOT NULL DEFAULT 0,
+    multimodal       INTEGER NOT NULL DEFAULT 0,
+    provider_routing TEXT,
+    enabled          INTEGER NOT NULL DEFAULT 1,
+    sort_order       INTEGER NOT NULL DEFAULT 0,
+    created_at       TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at       TEXT NOT NULL DEFAULT (datetime('now'))
+  )
+`);
+
+db.run(`
+  CREATE TABLE IF NOT EXISTS usage_logs (
+    id               TEXT PRIMARY KEY,
+    user_id          TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    project_id       TEXT NOT NULL,
+    chat_id          TEXT REFERENCES chats(id) ON DELETE SET NULL,
+    model_id         TEXT NOT NULL,
+    input_tokens     INTEGER NOT NULL DEFAULT 0,
+    output_tokens    INTEGER NOT NULL DEFAULT 0,
+    reasoning_tokens INTEGER NOT NULL DEFAULT 0,
+    cached_tokens    INTEGER NOT NULL DEFAULT 0,
+    cost_input       REAL NOT NULL DEFAULT 0,
+    cost_output      REAL NOT NULL DEFAULT 0,
+    duration_ms      INTEGER,
+    created_at       TEXT NOT NULL DEFAULT (datetime('now'))
+  )
+`);
+
+// ── Migrations (idempotent column additions) ──
+
+for (const col of [
+  "trigger_type TEXT NOT NULL DEFAULT 'schedule'",
+  "trigger_event TEXT",
+  "trigger_filter TEXT",
+  "cooldown_seconds INTEGER NOT NULL DEFAULT 0",
+]) {
+  try { db.run(`ALTER TABLE scheduled_tasks ADD COLUMN ${col}`); } catch {}
+}
+
+// Users migrations
+try { db.run(`ALTER TABLE users ADD COLUMN can_create_projects INTEGER NOT NULL DEFAULT 1`); } catch {}
+
 // ── Indexes ──
 
 db.run(`CREATE INDEX IF NOT EXISTS idx_projects_user_id ON projects(user_id)`);
@@ -264,7 +305,6 @@ db.run(`CREATE INDEX IF NOT EXISTS idx_project_members_project ON project_member
 db.run(`CREATE INDEX IF NOT EXISTS idx_project_members_user ON project_members(user_id)`);
 db.run(`CREATE INDEX IF NOT EXISTS idx_invitations_project ON invitations(project_id, status)`);
 db.run(`CREATE INDEX IF NOT EXISTS idx_invitations_email ON invitations(invitee_email, status)`);
-db.run(`CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, read, created_at)`);
 db.run(`CREATE INDEX IF NOT EXISTS idx_todos_project_chat ON todos(project_id, chat_id)`);
 db.run(`CREATE INDEX IF NOT EXISTS idx_skills_project ON skills(project_id)`);
 db.run(`CREATE INDEX IF NOT EXISTS idx_companion_tokens_user ON companion_tokens(user_id)`);
@@ -272,6 +312,36 @@ db.run(`CREATE INDEX IF NOT EXISTS idx_companion_tokens_project ON companion_tok
 db.run(`CREATE INDEX IF NOT EXISTS idx_companion_tokens_token ON companion_tokens(token)`);
 db.run(`CREATE INDEX IF NOT EXISTS idx_quick_actions_project ON quick_actions(project_id, sort_order)`);
 db.run(`CREATE INDEX IF NOT EXISTS idx_tg_bind_chat ON telegram_bindings(telegram_chat_id)`);
+db.run(`CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_trigger ON scheduled_tasks(trigger_type, trigger_event, enabled)`);
+db.run(`CREATE INDEX IF NOT EXISTS idx_models_provider ON models(provider)`);
+db.run(`CREATE INDEX IF NOT EXISTS idx_usage_logs_user ON usage_logs(user_id, created_at)`);
+db.run(`CREATE INDEX IF NOT EXISTS idx_usage_logs_model ON usage_logs(model_id, created_at)`);
+db.run(`CREATE INDEX IF NOT EXISTS idx_usage_logs_project ON usage_logs(project_id, created_at)`);
+db.run(`CREATE INDEX IF NOT EXISTS idx_usage_logs_created ON usage_logs(created_at)`);
+
+// ── Seed models from JSON if table is empty ──
+
+const modelCount = db.query<{ count: number }, []>("SELECT count(*) as count FROM models").get()!;
+if (modelCount.count === 0) {
+  const seedModels = require("@/config/models.json").models;
+  const insertModel = db.prepare(
+    `INSERT INTO models (id, name, provider, description, context_window, pricing_input, pricing_output, tags, is_default, multimodal, provider_routing, sort_order)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  );
+  for (let i = 0; i < seedModels.length; i++) {
+    const m = seedModels[i];
+    insertModel.run(
+      m.id, m.name, m.provider, m.description ?? "",
+      m.contextWindow ?? 128000,
+      m.pricing?.input ?? 0, m.pricing?.output ?? 0,
+      JSON.stringify(m.tags ?? []),
+      m.default ? 1 : 0,
+      m.multimodal ? 1 : 0,
+      m.providerRouting ? JSON.stringify(m.providerRouting) : null,
+      i,
+    );
+  }
+}
 
 // ── Exports ──
 

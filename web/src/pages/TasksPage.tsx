@@ -26,6 +26,13 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   PlusIcon,
   PlayIcon,
   Trash2Icon,
@@ -38,6 +45,7 @@ import {
   PauseCircleIcon,
   WrenchIcon,
   CheckIcon,
+  ZapIcon,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -53,11 +61,35 @@ export const SCHEDULE_PRESETS = [
   { label: "Daily at 9am UTC", value: "0 9 * * *" },
 ];
 
+export const EVENT_PRESETS = [
+  { label: "File created", value: "file.created" },
+  { label: "File updated", value: "file.updated" },
+  { label: "File deleted", value: "file.deleted" },
+  { label: "File moved", value: "file.moved" },
+  { label: "Folder created", value: "folder.created" },
+  { label: "Message received", value: "message.received" },
+  { label: "Chat created", value: "chat.created" },
+  { label: "Skill installed", value: "skill.installed" },
+  { label: "Companion connected", value: "companion.connected" },
+];
+
+export const COOLDOWN_PRESETS = [
+  { label: "5s", value: 5 },
+  { label: "10s", value: 10 },
+  { label: "30s", value: 30 },
+  { label: "1m", value: 60 },
+  { label: "5m", value: 300 },
+];
+
 export interface TaskFormData {
   name: string;
   prompt: string;
-  schedule: string;
+  schedule?: string;
   requiredTools?: string[] | null;
+  triggerType: "schedule" | "event";
+  triggerEvent?: string;
+  triggerFilter?: Record<string, string> | null;
+  cooldownSeconds?: number;
 }
 
 export function ToolPicker({
@@ -187,19 +219,29 @@ function TaskDialog({
 }) {
   const [name, setName] = useState(initial?.name ?? "");
   const [prompt, setPrompt] = useState(initial?.prompt ?? "");
+  const [triggerType, setTriggerType] = useState<"schedule" | "event">(initial?.triggerType ?? "schedule");
   const [schedule, setSchedule] = useState(initial?.schedule ?? "every 2h");
+  const [triggerEvent, setTriggerEvent] = useState(initial?.triggerEvent ?? "file.created");
+  const [cooldownSeconds, setCooldownSeconds] = useState(initial?.cooldownSeconds ?? 30);
   const [selectedTools, setSelectedTools] = useState<Set<string>>(
     () => new Set(initial?.requiredTools ?? []),
   );
 
+  const isValid = name.trim() && prompt.trim() && (
+    triggerType === "schedule" ? schedule.trim() : triggerEvent
+  );
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || !prompt.trim() || !schedule.trim()) return;
+    if (!isValid) return;
     const tools = selectedTools.size > 0 ? Array.from(selectedTools) : null;
     onSubmit({
       name: name.trim(),
       prompt: prompt.trim(),
-      schedule: schedule.trim(),
+      triggerType,
+      schedule: triggerType === "schedule" ? schedule.trim() : undefined,
+      triggerEvent: triggerType === "event" ? triggerEvent : undefined,
+      cooldownSeconds: triggerType === "event" ? cooldownSeconds : undefined,
       requiredTools: tools,
     });
   };
@@ -211,7 +253,7 @@ function TaskDialog({
           <DialogHeader className="px-6 pt-6">
             <DialogTitle>{initial ? "Edit Task" : "Create Task"}</DialogTitle>
             <DialogDescription>
-              Define what the agent should do and how often.
+              Define what the agent should do and when.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4 px-6 overflow-y-auto">
@@ -232,35 +274,114 @@ function TaskDialog({
                 rows={5}
               />
             </div>
+
+            {/* Trigger type toggle */}
             <div className="space-y-2">
-              <label className="text-sm font-medium">Schedule</label>
-              <Input
-                value={schedule}
-                onChange={(e) => setSchedule(e.target.value)}
-                placeholder='e.g. "every 2h" or "0 9 * * *"'
-              />
-              <div className="flex flex-wrap gap-1.5">
-                {SCHEDULE_PRESETS.map((p) => (
-                  <button
-                    key={p.value}
-                    type="button"
-                    onClick={() => setSchedule(p.value)}
-                    className={cn(
-                      "rounded-md px-2 py-1 text-xs transition-colors border",
-                      schedule === p.value
-                        ? "bg-primary text-primary-foreground border-primary"
-                        : "bg-muted text-muted-foreground hover:text-foreground border-transparent",
-                    )}
-                  >
-                    {p.label}
-                  </button>
-                ))}
+              <label className="text-sm font-medium">Trigger</label>
+              <div className="flex gap-1 p-0.5 bg-muted rounded-md w-fit">
+                <button
+                  type="button"
+                  onClick={() => setTriggerType("schedule")}
+                  className={cn(
+                    "rounded px-3 py-1 text-xs font-medium transition-colors flex items-center gap-1.5",
+                    triggerType === "schedule"
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  <ClockIcon className="size-3" />
+                  Schedule
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTriggerType("event")}
+                  className={cn(
+                    "rounded px-3 py-1 text-xs font-medium transition-colors flex items-center gap-1.5",
+                    triggerType === "event"
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  <ZapIcon className="size-3" />
+                  Event
+                </button>
               </div>
             </div>
+
+            {triggerType === "schedule" ? (
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Schedule</label>
+                <Input
+                  value={schedule}
+                  onChange={(e) => setSchedule(e.target.value)}
+                  placeholder='e.g. "every 2h" or "0 9 * * *"'
+                />
+                <div className="flex flex-wrap gap-1.5">
+                  {SCHEDULE_PRESETS.map((p) => (
+                    <button
+                      key={p.value}
+                      type="button"
+                      onClick={() => setSchedule(p.value)}
+                      className={cn(
+                        "rounded-md px-2 py-1 text-xs transition-colors border",
+                        schedule === p.value
+                          ? "bg-primary text-primary-foreground border-primary"
+                          : "bg-muted text-muted-foreground hover:text-foreground border-transparent",
+                      )}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Event</label>
+                  <Select value={triggerEvent} onValueChange={setTriggerEvent}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select an event" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {EVENT_PRESETS.map((e) => (
+                        <SelectItem key={e.value} value={e.value}>
+                          {e.label}
+                          <span className="ml-2 text-muted-foreground text-[10px]">{e.value}</span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Cooldown</label>
+                  <p className="text-xs text-muted-foreground">
+                    Minimum time between runs. Events during cooldown are batched.
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {COOLDOWN_PRESETS.map((p) => (
+                      <button
+                        key={p.value}
+                        type="button"
+                        onClick={() => setCooldownSeconds(p.value)}
+                        className={cn(
+                          "rounded-md px-2 py-1 text-xs transition-colors border",
+                          cooldownSeconds === p.value
+                            ? "bg-primary text-primary-foreground border-primary"
+                            : "bg-muted text-muted-foreground hover:text-foreground border-transparent",
+                        )}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+
             <ToolPicker selected={selectedTools} onChange={setSelectedTools} />
           </div>
           <DialogFooter className="px-6 pb-6 pt-2">
-            <Button type="submit" disabled={isPending || !name.trim() || !prompt.trim()}>
+            <Button type="submit" disabled={isPending || !isValid}>
               {isPending ? "Saving..." : initial ? "Update" : "Create"}
             </Button>
           </DialogFooter>
@@ -395,9 +516,16 @@ function TaskCard({
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <h3 className="text-sm font-medium truncate">{task.name}</h3>
-              <Badge variant="outline" className="text-[10px] shrink-0">
-                {task.schedule}
-              </Badge>
+              {task.triggerType === "event" ? (
+                <Badge variant="outline" className="text-[10px] shrink-0 gap-0.5 text-amber-600 border-amber-200 bg-amber-50 dark:bg-amber-950 dark:text-amber-400 dark:border-amber-800">
+                  <ZapIcon className="size-2.5" />
+                  {task.triggerEvent}
+                </Badge>
+              ) : (
+                <Badge variant="outline" className="text-[10px] shrink-0">
+                  {task.schedule}
+                </Badge>
+              )}
               {task.requiredTools && task.requiredTools.length > 0 && (
                 <Badge variant="outline" className="text-[10px] shrink-0 gap-0.5">
                   <WrenchIcon className="size-2.5" />
@@ -414,9 +542,14 @@ function TaskCard({
                   Last: {formatDistanceToNow(new Date(task.lastRunAt), { addSuffix: true })}
                 </span>
               )}
-              <span>
-                Next: {formatDistanceToNow(new Date(task.nextRunAt), { addSuffix: true })}
-              </span>
+              {task.triggerType === "schedule" && (
+                <span>
+                  Next: {formatDistanceToNow(new Date(task.nextRunAt), { addSuffix: true })}
+                </span>
+              )}
+              {task.triggerType === "event" && task.cooldownSeconds > 0 && (
+                <span>Cooldown: {task.cooldownSeconds}s</span>
+              )}
               <span className="tabular-nums">{task.runCount} runs</span>
             </div>
           </div>
@@ -476,7 +609,15 @@ function TaskCard({
         onOpenChange={setEditing}
         onSubmit={handleEdit}
         isPending={updateTask.isPending}
-        initial={{ name: task.name, prompt: task.prompt, schedule: task.schedule, requiredTools: task.requiredTools }}
+        initial={{
+          name: task.name,
+          prompt: task.prompt,
+          triggerType: task.triggerType,
+          schedule: task.schedule,
+          triggerEvent: task.triggerEvent ?? undefined,
+          cooldownSeconds: task.cooldownSeconds,
+          requiredTools: task.requiredTools,
+        }}
       />
     </>
   );
@@ -504,7 +645,7 @@ export function TasksPage() {
               Automation
             </h2>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Scheduled tasks that run automatically
+              Tasks that run on a schedule or in response to events
             </p>
           </div>
           <Button size="sm" onClick={() => setCreating(true)}>

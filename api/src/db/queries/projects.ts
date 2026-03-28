@@ -22,6 +22,12 @@ export function getProjectsByUser(userId: string): ProjectRow[] {
   ).all(userId);
 }
 
+export function getAllProjects(): ProjectRow[] {
+  return db.query<ProjectRow, []>(
+    "SELECT * FROM projects ORDER BY updated_at DESC",
+  ).all();
+}
+
 export function getProjectById(id: string): ProjectRow | null {
   return db.query<ProjectRow, [string]>(
     "SELECT * FROM projects WHERE id = ?",

@@ -13,7 +13,7 @@ export interface Project {
   assistantName: string;
   assistantDescription: string;
   assistantIcon: string;
-  role: "owner" | "member";
+  role: "owner" | "member" | "admin";
   memberCount: number;
   createdAt: string;
   updatedAt: string;
