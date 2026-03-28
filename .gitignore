@@ -3,6 +3,11 @@ dist/
 *.db
 *.db-shm
 *.db-wal
+*.s3db
+*.s3db-shm
+*.s3db-wal
 .env
 .DS_Store
+.browser-state/
 api/storage/
+data/
