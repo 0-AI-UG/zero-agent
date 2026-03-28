@@ -55,7 +55,7 @@ import pandas as pd
 df = pd.read_csv("source.csv")  # or pd.read_excel("source.xlsx")
 print(f"Shape: {df.shape[0]} rows, {df.shape[1]} columns")
 print(f"\nColumns & types:\n{df.dtypes}")
-print(f"\nFirst 5 rows:\n{df.head()}")
+print(f"\nFirst 5 rows:\n{df.head().to_string()}")
 print(f"\nNull counts:\n{df.isnull().sum()}")
 print(f"\nDuplicates: {df.duplicated().sum()}")
 ```
@@ -93,6 +93,16 @@ After successful execution, delete the tmp folder:
 ```
 deleteFile("tmp/<task-name>/")
 ```
+
+## Context Window Safety
+
+**Never print or return entire files or large dataframes.** The agent's context window is limited — dumping thousands of rows will break it.
+
+- **Exploration**: Use `df.head(n)` and `df.dtypes` — never `print(df)` or `df.to_string()` on the full dataframe. **Maximum 20 rows** in any single print
+- **Verification**: After processing, print row/column counts and a small sample (`df.head(10)`)
+- **Analysis results**: Print only aggregated stats (sums, means, counts), never raw row data beyond a few examples
+- **Large outputs**: Write results to a file and print a summary — do not print the data itself
+- **Forbidden patterns**: `print(df)`, `print(df.to_string())`, `print(df.to_markdown())` on full dataframes — always slice first with `.head(n)` where n ≤ 20
 
 ## Architecture Rules
 
@@ -243,7 +253,7 @@ After any spreadsheet operation, respond with:
 4. **Key stats** (for analysis): min, max, mean, distribution highlights
 5. **Next steps**: Suggest follow-up actions ("I can visualize this data" or "Want me to export this as Excel?")
 
-Never dump an entire dataset into chat. The user can browse it in the inline preview.
+**Never dump an entire dataset into chat** — this will overflow the agent's context window and break the conversation. The user can browse full data in the inline preview. Only show samples (up to 20 rows max) via markdown tables.
 
 ## Limits
 
