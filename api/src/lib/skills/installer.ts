@@ -4,6 +4,7 @@ import { createFolder, getFolderByPath, deleteFoldersByPathPrefix } from "@/db/q
 import { insertSkill, deleteSkill } from "@/db/queries/skills.ts";
 import { indexFileContent } from "@/db/queries/search.ts";
 import { parseSkillMd } from "./parser.ts";
+import { invalidateSummaryCache } from "./loader.ts";
 import type { SkillFrontmatter } from "./types.ts";
 import { log } from "@/lib/logger.ts";
 
@@ -87,6 +88,7 @@ export async function installSkillFiles(
     // UNIQUE constraint — skill already exists
   }
 
+  invalidateSummaryCache(projectId);
   installLog.info("skill installed", { projectId, name: resolvedName });
 
   return {
@@ -119,6 +121,7 @@ export async function uninstallSkill(projectId: string, skillName: string): Prom
   // Delete skills table entry
   deleteSkill(projectId, skillName);
 
+  invalidateSummaryCache(projectId);
   installLog.info("skill uninstalled", { projectId, name: skillName });
 }
 

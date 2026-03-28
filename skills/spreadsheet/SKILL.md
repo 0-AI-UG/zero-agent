@@ -35,13 +35,30 @@ Every spreadsheet task MUST follow these steps in order. Do not skip ahead to wr
 
 ### Step 1: Understand the Data
 
-Before writing any code, read the source file(s) with `readFile` and study the data:
+Before writing any processing code, explore the source file(s) using a quick Python/pandas script via `runCode`. **Never use `readFile`** — it fails on Excel files (binary) and chokes on large CSVs.
+
+Write a small exploration script to `tmp/explore/main.py` that prints:
 
 - **Column names** — list every column
-- **Data types** — numbers, dates, strings, booleans, mixed?
+- **Data types** — dtypes from pandas
 - **Row count** — how many records?
-- **Sample values** — show 3–5 representative rows
-- **Quality issues** — empty cells, inconsistent formatting, duplicates?
+- **Sample values** — first 5 rows
+- **Quality issues** — null counts, duplicates
+
+Example exploration script:
+
+```python
+# tmp/explore/main.py
+import pandas as pd
+
+# Use read_excel for .xlsx/.xls, read_csv for .csv
+df = pd.read_csv("source.csv")  # or pd.read_excel("source.xlsx")
+print(f"Shape: {df.shape[0]} rows, {df.shape[1]} columns")
+print(f"\nColumns & types:\n{df.dtypes}")
+print(f"\nFirst 5 rows:\n{df.head()}")
+print(f"\nNull counts:\n{df.isnull().sum()}")
+print(f"\nDuplicates: {df.duplicated().sum()}")
+```
 
 Tell the user what you found. Example:
 
@@ -54,18 +71,20 @@ For **create** tasks (no source file), skip to Step 2 — but still describe the
 Tell the user what you'll do before writing code:
 
 - What transformation/analysis you'll perform
-- What the output will look like (columns, format, filename)
+- Whether the result is a **text answer** (stats, insights, a yes/no) or a **file output** (new/modified spreadsheet)
+- If producing a file: what it will look like (columns, format, filename) and where it will be saved
 - Any assumptions or decisions (e.g. "I'll parse the $ prefix from revenue and treat as float")
 
 ### Step 3: Execute
 
-Write scripts and dependencies to a temporary folder, run them, and output results to `spreadsheets/`.
+Write scripts and dependencies to a temporary folder and run them.
 
 **Tmp folder convention:**
 - Create a folder: `tmp/<short-task-name>/` (e.g. `tmp/filter-revenue/`, `tmp/merge-leads/`)
 - Write your `requirements.txt` and `main.py` inside this folder
 - Run with `runCode({ entrypoint: "tmp/<task-name>/main.py" })`
-- Output files go to `spreadsheets/` (not the tmp folder)
+- If the task produces an output file, write it to a sensible location — next to the source file, or `spreadsheets/`, or wherever the user specifies
+- If the task is analysis/question-answering, just `print()` the results — no output file needed
 
 ### Step 4: Clean Up
 
@@ -75,12 +94,11 @@ After successful execution, delete the tmp folder:
 deleteFile("tmp/<task-name>/")
 ```
 
-This keeps the project clean — only the output files in `spreadsheets/` remain.
-
 ## Architecture Rules
 
-- **Output folder**: Always write output files to `spreadsheets/`
 - **Script folder**: Always write scripts and requirements.txt to `tmp/<task-name>/`
+- **Output files**: Only produce an output file when the task requires one (create, transform, merge, convert). For analysis or question-answering, just print results — no file needed
+- **Output location**: Place output files next to the source file by default, or wherever the user specifies. Use `spreadsheets/` only when creating files from scratch with no obvious location
 - **Prefer CSV** as the default output format — it gets inline preview with editing, sorting, filtering, and search in the UI
 - **Use XLSX only** when the user explicitly requests Excel, or when formatting matters (multi-sheet workbooks, column widths, styled headers)
 - **Never use `writeFile` for XLSX** — it only accepts text content. Always generate XLSX files inside `runCode` where the binary file flows through the changedFiles pipeline
@@ -94,17 +112,17 @@ Route on **intent**, not keywords.
 
 ### Analyze — "What does this data show?"
 The user has data and wants insights, summaries, or statistics.
-- **Step 1**: Read the file, describe structure and quality
+- **Step 1**: Explore the file with pandas, describe structure and quality
 - **Step 2**: Propose which stats/insights to compute
-- **Step 3**: Process in `runCode` with pandas
+- **Step 3**: Process in `runCode` with pandas, print results — no output file needed
 - Respond with: key stats, distributions, anomalies, top/bottom values
 - Suggest loading the **visualizer** skill if charts would help
 
 ### Transform — "Clean this up" / "Filter rows" / "Pivot this"
 The user wants to reshape, clean, or restructure existing data.
-- **Step 1**: Read source file, describe current structure and issues
+- **Step 1**: Explore source file with pandas, describe current structure and issues
 - **Step 2**: Propose the transformation plan
-- **Step 3**: Transform in `runCode`, write CSV result to `spreadsheets/`
+- **Step 3**: Transform in `runCode`, write result next to the source file (or where the user specifies)
 - Common operations: filter rows, rename columns, deduplicate, pivot, unpivot, type conversion, string cleanup
 
 ### Create — "Make a spreadsheet of..."
@@ -115,9 +133,9 @@ The user wants a new dataset generated from scratch or from research.
 
 ### Merge — "Combine these files"
 The user has multiple data sources to join.
-- **Step 1**: Read ALL source files, describe structure of each, identify join columns
+- **Step 1**: Explore ALL source files with pandas, describe structure of each, identify join columns
 - **Step 2**: Propose join strategy (inner/outer, which columns, mismatch handling)
-- **Step 3**: Join in a single `runCode` call, output merged CSV
+- **Step 3**: Join in a single `runCode` call, write merged result next to the source files (or where the user specifies)
 
 ### Convert — "Save as Excel" / "Convert to CSV"
 The user wants format conversion.
@@ -186,7 +204,7 @@ with pd.ExcelWriter("spreadsheets/multi-sheet-report.xlsx") as writer:
 
 ### Reading Excel Files
 
-When users upload or have existing XLSX files, read them inside `runCode` — never with `readFile` (which returns garbled binary text for XLSX):
+Always read XLSX files inside `runCode` with pandas:
 
 ```python
 # tmp/read-excel/main.py

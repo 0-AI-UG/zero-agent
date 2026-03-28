@@ -15,6 +15,10 @@ interface CacheEntry {
 
 const summaryCache = new Map<string, CacheEntry>();
 
+export function invalidateSummaryCache(projectId: string): void {
+  summaryCache.delete(projectId);
+}
+
 export async function getSkillSummaries(projectId: string): Promise<SkillSummary[]> {
   const cached = summaryCache.get(projectId);
   if (cached && Date.now() < cached.expiresAt) return cached.summaries;
