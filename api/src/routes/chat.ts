@@ -13,7 +13,7 @@ import { touchChat, updateChat } from "@/db/queries/chats.ts";
 import { flushConversationMemory } from "@/lib/memory-flush.ts";
 import { detectExploreItems } from "@/lib/heartbeat-explore.ts";
 import { log } from "@/lib/logger.ts";
-import { streamContext, setActiveStreamId, clearActiveStreamId, getActiveStreamId } from "@/lib/resumable-stream.ts";
+import { streamContext, setActiveStreamId, clearActiveStreamId, getActiveStreamId, setAbortController, clearAbortController, abortStream } from "@/lib/resumable-stream.ts";
 import { ConflictError } from "@/lib/errors.ts";
 import { insertUsageLog } from "@/db/queries/usage-logs.ts";
 import { getModelPricing } from "@/config/models.ts";
@@ -78,6 +78,9 @@ export async function handleChat(request: BunRequest): Promise<Response> {
     const streamId = generateId();
     setActiveStreamId(chatId, streamId);
 
+    const abortController = new AbortController();
+    setAbortController(chatId, abortController);
+
     // Track the last step's usage so we can report actual context window consumption.
     // totalUsage accumulates inputTokens across all agent steps (tool calls),
     // but only the last step's inputTokens reflects the real context size.
@@ -92,6 +95,7 @@ export async function handleChat(request: BunRequest): Promise<Response> {
     return createAgentUIStreamResponse({
       agent,
       uiMessages: messages,
+      abortSignal: abortController.signal,
       headers: corsHeaders,
       generateMessageId: generateId,
       experimental_transform: smoothStream({
@@ -129,14 +133,14 @@ export async function handleChat(request: BunRequest): Promise<Response> {
       },
       onFinish: ({ messages: finalMessages, isAborted }) => {
         clearActiveStreamId(chatId);
+        clearAbortController(chatId);
         const durationMs = Date.now() - start;
 
         if (isAborted) {
           chatLog.warn("stream aborted", { projectId, chatId, durationMs });
-          return;
+        } else {
+          chatLog.info("stream finished", { projectId, chatId, messageCount: finalMessages.length, durationMs });
         }
-
-        chatLog.info("stream finished", { projectId, chatId, messageCount: finalMessages.length, durationMs });
 
         // Persist all messages scoped to this chat
         // Wrapped in try-catch: the chat/project may have been deleted during the stream
@@ -227,9 +231,32 @@ export async function handleChat(request: BunRequest): Promise<Response> {
   } catch (error) {
     // Clear active stream so retries aren't blocked
     const { chatId } = (request.params ?? {}) as { chatId?: string };
-    if (chatId) clearActiveStreamId(chatId);
+    if (chatId) {
+      clearActiveStreamId(chatId);
+      clearAbortController(chatId);
+    }
 
     chatLog.error("chat request failed", error, { durationMs: Date.now() - start });
+    return handleError(error);
+  }
+}
+
+export async function handleAbortChat(request: BunRequest): Promise<Response> {
+  try {
+    const { userId } = await authenticateRequest(request);
+    const { projectId, chatId } = request.params as {
+      projectId: string;
+      chatId: string;
+    };
+
+    verifyProjectAccess(projectId, userId);
+    verifyChatOwnership(chatId, projectId);
+
+    const aborted = abortStream(chatId);
+    chatLog.info("abort requested", { projectId, chatId, aborted });
+
+    return Response.json({ aborted }, { headers: corsHeaders });
+  } catch (error) {
     return handleError(error);
   }
 }

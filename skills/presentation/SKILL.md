@@ -1,9 +1,9 @@
 ---
 name: presentation
 description: >-
-  Create professional slide decks and presentations. Use when the user wants
-  to build a pitch deck, report, keynote, or any slide-based content that
-  can be exported to PPTX.
+  Create slide decks and presentations. Use when the user wants to build a
+  pitch deck, report, keynote, or any slide-based content that can be exported
+  to PPTX.
 metadata:
   version: "1.0.0"
   platform: presentation
@@ -24,13 +24,11 @@ metadata:
 
 # Presentation
 
-Create polished slide decks that render inline as HTML and can be downloaded as PPTX. Use this skill whenever the user wants to build a presentation, pitch deck, report, or any slide-based content.
+Create slide decks that render inline as HTML and can be downloaded as PPTX. Use this skill whenever the user wants to build a presentation, pitch deck, report, or any slide-based content.
 
 ## Architecture Rules
 
-Every presentation is a **single, self-contained HTML file** with all CSS and JS inline, saved with the `.slides` extension. The file renders inside a sandboxed iframe and can be converted to native PPTX.
-
-Because of the PPTX conversion pipeline, strict CSS rules apply. Follow the **Supported CSS** and **Unsupported CSS** sections below exactly.
+Every presentation is a **single, self-contained HTML file** with all CSS and JS inline, saved with the `.slides` extension. The file renders inside a sandboxed iframe and can be converted to native PPTX via the `@0-ai/slide-gen` package.
 
 ### Slide Structure
 
@@ -47,8 +45,6 @@ Every `.slides` file must start with this structure:
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=1920, initial-scale=1" />
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-
     *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
     body {
@@ -62,7 +58,6 @@ Every `.slides` file must start with this structure:
       width: 1920px;
       height: 1080px;
       overflow: hidden;
-      font-family: 'Inter', sans-serif;
     }
 
     .slide + .slide {
@@ -78,17 +73,9 @@ Every `.slides` file must start with this structure:
 
 ## Workflow
 
-1. **Analyze the content** — Understand the topic, key messages, and how many slides are needed
-2. **Read STYLE.md** — Load `skills/presentation/STYLE.md` via readFile for the design system
-3. **Pick templates** — Read relevant templates from `skills/presentation/templates/` for layout reference:
-   - `title.html` — Hero title slide with subtitle
-   - `content.html` — Heading with bullet points or paragraphs
-   - `two-column.html` — Split layout for comparisons
-   - `section.html` — Large text section divider
-   - `data.html` — Charts and metrics using inline SVG
-   - `full-deck.html` — Complete multi-slide example showing overall structure
-4. **Compose the deck** — Write all slides in a single `.slides` file, combining and customizing template patterns
-5. **Write the file** — Save as `.slides` in the `presentations/` folder
+1. **Analyze the content** - Understand the topic, key messages, and how many slides are needed
+2. **Compose the deck** - Write all slides in a single `.slides` file following the supported CSS rules below
+3. **Write the file** - Save as `.slides` in the `presentations/` folder
 
 ## File Naming
 
@@ -103,7 +90,7 @@ These features survive PPTX conversion:
 
 - **Backgrounds**: solid `background-color`, `linear-gradient()`, `radial-gradient()` (use 4+ stops for smooth gradients)
 - **Layout**: flexbox and CSS Grid (positions captured via `getBoundingClientRect()`)
-- **Fonts**: Google Fonts via `@import` — all weights 100-900
+- **Fonts**: Google Fonts via `@import` - all weights 100-900
 - **Borders**: individual sides, colors, widths >= 1px
 - **`border-radius`**: single uniform value only (not per-corner)
 - **Opacity**: fully supported, accumulated from ancestors
@@ -126,20 +113,12 @@ Do NOT use these for anything visually important:
 
 ## Common Pitfalls
 
-- **Always use Google Fonts** — system fonts don't embed weight variants, only binary bold
-- **Use borders instead of box-shadow** — `border: 1px solid var(--border)` with lighter backgrounds for depth
-- **Large text (72px+)** renders ~10% smaller in PPTX — size up slightly
-- **Only one `background-image` per element** — use nested `<div>` elements for multiple layers
-- **Leave 10-15% extra horizontal space** for text wrapping
-- **Font weight 600** looks bolder in PPTX — consider using 500 instead
+- **Use Google Fonts** - system fonts don't embed weight variants, only binary bold
+- **Use borders instead of box-shadow** - for visual depth
+- **Large text (72px+)** renders ~10% smaller in PPTX - size up slightly
+- **Only one `background-image` per element** - use nested `<div>` elements for multiple layers
+- **Leave 10-15% extra horizontal space** for text wrapping differences
+- **Font weight 600** looks bolder in PPTX - consider using 500 instead
 - **Small circles** (`border-radius: 50%`) on elements < 14px may render as squares
-- **Never use emojis** — use inline SVGs for all icons
-
-## Guidelines
-
-- Always follow the design system in STYLE.md for colors, typography, and spacing
-- Use absolute positioning within `.slide` divs — the canvas is always exactly 1920x1080
-- Keep content generous with whitespace — slides should breathe
-- Data should be embedded directly as CSS or inline HTML, not JavaScript variables (since PPTX conversion captures the DOM, not JS output)
-- Prefer CSS Grid or flexbox for layouts within slides — positions are captured correctly
-- Include `aria-label` attributes on key elements for accessibility
+- **Never use emojis** - use inline SVGs for all icons
+- Data should be embedded directly as CSS or inline HTML, not JavaScript variables (PPTX conversion captures the DOM, not JS output)

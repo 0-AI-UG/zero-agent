@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { tool, ToolLoopAgent } from "ai";
+import { tool, ToolLoopAgent, stepCountIs } from "ai";
 import { createDiscoverableToolset } from "@/tools/registry.ts";
 import { chatModel, enrichModel } from "@/lib/openrouter.ts";
 import { browserBridge } from "@/lib/browser/bridge.ts";
@@ -102,6 +102,7 @@ ${skillsIndex ? `\n## Skills\n${skillsIndex}\nCall \`loadSkill\` with a skill na
 
         const agent = new ToolLoopAgent({
           model: selectedModel,
+          stopWhen: stepCountIs(50),
           instructions: subagentInstructions,
           tools: activeTools,
           onStepFinish: async ({ toolCalls, toolResults, text, finishReason }) => {

@@ -1,4 +1,4 @@
-import { ToolLoopAgent } from "ai";
+import { ToolLoopAgent, stepCountIs } from "ai";
 import { chatModel, createChatModel } from "@/lib/openrouter.ts";
 import { createDiscoverableToolset, type ExecutionContext } from "@/tools/registry.ts";
 import { getSkillSummaries } from "@/lib/skills/loader.ts";
@@ -296,6 +296,7 @@ export async function createAgent(project: ProjectForAgent, options: AgentOption
 
   return new ToolLoopAgent({
     model,
+    stopWhen: stepCountIs(100),
     instructions: {
       role: "system",
       content: await buildSystemPrompt({

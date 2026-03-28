@@ -449,8 +449,7 @@ class BrowserBridge {
     userId: string,
     projectId: string,
     workspaceId: string,
-    code?: string,
-    entrypoint?: string,
+    entrypoint: string,
     timeout?: number,
   ): Promise<{
     stdout: string;
@@ -479,8 +478,7 @@ class BrowserBridge {
         type: "runCode",
         workspaceId,
         commandId,
-        ...(code ? { code } : {}),
-        ...(entrypoint ? { entrypoint } : {}),
+        entrypoint,
         timeout,
       };
       conn.ws.send(JSON.stringify(msg));

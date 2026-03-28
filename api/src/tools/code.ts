@@ -114,20 +114,17 @@ export function createCodeTools(userId: string, projectId: string) {
   return {
     runCode: tool({
       description:
-        "Execute JavaScript/TypeScript in an isolated Bun workspace.\n" +
-        "Two modes: pass `code` for inline JS/TS, or pass `entrypoint` with a path to a .ts/.js file " +
-        "(write it first via writeFile, along with a package.json for dependencies).\n" +
-        "console.log() for output. Top-level await supported. npm packages auto-installed.\n" +
-        "Only JS/TS — no Python, bash, or shell. Subprocesses blocked. Filesystem sandboxed to workspace.",
+        "Execute a JavaScript/TypeScript or Python file in an isolated workspace.\n" +
+        "Write the entrypoint file first via writeFile.\n" +
+        "For JS/TS: use package.json for dependencies. console.log() for output. Top-level await supported.\n" +
+        "For Python: use requirements.txt for dependencies. print() for output. Python is auto-installed.\n" +
+        "No bash or shell. Filesystem sandboxed to workspace.",
       inputSchema: z.object({
-        code: z.string().optional().describe("Inline JavaScript/TypeScript code"),
-        entrypoint: z.string().optional().describe("Path to a .ts/.js file in the project to execute"),
+        entrypoint: z.string().describe("Path to a .ts/.js/.py file in the project to execute"),
         timeout: z.number().optional().describe("Timeout in ms (default 60000, max 300000)"),
-      }).refine(data => !!data.code !== !!data.entrypoint, {
-        message: "Provide exactly one of 'code' or 'entrypoint'",
       }),
-      execute: async ({ code, entrypoint, timeout }) => {
-        toolLog.info("runCode", { userId, projectId, code: code?.slice(0, 200), entrypoint });
+      execute: async ({ entrypoint, timeout }) => {
+        toolLog.info("runCode", { userId, projectId, entrypoint });
 
         try {
           await waitForCompanion();
@@ -136,7 +133,6 @@ export function createCodeTools(userId: string, projectId: string) {
             userId,
             projectId,
             wsId,
-            code,
             entrypoint,
             timeout,
           );

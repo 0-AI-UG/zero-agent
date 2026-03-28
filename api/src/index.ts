@@ -17,7 +17,7 @@ import {
   handleUpdateChat,
   handleDeleteChat,
 } from "@/routes/chats.ts";
-import { handleChat } from "@/routes/chat.ts";
+import { handleChat, handleAbortChat } from "@/routes/chat.ts";
 import { handleResumeStream } from "@/routes/stream.ts";
 import { handleGetMessages } from "@/routes/messages.ts";
 import {
@@ -200,6 +200,9 @@ const server = Bun.serve<{ userId: string; projectId: string; authenticated: boo
         httpLog.info("request", { method: "POST", path: new URL(req.url).pathname, note: "streaming" });
         return handleChat(req);
       },
+    },
+    "/api/projects/:projectId/chats/:chatId/abort": {
+      POST: withLogging(handleAbortChat),
     },
     "/api/projects/:projectId/chats/:chatId/stream": {
       GET: (req: any, server: any) => {

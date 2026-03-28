@@ -5,7 +5,7 @@ description: >-
   CSV and Excel files. Use when the user wants to process tabular data,
   generate reports, clean datasets, pivot data, or convert between CSV and XLSX.
 metadata:
-  version: "1.0.0"
+  version: "3.0.0"
   platform: spreadsheet
   login_required: false
   requires:
@@ -29,14 +29,64 @@ metadata:
 
 Work with tabular data — create, analyze, transform, merge, and export CSV and Excel files. This skill covers everything from simple CSV generation to multi-sheet Excel workbooks.
 
+## Mandatory Workflow
+
+Every spreadsheet task MUST follow these steps in order. Do not skip ahead to writing code.
+
+### Step 1: Understand the Data
+
+Before writing any code, read the source file(s) with `readFile` and study the data:
+
+- **Column names** — list every column
+- **Data types** — numbers, dates, strings, booleans, mixed?
+- **Row count** — how many records?
+- **Sample values** — show 3–5 representative rows
+- **Quality issues** — empty cells, inconsistent formatting, duplicates?
+
+Tell the user what you found. Example:
+
+> "This CSV has 1,240 rows and 8 columns: name (string), email (string), revenue (numeric, some with $ prefix), region (4 unique values: West, East, North, South), signup_date (mixed formats: MM/DD/YYYY and YYYY-MM-DD), …"
+
+For **create** tasks (no source file), skip to Step 2 — but still describe the structure you plan to build.
+
+### Step 2: Plan
+
+Tell the user what you'll do before writing code:
+
+- What transformation/analysis you'll perform
+- What the output will look like (columns, format, filename)
+- Any assumptions or decisions (e.g. "I'll parse the $ prefix from revenue and treat as float")
+
+### Step 3: Execute
+
+Write scripts and dependencies to a temporary folder, run them, and output results to `spreadsheets/`.
+
+**Tmp folder convention:**
+- Create a folder: `tmp/<short-task-name>/` (e.g. `tmp/filter-revenue/`, `tmp/merge-leads/`)
+- Write your `requirements.txt` and `main.py` inside this folder
+- Run with `runCode({ entrypoint: "tmp/<task-name>/main.py" })`
+- Output files go to `spreadsheets/` (not the tmp folder)
+
+### Step 4: Clean Up
+
+After successful execution, delete the tmp folder:
+
+```
+deleteFile("tmp/<task-name>/")
+```
+
+This keeps the project clean — only the output files in `spreadsheets/` remain.
+
 ## Architecture Rules
 
 - **Output folder**: Always write output files to `spreadsheets/`
+- **Script folder**: Always write scripts and requirements.txt to `tmp/<task-name>/`
 - **Prefer CSV** as the default output format — it gets inline preview with editing, sorting, filtering, and search in the UI
 - **Use XLSX only** when the user explicitly requests Excel, or when formatting matters (multi-sheet workbooks, column widths, styled headers)
 - **Never use `writeFile` for XLSX** — it only accepts text content. Always generate XLSX files inside `runCode` where the binary file flows through the changedFiles pipeline
 - **Always use `runCode`** for any data processing — install packages inline, process data, write output
-- **Packages**: Use `papaparse` for CSV parsing/serialization, `xlsx` (SheetJS) for Excel read/write
+- **Packages**: Use `pandas` for data processing, `openpyxl` for Excel read/write
+- **Language**: Always use Python (`.py` files)
 
 ## How to Decide What to Build
 
@@ -44,141 +94,125 @@ Route on **intent**, not keywords.
 
 ### Analyze — "What does this data show?"
 The user has data and wants insights, summaries, or statistics.
-- Read the file with `readFile` first to understand structure
-- Process in `runCode` with papaparse for CSV (or xlsx for Excel files)
+- **Step 1**: Read the file, describe structure and quality
+- **Step 2**: Propose which stats/insights to compute
+- **Step 3**: Process in `runCode` with pandas
 - Respond with: key stats, distributions, anomalies, top/bottom values
 - Suggest loading the **visualizer** skill if charts would help
 
 ### Transform — "Clean this up" / "Filter rows" / "Pivot this"
 The user wants to reshape, clean, or restructure existing data.
-- Read source file, transform in `runCode`, write CSV result
+- **Step 1**: Read source file, describe current structure and issues
+- **Step 2**: Propose the transformation plan
+- **Step 3**: Transform in `runCode`, write CSV result to `spreadsheets/`
 - Common operations: filter rows, rename columns, deduplicate, pivot, unpivot, type conversion, string cleanup
 
 ### Create — "Make a spreadsheet of..."
 The user wants a new dataset generated from scratch or from research.
-- Build data in `runCode`, output as CSV (default) or XLSX (if requested)
+- **Step 2**: Describe the structure you'll build (columns, expected row count)
+- **Step 3**: Build data in `runCode`, output as CSV (default) or XLSX (if requested)
 - For research-based data: use `searchWeb` first, then structure findings
 
 ### Merge — "Combine these files"
 The user has multiple data sources to join.
-- Read all source files in a single `runCode` call
-- Join on common columns, handle mismatches gracefully
-- Output merged CSV
+- **Step 1**: Read ALL source files, describe structure of each, identify join columns
+- **Step 2**: Propose join strategy (inner/outer, which columns, mismatch handling)
+- **Step 3**: Join in a single `runCode` call, output merged CSV
 
 ### Convert — "Save as Excel" / "Convert to CSV"
 The user wants format conversion.
-- CSV → XLSX: Read CSV, create workbook with `xlsx` package, auto-fit column widths
-- XLSX → CSV: Read workbook in `runCode`, export each sheet as separate CSV (or ask which sheet)
+- CSV → XLSX: Read CSV with pandas, write to Excel with openpyxl, auto-fit column widths
+- XLSX → CSV: Read workbook with pandas, export each sheet as separate CSV (or ask which sheet)
 
 ## Code Patterns
 
 ### CSV Processing
 
-```typescript
-// Read, transform, and write CSV
-import Papa from "papaparse";
-import * as fs from "fs";
+```python
+# tmp/filter-active/main.py
+import pandas as pd
 
-const raw = fs.readFileSync("source.csv", "utf-8");
-const { data, meta } = Papa.parse(raw, { header: true, skipEmptyLines: true });
+df = pd.read_csv("source.csv")
 
-// Transform data
-const processed = data
-  .filter(row => row.status === "active")
-  .map(row => ({
-    ...row,
-    revenue: parseFloat(row.revenue).toFixed(2),
-  }));
+# Transform data
+filtered = df[df["status"] == "active"].copy()
+filtered["revenue"] = filtered["revenue"].astype(float).round(2)
 
-// Write output
-const output = Papa.unparse(processed);
-fs.writeFileSync("spreadsheets/filtered-data.csv", output);
-console.log(`Processed ${data.length} → ${processed.length} rows, ${meta.fields.length} columns`);
-console.log(`Columns: ${meta.fields.join(", ")}`);
+# Write output to spreadsheets/
+import os
+os.makedirs("spreadsheets", exist_ok=True)
+filtered.to_csv("spreadsheets/filtered-data.csv", index=False)
+print(f"Processed {len(df)} → {len(filtered)} rows, {len(df.columns)} columns")
+print(f"Columns: {', '.join(df.columns)}")
 ```
 
 ### Excel Generation
 
-```typescript
-// Create a formatted Excel workbook
-import * as XLSX from "xlsx";
+```python
+# tmp/create-report/main.py
+import pandas as pd
 
-const data = [
-  { Name: "Alice", Revenue: 150000, Region: "West" },
-  { Name: "Bob", Revenue: 230000, Region: "East" },
-];
+data = [
+    {"Name": "Alice", "Revenue": 150000, "Region": "West"},
+    {"Name": "Bob", "Revenue": 230000, "Region": "East"},
+]
 
-const wb = XLSX.utils.book_new();
-const ws = XLSX.utils.json_to_sheet(data);
+df = pd.DataFrame(data)
 
-// Auto-fit column widths
-const headers = Object.keys(data[0]);
-ws["!cols"] = headers.map(h => ({
-  wch: Math.max(h.length, ...data.map(r => String(r[h]).length)) + 2,
-}));
-
-XLSX.utils.book_append_sheet(wb, ws, "Report");
-XLSX.writeFile(wb, "spreadsheets/report.xlsx");
-console.log(`Created workbook with ${data.length} rows`);
+import os
+os.makedirs("spreadsheets", exist_ok=True)
+df.to_excel("spreadsheets/report.xlsx", index=False, sheet_name="Report")
+print(f"Created workbook with {len(df)} rows")
 ```
 
 ### Multi-Sheet Workbook
 
-```typescript
-import * as XLSX from "xlsx";
+```python
+# tmp/multi-sheet/main.py
+import pandas as pd
 
-const wb = XLSX.utils.book_new();
+import os
+os.makedirs("spreadsheets", exist_ok=True)
 
-// Sheet 1: Summary
-const summary = [{ Metric: "Total Revenue", Value: "$1.2M" }];
-XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summary), "Summary");
+with pd.ExcelWriter("spreadsheets/multi-sheet-report.xlsx") as writer:
+    # Sheet 1: Summary
+    summary = pd.DataFrame([{"Metric": "Total Revenue", "Value": "$1.2M"}])
+    summary.to_excel(writer, sheet_name="Summary", index=False)
 
-// Sheet 2: Details
-const details = [{ Name: "Alice", Amount: 150000 }];
-XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(details), "Details");
-
-XLSX.writeFile(wb, "spreadsheets/multi-sheet-report.xlsx");
+    # Sheet 2: Details
+    details = pd.DataFrame([{"Name": "Alice", "Amount": 150000}])
+    details.to_excel(writer, sheet_name="Details", index=False)
 ```
 
 ### Reading Excel Files
 
 When users upload or have existing XLSX files, read them inside `runCode` — never with `readFile` (which returns garbled binary text for XLSX):
 
-```typescript
-import * as XLSX from "xlsx";
-import * as fs from "fs";
+```python
+# tmp/read-excel/main.py
+import pandas as pd
 
-const buf = fs.readFileSync("uploaded-file.xlsx");
-const wb = XLSX.read(buf, { type: "buffer" });
+# List sheets
+xl = pd.ExcelFile("uploaded-file.xlsx")
+print("Sheets:", ", ".join(xl.sheet_names))
 
-// List sheets
-console.log("Sheets:", wb.SheetNames.join(", "));
-
-// Read first sheet as JSON
-const data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
-console.log(`${data.length} rows, columns: ${Object.keys(data[0]).join(", ")}`);
+# Read first sheet
+df = pd.read_excel("uploaded-file.xlsx")
+print(f"{len(df)} rows, columns: {', '.join(df.columns)}")
 ```
 
 ### CSV to Excel Conversion
 
-```typescript
-import Papa from "papaparse";
-import * as XLSX from "xlsx";
-import * as fs from "fs";
+```python
+# tmp/csv-to-excel/main.py
+import pandas as pd
 
-const raw = fs.readFileSync("source.csv", "utf-8");
-const { data } = Papa.parse(raw, { header: true, skipEmptyLines: true });
+df = pd.read_csv("source.csv")
 
-const wb = XLSX.utils.book_new();
-const ws = XLSX.utils.json_to_sheet(data);
-const headers = Object.keys(data[0]);
-ws["!cols"] = headers.map(h => ({
-  wch: Math.max(h.length, ...data.slice(0, 100).map(r => String(r[h] ?? "").length)) + 2,
-}));
-
-XLSX.utils.book_append_sheet(wb, ws, "Data");
-XLSX.writeFile(wb, "spreadsheets/converted.xlsx");
-console.log(`Converted ${data.length} rows to Excel`);
+import os
+os.makedirs("spreadsheets", exist_ok=True)
+df.to_excel("spreadsheets/converted.xlsx", index=False, sheet_name="Data")
+print(f"Converted {len(df)} rows to Excel")
 ```
 
 ## Response Guidelines
@@ -196,5 +230,4 @@ Never dump an entire dataset into chat. The user can browse it in the inline pre
 ## Limits
 
 - The `runCode` changedFiles pipeline supports files up to ~10MB. For very large datasets (>100k rows), prefer CSV over XLSX.
-- All project files are available in the `runCode` workspace via the file manifest — use `fs.readFileSync()` to access them directly.
-- The `xlsx` package (SheetJS Community Edition) covers all standard operations. No need for the Pro version.
+- All project files are available in the `runCode` workspace via the file manifest — use standard file I/O to access them directly.

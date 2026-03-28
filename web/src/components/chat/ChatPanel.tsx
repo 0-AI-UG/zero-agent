@@ -47,6 +47,7 @@ import { FilePickerButton } from "@/components/chat/FilePickerButton";
 import { TodoProgress } from "@/components/chat/TodoProgress";
 import { QuickActionsManager, getQuickActionIcon } from "@/components/chat/QuickActionsManager";
 import { useQuickActions } from "@/api/quick-actions";
+import { apiFetch } from "@/api/client";
 import { useProject } from "@/api/projects";
 import { useCompanionStatus } from "@/api/companion";
 import { useMembers } from "@/api/members";
@@ -190,7 +191,7 @@ export function ChatPanel({ projectId, chatId, initialMessages }: ChatPanelProps
     [projectId, chatId],
   );
 
-  const { messages: rawMessages, sendMessage, status, error, regenerate, addToolApprovalResponse } = useChat<ChatMessage>({
+  const { messages: rawMessages, sendMessage, status, error, regenerate, addToolApprovalResponse, stop } = useChat<ChatMessage>({
     id: chatId,
     transport,
     messages: initialMessages as ChatMessage[] | undefined,
@@ -266,6 +267,11 @@ export function ChatPanel({ projectId, chatId, initialMessages }: ChatPanelProps
   }, [messages]);
 
   const isStreaming = status === "streaming" || status === "submitted";
+
+  const handleStop = useCallback(() => {
+    stop();
+    apiFetch(`/projects/${projectId}/chats/${chatId}/abort`, { method: "POST" }).catch(() => {});
+  }, [stop, projectId, chatId]);
 
   const starterSuggestions = useMemo(() => {
     return (quickActions ?? []).map((a) => ({
@@ -616,7 +622,8 @@ export function ChatPanel({ projectId, chatId, initialMessages }: ChatPanelProps
                           ? "submitted"
                           : "ready"
                     }
-                    disabled={!input.trim() || isStreaming}
+                    disabled={!isStreaming && !input.trim()}
+                    onStop={handleStop}
                   />
                 </TooltipTrigger>
                 <TooltipContent side="top">

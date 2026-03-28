@@ -3,6 +3,7 @@ import type { CompanionControl, CompanionMessage, BrowserResponse, WebAuthnSubCo
 import { executeAction, type RefMap } from "./actions.ts";
 import { WorkspaceManager } from "./workspace.ts";
 import { runCodeInWorker } from "./worker-runner.ts";
+import { runCodeInPython } from "./python-runner.ts";
 import { enableDomainsStealthy } from "./stealth.ts";
 import type { Logger } from "./logger.ts";
 
@@ -43,12 +44,12 @@ export function createWsClient(options: WsClientOptions) {
     backend: {
       async initWorkspace() {},
       async runCommand(_workspaceId, dir, command, timeout) {
-        // Command is encoded as "entrypoint:<path>" or raw code
-        if (command.startsWith("entrypoint:")) {
-          const entrypoint = command.slice("entrypoint:".length);
-          return runCodeInWorker(null, dir, timeout, entrypoint);
+        // Command is encoded as "entrypoint:<path>"
+        const entrypoint = command.startsWith("entrypoint:") ? command.slice("entrypoint:".length) : command;
+        if (entrypoint.endsWith(".py")) {
+          return runCodeInPython(dir, timeout, entrypoint);
         }
-        return runCodeInWorker(command, dir, timeout);
+        return runCodeInWorker(dir, timeout, entrypoint);
       },
       async destroyWorkspace() {},
     },
