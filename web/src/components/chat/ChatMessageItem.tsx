@@ -80,7 +80,7 @@ interface ChatMessageItemProps {
   isStreaming: boolean;
   memberMap: Map<string, string>;
   isMultiMember: boolean;
-  addToolApprovalResponse: (toolCallId: string, approved: boolean) => void;
+  addToolApprovalResponse: (response: { id: string; approved: boolean }) => void;
   onCopy: (text: string) => void;
   onRegenerate: () => void;
 }

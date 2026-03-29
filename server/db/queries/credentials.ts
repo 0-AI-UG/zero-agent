@@ -140,7 +140,7 @@ export function updateCredential(
   sets.push("updated_at = datetime('now')");
   values.push(id);
 
-  const row = db.query<CredentialRow, unknown[]>(
+  const row = db.query<CredentialRow, any[]>(
     `UPDATE credentials SET ${sets.join(", ")} WHERE id = ? RETURNING *`,
   ).get(...values);
 

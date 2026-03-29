@@ -84,7 +84,7 @@ export function createGenerateImageTool(projectId: string) {
           toolLog.info("success", { projectId, s3Key, sizeBytes: image.data.length, durationMs: Date.now() - start });
           return { fileId: fileRow.id, filename, message: "Image generated and saved to project files. A preview is displayed automatically in the chat — do not include the image URL or markdown in your response." };
         } catch (err) {
-          toolLog.error("failed", err, { projectId, prompt: fullPrompt.slice(0, 200), durationMs: Date.now() - start });
+          toolLog.error("failed", err, { projectId, prompt: prompt.slice(0, 200), durationMs: Date.now() - start });
           throw err;
         }
       },

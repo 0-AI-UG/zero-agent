@@ -43,7 +43,7 @@ export function registerEventTask(task: ScheduledTaskRow) {
 
   const eventName = task.trigger_event as EventName;
   const unsub = events.on(eventName, (eventData) => {
-    handleEvent(task.id, task.project_id, eventName, eventData);
+    handleEvent(task.id, task.project_id, eventName, eventData as unknown as Record<string, unknown>);
   });
 
   unsubscribers.set(task.id, unsub);

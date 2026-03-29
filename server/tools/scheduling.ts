@@ -27,7 +27,7 @@ export function createSchedulingTools(projectId: string) {
         triggerType: z.enum(["schedule", "event"]).default("schedule").describe("'schedule' for time-based, 'event' for event-driven."),
         schedule: z.string().optional().describe("Schedule expression (required for triggerType 'schedule'): 'every 30m', 'every 2h', 'every 1d', or cron syntax like '0 9 * * *'. Minimum interval is 15 minutes."),
         triggerEvent: z.string().optional().describe("Event name (required for triggerType 'event'). Valid events: file.created, file.updated, file.deleted, file.moved, folder.created, folder.deleted, message.received, chat.created, skill.installed, companion.connected."),
-        triggerFilter: z.record(z.string()).optional().describe("Optional filter on event payload. Keys match event fields, values support wildcards (e.g., {\"mimeType\": \"image/*\", \"path\": \"/uploads\"})."),
+        triggerFilter: z.record(z.string(), z.string()).optional().describe("Optional filter on event payload. Keys match event fields, values support wildcards (e.g., {\"mimeType\": \"image/*\", \"path\": \"/uploads\"})."),
         cooldownSeconds: z.number().optional().describe("Minimum seconds between event-triggered runs (default 30). Events during cooldown are batched into one run."),
       }),
       execute: async ({ name, prompt, triggerType, schedule, triggerEvent, triggerFilter, cooldownSeconds }) => {
@@ -63,7 +63,7 @@ export function createSchedulingTools(projectId: string) {
           return { success: false, error: validation.error };
         }
 
-        const task = insertTask(projectId, AGENT_USER_ID, name, prompt, schedule);
+        const task = insertTask(projectId, AGENT_USER_ID, name, prompt, schedule!);
         toolLog.info("task created", { projectId, taskId: task.id, name, schedule });
 
         return {
@@ -115,7 +115,7 @@ export function createSchedulingTools(projectId: string) {
         schedule: z.string().optional().describe("New schedule expression (for schedule tasks)."),
         enabled: z.boolean().optional().describe("Set to false to pause the task, true to resume."),
         triggerEvent: z.string().optional().describe("Change the trigger event (for event tasks)."),
-        triggerFilter: z.record(z.string()).optional().describe("Change the trigger filter."),
+        triggerFilter: z.record(z.string(), z.string()).optional().describe("Change the trigger filter."),
         cooldownSeconds: z.number().optional().describe("Change the cooldown between event-triggered runs."),
       }),
       execute: async ({ taskId, name, prompt, schedule, enabled, triggerEvent, triggerFilter, cooldownSeconds }) => {

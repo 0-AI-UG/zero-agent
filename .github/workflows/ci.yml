@@ -19,10 +19,14 @@ jobs:
       - run: cd companion && bun install
 
       - name: Typecheck server
-        run: bunx tsc --noEmit
+        run: |
+          errors=$(bunx tsc --noEmit 2>&1 | grep -E '^\S.*\([0-9]+,[0-9]+\)' | grep -v '^node_modules/' || true)
+          if [ -n "$errors" ]; then echo "$errors"; exit 1; fi
 
       - name: Typecheck web
         run: bunx tsc --noEmit -p web/tsconfig.json
 
       - name: Typecheck companion
-        run: cd companion && bunx tsc --noEmit
+        run: |
+          errors=$(cd companion && bunx tsc --noEmit 2>&1 | grep -E '^\S.*\([0-9]+,[0-9]+\)' | grep -v '^node_modules/' || true)
+          if [ -n "$errors" ]; then echo "$errors"; exit 1; fi

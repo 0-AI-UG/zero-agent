@@ -30,7 +30,7 @@ export async function handleSetupComplete(request: Request): Promise<Response> {
       );
     }
 
-    const body = await request.json();
+    const body = await request.json() as Record<string, string>;
     const { email, password, openrouterApiKey, openrouterModel, braveSearchApiKey } = body;
 
     if (!email || !password) {

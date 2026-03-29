@@ -28,7 +28,7 @@ export async function handleGetSettings(request: Request): Promise<Response> {
 export async function handleUpdateSettings(request: Request): Promise<Response> {
   try {
     await requireAdmin(request);
-    const body = await request.json();
+    const body = await request.json() as Record<string, unknown>;
     const { settings } = body;
 
     if (!settings || typeof settings !== "object") {

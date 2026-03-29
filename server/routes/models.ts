@@ -51,7 +51,7 @@ export async function handleListAllModels(request: Request): Promise<Response> {
 export async function handleCreateModel(request: Request): Promise<Response> {
   try {
     await requireAdmin(request);
-    const body = await request.json();
+    const body: any = await request.json();
 
     if (!body.id || !body.name || !body.provider) {
       return Response.json({ error: "id, name, and provider are required" }, { status: 400, headers: corsHeaders });
@@ -83,7 +83,7 @@ export async function handleCreateModel(request: Request): Promise<Response> {
 export async function handleUpdateModel(request: Request): Promise<Response> {
   try {
     await requireAdmin(request);
-    const body = await request.json();
+    const body: any = await request.json();
 
     if (!body.id) {
       return Response.json({ error: "id is required" }, { status: 400, headers: corsHeaders });

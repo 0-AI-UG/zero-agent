@@ -35,7 +35,7 @@ export async function handleListUsers(request: Request): Promise<Response> {
 export async function handleCreateUser(request: Request): Promise<Response> {
   try {
     const { userId } = await requireAdmin(request);
-    const body = await request.json();
+    const body: any = await request.json();
     const { email, password } = body;
 
     if (!email || !password) {
@@ -112,7 +112,7 @@ export async function handleUpdateUser(request: Request): Promise<Response> {
     await requireAdmin(request);
     const url = new URL(request.url);
     const targetId = url.pathname.split("/").pop()!;
-    const body = await request.json();
+    const body: any = await request.json();
 
     const user = db.query<{ id: string }, [string]>(
       "SELECT id FROM users WHERE id = ?"

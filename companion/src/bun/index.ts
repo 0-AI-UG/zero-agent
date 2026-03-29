@@ -15,7 +15,7 @@ const rpc = BrowserView.defineRPC<CompanionRPC>({
 					await companionShutdown();
 					companionShutdown = null;
 					companionGetState = null;
-					mainWindow.webview.rpc.send.status({ state: "disconnected" });
+					mainWindow.webview.rpc!.send.status({ state: "disconnected" });
 				}
 
 				if (!token) {
@@ -23,13 +23,13 @@ const rpc = BrowserView.defineRPC<CompanionRPC>({
 				}
 
 				try {
-					mainWindow.webview.rpc.send.status({ state: "connecting" });
+					mainWindow.webview.rpc!.send.status({ state: "connecting" });
 					const result = await startCompanion({
 						token,
 						server,
 						onEvent: (event) => {
 							try {
-								mainWindow.webview.rpc.send.event(event);
+								mainWindow.webview.rpc!.send.event(event);
 							} catch (err) {
 								console.error("Failed to send event to webview:", err, event);
 							}
@@ -37,11 +37,11 @@ const rpc = BrowserView.defineRPC<CompanionRPC>({
 					});
 					companionShutdown = result.shutdown;
 					companionGetState = result.getState;
-					mainWindow.webview.rpc.send.status({ state: "connected" });
+					mainWindow.webview.rpc!.send.status({ state: "connected" });
 					return { ok: true };
 				} catch (err) {
 					const message = err instanceof Error ? err.message : String(err);
-					mainWindow.webview.rpc.send.status({ state: "disconnected", message });
+					mainWindow.webview.rpc!.send.status({ state: "disconnected", message });
 					return { ok: false, error: message };
 				}
 			},
@@ -59,7 +59,7 @@ const rpc = BrowserView.defineRPC<CompanionRPC>({
 			setupDocker: async () => {
 				return setupDocker((step, detail) => {
 					try {
-						mainWindow.webview.rpc.send.setupProgress({ step, detail });
+						mainWindow.webview.rpc!.send.setupProgress({ step, detail });
 					} catch {}
 				});
 			},

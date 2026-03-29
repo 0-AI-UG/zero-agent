@@ -45,7 +45,7 @@ interface ChatMessageListProps {
   error: Error | undefined;
   memberMap: Map<string, string>;
   isMultiMember: boolean;
-  addToolApprovalResponse: (toolCallId: string, approved: boolean) => void;
+  addToolApprovalResponse: (response: { id: string; approved: boolean }) => void;
   regenerate: () => void;
   project: { assistantName?: string; assistantDescription?: string } | undefined;
   starterSuggestions: Array<{ text: string; icon: ReactNode; description: string }>;
@@ -75,7 +75,7 @@ export function ChatMessageList({
   const addToolApprovalResponseRef = useRef(addToolApprovalResponse);
   addToolApprovalResponseRef.current = addToolApprovalResponse;
   const stableAddToolApprovalResponse = useCallback(
-    (toolCallId: string, approved: boolean) => addToolApprovalResponseRef.current(toolCallId, approved),
+    (response: { id: string; approved: boolean }) => addToolApprovalResponseRef.current(response),
     [],
   );
 

@@ -414,7 +414,7 @@ export async function handleTelegramSetup(request: Request): Promise<Response> {
     const { projectId } = (request as Request & { params: { projectId: string } }).params;
     verifyProjectAccess(projectId, userId);
 
-    const body = await request.json();
+    const body: any = await request.json();
     const botToken = body.botToken;
     if (!botToken || typeof botToken !== "string") {
       return Response.json({ error: "botToken is required" }, { status: 400, headers: corsHeaders });
@@ -530,7 +530,7 @@ export async function handleUpdateTelegramAllowlist(request: Request): Promise<R
     const { projectId } = (request as Request & { params: { projectId: string } }).params;
     verifyProjectAccess(projectId, userId);
 
-    const body = await request.json();
+    const body: any = await request.json();
     const allowedUserIds = body.allowedUserIds;
     if (!Array.isArray(allowedUserIds) || !allowedUserIds.every((id: unknown) => typeof id === "string")) {
       return Response.json({ error: "allowedUserIds must be an array of strings" }, { status: 400, headers: corsHeaders });

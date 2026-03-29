@@ -24,7 +24,7 @@ function sanitizePath(p: string): string {
     throw new Error(`Invalid file path: ${p}`);
   }
   // Reject files inside ignored directories
-  const firstSegment = normalized.split(path.sep)[0];
+  const firstSegment = normalized.split(path.sep)[0]!;
   if (IGNORED_DIRS.has(firstSegment)) {
     throw new Error(`File inside ignored directory: ${firstSegment}`);
   }
