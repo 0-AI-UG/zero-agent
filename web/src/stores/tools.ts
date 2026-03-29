@@ -59,13 +59,37 @@ export const TOOL_GROUPS: ToolGroup[] = [
       "removeScheduledTask",
     ],
   },
+  {
+    id: "skills",
+    label: "Skills",
+    icon: "Puzzle",
+    tools: ["loadSkill"],
+  },
+  {
+    id: "credentials",
+    label: "Credentials",
+    icon: "KeyRound",
+    tools: ["savePasskeyCredential", "loadPasskey"],
+  },
+  {
+    id: "messaging",
+    label: "Messaging",
+    icon: "Send",
+    tools: ["sendTelegramMessage"],
+  },
+  {
+    id: "todos",
+    label: "Todos",
+    icon: "ListTodo",
+    tools: ["todoCreate", "todoUpdate", "todoList"],
+  },
 ];
 
 export const ALL_TOOL_NAMES = TOOL_GROUPS.flatMap((g) => g.tools);
 
 /** Tool groups available to automation/scheduled tasks (excludes chat-only tools like todos). */
 export const AUTOMATION_TOOL_GROUPS: ToolGroup[] = TOOL_GROUPS.filter(
-  (g) => g.id !== "agent",
+  (g) => g.id !== "agent" && g.id !== "todos",
 );
 
 interface ToolsState {

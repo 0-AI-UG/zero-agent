@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import { useChats, useCreateChat, useDeleteChat } from "@/api/chats";
 import {
@@ -13,7 +14,7 @@ import {
   SidebarGroupContent,
 } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
-import { BotIcon, PlusIcon, TrashIcon, SendIcon } from "lucide-react";
+import { BotIcon, PlusIcon, TrashIcon, SendIcon, ChevronDownIcon } from "lucide-react";
 import { useMembers } from "@/api/members";
 
 const SOURCE_COLORS: Record<string, string> = {
@@ -117,28 +118,74 @@ export function ChatSidebar({ projectId }: { projectId: string }) {
 
         {/* Autonomous activity chats */}
         {autonomousChats.length > 0 && (
-          <SidebarGroup>
-            <SidebarGroupLabel>Activity</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {autonomousChats.map((chat) => (
-                  <SidebarMenuItem key={chat.id}>
-                    <SidebarMenuButton
-                      isActive={chat.id === activeChatId}
-                      onClick={() =>
-                        navigate(`/projects/${projectId}/c/${chat.id}`)
-                      }
-                    >
-                      <BotIcon className="size-3.5 shrink-0" />
-                      <span>{chat.title}</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
+          <ActivityGroup
+            chats={autonomousChats}
+            activeChatId={activeChatId}
+            projectId={projectId!}
+            onNavigate={(chatId) => navigate(`/projects/${projectId}/c/${chatId}`)}
+            onDelete={handleDeleteChat}
+          />
         )}
       </SidebarContent>
     </Sidebar>
+  );
+}
+
+function ActivityGroup({
+  chats,
+  activeChatId,
+  projectId,
+  onNavigate,
+  onDelete,
+}: {
+  chats: { id: string; title: string }[];
+  activeChatId?: string;
+  projectId: string;
+  onNavigate: (chatId: string) => void;
+  onDelete: (chatId: string) => void;
+}) {
+  const [collapsed, setCollapsed] = useState(false);
+
+  return (
+    <SidebarGroup>
+      <SidebarGroupLabel
+        className="cursor-pointer select-none"
+        onClick={() => setCollapsed(!collapsed)}
+      >
+        <span className="flex items-center gap-1">
+          Activity
+          <ChevronDownIcon
+            className={`size-3 transition-transform ${collapsed ? "-rotate-90" : ""}`}
+          />
+        </span>
+      </SidebarGroupLabel>
+      {!collapsed && (
+        <SidebarGroupContent>
+          <SidebarMenu>
+            {chats.map((chat) => (
+              <SidebarMenuItem key={chat.id}>
+                <SidebarMenuButton
+                  isActive={chat.id === activeChatId}
+                  onClick={() => onNavigate(chat.id)}
+                >
+                  <BotIcon className="size-3.5 shrink-0" />
+                  <span className="truncate">{chat.title}</span>
+                </SidebarMenuButton>
+                <SidebarMenuAction
+                  showOnHover
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDelete(chat.id);
+                  }}
+                  aria-label={`Delete ${chat.title}`}
+                >
+                  <TrashIcon className="size-3.5" />
+                </SidebarMenuAction>
+              </SidebarMenuItem>
+            ))}
+          </SidebarMenu>
+        </SidebarGroupContent>
+      )}
+    </SidebarGroup>
   );
 }

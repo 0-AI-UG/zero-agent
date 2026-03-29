@@ -1,4 +1,4 @@
-import { Navigate, Outlet } from "react-router";
+import { Navigate, Outlet, useLocation } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useAuthStore } from "@/stores/auth";
 import { getSetupStatus } from "@/api/setup";
@@ -7,6 +7,7 @@ import logoSvg from "@/logo.svg";
 
 export function AuthLayout() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const location = useLocation();
 
   const { data: setupStatus, isLoading } = useQuery({
     queryKey: ["setup", "status"],
@@ -18,7 +19,10 @@ export function AuthLayout() {
   }
 
   if (setupStatus && !setupStatus.setupComplete) {
-    return <Navigate to="/setup" replace />;
+    if (location.pathname !== "/setup") {
+      return <Navigate to="/setup" replace />;
+    }
+    return <Outlet />;
   }
 
   if (isAuthenticated) {

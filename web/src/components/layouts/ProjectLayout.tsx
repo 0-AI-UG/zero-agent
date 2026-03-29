@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button";
 import {
   Tooltip,
   TooltipContent,
-  TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { SidebarProvider, SidebarInset, SidebarTrigger } from "@/components/ui/sidebar";
@@ -54,44 +53,42 @@ function NavRailItem({
   hasAlert?: boolean;
 }) {
   return (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <NavLink
-            to={to}
-            end={end}
-            className={({ isActive: navIsActive }) => {
-              const active = isActiveProp ?? navIsActive;
-              return cn(
-                "relative flex flex-col items-center justify-center gap-0.5 rounded-lg px-2 py-2 transition-colors w-full",
-                active
-                  ? "bg-sidebar-accent text-sidebar-accent-foreground before:absolute before:left-0 before:top-2 before:bottom-2 before:w-[2px] before:rounded-r-full before:bg-primary"
-                  : "text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent/50"
-              );
-            }}
-          >
-            <span className="relative">
-              <Icon className="size-[18px]" />
-              {count !== undefined && count > 0 && (
-                <span className="absolute -top-1.5 -right-2.5 flex size-4 items-center justify-center rounded-full bg-primary text-primary-foreground text-[9px] font-semibold leading-none tabular-nums">
-                  {count > 99 ? "99" : count}
-                </span>
-              )}
-              {hasAlert && (
-                <span className="absolute -top-0.5 -right-0.5 size-2 rounded-full bg-destructive" />
-              )}
-            </span>
-            <span className="text-[10px] font-medium leading-tight">
-              {label}
-            </span>
-          </NavLink>
-        </TooltipTrigger>
-        <TooltipContent side="right" sideOffset={8}>
-          {label}
-          {count !== undefined && count > 0 && ` (${count})`}
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <NavLink
+          to={to}
+          end={end}
+          className={({ isActive: navIsActive }) => {
+            const active = isActiveProp ?? navIsActive;
+            return cn(
+              "relative flex flex-col items-center justify-center gap-0.5 rounded-lg px-2 py-2 transition-colors w-full",
+              active
+                ? "bg-sidebar-accent text-sidebar-accent-foreground before:absolute before:left-0 before:top-2 before:bottom-2 before:w-[2px] before:rounded-r-full before:bg-primary"
+                : "text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent/50"
+            );
+          }}
+        >
+          <span className="relative">
+            <Icon className="size-[18px]" />
+            {count !== undefined && count > 0 && (
+              <span className="absolute -top-1.5 -right-2.5 flex size-4 items-center justify-center rounded-full bg-primary text-primary-foreground text-[9px] font-semibold leading-none tabular-nums">
+                {count > 99 ? "99" : count}
+              </span>
+            )}
+            {hasAlert && (
+              <span className="absolute -top-0.5 -right-0.5 size-2 rounded-full bg-destructive" />
+            )}
+          </span>
+          <span className="text-[10px] font-medium leading-tight">
+            {label}
+          </span>
+        </NavLink>
+      </TooltipTrigger>
+      <TooltipContent side="right" sideOffset={8}>
+        {label}
+        {count !== undefined && count > 0 && ` (${count})`}
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -282,24 +279,21 @@ export function ProjectLayout() {
     <div className="flex h-screen">
       {/* Desktop nav rail */}
       <aside className="w-16 shrink-0 border-r bg-sidebar flex flex-col items-center py-3 px-1.5 gap-1">
-        {/* Back + project initial */}
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                onClick={() => navigate("/")}
-                className="flex size-9 items-center justify-center rounded-lg text-white text-xs font-bold mb-3 transition-opacity hover:opacity-80"
-                style={{ backgroundColor: projectColor }}
-                aria-label={`Back to projects — ${project.name}`}
-              >
-                {project.name.charAt(0).toUpperCase()}
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="right" sideOffset={8}>
-              {project.name} — Back to projects
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+        {/* Back to projects */}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={() => navigate("/")}
+              className="group relative flex size-9 items-center justify-center rounded-lg mb-3 text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent/50 transition-colors"
+              aria-label={`Back to projects — ${project.name}`}
+            >
+              <ArrowLeftIcon className="size-4" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="right" sideOffset={8}>
+            Back to projects
+          </TooltipContent>
+        </Tooltip>
 
         {/* Nav items */}
         <nav className="flex flex-col items-center gap-1 flex-1 w-full">
@@ -309,24 +303,22 @@ export function ProjectLayout() {
         </nav>
 
         {/* Logout */}
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                onClick={logout}
-                aria-label="Sign out"
-                className="text-sidebar-foreground/50 hover:text-sidebar-foreground"
-              >
-                <LogOutIcon className="size-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="right" sideOffset={8}>
-              Sign out
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={logout}
+              aria-label="Sign out"
+              className="text-sidebar-foreground/50 hover:text-sidebar-foreground"
+            >
+              <LogOutIcon className="size-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="right" sideOffset={8}>
+            Sign out
+          </TooltipContent>
+        </Tooltip>
       </aside>
 
       {/* Content */}

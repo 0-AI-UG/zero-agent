@@ -26,6 +26,7 @@ import { CsvPreview } from "./csv-preview";
 import { XlsxPreview } from "./xlsx-preview";
 import { HtmlPreview } from "./html-preview";
 import { VizPreview } from "./viz-preview";
+import { SlidesPreview } from "./slides-preview";
 import { DownloadFallback } from "./download-fallback";
 import type { FileItem } from "@/hooks/use-files";
 
@@ -112,6 +113,10 @@ function isMarkdownFile(file: FileItem): boolean {
   return file.mimeType === "text/markdown" || file.filename.endsWith(".md");
 }
 
+function isSlidesFile(file: FileItem): boolean {
+  return file.mimeType === "text/html+slides" || file.filename.endsWith(".slides");
+}
+
 function isVizFile(file: FileItem): boolean {
   return file.mimeType === "text/html+viz" || file.filename.endsWith(".viz");
 }
@@ -172,6 +177,10 @@ function FilePreviewContent({
 }) {
   if (file.mimeType.startsWith("image/") && url) {
     return <ImagePreview file={file} url={url} thumbnailUrl={thumbnailUrl} />;
+  }
+
+  if (isSlidesFile(file)) {
+    return <SlidesPreview file={file} projectId={projectId} />;
   }
 
   if (isVizFile(file) && content !== undefined) {

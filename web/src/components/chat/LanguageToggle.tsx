@@ -3,7 +3,6 @@ import { useModelStore, type Language } from "@/stores/model";
 import {
   Tooltip,
   TooltipContent,
-  TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
@@ -19,22 +18,20 @@ export function LanguageToggle() {
   const next: Language = language === "zh" ? "en" : "zh";
 
   return (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 w-8 px-0 text-xs font-semibold text-muted-foreground hover:text-foreground"
-            onClick={() => setLanguage(next)}
-          >
-            {labels[language].short}
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent side="top" sideOffset={8}>
-          Model responds in {labels[language].full} — click to switch to {labels[next].full}
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 w-8 px-0 text-xs font-semibold text-muted-foreground hover:text-foreground"
+          onClick={() => setLanguage(next)}
+        >
+          {labels[language].short}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side="top" sideOffset={8}>
+        Model responds in {labels[language].full} — click to switch to {labels[next].full}
+      </TooltipContent>
+    </Tooltip>
   );
 }

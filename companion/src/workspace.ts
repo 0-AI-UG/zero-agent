@@ -114,7 +114,7 @@ export class WorkspaceManager {
   async syncWorkspace(workspaceId: string, manifest: Record<string, string>): Promise<void> {
     return this.withLock(workspaceId, async () => {
       const workspace = this.workspaces.get(workspaceId);
-      if (!workspace) throw new Error(`Workspace ${workspaceId} not found`);
+      if (!workspace) throw new Error("Execution environment not found — it may have been cleaned up. Please retry.");
       workspace.lastUsedAt = Date.now();
 
       const sid = shortId(workspaceId);
@@ -166,7 +166,7 @@ export class WorkspaceManager {
   }> {
     return this.withLock(workspaceId, async () => {
       const workspace = this.workspaces.get(workspaceId);
-      if (!workspace) throw new Error(`Workspace ${workspaceId} not found`);
+      if (!workspace) throw new Error("Execution environment not found — it may have been cleaned up. Please retry.");
       workspace.lastUsedAt = Date.now();
 
       const sid = shortId(workspaceId);
@@ -246,6 +246,11 @@ export class WorkspaceManager {
 
       // Run command via backend
       const result = await this.backend.runCommand(workspaceId, workspace.dir, command, effectiveTimeout);
+
+      // Strip absolute workspace paths from output so the agent only sees relative paths
+      const wsPrefix = workspace.dir.endsWith("/") ? workspace.dir : workspace.dir + "/";
+      result.stdout = result.stdout.replaceAll(wsPrefix, "").replaceAll(workspace.dir, ".");
+      result.stderr = result.stderr.replaceAll(wsPrefix, "").replaceAll(workspace.dir, ".");
 
       this.log.info(`[workspace] ${sid}: command exited with code ${result.exitCode}`);
       if (result.stderr.length > 0) {

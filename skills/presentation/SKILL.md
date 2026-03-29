@@ -73,16 +73,37 @@ Every `.slides` file must start with this structure:
 
 ## Workflow
 
-1. **Analyze the content** - Understand the topic, key messages, and how many slides are needed
-2. **Compose the deck** - Write all slides in a single `.slides` file following the supported CSS rules below
-3. **Write the file** - Save as `.slides` in the `presentations/` folder
+1. **Analyze the content** — Understand the topic, key messages, and how many slides are needed
+2. **Compose the deck** — Write all slides in a single `.slides` file following the supported CSS rules below
+3. **Write the file** — Save as `.slides` in its own folder under `presentations/`
+4. **Render & review** — Render the slides to PNG and visually inspect them, then iterate
 
 ## File Naming
 
-Save all presentations to `presentations/{descriptive-name}.slides`. Examples:
-- `presentations/q1-revenue-report.slides`
-- `presentations/product-launch-pitch.slides`
-- `presentations/team-onboarding.slides`
+Each presentation gets its own folder under `presentations/`. Examples:
+- `presentations/q1-revenue-report/q1-revenue-report.slides`
+- `presentations/product-launch-pitch/product-launch-pitch.slides`
+- `presentations/team-onboarding/team-onboarding.slides`
+
+## Visual Iteration
+
+After writing or editing a `.slides` file, render it to PNG images so you can visually verify the result. Write a small script and run it with `runCode`:
+
+```js
+// render-preview.js
+import { convertHtmlBuffers } from "@0-ai/slide-gen";
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+
+const html = readFileSync("presentations/my-deck/my-deck.slides", "utf-8");
+const result = await convertHtmlBuffers({ html, noPdf: true, noPptx: true, noPng: false });
+
+for (const [i, buf] of result.pngBuffers.entries()) {
+  writeFileSync(`presentations/my-deck/preview-${i + 1}.png`, buf);
+}
+console.log(`Rendered ${result.pngBuffers.length} slide(s)`);
+```
+
+Then read the generated PNG files with `readFile` to see what each slide looks like. If the layout, spacing, or content needs adjustment, edit the `.slides` file and re-render until the result looks good.
 
 ## Supported CSS
 

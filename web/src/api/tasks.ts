@@ -140,7 +140,7 @@ export function useRunTaskNow(projectId: string) {
   });
 }
 
-export function useTaskRuns(projectId: string, taskId: string) {
+export function useTaskRuns(projectId: string, taskId: string, refetchInterval?: number) {
   return useQuery({
     queryKey: queryKeys.tasks.runs(projectId, taskId),
     queryFn: async () => {
@@ -150,5 +150,6 @@ export function useTaskRuns(projectId: string, taskId: string) {
       return res.runs;
     },
     enabled: !!projectId && !!taskId,
+    refetchInterval: refetchInterval ?? false,
   });
 }

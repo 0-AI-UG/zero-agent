@@ -20,8 +20,55 @@ export async function runCodeInWorker(
   await fs.mkdir(tmpDir, { recursive: true });
   const tmpFile = path.join(tmpDir, `_worker_${Date.now()}.ts`);
 
-  // Minimal wrapper: capture console output, import the entrypoint, report back
+  // Wrapper: patch fs and Bun.file so absolute paths resolve relative to cwd,
+  // capture console output, import the entrypoint, report back
   await fs.writeFile(tmpFile, `
+import nodePath from "node:path";
+import nodeFs from "node:fs";
+import nodeFsPromises from "node:fs/promises";
+
+const __cwd = ${JSON.stringify(cwd)};
+
+function __rewrite(p: string | URL): string | URL {
+  if (typeof p === "string" && nodePath.isAbsolute(p)) {
+    return nodePath.join(__cwd, p.replace(/^\\/+/, ""));
+  }
+  return p;
+}
+
+// Patch fs sync methods
+const __fsSyncMethods = [
+  "readFileSync", "writeFileSync", "appendFileSync", "existsSync",
+  "statSync", "lstatSync", "readdirSync", "mkdirSync", "rmdirSync",
+  "unlinkSync", "renameSync", "copyFileSync", "accessSync",
+  "createReadStream", "createWriteStream",
+] as const;
+
+for (const method of __fsSyncMethods) {
+  const orig = (nodeFs as any)[method];
+  if (typeof orig === "function") {
+    (nodeFs as any)[method] = (p: any, ...args: any[]) => orig(__rewrite(p), ...args);
+  }
+}
+
+// Patch fs/promises methods
+const __fsAsyncMethods = [
+  "readFile", "writeFile", "appendFile", "stat", "lstat",
+  "readdir", "mkdir", "rmdir", "unlink", "rename", "copyFile",
+  "access", "rm",
+] as const;
+
+for (const method of __fsAsyncMethods) {
+  const orig = (nodeFsPromises as any)[method];
+  if (typeof orig === "function") {
+    (nodeFsPromises as any)[method] = (p: any, ...args: any[]) => orig(__rewrite(p), ...args);
+  }
+}
+
+// Patch Bun.file
+const __origBunFile = Bun.file.bind(Bun);
+(Bun as any).file = (p: any, ...args: any[]) => __origBunFile(__rewrite(p), ...args);
+
 const __out: string[] = [];
 const __err: string[] = [];
 const __fmt = (...args: any[]) => args.map(a => typeof a === "string" ? a : JSON.stringify(a, null, 2)).join(" ");

@@ -16,7 +16,7 @@ program
   .name("zero-agent-companion")
   .description("Browser companion agent for zero-agent")
   .requiredOption("--token <token>", "Companion authentication token")
-  .option("--server <url>", "Server URL", "http://localhost:3001")
+  .option("--server <url>", "Server URL", "http://localhost:3000")
   .option("--profile <name>", "Browser profile name", "default")
   .option("--cdp-url <url>", "Connect to existing CDP URL instead of launching Chrome")
   .option("--chrome <path>", "Custom Chrome executable path")

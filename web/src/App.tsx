@@ -14,11 +14,13 @@ import { SkillsPage } from "@/pages/SkillsPage";
 import { HelpPage } from "@/pages/HelpPage";
 import { AdminPage } from "@/pages/AdminPage";
 import { SetupPage } from "@/pages/SetupPage";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import "./index.css";
 
 export function App() {
   return (
     <QueryClientProvider client={queryClient}>
+      <TooltipProvider delayDuration={0}>
       <BrowserRouter>
         <Routes>
           {/* Public routes */}
@@ -46,6 +48,7 @@ export function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
+      </TooltipProvider>
     </QueryClientProvider>
   );
 }

@@ -9,5 +9,5 @@ dist/
 .env
 .DS_Store
 .browser-state/
-api/storage/
+storage/
 data/

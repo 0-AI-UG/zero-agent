@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useParams, useNavigate } from "react-router";
 import { ChatPanel } from "@/components/chat/ChatPanel";
 import { useChats, useCreateChat } from "@/api/chats";
@@ -42,6 +42,11 @@ export function ProjectPage() {
     chatId ?? "",
   );
 
+  const isAutonomous = useMemo(
+    () => chats?.find((c) => c.id === chatId)?.isAutonomous ?? false,
+    [chats, chatId],
+  );
+
   if (!chatId || chatsLoading || messagesLoading) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -56,6 +61,7 @@ export function ProjectPage() {
       projectId={projectId!}
       chatId={chatId}
       initialMessages={initialMessages}
+      isAutonomous={isAutonomous}
     />
   );
 }

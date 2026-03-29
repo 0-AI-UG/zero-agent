@@ -1,5 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useNavigate, useOutletContext } from "react-router";
+import { useQueryClient } from "@tanstack/react-query";
+import { queryKeys } from "@/lib/query-keys";
 import type { Project } from "@/api/projects";
 import {
   useTasks,
@@ -46,6 +48,8 @@ import {
   WrenchIcon,
   CheckIcon,
   ZapIcon,
+  FilterIcon,
+  XIcon,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -80,6 +84,131 @@ export const COOLDOWN_PRESETS = [
   { label: "1m", value: 60 },
   { label: "5m", value: 300 },
 ];
+
+// Filterable fields per event type (excludes projectId which is always matched automatically)
+const EVENT_FILTER_FIELDS: Record<string, { key: string; label: string; placeholder: string }[]> = {
+  "file.created": [
+    { key: "path", label: "Path", placeholder: "e.g. uploads/reports/*" },
+    { key: "filename", label: "Filename", placeholder: "e.g. *.csv" },
+    { key: "mimeType", label: "MIME type", placeholder: "e.g. image/*" },
+  ],
+  "file.updated": [
+    { key: "path", label: "Path", placeholder: "e.g. docs/*" },
+    { key: "filename", label: "Filename", placeholder: "e.g. *.md" },
+    { key: "mimeType", label: "MIME type", placeholder: "e.g. text/*" },
+  ],
+  "file.deleted": [
+    { key: "path", label: "Path", placeholder: "e.g. tmp/*" },
+    { key: "filename", label: "Filename", placeholder: "e.g. *.log" },
+  ],
+  "file.moved": [
+    { key: "fromPath", label: "From path", placeholder: "e.g. inbox/*" },
+    { key: "toPath", label: "To path", placeholder: "e.g. archive/*" },
+    { key: "filename", label: "Filename", placeholder: "e.g. report-*" },
+  ],
+  "folder.created": [
+    { key: "path", label: "Path", placeholder: "e.g. projects/*" },
+  ],
+  "folder.deleted": [
+    { key: "path", label: "Path", placeholder: "e.g. tmp/*" },
+  ],
+  "message.received": [
+    { key: "content", label: "Content contains", placeholder: "e.g. /deploy*" },
+    { key: "userId", label: "User ID", placeholder: "Specific user ID" },
+  ],
+  "chat.created": [
+    { key: "title", label: "Title", placeholder: "e.g. Bug report*" },
+  ],
+  "skill.installed": [
+    { key: "skillName", label: "Skill name", placeholder: "e.g. presentation" },
+    { key: "source", label: "Source", placeholder: "e.g. builtin" },
+  ],
+  "companion.connected": [
+    { key: "userId", label: "User ID", placeholder: "Specific user ID" },
+  ],
+};
+
+function EventFilterBuilder({
+  eventType,
+  filters,
+  onChange,
+}: {
+  eventType: string;
+  filters: Record<string, string>;
+  onChange: (filters: Record<string, string>) => void;
+}) {
+  const availableFields = EVENT_FILTER_FIELDS[eventType] ?? [];
+  if (availableFields.length === 0) return null;
+
+  const activeKeys = Object.keys(filters);
+  const unusedFields = availableFields.filter((f) => !activeKeys.includes(f.key));
+
+  const updateFilter = (key: string, value: string) => {
+    onChange({ ...filters, [key]: value });
+  };
+
+  const removeFilter = (key: string) => {
+    const next = { ...filters };
+    delete next[key];
+    onChange(next);
+  };
+
+  const addFilter = (key: string) => {
+    onChange({ ...filters, [key]: "" });
+  };
+
+  return (
+    <div className="space-y-2">
+      <label className="text-sm font-medium flex items-center gap-1.5">
+        <FilterIcon className="size-3.5 text-muted-foreground" />
+        Filters
+      </label>
+      <p className="text-xs text-muted-foreground">
+        Only trigger when event fields match. Use <code className="text-[10px] bg-muted px-1 rounded">*</code> as a wildcard suffix.
+      </p>
+
+      {activeKeys.map((key) => {
+        const field = availableFields.find((f) => f.key === key);
+        if (!field) return null;
+        return (
+          <div key={key} className="flex items-center gap-2">
+            <span className="text-xs font-medium w-24 shrink-0">{field.label}</span>
+            <Input
+              value={filters[key] ?? ""}
+              onChange={(e) => updateFilter(key, e.target.value)}
+              placeholder={field.placeholder}
+              className="h-7 text-xs"
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => removeFilter(key)}
+              className="shrink-0"
+            >
+              <XIcon className="size-3" />
+            </Button>
+          </div>
+        );
+      })}
+
+      {unusedFields.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {unusedFields.map((field) => (
+            <button
+              key={field.key}
+              type="button"
+              onClick={() => addFilter(field.key)}
+              className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:text-foreground border border-dashed border-muted-foreground/30 hover:border-foreground/30 transition-colors"
+            >
+              + {field.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export interface TaskFormData {
   name: string;
@@ -223,6 +352,9 @@ function TaskDialog({
   const [schedule, setSchedule] = useState(initial?.schedule ?? "every 2h");
   const [triggerEvent, setTriggerEvent] = useState(initial?.triggerEvent ?? "file.created");
   const [cooldownSeconds, setCooldownSeconds] = useState(initial?.cooldownSeconds ?? 30);
+  const [triggerFilter, setTriggerFilter] = useState<Record<string, string>>(
+    () => initial?.triggerFilter ?? {},
+  );
   const [selectedTools, setSelectedTools] = useState<Set<string>>(
     () => new Set(initial?.requiredTools ?? []),
   );
@@ -235,12 +367,19 @@ function TaskDialog({
     e.preventDefault();
     if (!isValid) return;
     const tools = selectedTools.size > 0 ? Array.from(selectedTools) : null;
+    // Only include non-empty filter values
+    const cleanFilter = Object.fromEntries(
+      Object.entries(triggerFilter).filter(([, v]) => v.trim() !== ""),
+    );
+    const hasFilter = triggerType === "event" && Object.keys(cleanFilter).length > 0;
+
     onSubmit({
       name: name.trim(),
       prompt: prompt.trim(),
       triggerType,
       schedule: triggerType === "schedule" ? schedule.trim() : undefined,
       triggerEvent: triggerType === "event" ? triggerEvent : undefined,
+      triggerFilter: hasFilter ? cleanFilter : null,
       cooldownSeconds: triggerType === "event" ? cooldownSeconds : undefined,
       requiredTools: tools,
     });
@@ -338,7 +477,7 @@ function TaskDialog({
               <>
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Event</label>
-                  <Select value={triggerEvent} onValueChange={setTriggerEvent}>
+                  <Select value={triggerEvent} onValueChange={(v) => { setTriggerEvent(v); setTriggerFilter({}); }}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select an event" />
                     </SelectTrigger>
@@ -352,6 +491,11 @@ function TaskDialog({
                     </SelectContent>
                   </Select>
                 </div>
+                <EventFilterBuilder
+                  eventType={triggerEvent}
+                  filters={triggerFilter}
+                  onChange={setTriggerFilter}
+                />
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Cooldown</label>
                   <p className="text-xs text-muted-foreground">
@@ -492,9 +636,24 @@ function TaskCard({
 }) {
   const [expanded, setExpanded] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [isRunning, setIsRunning] = useState(false);
+  const [runId, setRunId] = useState<string | null>(null);
   const updateTask = useUpdateTask(projectId);
   const deleteTask = useDeleteTask(projectId);
   const runNow = useRunTaskNow(projectId);
+  const queryClient = useQueryClient();
+  const { data: runs } = useTaskRuns(projectId, task.id, isRunning ? 3000 : undefined);
+
+  // Detect when the triggered run completes and refresh chat list
+  useEffect(() => {
+    if (!isRunning || !runId || !runs) return;
+    const run = runs.find((r) => r.id === runId);
+    if (run && run.status !== "running") {
+      setIsRunning(false);
+      setRunId(null);
+      queryClient.invalidateQueries({ queryKey: queryKeys.chats.byProject(projectId) });
+    }
+  }, [isRunning, runId, runs, queryClient, projectId]);
 
   const handleToggleEnabled = () => {
     updateTask.mutate({ taskId: task.id, enabled: !task.enabled });
@@ -547,6 +706,11 @@ function TaskCard({
                   Next: {formatDistanceToNow(new Date(task.nextRunAt), { addSuffix: true })}
                 </span>
               )}
+              {task.triggerType === "event" && task.triggerFilter && Object.keys(task.triggerFilter).length > 0 && (
+                <span>
+                  {Object.entries(task.triggerFilter).map(([k, v]) => `${k}=${v}`).join(", ")}
+                </span>
+              )}
               {task.triggerType === "event" && task.cooldownSeconds > 0 && (
                 <span>Cooldown: {task.cooldownSeconds}s</span>
               )}
@@ -563,11 +727,21 @@ function TaskCard({
             <Button
               variant="ghost"
               size="icon-sm"
-              onClick={() => runNow.mutate(task.id)}
-              disabled={runNow.isPending}
+              onClick={() => {
+                setIsRunning(true);
+                runNow.mutate(task.id, {
+                  onSuccess: (data) => setRunId(data.run.id),
+                  onError: () => setIsRunning(false),
+                });
+              }}
+              disabled={runNow.isPending || isRunning}
               aria-label="Run now"
             >
-              <PlayIcon className="size-3.5" />
+              {isRunning ? (
+                <LoaderIcon className="size-3.5 animate-spin" />
+              ) : (
+                <PlayIcon className="size-3.5" />
+              )}
             </Button>
             <Button
               variant="ghost"
@@ -615,6 +789,7 @@ function TaskCard({
           triggerType: task.triggerType,
           schedule: task.schedule,
           triggerEvent: task.triggerEvent ?? undefined,
+          triggerFilter: task.triggerFilter ?? undefined,
           cooldownSeconds: task.cooldownSeconds,
           requiredTools: task.requiredTools,
         }}

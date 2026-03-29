@@ -98,7 +98,7 @@ function VizPreview({ fileId, projectId, filename }: WriteFileRendererProps) {
     return (
       <div
         className="w-full my-2 flex items-center justify-center bg-muted/30 rounded-lg"
-        style={{ height: 450 }}
+        style={{ height: 700 }}
       >
         <Loader2Icon className="size-5 animate-spin text-muted-foreground" />
       </div>
@@ -112,7 +112,7 @@ function VizPreview({ fileId, projectId, filename }: WriteFileRendererProps) {
         sandbox="allow-scripts"
         title={filename}
         className="w-full rounded-lg border-none"
-        style={{ height: 450 }}
+        style={{ height: 700 }}
       />
       <div className="flex items-center gap-1.5 mt-1.5 px-0.5 text-xs text-muted-foreground">
         <BarChart3Icon className="size-3 shrink-0" />

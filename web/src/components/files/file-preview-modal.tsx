@@ -24,6 +24,7 @@ import { CodePreview } from "./code-preview";
 import { CsvPreview } from "./csv-preview";
 import { HtmlPreview } from "./html-preview";
 import { VizPreview } from "./viz-preview";
+import { SlidesPreview } from "./slides-preview";
 import { DownloadFallback } from "./download-fallback";
 
 interface FilePreviewModalProps {
@@ -49,7 +50,7 @@ export function FilePreviewModal({ projectId }: FilePreviewModalProps) {
 
   return (
     <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
-      <DialogContent className="max-w-4xl h-[85vh] flex flex-col p-0 gap-0">
+      <DialogContent className="sm:max-w-6xl h-[85vh] flex flex-col p-0 gap-0">
         <PreviewActionsProvider value={{ setActions }}>
           <DialogHeader className="flex-row items-center justify-between gap-2 px-4 py-3 border-b space-y-0">
             <div className="min-w-0">
@@ -124,6 +125,9 @@ function ModalPreviewContent({
   if (file.mimeType.startsWith("image/") && url) {
     return <ImagePreview file={file} url={url} thumbnailUrl={thumbnailUrl} />;
   }
+  if (isSlidesFile(file)) {
+    return <SlidesPreview file={file} projectId={projectId} />;
+  }
   if (isVizFile(file) && content !== undefined) {
     return <VizPreview file={file} content={content} />;
   }
@@ -150,6 +154,9 @@ function ModalPreviewContent({
 
 function isMarkdownFile(file: FileItem) {
   return file.mimeType === "text/markdown" || file.filename.endsWith(".md");
+}
+function isSlidesFile(file: FileItem) {
+  return file.mimeType === "text/html+slides" || file.filename.endsWith(".slides");
 }
 function isVizFile(file: FileItem) {
   return file.mimeType === "text/html+viz" || file.filename.endsWith(".viz");

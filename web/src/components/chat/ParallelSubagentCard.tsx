@@ -1,4 +1,4 @@
-import { CheckCircleIcon, ChevronDownIcon, LoaderIcon, SparklesIcon, XCircleIcon } from "lucide-react";
+import { CheckCircleIcon, LoaderIcon, XCircleIcon } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Shimmer } from "@/components/ai/shimmer";
@@ -67,7 +67,7 @@ function TaskRow({
           )}>
             {truncate(prompt, 80)}
           </span>
-          <ChevronDownIcon className="size-3.5 shrink-0 mt-0.5 text-muted-foreground/50 transition-transform group-data-[state=open]:rotate-180" />
+
         </CollapsibleTrigger>
         <CollapsibleContent className="ml-[22px] mt-1.5 overflow-hidden data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=closed]:fade-out-0">
           <div className="rounded-md bg-muted/50 p-2 space-y-2">
@@ -115,7 +115,6 @@ export function ParallelSubagentCard({ input, output, isRunning, isPreliminary }
     <div className="my-1.5 rounded-lg border bg-card p-3 max-w-md animate-in fade-in-0 slide-in-from-top-1">
       {/* Header */}
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <SparklesIcon className={cn("size-4 shrink-0", isDone && "text-emerald-500")} />
         <span className="font-medium">
           {isDone ? label : (
             <Shimmer className="text-sm" duration={1.5}>{label}</Shimmer>

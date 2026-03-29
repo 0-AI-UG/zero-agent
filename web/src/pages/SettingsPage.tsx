@@ -4,6 +4,7 @@ import type { Project } from "@/api/projects";
 import { Switch } from "@/components/ui/switch";
 import {
   FolderIcon,
+  ZapIcon,
 } from "lucide-react";
 import { MembersManager } from "@/components/settings/MembersManager";
 import { CompanionManager } from "@/components/settings/CompanionManager";
@@ -34,6 +35,33 @@ export function SettingsPage() {
 
         {/* Telegram section */}
         <TelegramManager projectId={projectId!} />
+
+        {/* Automation section */}
+        <section className="space-y-4">
+          <div className="flex items-center gap-2">
+            <ZapIcon className="size-4 text-yellow-500" />
+            <h3 className="text-sm font-semibold">Automation</h3>
+          </div>
+
+          <div className="rounded-lg border p-4 space-y-4">
+            <div className="flex items-center justify-between gap-4">
+              <div className="space-y-1">
+                <p className="text-sm font-medium">Enable automations</p>
+                <p className="text-xs text-muted-foreground">
+                  Allow scheduled and event-triggered tasks to run automatically.
+                </p>
+              </div>
+              <Switch
+                checked={project.automationEnabled}
+                onCheckedChange={(checked) =>
+                  updateProject.mutate({ automationEnabled: checked })
+                }
+                disabled={updateProject.isPending}
+                aria-label="Enable automations"
+              />
+            </div>
+          </div>
+        </section>
 
         {/* Display section */}
         <section className="space-y-4">
