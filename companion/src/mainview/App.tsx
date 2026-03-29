@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { setHandlers, connect, getState } from "./rpc-bridge.ts";
+import { setHandlers, connect, getState, checkRuntime, setupDocker, installWsl } from "./rpc-bridge.ts";
 import type { ActivityEvent } from "../shared/rpc.ts";
 import type {
 	SessionDetail, WorkspaceDetail, CodeExecution,
@@ -11,6 +11,7 @@ import { Overview } from "./components/overview.tsx";
 import { SessionDetailView } from "./components/session-detail.tsx";
 import { WorkspaceDetailView } from "./components/workspace-detail.tsx";
 import { ExecutionDetailView } from "./components/execution-detail.tsx";
+import { ResourcesPanel } from "./components/resources-panel.tsx";
 
 const MAX_ACTIONS = 100;
 
@@ -20,6 +21,9 @@ export function App() {
 	const [connection, setConnection] = useState<ConnectionState>("disconnected");
 	const [error, setError] = useState("");
 	const [route, setRoute] = useState<Route>({ view: "overview" });
+	const [runtimeReady, setRuntimeReady] = useState<boolean | "checking" | "setting-up">("checking");
+	const [canSetup, setCanSetup] = useState(false);
+	const [needsWsl, setNeedsWsl] = useState(false);
 	const [sessions, setSessions] = useState<Map<string, SessionDetail>>(new Map());
 	const [workspaces, setWorkspaces] = useState<Map<string, WorkspaceDetail>>(new Map());
 
@@ -131,6 +135,43 @@ export function App() {
 		});
 	}, []);
 
+	const refreshRuntimeStatus = () => {
+		checkRuntime().then((r) => {
+			setRuntimeReady(r.ready);
+			setCanSetup(r.canSetup);
+			setNeedsWsl(r.needsWsl);
+		}).catch(() => setRuntimeReady(false));
+	};
+
+	useEffect(() => {
+		refreshRuntimeStatus();
+	}, []);
+
+	const handleSetup = async () => {
+		setRuntimeReady("setting-up");
+		setError("");
+		const result = await setupDocker();
+		if (result.ok) {
+			setRuntimeReady(true);
+		} else {
+			setError(result.error ?? "Setup failed");
+			setRuntimeReady("setting-up"); // stay on progress screen to show the error
+		}
+	};
+
+	const handleInstallWsl = async () => {
+		setRuntimeReady("checking");
+		setError("");
+		const result = await installWsl();
+		if (result.ok) {
+			// WSL install typically requires a reboot — re-check status
+			refreshRuntimeStatus();
+		} else {
+			setError(result.error ?? "WSL installation failed");
+			setRuntimeReady(false);
+		}
+	};
+
 	useEffect(() => {
 		setHandlers(
 			(state, message) => {
@@ -193,6 +234,8 @@ export function App() {
 		}
 	};
 
+	const goToResources = () => setRoute({ view: "resources" });
+
 	// Determine header title
 	let headerTitle = "Companion";
 	if (connection === "connected") {
@@ -211,6 +254,9 @@ export function App() {
 				headerTitle = exec?.command ?? "Execution";
 				break;
 			}
+			case "resources":
+				headerTitle = "Resources";
+				break;
 		}
 	}
 
@@ -222,10 +268,21 @@ export function App() {
 				canGoBack={connection === "connected" && route.view !== "overview"}
 				onBack={goBack}
 				onDisconnect={connection === "connected" ? handleDisconnect : undefined}
+				onResources={connection === "connected" && route.view !== "resources" ? goToResources : undefined}
 			/>
 
 			{connection !== "connected" ? (
-				<ConnectPanel onConnect={handleConnect} error={error} />
+				<ConnectPanel
+					onConnect={handleConnect}
+					error={error}
+					runtimeReady={runtimeReady}
+					canSetup={canSetup}
+					needsWsl={needsWsl}
+					onSetup={handleSetup}
+					onInstallWsl={handleInstallWsl}
+				/>
+			) : route.view === "resources" ? (
+				<ResourcesPanel onBack={goBack} />
 			) : route.view === "session" ? (
 				sessions.get(route.sessionId) ? (
 					<SessionDetailView sessionId={route.sessionId} session={sessions.get(route.sessionId)!} />

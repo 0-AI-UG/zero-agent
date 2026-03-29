@@ -64,7 +64,7 @@ export function createToolRegistry(
     userId?: string;
     modelId?: string;
     browserSessionId?: string;
-    lazyBrowserSession?: { id: string; created: boolean };
+    lazyBrowserSession?: { id: string; created: boolean; label?: string };
     context?: ExecutionContext;
     onlyTools?: string[];
     onlySkills?: string[];
@@ -80,8 +80,8 @@ export function createToolRegistry(
     ...(options.chatId ? createTodoTools(projectId, options.chatId) : {}),
     ...createSkillTools(projectId, options.chatId),
     ...(options.userId ? createBrowserTool(options.userId, projectId, options.browserSessionId, options.lazyBrowserSession) : {}),
-    ...(options.userId && options.codeExecutionEnabled ? createCodeTools(options.userId, projectId) : {}),
-    ...createCredentialTools(projectId, options.userId),
+    ...(options.userId && options.chatId && options.codeExecutionEnabled ? createCodeTools(options.userId, projectId, options.chatId) : {}),
+    ...createCredentialTools(projectId, options.userId ?? undefined),
     ...createTelegramTools(projectId),
   };
 
@@ -142,7 +142,7 @@ export function createDiscoverableToolset(
     userId?: string;
     modelId?: string;
     browserSessionId?: string;
-    lazyBrowserSession?: { id: string; created: boolean };
+    lazyBrowserSession?: { id: string; created: boolean; label?: string };
     excludeTools?: string[];
     context?: ExecutionContext;
     onlyTools?: string[];

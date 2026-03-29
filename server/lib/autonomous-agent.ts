@@ -4,6 +4,7 @@ import { createAutonomousChat } from "@/db/queries/chats.ts";
 import { touchChat } from "@/db/queries/chats.ts";
 import { db } from "@/db/index.ts";
 import { readFromS3 } from "@/lib/s3.ts";
+import { browserBridge } from "@/lib/browser/bridge.ts";
 import { log } from "@/lib/logger.ts";
 
 const autoLog = log.child({ module: "autonomous-agent" });
@@ -61,17 +62,30 @@ export async function runAutonomousTask(
       autoLog.info("no heartbeat checklist found", { projectId: project.id });
     }
 
+    const lazyBrowserSession = options?.userId && browserBridge.isConnected(options.userId, project.id)
+      ? { id: `auto-${chat.id}`, created: false }
+      : undefined;
+
     const agent = await createAgent(project, {
       onlyTools: options?.onlyTools,
       onlySkills: options?.onlySkills,
       userId: options?.userId,
+      lazyBrowserSession,
     });
 
-    const result = await agent.generate({
-      prompt: fullPrompt,
-    });
-
-    const responseText = result.text || "No response generated.";
+    let responseText: string;
+    try {
+      const result = await agent.generate({
+        prompt: fullPrompt,
+      });
+      responseText = result.text || "No response generated.";
+    } finally {
+      if (lazyBrowserSession?.created && options?.userId) {
+        browserBridge.destroySession(options.userId, project.id, lazyBrowserSession.id).catch((err) => {
+          autoLog.warn("failed to destroy browser session", { error: String(err) });
+        });
+      }
+    }
 
     // If the agent says nothing needs attention, skip persisting to chat
     const isOk = responseText.trim() === HEARTBEAT_OK

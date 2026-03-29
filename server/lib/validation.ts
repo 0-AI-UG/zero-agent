@@ -43,7 +43,7 @@ export const folderPathSchema = z
   .string()
   .min(1)
   .max(500)
-  .regex(/^\/([a-zA-Z0-9_\- ]+\/)*$/, "Invalid folder path");
+  .regex(/^\/([a-zA-Z0-9._\- ]+\/)*$/, "Invalid folder path");
 
 export const createFolderSchema = z.object({
   path: folderPathSchema,
@@ -94,7 +94,7 @@ export const installFromGithubSchema = z.object({
   skills: z.array(z.string().min(1)).min(1, "Select at least one skill"),
 });
 
-// Credentials (file-based JSON format)
+// Credentials
 const credentialBaseFields = {
   label: z.string().min(1).max(100),
   siteUrl: z.string().min(1).max(500),

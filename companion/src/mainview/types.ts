@@ -28,6 +28,7 @@ export type Route =
 	| { view: "overview" }
 	| { view: "session"; sessionId: string }
 	| { view: "workspace"; workspaceId: string }
-	| { view: "execution"; workspaceId: string; executionIndex: number };
+	| { view: "execution"; workspaceId: string; executionIndex: number }
+	| { view: "resources" };
 
 export type ConnectionState = "disconnected" | "connecting" | "connected";

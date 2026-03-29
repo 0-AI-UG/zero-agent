@@ -20,7 +20,7 @@ export function ExecutionDetailView({
 	execution: CodeExecution;
 }) {
 	return (
-		<section className="flex flex-col gap-2.5 p-3 flex-1 overflow-y-auto custom-scrollbar">
+		<section className="flex flex-col gap-3 p-4 flex-1 overflow-y-auto custom-scrollbar">
 			{/* Header with entrypoint and exit code */}
 			<div className="rounded-lg border border-border bg-card p-3 flex items-center gap-2">
 				<span className="text-xs font-semibold font-mono truncate flex-1 min-w-0">
@@ -31,7 +31,7 @@ export function ExecutionDetailView({
 
 			{/* stdout */}
 			{execution.stdout && (
-				<div className="flex flex-col gap-1">
+				<div className="flex flex-col gap-1.5">
 					<div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider px-0.5">Output</div>
 					<CodeBlock label="stdout">{execution.stdout}</CodeBlock>
 					{execution.truncated && (
@@ -42,7 +42,7 @@ export function ExecutionDetailView({
 
 			{/* stderr */}
 			{execution.stderr && (
-				<div className="flex flex-col gap-1">
+				<div className="flex flex-col gap-1.5">
 					<div className="text-[10px] font-medium text-destructive uppercase tracking-wider px-0.5">Errors</div>
 					<CodeBlock label="stderr" variant="error">{execution.stderr}</CodeBlock>
 				</div>
@@ -50,7 +50,7 @@ export function ExecutionDetailView({
 
 			{/* Changed files */}
 			{execution.changedFiles && execution.changedFiles.length > 0 && (
-				<div className="flex flex-col gap-1">
+				<div className="flex flex-col gap-1.5">
 					<div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider px-0.5">
 						Changed Files ({execution.changedFiles.length})
 					</div>
@@ -60,7 +60,7 @@ export function ExecutionDetailView({
 
 			{/* Deleted files */}
 			{execution.deletedFiles && execution.deletedFiles.length > 0 && (
-				<div className="flex flex-col gap-1">
+				<div className="flex flex-col gap-1.5">
 					<div className="text-[10px] font-medium text-destructive uppercase tracking-wider px-0.5">
 						Deleted Files ({execution.deletedFiles.length})
 					</div>

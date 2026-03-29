@@ -121,14 +121,17 @@ function resolveRef(refMap: RefMap, ref: string): number {
   return entry.backendNodeId;
 }
 
-async function getNodeCenter(cdp: CdpClient, backendNodeId: number) {
-  // Resolve to a remote object
+async function resolveNode(cdp: CdpClient, backendNodeId: number): Promise<string> {
   const { object } = await cdp.send("DOM.resolveNode", { backendNodeId });
-  if (!object?.objectId) throw new Error("Could not resolve node");
+  if (!object?.objectId) throw new Error("Could not resolve node — it may have been removed from the DOM. Take a new snapshot.");
+  return object.objectId;
+}
 
-  // Get the bounding box via JS
+async function getNodeCenter(cdp: CdpClient, backendNodeId: number) {
+  const objectId = await resolveNode(cdp, backendNodeId);
+
   const result = await cdp.send("Runtime.callFunctionOn", {
-    objectId: object.objectId,
+    objectId,
     functionDeclaration: `function() {
       const r = this.getBoundingClientRect();
       return JSON.stringify({ x: r.x + r.width / 2, y: r.y + r.height / 2, width: r.width, height: r.height });
@@ -136,58 +139,73 @@ async function getNodeCenter(cdp: CdpClient, backendNodeId: number) {
     returnByValue: true,
   });
 
-  await cdp.send("Runtime.releaseObject", { objectId: object.objectId });
+  await cdp.send("Runtime.releaseObject", { objectId });
   return JSON.parse(result.result.value);
 }
 
-async function clickNode(cdp: CdpClient, backendNodeId: number) {
-  const { x, y } = await getNodeCenter(cdp, backendNodeId);
-
+async function clickNode(cdp: CdpClient, backendNodeId: number, stealth?: boolean) {
   // Scroll into view first
-  const { object } = await cdp.send("DOM.resolveNode", { backendNodeId });
-  if (object?.objectId) {
-    await cdp.send("Runtime.callFunctionOn", {
-      objectId: object.objectId,
-      functionDeclaration: `function() { this.scrollIntoViewIfNeeded(); }`,
-    }).catch(() => {});
-    await cdp.send("Runtime.releaseObject", { objectId: object.objectId });
-  }
+  const objectId = await resolveNode(cdp, backendNodeId);
+  await cdp.send("Runtime.callFunctionOn", {
+    objectId,
+    functionDeclaration: `function() { this.scrollIntoViewIfNeeded(); }`,
+  }).catch(() => {});
+  await cdp.send("Runtime.releaseObject", { objectId });
 
-  // Re-calculate position after scroll
   const pos = await getNodeCenter(cdp, backendNodeId);
 
-  // Human-like mouse movement to target
-  await humanMouseMove(cdp, pos.x, pos.y);
-
-  // Reaction time before clicking (50-150ms)
-  await sleep(randomBetween(50, 150));
-
-  await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: pos.x, y: pos.y, button: "left", clickCount: 1 });
-
-  // Natural hold time between mouseDown and mouseUp (10-50ms)
-  await sleep(randomBetween(10, 50));
-
-  await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: pos.x, y: pos.y, button: "left", clickCount: 1 });
+  if (stealth) {
+    // Human-like mouse movement to target
+    await humanMouseMove(cdp, pos.x, pos.y);
+    // Reaction time before clicking (50-150ms)
+    await sleep(randomBetween(50, 150));
+    await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: pos.x, y: pos.y, button: "left", clickCount: 1 });
+    // Natural hold time between mouseDown and mouseUp (10-50ms)
+    await sleep(randomBetween(10, 50));
+    await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: pos.x, y: pos.y, button: "left", clickCount: 1 });
+  } else {
+    // Fast mode: direct click with no artificial delays
+    await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: pos.x, y: pos.y });
+    await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: pos.x, y: pos.y, button: "left", clickCount: 1 });
+    await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: pos.x, y: pos.y, button: "left", clickCount: 1 });
+  }
 }
 
-async function focusAndType(cdp: CdpClient, backendNodeId: number, text: string) {
-  // Focus the element
-  await cdp.send("DOM.focus", { backendNodeId });
-
-  // Clear existing value
-  const { object } = await cdp.send("DOM.resolveNode", { backendNodeId });
-  if (object?.objectId) {
+async function focusAndType(cdp: CdpClient, backendNodeId: number, text: string, stealth?: boolean) {
+  // Focus the element — try DOM.focus first, fall back to click + JS .focus()
+  // for elements that aren't natively focusable (contentEditable divs, role="textbox", etc.)
+  try {
+    await cdp.send("DOM.focus", { backendNodeId });
+  } catch {
+    // Click to focus, then JS focus as fallback
+    const pos = await getNodeCenter(cdp, backendNodeId);
+    await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: pos.x, y: pos.y });
+    await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: pos.x, y: pos.y, button: "left", clickCount: 1 });
+    await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: pos.x, y: pos.y, button: "left", clickCount: 1 });
+    const objectId = await resolveNode(cdp, backendNodeId);
     await cdp.send("Runtime.callFunctionOn", {
-      objectId: object.objectId,
-      functionDeclaration: `function() {
-        if ('value' in this) { this.value = ''; this.dispatchEvent(new Event('input', { bubbles: true })); }
-      }`,
-    });
-    await cdp.send("Runtime.releaseObject", { objectId: object.objectId });
+      objectId,
+      functionDeclaration: `function() { this.focus(); }`,
+    }).catch(() => {});
+    await cdp.send("Runtime.releaseObject", { objectId });
   }
 
-  // Type with human-like timing
-  await humanType(cdp, text);
+  // Clear existing value
+  const objectId = await resolveNode(cdp, backendNodeId);
+  await cdp.send("Runtime.callFunctionOn", {
+    objectId,
+    functionDeclaration: `function() {
+      if ('value' in this) { this.value = ''; this.dispatchEvent(new Event('input', { bubbles: true })); }
+      else if (this.isContentEditable) { this.textContent = ''; this.dispatchEvent(new Event('input', { bubbles: true })); }
+    }`,
+  });
+  await cdp.send("Runtime.releaseObject", { objectId });
+
+  if (stealth) {
+    await humanType(cdp, text);
+  } else {
+    await cdp.send("Input.insertText", { text });
+  }
 }
 
 /**
@@ -276,73 +294,151 @@ export async function executeAction(
   action: BrowserAction,
   cdpPort: number,
   refMap: RefMap,
+  options?: { stealth?: boolean },
 ): Promise<BrowserResult> {
+  const stealth = options?.stealth;
+
+  /** Run buildA11ySnapshot, update refMap in-place, return content string. */
+  async function autoSnapshot(): Promise<string> {
+    const snap = await buildA11ySnapshot(cdp);
+    refMap.clear();
+    for (const [k, v] of snap.refMap) refMap.set(k, v);
+    return snap.content;
+  }
+
+  /** Check if an error indicates a stale/detached DOM node. */
+  function isStaleNodeError(err: unknown): boolean {
+    const msg = err instanceof Error ? err.message : String(err);
+    return msg.includes("does not belong to the document")
+      || msg.includes("No node with given id found")
+      || msg.includes("Could not resolve node")
+      || msg.includes("not found — it may have been removed");
+  }
+
+  /**
+   * Re-snapshot and re-resolve a ref after a stale node error.
+   * Returns the new backendNodeId, or throws if the ref can't be found.
+   */
+  async function reResolveRef(ref: string): Promise<number> {
+    await autoSnapshot();
+    return resolveRef(refMap, ref);
+  }
+
   switch (action.type) {
     case "navigate": {
       await cdp.send("Page.navigate", { url: action.url });
       await waitForLoad(cdp);
       const info = await getPageInfo(cdp);
-      return { type: "done", ...info, message: `Navigated to ${action.url}` };
+      const snapshot = await autoSnapshot();
+      return { type: "done", ...info, message: `Navigated to ${action.url}`, snapshot };
     }
 
     case "click": {
-      const backendNodeId = resolveRef(refMap, action.ref);
-      await clickNode(cdp, backendNodeId);
-      await new Promise((r) => setTimeout(r, 500)); // Brief wait for navigation
+      let nodeId = resolveRef(refMap, action.ref);
+      try {
+        await clickNode(cdp, nodeId, stealth);
+      } catch (err) {
+        if (isStaleNodeError(err)) {
+          nodeId = await reResolveRef(action.ref);
+          await clickNode(cdp, nodeId, stealth);
+        } else throw err;
+      }
       await waitForLoad(cdp, 5000).catch(() => {});
       const info = await getPageInfo(cdp);
-      return { type: "done", ...info, message: `Clicked [${action.ref}]` };
+      const snapshot = await autoSnapshot();
+      return { type: "done", ...info, message: `Clicked [${action.ref}]`, snapshot };
     }
 
     case "type": {
-      const backendNodeId = resolveRef(refMap, action.ref);
-      await focusAndType(cdp, backendNodeId, action.text);
+      let nodeId = resolveRef(refMap, action.ref);
+      try {
+        await focusAndType(cdp, nodeId, action.text, stealth);
+      } catch (err) {
+        if (isStaleNodeError(err)) {
+          nodeId = await reResolveRef(action.ref);
+          await focusAndType(cdp, nodeId, action.text, stealth);
+        } else throw err;
+      }
       if (action.submit) {
         await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
         await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
         await waitForLoad(cdp, 5000).catch(() => {});
       }
       const info = await getPageInfo(cdp);
-      return { type: "done", ...info, message: `Typed into [${action.ref}]` };
+      const snapshot = await autoSnapshot();
+      return { type: "done", ...info, message: `Typed into [${action.ref}]`, snapshot };
     }
 
     case "select": {
-      const backendNodeId = resolveRef(refMap, action.ref);
-      const { object } = await cdp.send("DOM.resolveNode", { backendNodeId });
-      if (object?.objectId) {
+      let nodeId = resolveRef(refMap, action.ref);
+      try {
+        const objectId = await resolveNode(cdp, nodeId);
         await cdp.send("Runtime.callFunctionOn", {
-          objectId: object.objectId,
+          objectId,
           functionDeclaration: `function(val) {
             this.value = val;
             this.dispatchEvent(new Event('change', { bubbles: true }));
           }`,
           arguments: [{ value: action.value }],
         });
-        await cdp.send("Runtime.releaseObject", { objectId: object.objectId });
+        await cdp.send("Runtime.releaseObject", { objectId });
+      } catch (err) {
+        if (isStaleNodeError(err)) {
+          nodeId = await reResolveRef(action.ref);
+          const objectId = await resolveNode(cdp, nodeId);
+          await cdp.send("Runtime.callFunctionOn", {
+            objectId,
+            functionDeclaration: `function(val) {
+              this.value = val;
+              this.dispatchEvent(new Event('change', { bubbles: true }));
+            }`,
+            arguments: [{ value: action.value }],
+          });
+          await cdp.send("Runtime.releaseObject", { objectId });
+        } else throw err;
       }
       const info = await getPageInfo(cdp);
-      return { type: "done", ...info, message: `Selected "${action.value}" in [${action.ref}]` };
+      const snapshot = await autoSnapshot();
+      return { type: "done", ...info, message: `Selected "${action.value}" in [${action.ref}]`, snapshot };
     }
 
     case "hover": {
-      const backendNodeId = resolveRef(refMap, action.ref);
-      const { x, y } = await getNodeCenter(cdp, backendNodeId);
-      await humanMouseMove(cdp, x, y);
+      let nodeId = resolveRef(refMap, action.ref);
+      try {
+        const { x, y } = await getNodeCenter(cdp, nodeId);
+        if (stealth) {
+          await humanMouseMove(cdp, x, y);
+        } else {
+          await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
+        }
+      } catch (err) {
+        if (isStaleNodeError(err)) {
+          nodeId = await reResolveRef(action.ref);
+          const { x, y } = await getNodeCenter(cdp, nodeId);
+          if (stealth) {
+            await humanMouseMove(cdp, x, y);
+          } else {
+            await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
+          }
+        } else throw err;
+      }
       const info = await getPageInfo(cdp);
-      return { type: "done", ...info, message: `Hovered [${action.ref}]` };
+      const snapshot = await autoSnapshot();
+      return { type: "done", ...info, message: `Hovered [${action.ref}]`, snapshot };
     }
 
     case "scroll": {
       const amount = action.amount ?? 500;
       const delta = action.direction === "down" ? amount : -amount;
-      // Move cursor to approximate viewport center before scrolling
-      const scrollX = 400 + randomBetween(-50, 50);
-      const scrollY = 300 + randomBetween(-50, 50);
-      await humanMouseMove(cdp, scrollX, scrollY);
+      const scrollX = 400;
+      const scrollY = 300;
+      if (stealth) {
+        await humanMouseMove(cdp, scrollX + randomBetween(-50, 50), scrollY + randomBetween(-50, 50));
+      }
       await cdp.send("Input.dispatchMouseEvent", { type: "mouseWheel", x: scrollX, y: scrollY, deltaX: 0, deltaY: delta });
-      await sleep(300);
       const info = await getPageInfo(cdp);
-      return { type: "done", ...info, message: `Scrolled ${action.direction} ${amount}px` };
+      const snapshot = await autoSnapshot();
+      return { type: "done", ...info, message: `Scrolled ${action.direction} ${amount}px`, snapshot };
     }
 
     case "back": {

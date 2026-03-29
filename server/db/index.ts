@@ -259,6 +259,28 @@ db.run(`
 `);
 
 db.run(`
+  CREATE TABLE IF NOT EXISTS credentials (
+    id               TEXT PRIMARY KEY,
+    project_id       TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    cred_type        TEXT NOT NULL CHECK (cred_type IN ('password', 'passkey')),
+    label            TEXT NOT NULL,
+    site_url         TEXT NOT NULL,
+    domain           TEXT NOT NULL,
+    username         TEXT,
+    password_enc     TEXT,
+    totp_secret_enc  TEXT,
+    backup_codes_enc TEXT,
+    credential_id    TEXT,
+    private_key_enc  TEXT,
+    rp_id            TEXT,
+    user_handle      TEXT,
+    sign_count       INTEGER NOT NULL DEFAULT 0,
+    created_at       TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at       TEXT NOT NULL DEFAULT (datetime('now'))
+  )
+`);
+
+db.run(`
   CREATE TABLE IF NOT EXISTS usage_logs (
     id               TEXT PRIMARY KEY,
     user_id          TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -318,6 +340,8 @@ db.run(`CREATE INDEX IF NOT EXISTS idx_usage_logs_user ON usage_logs(user_id, cr
 db.run(`CREATE INDEX IF NOT EXISTS idx_usage_logs_model ON usage_logs(model_id, created_at)`);
 db.run(`CREATE INDEX IF NOT EXISTS idx_usage_logs_project ON usage_logs(project_id, created_at)`);
 db.run(`CREATE INDEX IF NOT EXISTS idx_usage_logs_created ON usage_logs(created_at)`);
+db.run(`CREATE INDEX IF NOT EXISTS idx_credentials_project ON credentials(project_id)`);
+db.run(`CREATE INDEX IF NOT EXISTS idx_credentials_domain ON credentials(project_id, domain)`);
 
 // ── Seed models from JSON if table is empty ──
 

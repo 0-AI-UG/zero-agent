@@ -40,7 +40,7 @@ export function WorkspaceDetailView({
 		: "Ready";
 
 	return (
-		<section className="flex flex-col gap-2.5 p-3 flex-1 overflow-y-auto custom-scrollbar">
+		<section className="flex flex-col gap-3 p-4 flex-1 overflow-y-auto custom-scrollbar">
 			{/* Status header */}
 			<div className="rounded-lg border border-border bg-card p-3">
 				<div className="flex items-center gap-2">
@@ -52,7 +52,7 @@ export function WorkspaceDetailView({
 
 			{/* Files */}
 			{workspace.files.length > 0 && (
-				<div className="flex flex-col gap-1">
+				<div className="flex flex-col gap-1.5">
 					<div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider px-0.5">
 						Files ({workspace.files.length})
 					</div>
@@ -61,7 +61,7 @@ export function WorkspaceDetailView({
 			)}
 
 			{/* Executions */}
-			<div className="flex flex-col gap-1 flex-1 min-h-0">
+			<div className="flex flex-col gap-1.5flex-1 min-h-0">
 				<div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider px-0.5">
 					Executions ({workspace.executions.length})
 				</div>
@@ -76,7 +76,7 @@ export function WorkspaceDetailView({
 									<button
 										key={idx}
 										onClick={() => onSelectExecution(idx)}
-										className="flex items-center gap-2 px-3 py-2 w-full text-left hover:bg-accent"
+										className="flex items-center gap-2.5 px-3.5 py-2.5 w-full text-left hover:bg-accent"
 									>
 										<div className="flex flex-col min-w-0 flex-1">
 											<span className="text-[11px] font-medium leading-tight truncate font-mono">
@@ -87,7 +87,7 @@ export function WorkspaceDetailView({
 											</span>
 										</div>
 										<ExitCodeBadge code={exec.exitCode} status={exec.status} />
-										<svg className="w-3 h-3 text-muted-foreground shrink-0" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+										<svg className="w-3 h-3 text-muted-foreground shrink-0" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round">
 											<path d="M4.5 3L7.5 6L4.5 9" />
 										</svg>
 									</button>

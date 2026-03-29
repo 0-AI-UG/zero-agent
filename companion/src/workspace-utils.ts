@@ -52,9 +52,12 @@ export interface FileEntry {
   size: number;
 }
 
+/** Directories that should never be included in snapshots or synced back. */
+const IGNORED_DIRS = new Set([".venv", "node_modules", ".tmp", "__pycache__", ".git"]);
+
 /**
  * Recursively walk a directory, returning relative paths with mtime and size.
- * Uses lstat to avoid following symlinks.
+ * Uses lstat to avoid following symlinks. Skips common generated directories.
  */
 export async function walkDir(dir: string, base: string = dir): Promise<FileEntry[]> {
   const results: FileEntry[] = [];
@@ -65,6 +68,7 @@ export async function walkDir(dir: string, base: string = dir): Promise<FileEntr
       const stat = await fs.lstat(fullPath);
       if (stat.isSymbolicLink()) continue;
       if (stat.isDirectory()) {
+        if (IGNORED_DIRS.has(entry.name)) continue;
         results.push(...await walkDir(fullPath, base));
       } else if (stat.isFile()) {
         results.push({ path: path.relative(base, fullPath), mtimeMs: stat.mtimeMs, size: stat.size });

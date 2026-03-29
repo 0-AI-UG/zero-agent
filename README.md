@@ -4,9 +4,9 @@ An AI agent platform with built-in web browsing, file management, code execution
 
 ## Architecture
 
-- **`api/`** — Backend server (Bun + SQLite + S3-compatible storage)
+- **`server/`** — Backend server (Bun + SQLite + S3-compatible storage)
 - **`web/`** — Frontend React app
-- **`companion/`** — CLI companion tool (cross-platform)
+- **`companion/`** — Desktop companion app ([Electrobun](https://electrobun.dev))
 - **`skills/`** — Extensible skill modules (presentation, visualization, etc.)
 
 ## Prerequisites
@@ -28,15 +28,24 @@ cp .env.example .env
 bun run dev
 ```
 
-The API runs on `http://localhost:3001` and the web app on `http://localhost:3000`.
+The app runs on `http://localhost:3000`. On first run, visit `/setup` to complete initial configuration.
 
-On first run, visit `http://localhost:3000/setup` to complete initial configuration.
+## Building
+
+```bash
+bun run compile
+```
+
+This produces two binaries:
+
+- `dist/zero-agent` — standalone server (Bun compiled binary)
+- `companion/build/` — desktop companion app (Electrobun)
 
 ## Docker
 
 ```bash
-docker build -f api/Dockerfile.api -t zero-agent-api .
-docker run -p 3001:3001 --env-file .env zero-agent-api
+docker build -t zero-agent .
+docker run -p 3000:3000 --env-file .env zero-agent
 ```
 
 ## Configuration
@@ -53,10 +62,9 @@ Models, image generation, and other settings can be configured at runtime via th
 
 Skills are modular instruction sets that extend the agent's capabilities:
 
-- **account-creation** — Automated account setup workflows
-- **leads-finder** — Lead discovery and research
 - **presentation** — Slide deck generation
 - **skill-creator** — Create new skills from natural language
+- **spreadsheet** — Spreadsheet generation
 - **visualizer** — Data visualization
 
 ## License

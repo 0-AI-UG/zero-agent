@@ -3,7 +3,7 @@ import { CdpClient } from "./cdp.ts";
 import type { CompanionControl, CompanionMessage, BrowserResponse, WebAuthnSubCommand } from "./protocol.ts";
 import { executeAction, type RefMap } from "./actions.ts";
 import { WorkspaceManager } from "./workspace.ts";
-import { DockerBackend } from "./docker-backend.ts";
+import { ContainerBackend, detectRuntime, prepareRuntime } from "./container-backend.ts";
 import { enableDomainsStealthy } from "./stealth.ts";
 import type { Logger } from "./logger.ts";
 import type { ActivityEvent } from "./shared/rpc.ts";
@@ -36,7 +36,7 @@ interface WsClientOptions {
   onEvent?: (event: ActivityEvent) => void;
 }
 
-export function createWsClient(options: WsClientOptions) {
+export async function createWsClient(options: WsClientOptions) {
   let ws: WebSocket | null = null;
   let reconnectDelay = RECONNECT_BASE;
   let stopped = false;
@@ -54,9 +54,17 @@ export function createWsClient(options: WsClientOptions) {
       console.error("Failed to emit event:", err, event);
     }
   }
+  // Detect and prepare container runtime
+  const runtimeStatus = detectRuntime();
+  if (!runtimeStatus.ready) {
+    throw new Error("Docker is not running. Please set it up from the companion home screen.");
+  }
+  options.logger.info("Using Docker");
+  await prepareRuntime();
+
   const workspaceManager = new WorkspaceManager({
     logger: options.logger,
-    backend: new DockerBackend(),
+    backend: new ContainerBackend(),
   });
 
   // Session idle reaper — runs every 60s, cleans up sessions idle for 5+ min

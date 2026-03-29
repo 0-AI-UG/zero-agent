@@ -4,18 +4,21 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "bun src/index.ts",
-    "build": "bun build --compile src/index.ts --outfile dist/zero-agent-companion",
-    "build:macos-arm64": "bun build --compile --target=bun-darwin-arm64 src/index.ts --outfile dist/zero-agent-companion-darwin-arm64",
-    "build:macos-x64": "bun build --compile --target=bun-darwin-x64 src/index.ts --outfile dist/zero-agent-companion-darwin-x64",
-    "build:linux-x64": "bun build --compile --target=bun-linux-x64 src/index.ts --outfile dist/zero-agent-companion-linux-x64",
-    "build:windows-x64": "bun build --compile --target=bun-windows-x64 src/index.ts --outfile dist/zero-agent-companion-windows-x64.exe",
-    "build:all": "bun run build:macos-arm64 && bun run build:macos-x64 && bun run build:linux-x64 && bun run build:windows-x64"
+    "start": "electrobun dev",
+    "dev": "electrobun dev --watch",
+    "build": "electrobun build"
   },
   "dependencies": {
-    "commander": "^13.1.0"
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "electrobun": "1.16.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "tailwind-merge": "^3.5.0"
   },
   "devDependencies": {
-    "bun-types": "^1.3.10"
+    "@types/bun": "latest",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3"
   }
 }

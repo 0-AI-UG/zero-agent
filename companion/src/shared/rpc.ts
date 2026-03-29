@@ -42,6 +42,37 @@ export type CompanionRPC = {
 					workspaces: CompanionWorkspaceState[];
 				};
 			};
+			checkRuntime: {
+				params: {};
+				response: { ready: boolean; canSetup: boolean; needsWsl: boolean };
+			};
+			setupDocker: {
+				params: {};
+				response: { ok: boolean; error?: string };
+			};
+			installWsl: {
+				params: {};
+				response: { ok: boolean; error?: string };
+			};
+			getResources: {
+				params: {};
+				response: {
+					containers: Array<{ id: string; name: string; image: string; state: string; created: string }>;
+					images: Array<{ id: string; repository: string; tag: string; created: string }>;
+				};
+			};
+			removeContainer: {
+				params: { id: string };
+				response: { ok: boolean; error?: string };
+			};
+			removeImage: {
+				params: { id: string };
+				response: { ok: boolean; error?: string };
+			};
+			pruneAll: {
+				params: {};
+				response: { ok: boolean; error?: string };
+			};
 		};
 		messages: {};
 	}>;
@@ -50,6 +81,7 @@ export type CompanionRPC = {
 		messages: {
 			status: { state: "disconnected" | "connecting" | "connected"; message?: string };
 			event: ActivityEvent;
+			setupProgress: { step: string; detail?: string };
 		};
 	}>;
 };

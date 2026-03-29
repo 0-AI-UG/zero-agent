@@ -6,13 +6,14 @@ import { log } from "@/lib/logger.ts";
 
 const toolLog = log.child({ module: "tool:browser" });
 
-export function createBrowserTool(userId: string, projectId: string, initialSessionId?: string, lazySession?: { id: string; created: boolean }) {
+export function createBrowserTool(userId: string, projectId: string, initialSessionId?: string, lazySession?: { id: string; created: boolean; label?: string }) {
   let sessionId = initialSessionId;
   return {
     browser: tool({
       description:
-        "Control the user's browser via the companion agent. Actions: navigate (go to URL), click/type/select/hover (interact with elements by ref like [e1]), scroll, back/forward/reload, wait, snapshot (get page accessibility tree), screenshot (capture visible page), evaluate (run JS), tabs/switchTab/closeTab (manage tabs). Always take a snapshot first to see the page, then use element refs [e1], [e2] etc. to interact.",
+        "Control the user's browser via the companion agent. Actions: navigate (go to URL), click/type/select/hover (interact with elements by ref like [e1]), scroll, back/forward/reload, wait, snapshot (get page accessibility tree), screenshot (capture visible page), evaluate (run JS), tabs/switchTab/closeTab (manage tabs). Always take a snapshot first to see the page, then use element refs [e1], [e2] etc. to interact. Mutating actions (click, type, select, hover, scroll, navigate) automatically return an updated snapshot.",
       inputSchema: z.object({
+        stealth: z.boolean().optional().describe("Enable human-like mouse movement and typing delays for bot detection avoidance. Default: false (fast mode)."),
         action: z.discriminatedUnion("type", [
           z.object({ type: z.literal("navigate"), url: z.string().describe("URL to navigate to") }),
           z.object({ type: z.literal("click"), ref: z.string().describe("Element ref like 'e1'") }),
@@ -56,10 +57,17 @@ export function createBrowserTool(userId: string, projectId: string, initialSess
             ],
           };
         }
-        // Non-screenshot results (snapshot, done, evaluate, tabs, error) → default JSON
+        // Done results with auto-snapshot: render as text for readability
+        if (result?.type === "done" && typeof result.snapshot === "string") {
+          return {
+            type: "text" as const,
+            value: `${result.message} — ${result.title} (${result.url})\n\n${result.snapshot}`,
+          };
+        }
+        // Other results (snapshot, done without snapshot, evaluate, tabs, error) → default JSON
         return { type: "json" as const, value: (output ?? null) as import("@ai-sdk/provider").JSONValue };
       },
-      execute: async ({ action }) => {
+      execute: async ({ action, stealth }) => {
         toolLog.info("browser action", { userId, projectId, action: action.type });
 
         // Wait for companion with backoff: 1s, 2s, 4s (total ~7s)
@@ -79,7 +87,7 @@ export function createBrowserTool(userId: string, projectId: string, initialSess
         // Lazily create browser session on first use
         if (lazySession && !lazySession.created) {
           try {
-            await browserBridge.createSession(userId, projectId, lazySession.id);
+            await browserBridge.createSession(userId, projectId, lazySession.id, lazySession.label);
             lazySession.created = true;
             sessionId = lazySession.id;
           } catch (err) {
@@ -91,7 +99,7 @@ export function createBrowserTool(userId: string, projectId: string, initialSess
         const MAX_RETRIES = 2;
         for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
           try {
-            const result = await browserBridge.execute(userId, projectId, action as BrowserAction, sessionId);
+            const result = await browserBridge.execute(userId, projectId, action as BrowserAction, sessionId, stealth);
             return result;
           } catch (err) {
             const message = err instanceof Error ? err.message : String(err);

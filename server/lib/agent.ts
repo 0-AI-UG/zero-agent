@@ -6,6 +6,7 @@ import { buildSkillsIndex } from "@/lib/skills/injector.ts";
 import { createAgentTool } from "@/tools/agent.ts";
 import { createCompactPrepareStep } from "@/lib/compact-conversation.ts";
 import { readFromS3 } from "@/lib/s3.ts";
+import { browserBridge } from "@/lib/browser/bridge.ts";
 import { log } from "@/lib/logger.ts";
 
 const agentLog = log.child({ module: "agent" });
@@ -42,6 +43,8 @@ export interface AgentOptions {
   };
   /** Prompt mode — controls which sections are included. Auto-derived from context if not set. */
   mode?: "chat" | "automation";
+  /** Pre-created lazy browser session — if provided, skips auto-creation in createAgent(). */
+  lazyBrowserSession?: { id: string; created: boolean; label?: string };
 }
 
 async function buildSystemPrompt(project: {
@@ -213,9 +216,9 @@ Before using a tool not listed as always-loaded, call \`loadTools\` with the too
   // ── Credentials (both modes) ──
   sections.push(`## Credentials
 
-Login credentials are stored as JSON files in \`credentials/\`. Use \`readFile("credentials/{domain}.json")\` to check for saved credentials. Use \`loadPasskey\` (via \`loadTools\`) for passkey-based sign-in.
+Use \`loadAccount\` (via \`loadTools\`) to find and load saved credentials for a site. For passkey sign-in it loads the key into the authenticator automatically. For password sign-in it returns the username, password, and TOTP secret. Use \`saveAccount\` to save new credentials after creating an account or registering a passkey.
 
-Never log or display passwords or passkey keys. Refer to credentials as "your saved login".`);
+CRITICAL: Never include passwords, TOTP secrets, or passkey keys in your text responses. These are provided exclusively for filling browser forms via the browser tool. Refer to credentials as "your saved login".`);
 
   // ── Response Style ──
   if (isChat) {
@@ -256,9 +259,16 @@ export async function createAgent(project: ProjectForAgent, options: AgentOption
 
   const context = options.context ?? (options.chatId ? "chat" : "automation");
 
+  // Use provided lazy session, or auto-create one for chat agents
+  const lazyBrowserSession = options.lazyBrowserSession ??
+    (options.userId && browserBridge.isConnected(options.userId, project.id)
+      ? { id: options.chatId ? `chat-${options.chatId}` : `agent-${Date.now()}`, created: false }
+      : undefined);
+
   const { activeTools, fullRegistry, toolIndex } = createDiscoverableToolset(project.id, {
     chatId: options.chatId,
     userId: options.userId,
+    lazyBrowserSession,
     context,
     onlyTools: options.onlyTools,
     onlySkills: options.onlySkills,

@@ -198,6 +198,26 @@ export interface ModelRow {
   updated_at: string;
 }
 
+export interface CredentialRow {
+  id: string;
+  project_id: string;
+  cred_type: "password" | "passkey";
+  label: string;
+  site_url: string;
+  domain: string;
+  username: string | null;
+  password_enc: string | null;
+  totp_secret_enc: string | null;
+  backup_codes_enc: string | null;
+  credential_id: string | null;
+  private_key_enc: string | null;
+  rp_id: string | null;
+  user_handle: string | null;
+  sign_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface UsageLogRow {
   id: string;
   user_id: string;

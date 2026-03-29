@@ -59,8 +59,8 @@ mkdirSync(OUT_DIR, { recursive: true });
 console.log("3/4 Compiling server...");
 const serverBuild = $`bun build --compile --minify --target=bun server/index.ts --outfile=dist/zero-agent --external=../web/src/index.html 2>&1 | grep -E "compile|bundle|minify|error"`.nothrow();
 
-console.log("4/4 Compiling companion...");
-const companionBuild = $`bun build --compile --minify --target=bun companion/src/index.ts --outfile=dist/zero-agent-companion 2>&1 | grep -E "compile|bundle|minify|error"`.nothrow();
+console.log("4/4 Building companion...");
+const companionBuild = $`cd companion && bunx electrobun build 2>&1`.nothrow();
 
 await Promise.all([serverBuild, companionBuild]);
 
@@ -68,7 +68,6 @@ await Promise.all([serverBuild, companionBuild]);
 await $`rm -rf ${GENERATED}`;
 
 const serverSize = ((await Bun.file("dist/zero-agent").size) / 1024 / 1024).toFixed(1);
-const companionSize = ((await Bun.file("dist/zero-agent-companion").size) / 1024 / 1024).toFixed(1);
 console.log(`\nDone:`);
-console.log(`  dist/zero-agent            (${serverSize} MB)`);
-console.log(`  dist/zero-agent-companion  (${companionSize} MB)`);
+console.log(`  dist/zero-agent  (${serverSize} MB)`);
+console.log(`  companion/build/ (electrobun app)`);

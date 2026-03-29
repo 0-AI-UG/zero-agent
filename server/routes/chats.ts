@@ -12,6 +12,7 @@ import {
 } from "@/db/queries/chats.ts";
 import type { ChatRow } from "@/db/types.ts";
 import { events } from "@/lib/events.ts";
+import { browserBridge } from "@/lib/browser/bridge.ts";
 
 function formatChat(row: ChatRow) {
   return {
@@ -103,6 +104,10 @@ export async function handleDeleteChat(request: BunRequest): Promise<Response> {
 
     deleteChat(chatId);
     events.emit("chat.deleted", { chatId, projectId });
+
+    // Best-effort cleanup of the chat's browser session
+    browserBridge.destroySession(userId, projectId, `chat-${chatId}`).catch(() => {});
+
     return Response.json({ ok: true }, { headers: corsHeaders });
   } catch (error) {
     return handleError(error);

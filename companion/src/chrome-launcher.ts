@@ -90,9 +90,6 @@ export async function launchChrome(options: LaunchOptions = {}): Promise<LaunchR
     `--user-data-dir=${userDataDir}`,
     "--no-first-run",
     "--no-default-browser-check",
-    // Core anti-detection: disable the AutomationControlled blink feature
-    // which sets navigator.webdriver=true and shows the "controlled by automation" infobar
-    "--disable-blink-features=AutomationControlled",
     // Suppress "Chrome is being controlled by automated test software" infobar
     "--disable-infobars",
     // Disable component extensions (like automation extension) that leak detection signals
