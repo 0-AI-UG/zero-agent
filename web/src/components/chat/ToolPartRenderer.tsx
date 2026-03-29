@@ -1,5 +1,6 @@
 import { isToolUIPart, getToolName } from "ai";
 import type { UIMessage } from "ai";
+import { memo } from "react";
 import { Shimmer } from "@/components/ai/shimmer";
 import {
   CheckCircleIcon,
@@ -11,6 +12,7 @@ import {
   GlobeIcon,
   ImageIcon,
   InboxIcon,
+  KeyRoundIcon,
   MonitorIcon,
   PencilIcon,
   TerminalSquareIcon,
@@ -139,10 +141,20 @@ const TOOL_CONFIG: Record<
     activeLabel: "Loading skill",
     icon: DownloadIcon,
   },
-  runCode: {
-    label: "Ran code",
-    activeLabel: "Running code",
+  bash: {
+    label: "Ran command",
+    activeLabel: "Running command",
     icon: TerminalSquareIcon,
+  },
+  saveAccount: {
+    label: "Saved account",
+    activeLabel: "Saving account",
+    icon: KeyRoundIcon,
+  },
+  loadAccount: {
+    label: "Loaded account",
+    activeLabel: "Loading account",
+    icon: KeyRoundIcon,
   },
 };
 
@@ -209,13 +221,19 @@ function getToolDetail(toolName: string, input: unknown): string | null {
     }
     case "loadSkill":
       return typeof inp.name === "string" ? inp.name : null;
-    case "runCode": {
-      const code = (inp as any).code;
-      if (typeof code === "string") {
-        return code.length > 60 ? code.slice(0, 60) + "…" : code;
-      }
-      return null;
+    case "bash": {
+      const cmd = (inp as any).command ?? "";
+      return typeof cmd === "string" && cmd.length > 0
+        ? (cmd.length > 60 ? cmd.slice(0, 60) + "…" : cmd)
+        : null;
     }
+    case "saveAccount":
+    case "loadAccount":
+      return typeof inp.siteUrl === "string"
+        ? inp.siteUrl
+        : typeof inp.label === "string"
+          ? inp.label
+          : null;
     default:
       return null;
   }
@@ -628,8 +646,10 @@ type MessagePart = UIMessage["parts"][number];
 
 /**
  * Renders a single tool call as an inline status line.
+ * Memoized to prevent re-renders when the parent streams new parts —
+ * only re-renders when this specific tool part's state changes.
  */
-export function ToolCallPart({
+export const ToolCallPart = memo(function ToolCallPart({
   part,
   projectId,
   addToolApprovalResponse,
@@ -742,9 +762,9 @@ export function ToolCallPart({
       const output = part.output as any;
       if (output?.url) return <FetchUrlCard output={output} />;
     }
-    if (toolName === "runCode") {
+    if (toolName === "bash") {
       const output = part.output as any;
-      if (output) return <BashResultCard output={output} command={(part.input as any)?.code} />;
+      if (output) return <BashResultCard output={output} command={(part.input as any)?.command} />;
     }
     // Browser tool: skip hidden actions, show status line for visible ones
     if (toolName === "browser") {
@@ -768,7 +788,8 @@ export function ToolCallPart({
   return (
     <div
       className={cn(
-        "flex items-center gap-2 text-sm py-1 animate-in fade-in-0 slide-in-from-top-1",
+        "flex items-center gap-2 text-sm py-1",
+        isLoading && "animate-in fade-in-0 slide-in-from-top-1",
         hasError ? "text-destructive" : "text-muted-foreground",
       )}
     >
@@ -789,4 +810,11 @@ export function ToolCallPart({
       )}
     </div>
   );
-}
+}, (prev, next) => {
+  // Skip re-render when the tool part hasn't materially changed
+  const p = prev.part as any;
+  const n = next.part as any;
+  if (p === n) return true;
+  return p.state === n.state && p.output === n.output && p.input === n.input
+    && prev.projectId === next.projectId;
+});

@@ -35,9 +35,9 @@ Every spreadsheet task MUST follow these steps in order. Do not skip ahead to wr
 
 ### Step 1: Understand the Data
 
-Before writing any processing code, explore the source file(s) using a quick Python/pandas script via `runCode`. **Never use `readFile`** — it fails on Excel files (binary) and chokes on large CSVs.
+Before writing any processing code, explore the source file(s) using a quick Python/pandas script via `bash`. **Never use `readFile`** — it fails on Excel files (binary) and chokes on large CSVs.
 
-Write a small exploration script to `tmp/explore/main.py` that prints:
+Write a small exploration script to `tmp/explore/main.py` via `writeFile`, then run it. It should print:
 
 - **Column names** — list every column
 - **Data types** — dtypes from pandas
@@ -77,12 +77,13 @@ Tell the user what you'll do before writing code:
 
 ### Step 3: Execute
 
-Write scripts and dependencies to a temporary folder and run them.
+Write scripts to a temporary folder via `writeFile`, install dependencies, and run via `bash`.
 
 **Tmp folder convention:**
 - Create a folder: `tmp/<short-task-name>/` (e.g. `tmp/filter-revenue/`, `tmp/merge-leads/`)
-- Write your `requirements.txt` and `main.py` inside this folder
-- Run with `runCode({ entrypoint: "tmp/<task-name>/main.py" })`
+- Write your `main.py` inside this folder via `writeFile`
+- Install dependencies: `bash: uv pip install pandas openpyxl`
+- Run: `bash: uv run tmp/<task-name>/main.py`
 - If the task produces an output file, write it to a sensible location — next to the source file, or `spreadsheets/`, or wherever the user specifies
 - If the task is analysis/question-answering, just `print()` the results — no output file needed
 
@@ -111,10 +112,10 @@ deleteFile("tmp/<task-name>/")
 - **Output location**: Place output files next to the source file by default, or wherever the user specifies. Use `spreadsheets/` only when creating files from scratch with no obvious location
 - **Prefer CSV** as the default output format — it gets inline preview with editing, sorting, filtering, and search in the UI
 - **Use XLSX only** when the user explicitly requests Excel, or when formatting matters (multi-sheet workbooks, column widths, styled headers)
-- **Never use `writeFile` for XLSX** — it only accepts text content. Always generate XLSX files inside `runCode` where the binary file flows through the changedFiles pipeline
-- **Always use `runCode`** for any data processing — install packages inline, process data, write output
-- **Packages**: Use `pandas` for data processing, `openpyxl` for Excel read/write
-- **Language**: Always use Python (`.py` files)
+- **Never use `writeFile` for XLSX** — it only accepts text content. Always generate XLSX files inside `bash` where the binary file flows through the changedFiles pipeline
+- **Always use `bash`** for any data processing — install packages with `uv pip install`, run scripts with `uv run`
+- **Packages**: Use `pandas` for data processing, `openpyxl` for Excel read/write. Install via `uv pip install pandas openpyxl`
+- **Language**: Always use Python (`.py` files), run via `uv run`
 
 ## How to Decide What to Build
 
@@ -124,7 +125,7 @@ Route on **intent**, not keywords.
 The user has data and wants insights, summaries, or statistics.
 - **Step 1**: Explore the file with pandas, describe structure and quality
 - **Step 2**: Propose which stats/insights to compute
-- **Step 3**: Process in `runCode` with pandas, print results — no output file needed
+- **Step 3**: Process via `bash` with pandas, print results — no output file needed
 - Respond with: key stats, distributions, anomalies, top/bottom values
 - Suggest loading the **visualizer** skill if charts would help
 
@@ -132,20 +133,20 @@ The user has data and wants insights, summaries, or statistics.
 The user wants to reshape, clean, or restructure existing data.
 - **Step 1**: Explore source file with pandas, describe current structure and issues
 - **Step 2**: Propose the transformation plan
-- **Step 3**: Transform in `runCode`, write result next to the source file (or where the user specifies)
+- **Step 3**: Transform via `bash`, write result next to the source file (or where the user specifies)
 - Common operations: filter rows, rename columns, deduplicate, pivot, unpivot, type conversion, string cleanup
 
 ### Create — "Make a spreadsheet of..."
 The user wants a new dataset generated from scratch or from research.
 - **Step 2**: Describe the structure you'll build (columns, expected row count)
-- **Step 3**: Build data in `runCode`, output as CSV (default) or XLSX (if requested)
+- **Step 3**: Build data via `bash`, output as CSV (default) or XLSX (if requested)
 - For research-based data: use `searchWeb` first, then structure findings
 
 ### Merge — "Combine these files"
 The user has multiple data sources to join.
 - **Step 1**: Explore ALL source files with pandas, describe structure of each, identify join columns
 - **Step 2**: Propose join strategy (inner/outer, which columns, mismatch handling)
-- **Step 3**: Join in a single `runCode` call, write merged result next to the source files (or where the user specifies)
+- **Step 3**: Join in a single `bash` call, write merged result next to the source files (or where the user specifies)
 
 ### Convert — "Save as Excel" / "Convert to CSV"
 The user wants format conversion.
@@ -214,7 +215,7 @@ with pd.ExcelWriter("spreadsheets/multi-sheet-report.xlsx") as writer:
 
 ### Reading Excel Files
 
-Always read XLSX files inside `runCode` with pandas:
+Always read XLSX files via `bash` with pandas:
 
 ```python
 # tmp/read-excel/main.py
@@ -257,5 +258,5 @@ After any spreadsheet operation, respond with:
 
 ## Limits
 
-- The `runCode` changedFiles pipeline supports files up to ~10MB. For very large datasets (>100k rows), prefer CSV over XLSX.
-- All project files are available in the `runCode` workspace via the file manifest — use standard file I/O to access them directly.
+- The changedFiles pipeline supports files up to ~10MB. For very large datasets (>100k rows), prefer CSV over XLSX.
+- All project files are available in the workspace via the file manifest — use standard file I/O to access them directly.

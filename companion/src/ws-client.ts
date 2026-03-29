@@ -1,11 +1,12 @@
+import * as path from "node:path";
 import { CdpClient } from "./cdp.ts";
 import type { CompanionControl, CompanionMessage, BrowserResponse, WebAuthnSubCommand } from "./protocol.ts";
 import { executeAction, type RefMap } from "./actions.ts";
 import { WorkspaceManager } from "./workspace.ts";
-import { runCodeInWorker } from "./worker-runner.ts";
-import { runCodeInPython } from "./python-runner.ts";
+import { DockerBackend } from "./docker-backend.ts";
 import { enableDomainsStealthy } from "./stealth.ts";
 import type { Logger } from "./logger.ts";
+import type { ActivityEvent } from "./shared/rpc.ts";
 
 const RECONNECT_BASE = 1000;
 const RECONNECT_MAX = 30000;
@@ -14,6 +15,7 @@ const SERVER_PING_TIMEOUT = 30_000;
 
 const MAX_SESSIONS = 8;
 const SESSION_IDLE_TIMEOUT = 5 * 60 * 1000; // 5 minutes
+const CHAT_SESSION_IDLE_TIMEOUT = 15 * 60 * 1000; // 15 minutes for chat sessions
 
 interface SessionState {
   cdp: CdpClient;
@@ -31,6 +33,7 @@ interface WsClientOptions {
   cdpPort: number;
   onConnected?: () => void;
   onDisconnected?: () => void;
+  onEvent?: (event: ActivityEvent) => void;
 }
 
 export function createWsClient(options: WsClientOptions) {
@@ -39,34 +42,36 @@ export function createWsClient(options: WsClientOptions) {
   let stopped = false;
   let serverPingTimer: ReturnType<typeof setTimeout> | null = null;
   const sessions = new Map<string, SessionState>();
+  const sessionInfo = new Map<string, { url?: string; title?: string; label?: string }>();
+  const workspaceFiles = new Map<string, string[]>();
+  const workspaceStatuses = new Map<string, string>();
+
+  /** Safely emit an event — never throw to avoid breaking message handling chains. */
+  function emitEvent(event: ActivityEvent) {
+    try {
+      options.onEvent?.(event);
+    } catch (err) {
+      console.error("Failed to emit event:", err, event);
+    }
+  }
   const workspaceManager = new WorkspaceManager({
     logger: options.logger,
-    backend: {
-      async initWorkspace() {},
-      async runCommand(_workspaceId, dir, command, timeout) {
-        // Command is encoded as "entrypoint:<path>"
-        const entrypoint = command.startsWith("entrypoint:") ? command.slice("entrypoint:".length) : command;
-        if (entrypoint.endsWith(".py")) {
-          return runCodeInPython(dir, timeout, entrypoint);
-        }
-        return runCodeInWorker(dir, timeout, entrypoint);
-      },
-      async destroyWorkspace() {},
-    },
+    backend: new DockerBackend(),
   });
 
   // Session idle reaper — runs every 60s, cleans up sessions idle for 5+ min
   const sessionReaper = setInterval(() => {
     const now = Date.now();
     for (const [id, session] of sessions) {
-      if (now - session.lastUsedAt > SESSION_IDLE_TIMEOUT) {
+      const timeout = id.startsWith("chat-") ? CHAT_SESSION_IDLE_TIMEOUT : SESSION_IDLE_TIMEOUT;
+      if (now - session.lastUsedAt > timeout) {
         console.log(`Reaping idle session ${id}`);
         destroySessionInternal(id, session);
       }
     }
   }, 60_000);
 
-  async function createSessionInternal(sessionId: string): Promise<void> {
+  async function createSessionInternal(sessionId: string, label?: string): Promise<void> {
     if (sessions.size >= MAX_SESSIONS) {
       throw new Error(`Session limit reached (max ${MAX_SESSIONS})`);
     }
@@ -94,12 +99,16 @@ export function createWsClient(options: WsClientOptions) {
       refMap: new Map(),
       lastUsedAt: Date.now(),
     });
+    emitEvent({ type: "session:created", sessionId, label });
+    sessionInfo.set(sessionId, { label });
   }
 
   function destroySessionInternal(sessionId: string, session?: SessionState): void {
     const s = session ?? sessions.get(sessionId);
     if (!s) return;
     sessions.delete(sessionId);
+    sessionInfo.delete(sessionId);
+    emitEvent({ type: "session:destroyed", sessionId });
     s.cdp.close();
     // Close the tab
     fetch(`http://127.0.0.1:${options.cdpPort}/json/close/${s.targetId}`).catch(() => {});
@@ -136,7 +145,7 @@ export function createWsClient(options: WsClientOptions) {
 
     if (data.type === "createSession") {
       try {
-        await createSessionInternal(data.sessionId);
+        await createSessionInternal(data.sessionId, data.label);
         const msg: CompanionMessage = { type: "sessionCreated", sessionId: data.sessionId };
         ws?.send(JSON.stringify(msg));
       } catch (err) {
@@ -204,9 +213,14 @@ export function createWsClient(options: WsClientOptions) {
 
     if (data.type === "createWorkspace") {
       workspaceManager.createWorkspace(data.workspaceId, data.manifest).then(() => {
+        emitEvent({ type: "workspace:created", workspaceId: data.workspaceId });
+        emitEvent({ type: "workspace:files", workspaceId: data.workspaceId, files: Object.keys(data.manifest) });
+        workspaceFiles.set(data.workspaceId, Object.keys(data.manifest));
+        workspaceStatuses.set(data.workspaceId, "ready");
         const msg: CompanionMessage = { type: "workspaceCreated", workspaceId: data.workspaceId };
         ws?.send(JSON.stringify(msg));
       }).catch((err) => {
+        emitEvent({ type: "workspace:error", workspaceId: data.workspaceId, error: err instanceof Error ? err.message : String(err) });
         const msg: CompanionMessage = { type: "workspaceError", workspaceId: data.workspaceId, error: err instanceof Error ? err.message : String(err) };
         ws?.send(JSON.stringify(msg));
       });
@@ -215,6 +229,8 @@ export function createWsClient(options: WsClientOptions) {
 
     if (data.type === "syncWorkspace") {
       workspaceManager.syncWorkspace(data.workspaceId, data.manifest).then(() => {
+        emitEvent({ type: "workspace:files", workspaceId: data.workspaceId, files: Object.keys(data.manifest) });
+        workspaceFiles.set(data.workspaceId, Object.keys(data.manifest));
         const msg: CompanionMessage = { type: "workspaceSynced", workspaceId: data.workspaceId };
         ws?.send(JSON.stringify(msg));
       }).catch((err) => {
@@ -224,12 +240,30 @@ export function createWsClient(options: WsClientOptions) {
       return;
     }
 
-    if (data.type === "runCode") {
-      const command = data.entrypoint ? `entrypoint:${data.entrypoint}` : (data.code ?? "");
-      workspaceManager.runCommand(data.workspaceId, command, data.timeout).then((result) => {
-        const msg: CompanionMessage = { type: "commandResult", commandId: data.commandId, workspaceId: data.workspaceId, ...result };
+    if (data.type === "runBash") {
+      emitEvent({ type: "workspace:bash-started", workspaceId: data.workspaceId, command: data.command });
+      emitEvent({ type: "workspace:running", workspaceId: data.workspaceId });
+      workspaceStatuses.set(data.workspaceId, "running");
+      workspaceManager.runCommand(data.workspaceId, data.command, data.timeout).then((result) => {
+        const MAX_OUTPUT = 10_240;
+        const truncated = result.stdout.length > MAX_OUTPUT || result.stderr.length > MAX_OUTPUT;
+        emitEvent({
+          type: "workspace:bash-result",
+          workspaceId: data.workspaceId,
+          stdout: result.stdout.slice(0, MAX_OUTPUT),
+          stderr: result.stderr.slice(0, MAX_OUTPUT),
+          exitCode: result.exitCode,
+          changedFiles: result.changedFiles?.map((f: { path: string; sizeBytes: number }) => ({ path: f.path, sizeBytes: f.sizeBytes })),
+          deletedFiles: result.deletedFiles,
+          truncated,
+        });
+        emitEvent({ type: "workspace:completed", workspaceId: data.workspaceId, exitCode: result.exitCode });
+        workspaceStatuses.set(data.workspaceId, "ready");
+        const msg: CompanionMessage = { type: "bashResult", commandId: data.commandId, workspaceId: data.workspaceId, ...result };
         ws?.send(JSON.stringify(msg));
       }).catch((err) => {
+        emitEvent({ type: "workspace:error", workspaceId: data.workspaceId, error: err instanceof Error ? err.message : String(err) });
+        workspaceStatuses.set(data.workspaceId, "error");
         const msg: CompanionMessage = { type: "workspaceError", workspaceId: data.workspaceId, commandId: data.commandId, error: err instanceof Error ? err.message : String(err) };
         ws?.send(JSON.stringify(msg));
       });
@@ -238,6 +272,9 @@ export function createWsClient(options: WsClientOptions) {
 
     if (data.type === "destroyWorkspace") {
       workspaceManager.destroyWorkspace(data.workspaceId).then(() => {
+        emitEvent({ type: "workspace:destroyed", workspaceId: data.workspaceId });
+        workspaceFiles.delete(data.workspaceId);
+        workspaceStatuses.delete(data.workspaceId);
         const msg: CompanionMessage = { type: "workspaceDestroyed", workspaceId: data.workspaceId };
         ws?.send(JSON.stringify(msg));
       }).catch((err) => {
@@ -250,14 +287,25 @@ export function createWsClient(options: WsClientOptions) {
     if (data.type === "command") {
       const { command } = data;
 
-      // Route to session or default CDP
-      const session = command.sessionId ? sessions.get(command.sessionId) : null;
+      // All browser commands must target an explicit session
+      if (!command.sessionId) {
+        const response: BrowserResponse = {
+          id: command.id,
+          error: "No sessionId provided. Browser commands require an explicit session.",
+        };
+        const msg: CompanionMessage = { type: "response", response };
+        ws?.send(JSON.stringify(msg));
+        return;
+      }
+
+      // Route to session CDP and refMap
+      const session = sessions.get(command.sessionId);
       const getCdp = session ? () => session.cdp : options.getCdp;
       const refMap = session ? session.refMap : options.getDefaultRefMap();
 
       if (session) session.lastUsedAt = Date.now();
 
-      if (command.sessionId && !session) {
+      if (!session) {
         const response: BrowserResponse = {
           id: command.id,
           error: `Session ${command.sessionId} not found. Create it first with createSession.`,
@@ -267,10 +315,14 @@ export function createWsClient(options: WsClientOptions) {
         return;
       }
 
+      // Emit browser action event
+      const actionDetail = 'url' in command.action ? (command.action as { url: string }).url : undefined;
+      emitEvent({ type: "browser:action", sessionId: command.sessionId, action: command.action.type, detail: actionDetail });
+
       let response: BrowserResponse;
       try {
         const cdp = getCdp();
-        const result = await executeAction(cdp, command.action, options.cdpPort, refMap);
+        const result = await executeAction(cdp, command.action, options.cdpPort, refMap, { stealth: command.stealth });
         response = { id: command.id, result };
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : String(err);
@@ -281,7 +333,7 @@ export function createWsClient(options: WsClientOptions) {
           await new Promise((r) => setTimeout(r, 3000));
           try {
             const cdp = getCdp();
-            const result = await executeAction(cdp, command.action, options.cdpPort, refMap);
+            const result = await executeAction(cdp, command.action, options.cdpPort, refMap, { stealth: command.stealth });
             response = { id: command.id, result };
           } catch (retryErr) {
             response = {
@@ -292,6 +344,16 @@ export function createWsClient(options: WsClientOptions) {
         } else {
           response = { id: command.id, error: errMsg };
         }
+      }
+
+      // Emit result event
+      if (response.result && 'url' in response.result) {
+        const r = response.result as { url: string; title: string };
+        emitEvent({ type: "browser:done", sessionId: command.sessionId, url: r.url, title: r.title });
+        if (command.sessionId) sessionInfo.set(command.sessionId, { url: r.url, title: r.title });
+      }
+      if (response.error) {
+        emitEvent({ type: "browser:error", sessionId: command.sessionId, error: response.error });
       }
 
       const msg: CompanionMessage = { type: "response", response };
@@ -389,7 +451,18 @@ export function createWsClient(options: WsClientOptions) {
     ws?.close();
   }
 
+  function getState() {
+    return {
+      sessions: [...sessionInfo.entries()].map(([id, info]) => ({ id, ...info })),
+      workspaces: [...workspaceStatuses.entries()].map(([id, status]) => ({
+        id,
+        status,
+        files: workspaceFiles.get(id) ?? [],
+      })),
+    };
+  }
+
   connect();
 
-  return { stop };
+  return { stop, getState };
 }

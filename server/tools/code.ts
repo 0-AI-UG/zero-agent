@@ -7,16 +7,23 @@ import { insertFile, getFileByS3Key } from "@/db/queries/files.ts";
 import { getFilesByFolderPath } from "@/db/queries/files.ts";
 import { getFolderByPath, createFolder as createFolderRecord } from "@/db/queries/folders.ts";
 import { log } from "@/lib/logger.ts";
-import { nanoid } from "nanoid";
 import path from "node:path";
 
 const toolLog = log.child({ module: "tool:code" });
+
+/** Directories whose contents should never be synced back to the project. */
+const IGNORED_DIRS = new Set([".venv", "node_modules", ".tmp", "__pycache__", ".git"]);
 
 /** Prevent path traversal — reject paths with `..` or leading `/` */
 function sanitizePath(p: string): string {
   const normalized = path.normalize(p);
   if (normalized.startsWith("..") || path.isAbsolute(normalized)) {
     throw new Error(`Invalid file path: ${p}`);
+  }
+  // Reject files inside ignored directories
+  const firstSegment = normalized.split(path.sep)[0];
+  if (IGNORED_DIRS.has(firstSegment)) {
+    throw new Error(`File inside ignored directory: ${firstSegment}`);
   }
   return normalized;
 }
@@ -73,8 +80,9 @@ function buildFileManifest(projectId: string): Record<string, string> {
   return manifest;
 }
 
-export function createCodeTools(userId: string, projectId: string) {
-  let workspaceId: string | null = null;
+export function createCodeTools(userId: string, projectId: string, chatId: string) {
+  const workspaceId = `chat-${chatId}`;
+  let workspaceReady = false;
 
   async function waitForCompanion(): Promise<void> {
     if (!browserBridge.isConnected(userId, projectId)) {
@@ -93,55 +101,55 @@ export function createCodeTools(userId: string, projectId: string) {
   async function ensureWorkspace(): Promise<string> {
     const manifest = buildFileManifest(projectId);
 
-    if (workspaceId) {
+    if (workspaceReady) {
       try {
         await browserBridge.syncWorkspace(userId, projectId, workspaceId, manifest);
         return workspaceId;
       } catch {
-        // Workspace gone (companion restarted, idle-reaped) — recreate
         toolLog.info("workspace sync failed, recreating", { userId, projectId, workspaceId });
-        workspaceId = null;
+        workspaceReady = false;
       }
     }
 
-    const id = nanoid();
-    await browserBridge.createWorkspace(userId, projectId, id, manifest);
-    workspaceId = id;
-    toolLog.info("workspace created", { userId, projectId, workspaceId: id, fileCount: Object.keys(manifest).length });
-    return id;
+    await browserBridge.createWorkspace(userId, projectId, workspaceId, manifest);
+    workspaceReady = true;
+    toolLog.info("workspace created", { userId, projectId, workspaceId, fileCount: Object.keys(manifest).length });
+    return workspaceId;
   }
 
   return {
-    runCode: tool({
+    bash: tool({
       description:
-        "Execute a JavaScript/TypeScript or Python file in the project.\n" +
-        "All project files are in the current working directory — ALWAYS use relative paths without leading slash (e.g. 'data.xlsx', 'subfolder/file.csv'), both for the entrypoint and inside your code (open('data.csv'), fs.readFileSync('input.xlsx')).\n" +
-        "Write the entrypoint file first via writeFile.\n" +
-        "For JS/TS: use package.json for dependencies. console.log() for output. Top-level await supported.\n" +
-        "For Python: use requirements.txt for dependencies (e.g. pandas, openpyxl). print() for output. Python is auto-installed.\n" +
-        "No bash or shell.",
+        "Run a bash command in the project workspace (inside a container).\n" +
+        "Available runtimes: bun (TypeScript/JS), uv (Python), plus standard unix tools.\n" +
+        "Examples:\n" +
+        "  bun run script.ts\n" +
+        "  uv run script.py\n" +
+        "  uv pip install pandas && uv run analysis.py\n" +
+        "  bun add lodash && bun run process.ts\n" +
+        "  curl -o data.json https://api.example.com/data\n" +
+        "Files changed by the command are automatically synced back to the project.\n" +
+        "All project files are in the current working directory — use relative paths.",
       inputSchema: z.object({
-        entrypoint: z.string().describe("Relative path to a .ts/.js/.py file to execute (e.g. 'script.py', no leading slash)"),
-        timeout: z.number().optional().describe("Timeout in ms (default 60000, max 300000)"),
+        command: z.string().describe("The bash command to execute"),
+        timeout: z.number().optional().describe("Timeout in ms (default 120000, max 300000)"),
       }),
-      execute: async ({ entrypoint: rawEntrypoint, timeout }) => {
-        // Normalize: strip leading slashes so "/script.py" becomes "script.py"
-        const entrypoint = rawEntrypoint.replace(/^\/+/, "");
-        toolLog.info("runCode", { userId, projectId, entrypoint });
+      execute: async ({ command, timeout }) => {
+        toolLog.info("bash", { userId, projectId, command });
 
         try {
           await waitForCompanion();
           const wsId = await ensureWorkspace();
-          const result = await browserBridge.runCode(
+          const result = await browserBridge.runBash(
             userId,
             projectId,
             wsId,
-            entrypoint,
+            command,
             timeout,
           );
 
           // Process changed files: upload to S3 + register in DB
-          const savedFiles: Array<{ path: string; fileId: string; sizeBytes: number }> = [];
+          const savedFiles: Array<{ path: string }> = [];
           const saveErrors: Array<{ path: string; error: string }> = [];
 
           if (result.changedFiles) {
@@ -160,10 +168,10 @@ export function createCodeTools(userId: string, projectId: string) {
                 ensureFoldersExist(projectId, folderPath);
 
                 await writeToS3(s3Key, buffer);
-                const fileRecord = insertFile(projectId, s3Key, filename, mimeType, file.sizeBytes, folderPath);
+                insertFile(projectId, s3Key, filename, mimeType, file.sizeBytes, folderPath);
 
                 savedFiles.push({ path: file.path });
-                toolLog.info("file saved", { userId, workspaceId: wsId, path: file.path, fileId: fileRecord.id });
+                toolLog.info("file saved", { userId, workspaceId: wsId, path: file.path });
               } catch (err) {
                 const message = err instanceof Error ? err.message : String(err);
                 saveErrors.push({ path: file.path, error: message });
@@ -204,12 +212,12 @@ export function createCodeTools(userId: string, projectId: string) {
             stderr: result.stderr,
             exitCode: result.exitCode,
             ...(savedFiles.length > 0 ? { savedFiles } : {}),
-            ...(pendingDeletions.length > 0 ? { pendingDeletions, pendingDeletionsNote: "These files were deleted during code execution. Use the delete tool for each file so the user can confirm the deletions." } : {}),
+            ...(pendingDeletions.length > 0 ? { pendingDeletions, pendingDeletionsNote: "These files were deleted during execution. Use the delete tool for each file so the user can confirm the deletions." } : {}),
             ...(warning ? { warning } : {}),
           };
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
-          toolLog.error("runCode failed", err, { userId });
+          toolLog.error("bash failed", err, { userId });
           return { error: message };
         }
       },

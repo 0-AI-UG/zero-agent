@@ -28,7 +28,7 @@ Create slide decks that render as HTML and can be exported to PPTX/PNG via code 
 
 ## Architecture Rules
 
-Every presentation is a **single, self-contained HTML file** with all CSS and JS inline. The file can be converted to PPTX via the `@0-ai/slide-gen` package running in `runCode`.
+Every presentation is a **single, self-contained HTML file** with all CSS and JS inline. The file can be converted to PPTX via the `@0-ai/slide-gen` package using `bash` to run `bun`.
 
 ### Slide Structure
 
@@ -76,8 +76,8 @@ Every presentation file must start with this structure:
 1. **Analyze the content** — Understand the topic, key messages, and how many slides are needed
 2. **Compose the deck** — Write all slides in a single HTML file following the supported CSS rules below
 3. **Write the file** — Save as `.html` in its own folder under `presentations/`
-4. **Render & review** — Use `runCode` to render the slides to PNG and visually inspect them, then iterate
-5. **Export** — Ask the user if they'd like a PPTX. If yes, run the export via `runCode`
+4. **Render & review** — Write a render script and run it via `bash` to generate PNGs, then visually inspect and iterate
+5. **Export** — Ask the user if they'd like a PPTX. If yes, write and run an export script via `bash`
 
 ## File Naming
 
@@ -88,25 +88,15 @@ Each presentation gets its own folder under `presentations/`. Examples:
 
 ## Setup
 
-Before running any conversion code, ensure `@0-ai/slide-gen` is available. Write a `package.json` if one doesn't exist:
+Before running any conversion code, install `@0-ai/slide-gen` via bash:
 
-```js
-// setup.js
-import { writeFileSync, existsSync, readFileSync } from "node:fs";
-
-const pkgPath = "package.json";
-let pkg = existsSync(pkgPath) ? JSON.parse(readFileSync(pkgPath, "utf-8")) : {};
-pkg.dependencies = pkg.dependencies || {};
-pkg.dependencies["@0-ai/slide-gen"] = "latest";
-writeFileSync(pkgPath, JSON.stringify(pkg, null, 2));
-console.log("Dependencies updated — bun will auto-install");
 ```
-
-Run this once with `runCode`. The companion auto-installs when `package.json` changes.
+bash: bun add @0-ai/slide-gen
+```
 
 ## Visual Iteration
 
-After writing or editing a presentation file, render it to PNG so you can visually verify the result:
+After writing or editing a presentation file, render it to PNG so you can visually verify the result. First write the render script via `writeFile`, then run it:
 
 ```js
 // render-preview.js
@@ -122,11 +112,15 @@ for (const [i, buf] of result.pngBuffers.entries()) {
 console.log(`Rendered ${result.pngBuffers.length} slide(s)`);
 ```
 
+```
+bash: bun run presentations/my-deck/render-preview.js
+```
+
 Then read the generated PNG files with `readFile` to see what each slide looks like. If the layout, spacing, or content needs adjustment, edit the HTML file and re-render until the result looks good.
 
 ## PPTX Export
 
-After the user approves the slides, ask if they'd like to download as PPTX. If yes:
+After the user approves the slides, ask if they'd like to download as PPTX. If yes, write and run the export script:
 
 ```js
 // export-pptx.js
@@ -137,6 +131,10 @@ const html = readFileSync("presentations/my-deck/my-deck.html", "utf-8");
 const result = await convertHtmlBuffers({ html, noPdf: true, noPng: true, noPptx: false });
 writeFileSync("presentations/my-deck/my-deck.pptx", result.pptxBuffer);
 console.log("PPTX exported");
+```
+
+```
+bash: bun run presentations/my-deck/export-pptx.js
 ```
 
 ## Supported CSS

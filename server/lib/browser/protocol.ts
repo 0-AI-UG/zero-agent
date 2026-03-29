@@ -25,7 +25,7 @@ export type BrowserResult =
   | { type: "screenshot"; url: string; title: string; base64: string }
   | { type: "evaluate"; value: unknown }
   | { type: "tabs"; tabs: Array<{ index: number; url: string; title: string; active: boolean }> }
-  | { type: "done"; url: string; title: string; message?: string };
+  | { type: "done"; url: string; title: string; message?: string; snapshot?: string };
 
 // ── Command/Response Envelope ──
 
@@ -33,6 +33,8 @@ export interface BrowserCommand {
   id: string;
   action: BrowserAction;
   sessionId?: string;
+  /** When true, use human-like mouse movement and typing delays for bot detection avoidance. */
+  stealth?: boolean;
 }
 
 export interface BrowserResponse {
@@ -68,11 +70,11 @@ export type WebAuthnSubCommand =
 export type CompanionControl =
   | { type: "ping" }
   | { type: "command"; command: BrowserCommand }
-  | { type: "createSession"; sessionId: string }
+  | { type: "createSession"; sessionId: string; label?: string }
   | { type: "destroySession"; sessionId: string }
   | { type: "createWorkspace"; workspaceId: string; manifest: Record<string, string> }
   | { type: "syncWorkspace"; workspaceId: string; manifest: Record<string, string> }
-  | { type: "runCode"; workspaceId: string; commandId: string; code?: string; entrypoint?: string; timeout?: number }
+  | { type: "runBash"; workspaceId: string; commandId: string; command: string; timeout?: number }
   | { type: "destroyWorkspace"; workspaceId: string }
   | { type: "webauthn"; subCommand: WebAuthnSubCommand };
 
@@ -87,7 +89,7 @@ export type CompanionMessage =
   | { type: "sessionError"; sessionId: string; error: string }
   | { type: "workspaceCreated"; workspaceId: string }
   | { type: "workspaceSynced"; workspaceId: string }
-  | { type: "commandResult"; commandId: string; workspaceId: string; stdout: string; stderr: string; exitCode: number; changedFiles?: Array<{ path: string; data: string; sizeBytes: number }>; deletedFiles?: string[] }
+  | { type: "bashResult"; commandId: string; workspaceId: string; stdout: string; stderr: string; exitCode: number; changedFiles?: Array<{ path: string; data: string; sizeBytes: number }>; deletedFiles?: string[] }
   | { type: "workspaceDestroyed"; workspaceId: string }
   | { type: "workspaceError"; workspaceId: string; commandId?: string; error: string }
   | { type: "webauthnResult"; commandId: string; result: unknown }

@@ -46,7 +46,7 @@ export const TOOL_GROUPS: ToolGroup[] = [
     id: "code",
     label: "Code Execution",
     icon: "Terminal",
-    tools: ["runCode"],
+    tools: ["bash"],
   },
   {
     id: "scheduling",
@@ -69,7 +69,7 @@ export const TOOL_GROUPS: ToolGroup[] = [
     id: "credentials",
     label: "Credentials",
     icon: "KeyRound",
-    tools: ["savePasskeyCredential", "loadPasskey"],
+    tools: ["saveAccount", "loadAccount"],
   },
   {
     id: "messaging",

@@ -216,7 +216,7 @@ class BrowserBridge {
 
       // ── Code execution result ──
 
-      if (data.type === "commandResult") {
+      if (data.type === "bashResult") {
         const pending = this.pendingCode.get(data.commandId);
         if (pending) {
           this.pendingCode.delete(data.commandId);
@@ -342,14 +342,14 @@ class BrowserBridge {
     }
   }
 
-  async execute(userId: string, projectId: string, action: BrowserAction, sessionId?: string): Promise<BrowserResult> {
+  async execute(userId: string, projectId: string, action: BrowserAction, sessionId?: string, stealth?: boolean): Promise<BrowserResult> {
     const conn = this.findConnection(userId, projectId);
     if (!conn) {
       throw new Error("Browser companion is not connected. Please start the companion agent on your machine.");
     }
 
     const id = nanoid();
-    const command: BrowserCommand = { id, action, sessionId };
+    const command: BrowserCommand = { id, action, sessionId, stealth };
 
     return new Promise<BrowserResult>((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -366,7 +366,7 @@ class BrowserBridge {
     });
   }
 
-  async createSession(userId: string, projectId: string, sessionId: string): Promise<void> {
+  async createSession(userId: string, projectId: string, sessionId: string, label?: string): Promise<void> {
     const conn = this.findConnection(userId, projectId);
     if (!conn) {
       throw new Error("Browser companion is not connected.");
@@ -382,7 +382,7 @@ class BrowserBridge {
       this.pendingSessions.set(sessionId, { resolve, reject, timer });
       conn.pendingSessionIds.add(sessionId);
 
-      const msg: CompanionControl = { type: "createSession", sessionId };
+      const msg: CompanionControl = { type: "createSession", sessionId, label };
       conn.ws.send(JSON.stringify(msg));
     });
   }
@@ -444,11 +444,11 @@ class BrowserBridge {
     });
   }
 
-  async runCode(
+  async runBash(
     userId: string,
     projectId: string,
     workspaceId: string,
-    entrypoint: string,
+    command: string,
     timeout?: number,
   ): Promise<{
     stdout: string;
@@ -461,22 +461,22 @@ class BrowserBridge {
     if (!conn) throw new Error("Browser companion is not connected.");
 
     const commandId = nanoid();
-    const bridgeTimeout = (timeout ?? 60_000) + 10_000;
+    const bridgeTimeout = (timeout ?? 120_000) + 10_000;
 
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pendingCode.delete(commandId);
         conn.pendingCodeIds.delete(commandId);
-        reject(new Error("Code execution timed out"));
+        reject(new Error("Command execution timed out"));
       }, bridgeTimeout);
 
       this.pendingCode.set(commandId, { resolve, reject, timer });
       conn.pendingCodeIds.add(commandId);
       const msg: CompanionControl = {
-        type: "runCode",
+        type: "runBash",
         workspaceId,
         commandId,
-        entrypoint,
+        command,
         timeout,
       };
       conn.ws.send(JSON.stringify(msg));
