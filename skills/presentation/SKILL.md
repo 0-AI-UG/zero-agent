@@ -88,11 +88,14 @@ Each presentation gets its own folder under `presentations/`. Examples:
 
 ## Setup
 
-Before running any conversion code, install `@0-ai/slide-gen` via bash:
+Run these two commands before any conversion code:
 
 ```
 bash: bun add @0-ai/slide-gen
+bash: bunx playwright install --with-deps chromium 2>&1 | tail -5
 ```
+
+**`@0-ai/slide-gen` is the only package you need.** It handles PNG rendering, PPTX export, and PDF generation internally. Do NOT install other packages like `pptxgenjs`, `playwright`, or `puppeteer` — they are unnecessary and will cause errors.
 
 ## Visual Iteration
 
@@ -163,6 +166,12 @@ Do NOT use these for anything visually important:
 - **Gradients**: `conic-gradient()`, `repeating-*-gradient()`
 - **Layout**: `position: relative` offsets, `position: sticky/fixed`, CSS columns, float
 - **Other**: multiple `background-image` layers, per-corner `border-radius`, `::before`/`::after` text content, CSS animations/transitions
+
+## Critical Rules
+
+- **Always use the exact render/export script templates** from this skill. Do not write custom conversion logic.
+- **Never install additional packages** for rendering or export. `@0-ai/slide-gen` handles everything.
+- **Slides must be 1920x1080px**. No other dimensions.
 
 ## Common Pitfalls
 

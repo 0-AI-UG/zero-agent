@@ -7,9 +7,12 @@ import { insertFile, getFileByS3Key } from "@/db/queries/files.ts";
 import { getFilesByFolderPath } from "@/db/queries/files.ts";
 import { getFolderByPath, createFolder as createFolderRecord } from "@/db/queries/folders.ts";
 import { log } from "@/lib/logger.ts";
+import { truncateText } from "@/lib/truncate-result.ts";
 import path from "node:path";
 
 const toolLog = log.child({ module: "tool:code" });
+
+const MAX_OUTPUT_CHARS = 8_000;
 
 /** Directories whose contents should never be synced back to the project. */
 const IGNORED_DIRS = new Set([".venv", "node_modules", ".tmp", "__pycache__", ".git"]);
@@ -129,7 +132,8 @@ export function createCodeTools(userId: string, projectId: string, chatId: strin
         "  bun add lodash && bun run process.ts\n" +
         "  curl -o data.json https://api.example.com/data\n" +
         "Files changed by the command are automatically synced back to the project.\n" +
-        "All project files are in the current working directory — use relative paths.",
+        "The shell starts in the project workspace directory. All project files are here — use relative paths directly. Do NOT cd into any directory before running commands.\n" +
+        "Output is truncated to ~8KB. For verbose commands (package installs, builds), pipe through `tail -20` or `head -n 50` to capture the relevant portion.",
       inputSchema: z.object({
         command: z.string().describe("The bash command to execute"),
         timeout: z.number().optional().describe("Timeout in ms (default 120000, max 300000)"),
@@ -208,8 +212,8 @@ export function createCodeTools(userId: string, projectId: string, chatId: strin
             : undefined;
 
           return {
-            stdout: result.stdout,
-            stderr: result.stderr,
+            stdout: truncateText(result.stdout, MAX_OUTPUT_CHARS),
+            stderr: truncateText(result.stderr, MAX_OUTPUT_CHARS),
             exitCode: result.exitCode,
             ...(savedFiles.length > 0 ? { savedFiles } : {}),
             ...(pendingDeletions.length > 0 ? { pendingDeletions, pendingDeletionsNote: "These files were deleted during execution. Use the delete tool for each file so the user can confirm the deletions." } : {}),
