@@ -1,4 +1,5 @@
 import { log } from "@/lib/logger.ts";
+import { getSetting } from "@/lib/settings.ts";
 
 const searchLog = log.child({ module: "search" });
 
@@ -56,7 +57,7 @@ export async function search(query: string): Promise<SearchResponse> {
     return cached;
   }
 
-  const apiKey = process.env.BRAVE_SEARCH_API_KEY;
+  const apiKey = getSetting("BRAVE_SEARCH_API_KEY");
   if (!apiKey) {
     throw new Error("BRAVE_SEARCH_API_KEY is not set. Get a free key at https://brave.com/search/api/ and add it to .env");
   }

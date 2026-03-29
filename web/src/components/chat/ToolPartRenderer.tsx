@@ -285,7 +285,7 @@ function WriteFileCard({ output, projectId }: { output: any; projectId?: string 
     );
   }
 
-  // Check registry for custom renderer (e.g. .viz, .slides)
+  // Check registry for custom renderer (e.g. .viz)
   const renderer = findWriteFileRenderer(filename);
   if (renderer) {
     const Component = renderer.component;
@@ -683,7 +683,7 @@ export function ToolCallPart({
   // Streaming input display for content-heavy tools
   if (isLoading && toolName === "writeFile") {
     const inp = (part.input ?? {}) as Record<string, unknown>;
-    // Check for custom loading state based on filename (e.g. .viz, .slides)
+    // Check for custom loading state based on filename (e.g. .viz)
     if (typeof inp.path === "string") {
       const fname = inp.path.split("/").pop() ?? "";
       const customRenderer = findWriteFileRenderer(fname);

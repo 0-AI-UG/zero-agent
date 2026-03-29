@@ -7,7 +7,6 @@ import {
   TableIcon,
   GlobeIcon,
   BracesIcon,
-  PresentationIcon,
   BarChart3Icon,
   PackageIcon,
 } from "lucide-react";
@@ -99,9 +98,6 @@ export function getFileTypeInfo(mimeType: string, filename?: string): FileTypeIn
   }
   if (mimeType === "text/html+viz" || filename?.endsWith(".viz")) {
     return { icon: BarChart3Icon, color: "text-emerald-500", extension: "VIZ" };
-  }
-  if (mimeType === "text/html+slides" || filename?.endsWith(".slides")) {
-    return { icon: PresentationIcon, color: "text-blue-500", extension: "SLIDES" };
   }
   if (mimeType === "text/html" || filename?.endsWith(".html")) {
     return { icon: GlobeIcon, color: "text-violet-500", extension: "HTML" };

@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Node Graph</title>
+<style>
+  :root { --bg: #fff; --text: #2c2c2a; --text-tertiary: #888780; --border: rgba(0,0,0,0.12); --border-emphasis: rgba(0,0,0,0.25); --hl: #7F77DD; --hl-bg: #EEEDFE; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); }
+  svg { display: block; }
+  .node { cursor: grab; }
+  .node:active { cursor: grabbing; }
+  .node rect { fill: var(--bg); stroke: var(--border); stroke-width: 0.5; transition: stroke 0.15s, fill 0.15s; }
+  .node:hover rect { stroke: var(--border-emphasis); stroke-width: 1.5; }
+  .node.hl rect { stroke: var(--hl); stroke-width: 2; fill: var(--hl-bg); }
+  .node text { font-size: 13px; fill: var(--text); text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+  .edge { stroke: var(--text-tertiary); stroke-width: 1.5; fill: none; }
+  .edge.hl { stroke: var(--hl); stroke-width: 2; }
+</style>
+</head>
+<body>
+<svg id="g" width="100%" viewBox="0 0 680 480">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="var(--text-tertiary)"/></marker>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="var(--hl)"/></marker>
+  </defs>
+  <g id="edges"></g><g id="nodes"></g>
+</svg>
+<script>
+  const W=680,H=480,NW=130,NH=40;
+  const nodes=[
+    {id:'gw',label:'API Gateway',x:340,y:60,vx:0,vy:0},
+    {id:'auth',label:'Auth',x:160,y:180,vx:0,vy:0},
+    {id:'users',label:'Users',x:340,y:180,vx:0,vy:0},
+    {id:'orders',label:'Orders',x:520,y:180,vx:0,vy:0},
+    {id:'db',label:'Database',x:250,y:320,vx:0,vy:0},
+    {id:'cache',label:'Cache',x:430,y:320,vx:0,vy:0},
+    {id:'queue',label:'Queue',x:520,y:320,vx:0,vy:0},
+    {id:'notify',label:'Notifications',x:430,y:430,vx:0,vy:0},
+  ];
+  const edges=[
+    ['gw','auth'],['gw','users'],['gw','orders'],
+    ['auth','db'],['users','db'],['users','cache'],
+    ['orders','db'],['orders','queue'],['queue','notify'],['notify','cache'],
+  ];
+  const nm=Object.fromEntries(nodes.map(n=>[n.id,n]));
+  const svg=document.getElementById('g'),eG=document.getElementById('edges'),nG=document.getElementById('nodes');
+
+  // Create elements
+  const eEls=edges.map(([s,t])=>{const l=document.createElementNS('http://www.w3.org/2000/svg','line');l.classList.add('edge');l.setAttribute('marker-end','url(#a)');l.dataset.s=s;l.dataset.t=t;eG.appendChild(l);return l;});
+  nodes.forEach(n=>{const g=document.createElementNS('http://www.w3.org/2000/svg','g');g.classList.add('node');g.dataset.id=n.id;g.innerHTML=`<rect width="${NW}" height="${NH}" rx="8"/><text></text>`;g.querySelector('text').textContent=n.label;nG.appendChild(g);n.el=g;});
+
+  function render(){
+    nodes.forEach(n=>{n.el.querySelector('rect').setAttribute('x',n.x-NW/2);n.el.querySelector('rect').setAttribute('y',n.y-NH/2);n.el.querySelector('text').setAttribute('x',n.x);n.el.querySelector('text').setAttribute('y',n.y);});
+    eEls.forEach(l=>{const s=nm[l.dataset.s],t=nm[l.dataset.t],dx=t.x-s.x,dy=t.y-s.y,d=Math.sqrt(dx*dx+dy*dy)||1,ux=dx/d,uy=dy/d;l.setAttribute('x1',s.x+ux*(NW/2+2));l.setAttribute('y1',s.y+uy*(NH/2+2));l.setAttribute('x2',t.x-ux*(NW/2+8));l.setAttribute('y2',t.y-uy*(NH/2+8));});
+  }
+
+  // Force sim
+  let cx=W/2,cy=H/2,frame=0;
+  function tick(){
+    for(let i=0;i<nodes.length;i++)for(let j=i+1;j<nodes.length;j++){const a=nodes[i],b=nodes[j],dx=b.x-a.x,dy=b.y-a.y,d=Math.max(Math.sqrt(dx*dx+dy*dy),1),f=1200/(d*d);a.vx-=dx/d*f;a.vy-=dy/d*f;b.vx+=dx/d*f;b.vy+=dy/d*f;}
+    edges.forEach(([s,t])=>{const a=nm[s],b=nm[t],dx=b.x-a.x,dy=b.y-a.y,d=Math.max(Math.sqrt(dx*dx+dy*dy),1),f=(d-140)*0.04;a.vx+=dx/d*f;a.vy+=dy/d*f;b.vx-=dx/d*f;b.vy-=dy/d*f;});
+    nodes.forEach(n=>{n.vx+=(cx-n.x)*0.008;n.vy+=(cy-n.y)*0.008;n.vx*=0.85;n.vy*=0.85;n.x+=n.vx;n.y+=n.vy;n.x=Math.max(NW/2,Math.min(W-NW/2,n.x));n.y=Math.max(NH/2,Math.min(H-NH/2,n.y));});
+    render();if(++frame<200)requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+
+  // Drag
+  let dn=null,off={x:0,y:0};
+  svg.addEventListener('mousedown',e=>{const g=e.target.closest('[data-id]');if(!g)return;frame=200;dn=nm[g.dataset.id];const pt=svg.createSVGPoint();pt.x=e.clientX;pt.y=e.clientY;const p=pt.matrixTransform(svg.getScreenCTM().inverse());off={x:p.x-dn.x,y:p.y-dn.y};e.preventDefault();});
+  svg.addEventListener('mousemove',e=>{if(!dn)return;const pt=svg.createSVGPoint();pt.x=e.clientX;pt.y=e.clientY;const p=pt.matrixTransform(svg.getScreenCTM().inverse());dn.x=Math.max(NW/2,Math.min(W-NW/2,p.x-off.x));dn.y=Math.max(NH/2,Math.min(H-NH/2,p.y-off.y));render();});
+  svg.addEventListener('mouseup',()=>{dn=null;});
+
+  // Hover highlight
+  svg.addEventListener('mouseover',e=>{const g=e.target.closest('[data-id]');if(!g||dn)return;const id=g.dataset.id;g.classList.add('hl');eEls.forEach(l=>{if(l.dataset.s===id||l.dataset.t===id){l.classList.add('hl');l.setAttribute('marker-end','url(#ah)');}});});
+  svg.addEventListener('mouseout',e=>{const g=e.target.closest('[data-id]');if(!g)return;g.classList.remove('hl');eEls.forEach(l=>{l.classList.remove('hl');l.setAttribute('marker-end','url(#a)');});});
+</script>
+</body>
+</html>

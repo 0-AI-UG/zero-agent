@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router";
 import { useCreateProject } from "@/api/projects";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,6 +17,7 @@ import {
 import { Plus } from "lucide-react";
 
 export function CreateProjectDialog() {
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -29,10 +31,11 @@ export function CreateProjectDialog() {
     createProject.mutate(
       { name: name.trim(), description: description.trim() },
       {
-        onSuccess: () => {
+        onSuccess: (project) => {
           setOpen(false);
           setName("");
           setDescription("");
+          navigate(`/projects/${project.id}`);
         },
       },
     );

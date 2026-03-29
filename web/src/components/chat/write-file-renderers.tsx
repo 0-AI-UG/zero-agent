@@ -1,17 +1,13 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import type { LucideIcon } from "lucide-react";
 import {
-  BarChart3Icon,
-  PresentationIcon,
+  PenToolIcon,
   DownloadIcon,
-  ChevronLeftIcon,
-  ChevronRightIcon,
   MaximizeIcon,
   Loader2Icon,
 } from "lucide-react";
 import { usePresignedUrl } from "@/hooks/use-presigned-url";
 import { useFilesStore } from "@/stores/files-store";
-import { useConvertSlides, useSlidePreviews } from "@/api/slides";
 
 // ---------------------------------------------------------------------------
 // Registry types
@@ -41,16 +37,7 @@ export const writeFileRenderers: WriteFileRendererEntry[] = [
     loading: {
       label: "Created visualization",
       activeLabel: "Creating visualization",
-      icon: BarChart3Icon,
-    },
-  },
-  {
-    match: (f) => f.endsWith(".slides"),
-    component: SlidePreview,
-    loading: {
-      label: "Built presentation",
-      activeLabel: "Building presentation",
-      icon: PresentationIcon,
+      icon: PenToolIcon,
     },
   },
 ];
@@ -87,18 +74,60 @@ function useHtmlContent(projectId: string, fileId: string) {
 }
 
 // ---------------------------------------------------------------------------
-// VizPreview — full-width, no card wrapper
+// Resize script injected into viz HTML for dynamic height
+// ---------------------------------------------------------------------------
+
+const RESIZE_SCRIPT = `<script>
+(function(){
+  var last=0,tid=0;
+  function post(){
+    var h=document.documentElement.scrollHeight;
+    if(h!==last){last=h;window.parent.postMessage({type:'viz-resize',height:h},'*');}
+  }
+  new ResizeObserver(function(){clearTimeout(tid);tid=setTimeout(post,80);}).observe(document.body);
+  setTimeout(post,0);
+  setTimeout(post,300);
+})();
+</script>`;
+
+function injectResizeScript(html: string): string {
+  const idx = html.lastIndexOf("</body>");
+  if (idx !== -1) {
+    return html.slice(0, idx) + RESIZE_SCRIPT + html.slice(idx);
+  }
+  return html + RESIZE_SCRIPT;
+}
+
+// ---------------------------------------------------------------------------
+// VizPreview — dynamic height, canvas feel
 // ---------------------------------------------------------------------------
 
 function VizPreview({ fileId, projectId, filename }: WriteFileRendererProps) {
   const { htmlContent, loading, url } = useHtmlContent(projectId, fileId);
   const { openFilePreview } = useFilesStore();
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [iframeHeight, setIframeHeight] = useState(300);
+
+  const handleMessage = useCallback((e: MessageEvent) => {
+    if (
+      e.source === iframeRef.current?.contentWindow &&
+      e.data?.type === "viz-resize" &&
+      typeof e.data.height === "number"
+    ) {
+      setIframeHeight(Math.max(100, e.data.height));
+    }
+  }, []);
+
+  useEffect(() => {
+    window.addEventListener("message", handleMessage);
+    return () => window.removeEventListener("message", handleMessage);
+  }, [handleMessage]);
 
   if (loading || !htmlContent) {
     return (
       <div
-        className="w-full my-2 flex items-center justify-center bg-muted/30 rounded-lg"
-        style={{ height: 700 }}
+        className="w-full my-1 flex items-center justify-center bg-muted/30 rounded-lg"
+        style={{ height: 200 }}
       >
         <Loader2Icon className="size-5 animate-spin text-muted-foreground" />
       </div>
@@ -106,16 +135,20 @@ function VizPreview({ fileId, projectId, filename }: WriteFileRendererProps) {
   }
 
   return (
-    <div className="w-full my-2">
+    <div className="group w-full my-1 relative">
       <iframe
-        srcDoc={htmlContent}
+        ref={iframeRef}
+        srcDoc={injectResizeScript(htmlContent)}
         sandbox="allow-scripts"
         title={filename}
-        className="w-full rounded-lg border-none"
-        style={{ height: 700 }}
+        className="w-full border-none"
+        style={{
+          height: iframeHeight,
+          transition: "height 0.15s ease",
+        }}
       />
-      <div className="flex items-center gap-1.5 mt-1.5 px-0.5 text-xs text-muted-foreground">
-        <BarChart3Icon className="size-3 shrink-0" />
+      <div className="flex items-center gap-1.5 mt-1 px-0.5 text-xs text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity">
+        <PenToolIcon className="size-3 shrink-0" />
         <span className="truncate">{filename}</span>
         <div className="ml-auto flex items-center gap-2">
           <button
@@ -134,116 +167,6 @@ function VizPreview({ fileId, projectId, filename }: WriteFileRendererProps) {
               <DownloadIcon className="size-3" />
             </button>
           )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// SlidePreview — slide navigator with prev/next
-// ---------------------------------------------------------------------------
-
-function SlidePreview({ fileId, projectId, filename }: WriteFileRendererProps) {
-  const { openFilePreview } = useFilesStore();
-  const convertSlides = useConvertSlides(projectId);
-  const { data, isLoading } = useSlidePreviews(projectId, fileId);
-  const [currentSlide, setCurrentSlide] = useState(0);
-
-  const totalSlides = data?.slideCount ?? 0;
-
-  const prev = () => setCurrentSlide((c) => Math.max(0, c - 1));
-  const next = () => setCurrentSlide((c) => Math.min(totalSlides - 1, c + 1));
-
-  const handleDownloadPptx = () => {
-    convertSlides.mutate(fileId, {
-      onSuccess: (data) => {
-        window.open(data.pptxUrl);
-      },
-    });
-  };
-
-  if (isLoading || !data) {
-    return (
-      <div className="w-full my-2">
-        <div
-          className="w-full flex items-center justify-center bg-black/50 rounded-lg"
-          style={{ aspectRatio: "16/9" }}
-        >
-          <Loader2Icon className="size-5 animate-spin text-muted-foreground" />
-        </div>
-      </div>
-    );
-  }
-
-  if (totalSlides === 0) {
-    return (
-      <div className="w-full my-2">
-        <div
-          className="w-full flex items-center justify-center bg-black/50 rounded-lg text-muted-foreground text-xs"
-          style={{ aspectRatio: "16/9" }}
-        >
-          No slides found
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="w-full my-2">
-      <div
-        className="relative overflow-hidden bg-black rounded-lg"
-        style={{ aspectRatio: "16/9" }}
-      >
-        <img
-          src={data.urls[currentSlide]}
-          alt={`${filename} — slide ${currentSlide + 1}`}
-          className="w-full h-full object-contain"
-        />
-      </div>
-      <div className="flex items-center justify-between mt-2 px-0.5 text-xs text-muted-foreground">
-        <div className="flex items-center gap-1.5">
-          <PresentationIcon className="size-3 shrink-0" />
-          <span className="truncate">{filename}</span>
-        </div>
-        <div className="flex items-center gap-1">
-          <button
-            onClick={prev}
-            disabled={currentSlide === 0}
-            className="p-1 rounded hover:bg-muted disabled:opacity-30 transition-colors"
-          >
-            <ChevronLeftIcon className="size-3.5" />
-          </button>
-          <span className="min-w-[48px] text-center tabular-nums">
-            {currentSlide + 1} / {totalSlides}
-          </span>
-          <button
-            onClick={next}
-            disabled={currentSlide === totalSlides - 1}
-            className="p-1 rounded hover:bg-muted disabled:opacity-30 transition-colors"
-          >
-            <ChevronRightIcon className="size-3.5" />
-          </button>
-          <div className="w-px h-3 bg-border mx-1" />
-          <button
-            onClick={() => openFilePreview(fileId)}
-            className="p-1 rounded hover:bg-muted transition-colors"
-            title="Full preview"
-          >
-            <MaximizeIcon className="size-3" />
-          </button>
-          <button
-            onClick={handleDownloadPptx}
-            disabled={convertSlides.isPending}
-            className="p-1 rounded hover:bg-muted disabled:opacity-50 transition-colors"
-            title="Download PPTX"
-          >
-            {convertSlides.isPending ? (
-              <Loader2Icon className="size-3 animate-spin" />
-            ) : (
-              <DownloadIcon className="size-3" />
-            )}
-          </button>
         </div>
       </div>
     </div>

@@ -29,6 +29,7 @@ export function SetupPage() {
   // Step 2 fields
   const [openrouterApiKey, setOpenrouterApiKey] = useState("");
   const [openrouterModel, setOpenrouterModel] = useState("");
+  const [braveSearchApiKey, setBraveSearchApiKey] = useState("");
 
   const handleNext = () => {
     setError(null);
@@ -63,6 +64,7 @@ export function SetupPage() {
         password,
         openrouterApiKey,
         openrouterModel: openrouterModel || undefined,
+        braveSearchApiKey: braveSearchApiKey || undefined,
       });
       useAuthStore.getState().login(token, user);
       navigate("/", { replace: true });
@@ -172,6 +174,16 @@ export function SetupPage() {
                     value={openrouterModel}
                     onChange={(e) => setOpenrouterModel(e.target.value)}
                     placeholder="minimax/minimax-m2.7"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="setup-brave-key">Brave Search API Key (optional)</Label>
+                  <Input
+                    id="setup-brave-key"
+                    type="password"
+                    value={braveSearchApiKey}
+                    onChange={(e) => setBraveSearchApiKey(e.target.value)}
+                    placeholder="BSA..."
                   />
                 </div>
                 <div className="flex gap-2">

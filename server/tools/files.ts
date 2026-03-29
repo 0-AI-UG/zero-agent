@@ -11,7 +11,7 @@ import { indexFileContent, searchFileContent, removeFileIndex } from "@/db/queri
 import { log } from "@/lib/logger.ts";
 import { isModelMultimodal } from "@/config/models.ts";
 import { visionModel } from "@/lib/openrouter.ts";
-import sharp from "sharp";
+import { Jimp } from "jimp";
 
 const MAX_READ_CHARS = 15_000;
 
@@ -29,13 +29,14 @@ async function resizeImageForModel(imageData: Buffer, mediaType: string): Promis
     if (mediaType === "image/svg+xml") {
       return { buffer: imageData, mediaType };
     }
-    const resized = await sharp(imageData)
-      .resize(MODEL_IMAGE_MAX_WIDTH, undefined, { withoutEnlargement: true })
-      .jpeg({ quality: MODEL_IMAGE_QUALITY })
-      .toBuffer();
+    const image = await Jimp.read(imageData);
+    if (image.width > MODEL_IMAGE_MAX_WIDTH) {
+      image.resize({ w: MODEL_IMAGE_MAX_WIDTH });
+    }
+    const resized = await image.getBuffer("image/jpeg", { quality: MODEL_IMAGE_QUALITY });
     return { buffer: resized, mediaType: "image/jpeg" };
   } catch {
-    // If sharp fails (e.g. unsupported format), return original
+    // If resize fails (e.g. unsupported format), return original
     return { buffer: imageData, mediaType };
   }
 }
@@ -80,7 +81,6 @@ function guessMimeType(filename: string): string {
     gif: "image/gif",
     pdf: "application/pdf",
     html: "text/html",
-    slides: "text/html+slides",
     viz: "text/html+viz",
   };
   return map[ext ?? ""] ?? "application/octet-stream";

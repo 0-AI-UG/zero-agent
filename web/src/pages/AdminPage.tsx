@@ -169,11 +169,74 @@ export function AdminPage() {
   );
 }
 
+function ApiKeyField({
+  label,
+  placeholder,
+  currentValue,
+  settingKey,
+}: {
+  label: string;
+  placeholder: string;
+  currentValue: string | undefined;
+  settingKey: string;
+}) {
+  const updateSettings = useUpdateSettings();
+  const [value, setValue] = useState("");
+  const [show, setShow] = useState(false);
+
+  return (
+    <div className="space-y-2">
+      <label className="text-sm font-medium">{label}</label>
+      <p className="text-xs text-muted-foreground">
+        Current: {currentValue ?? "Not set"}
+      </p>
+      <div className="flex gap-2">
+        <div className="relative flex-1">
+          <Input
+            type={show ? "text" : "password"}
+            placeholder={placeholder}
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            className="h-8 text-xs pr-8"
+          />
+          <button
+            type="button"
+            onClick={() => setShow(!show)}
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+          >
+            {show ? (
+              <EyeOffIcon className="size-3.5" />
+            ) : (
+              <EyeIcon className="size-3.5" />
+            )}
+          </button>
+        </div>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={!value || updateSettings.isPending}
+          onClick={() => {
+            updateSettings.mutate(
+              { [settingKey]: value },
+              {
+                onSuccess: () => {
+                  setValue("");
+                  toast.success(`${label} updated`);
+                },
+                onError: (err) => toast.error(err.message),
+              }
+            );
+          }}
+        >
+          Update
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function InstanceSettingsSection() {
   const { data: settings } = useAdminSettings();
-  const updateSettings = useUpdateSettings();
-  const [apiKey, setApiKey] = useState("");
-  const [showKey, setShowKey] = useState(false);
 
   return (
     <section className="space-y-4">
@@ -182,53 +245,18 @@ function InstanceSettingsSection() {
         <h3 className="text-sm font-semibold">Instance Settings</h3>
       </div>
       <div className="rounded-lg border p-4 space-y-4">
-        <div className="space-y-2">
-          <label className="text-sm font-medium">OpenRouter API Key</label>
-          <p className="text-xs text-muted-foreground">
-            Current: {settings?.OPENROUTER_API_KEY ?? "Not set"}
-          </p>
-          <div className="flex gap-2">
-            <div className="relative flex-1">
-              <Input
-                type={showKey ? "text" : "password"}
-                placeholder="sk-or-..."
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                className="h-8 text-xs pr-8"
-              />
-              <button
-                type="button"
-                onClick={() => setShowKey(!showKey)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-              >
-                {showKey ? (
-                  <EyeOffIcon className="size-3.5" />
-                ) : (
-                  <EyeIcon className="size-3.5" />
-                )}
-              </button>
-            </div>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={!apiKey || updateSettings.isPending}
-              onClick={() => {
-                updateSettings.mutate(
-                  { OPENROUTER_API_KEY: apiKey },
-                  {
-                    onSuccess: () => {
-                      setApiKey("");
-                      toast.success("API key updated");
-                    },
-                    onError: (err) => toast.error(err.message),
-                  }
-                );
-              }}
-            >
-              Update
-            </Button>
-          </div>
-        </div>
+        <ApiKeyField
+          label="OpenRouter API Key"
+          placeholder="sk-or-..."
+          currentValue={settings?.OPENROUTER_API_KEY}
+          settingKey="OPENROUTER_API_KEY"
+        />
+        <ApiKeyField
+          label="Brave Search API Key"
+          placeholder="BSA..."
+          currentValue={settings?.BRAVE_SEARCH_API_KEY}
+          settingKey="BRAVE_SEARCH_API_KEY"
+        />
       </div>
     </section>
   );
@@ -611,7 +639,7 @@ function getDateRange(range: DateRange): { from?: string; to?: string } {
 
 function UsageSection() {
   const [range, setRange] = useState<DateRange>("30d");
-  const opts = getDateRange(range);
+  const opts = useMemo(() => getDateRange(range), [range]);
 
   const { data: summary } = useUsageSummary(opts);
   const { data: byModel } = useUsageByModel(opts);

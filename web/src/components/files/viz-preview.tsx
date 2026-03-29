@@ -56,7 +56,7 @@ export function VizPreview({ file, content }: VizPreviewProps) {
         srcDoc={content}
         sandbox="allow-scripts"
         title={file.filename}
-        className="w-full flex-1 min-h-[700px] rounded-md border bg-white"
+        className="w-full flex-1 rounded-md border bg-white"
       />
     </div>
   );

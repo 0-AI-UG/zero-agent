@@ -5,168 +5,49 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Donut Chart</title>
 <style>
-  :root {
-    --color-bg: #ffffff;
-    --color-surface: #ffffff;
-    --color-surface-muted: #f5f5f5;
-    --color-border: #e5e5e5;
-    --color-text: #1b1b1b;
-    --color-text-muted: #737373;
-  }
+  :root { --bg: #fff; --text: #2c2c2a; --text-t: #888780; }
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body { height: 100%; overflow: hidden; }
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-    background: var(--color-bg);
-    color: var(--color-text);
-    padding: 0.75rem;
-    display: flex;
-    flex-direction: column;
-  }
-  h1 { font-size: 0.875rem; font-weight: 500; margin-bottom: 0.5rem; }
-  .chart-container {
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-radius: 0.625rem;
-    padding: 0.75rem;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
-    display: flex;
-    align-items: center;
-    gap: 1.5rem;
-    flex: 1;
-    min-height: 0;
-  }
-  .donut-wrapper {
-    position: relative;
-    width: 180px;
-    height: 180px;
-    flex-shrink: 0;
-  }
-  svg { width: 100%; height: 100%; }
-  .donut-segment {
-    cursor: pointer;
-    transition: opacity 0.15s ease;
-  }
-  .donut-segment:hover { opacity: 0.8; }
-  .donut-center {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    text-align: center;
-  }
-  .donut-total { font-size: 1.25rem; font-weight: 500; }
-  .donut-label { font-size: 0.75rem; color: #737373; }
-  .legend-list { display: flex; flex-direction: column; gap: 0.75rem; flex: 1; min-width: 160px; }
-  .legend-row {
-    display: flex;
-    align-items: center;
-    gap: 0.625rem;
-    font-size: 0.875rem;
-    cursor: pointer;
-    padding: 0.375rem 0.5rem;
-    border-radius: 0.375rem;
-    transition: background 0.15s ease;
-  }
-  .legend-row:hover { background: var(--color-surface-muted); }
-  .legend-dot { width: 0.75rem; height: 0.75rem; border-radius: 50%; flex-shrink: 0; }
-  .legend-name { flex: 1; }
-  .legend-value { font-weight: 600; }
-  .legend-pct { color: #737373; font-size: 0.75rem; min-width: 3rem; text-align: right; }
-  .tooltip-box {
-    display: none;
-    position: absolute;
-    background: #1b1b1b;
-    color: #ffffff;
-    padding: 0.375rem 0.625rem;
-    border-radius: 0.25rem;
-    font-size: 0.75rem;
-    white-space: nowrap;
-    pointer-events: none;
-    z-index: 10;
-  }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); }
+  .wrap { display: flex; align-items: center; gap: 24px; padding: 12px; }
+  .donut { position: relative; width: 160px; height: 160px; flex-shrink: 0; }
+  .donut svg { width: 100%; height: 100%; }
+  .seg { cursor: pointer; transition: opacity 0.15s; }
+  .seg:hover { opacity: 0.8; }
+  .center { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); text-align: center; }
+  .center-val { font-size: 20px; font-weight: 500; }
+  .center-lbl { font-size: 11px; color: var(--text-t); }
+  .legend { display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
+  .leg-row { display: flex; align-items: center; gap: 8px; }
+  .leg-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .leg-pct { color: var(--text-t); font-size: 11px; margin-left: auto; }
 </style>
 </head>
 <body>
-  <h1>Donut Chart</h1>
-  <div class="chart-container">
-    <div class="donut-wrapper" id="donutWrapper">
-      <svg viewBox="0 0 220 220" id="donut" role="img" aria-label="Donut chart"></svg>
-      <div class="donut-center">
-        <div class="donut-total" id="totalValue"></div>
-        <div class="donut-label">Total</div>
-      </div>
-      <div class="tooltip-box" id="tooltip"></div>
-    </div>
-    <div class="legend-list" id="legend"></div>
+<div class="wrap">
+  <div class="donut">
+    <svg viewBox="0 0 200 200" id="d"></svg>
+    <div class="center"><div class="center-val" id="tot"></div><div class="center-lbl">Total</div></div>
   </div>
-
-  <script>
-    // <!-- DATA -->
-    const data = [
-      { name: "Engineering", value: 42, color: "#005bd9" },
-      { name: "Marketing", value: 28, color: "#4d8ce8" },
-      { name: "Sales", value: 18, color: "#94b8f0" },
-      { name: "Support", value: 12, color: "#c7d9f7" },
-    ];
-
-    const total = data.reduce((s, d) => s + d.value, 0);
-    document.getElementById("totalValue").textContent = total;
-
-    const svg = document.getElementById("donut");
-    const tooltip = document.getElementById("tooltip");
-    const legend = document.getElementById("legend");
-    const cx = 110, cy = 110, r = 80, strokeWidth = 28;
-    const circumference = 2 * Math.PI * r;
-    let offset = 0;
-
-    data.forEach(item => {
-      const pct = item.value / total;
-      const dashLength = pct * circumference;
-      const gap = circumference - dashLength;
-
-      const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-      circle.setAttribute("cx", cx);
-      circle.setAttribute("cy", cy);
-      circle.setAttribute("r", r);
-      circle.setAttribute("fill", "none");
-      circle.setAttribute("stroke", item.color);
-      circle.setAttribute("stroke-width", strokeWidth);
-      circle.setAttribute("stroke-dasharray", `${dashLength} ${gap}`);
-      circle.setAttribute("stroke-dashoffset", -offset);
-      circle.setAttribute("transform", `rotate(-90 ${cx} ${cy})`);
-      circle.setAttribute("class", "donut-segment");
-      circle.setAttribute("role", "graphics-symbol");
-      circle.setAttribute("aria-label", `${item.name}: ${item.value} (${(pct * 100).toFixed(1)}%)`);
-
-      circle.addEventListener("mouseenter", (e) => {
-        tooltip.style.display = "block";
-        tooltip.textContent = `${item.name}: ${item.value} (${(pct * 100).toFixed(1)}%)`;
-        const rect = document.getElementById("donutWrapper").getBoundingClientRect();
-        tooltip.style.left = (e.clientX - rect.left + 10) + "px";
-        tooltip.style.top = (e.clientY - rect.top - 30) + "px";
-      });
-      circle.addEventListener("mousemove", (e) => {
-        const rect = document.getElementById("donutWrapper").getBoundingClientRect();
-        tooltip.style.left = (e.clientX - rect.left + 10) + "px";
-        tooltip.style.top = (e.clientY - rect.top - 30) + "px";
-      });
-      circle.addEventListener("mouseleave", () => { tooltip.style.display = "none"; });
-
-      svg.appendChild(circle);
-      offset += dashLength;
-
-      // Legend row
-      const row = document.createElement("div");
-      row.className = "legend-row";
-      row.innerHTML = `
-        <div class="legend-dot" style="background:${item.color}"></div>
-        <div class="legend-name">${item.name}</div>
-        <div class="legend-value">${item.value}</div>
-        <div class="legend-pct">${(pct * 100).toFixed(1)}%</div>
-      `;
-      legend.appendChild(row);
-    });
-  </script>
+  <div class="legend" id="leg"></div>
+</div>
+<script>
+  const data = [
+    { name: 'Engineering', value: 42, color: '#534AB7' },
+    { name: 'Marketing', value: 28, color: '#0F6E56' },
+    { name: 'Sales', value: 18, color: '#D85A30' },
+    { name: 'Support', value: 12, color: '#185FA5' },
+  ];
+  const total = data.reduce((s, d) => s + d.value, 0);
+  document.getElementById('tot').textContent = total;
+  const svg = document.getElementById('d');
+  const cx = 100, cy = 100, r = 70, sw = 24, circ = 2 * Math.PI * r;
+  let off = 0;
+  data.forEach(d => {
+    const pct = d.value / total, dash = pct * circ, gap = circ - dash;
+    svg.innerHTML += `<circle class="seg" cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${d.color}" stroke-width="${sw}" stroke-dasharray="${dash} ${gap}" stroke-dashoffset="${-off}" transform="rotate(-90 ${cx} ${cy})" aria-label="${d.name}: ${d.value}"><title>${d.name}: ${d.value} (${(pct*100).toFixed(1)}%)</title></circle>`;
+    off += dash;
+    document.getElementById('leg').innerHTML += `<div class="leg-row"><div class="leg-dot" style="background:${d.color}"></div><span>${d.name}</span><span class="leg-pct">${(pct*100).toFixed(1)}%</span></div>`;
+  });
+</script>
 </body>
 </html>

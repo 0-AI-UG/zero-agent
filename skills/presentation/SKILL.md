@@ -5,7 +5,7 @@ description: >-
   pitch deck, report, keynote, or any slide-based content that can be exported
   to PPTX.
 metadata:
-  version: "1.0.0"
+  version: "2.0.0"
   platform: presentation
   login_required: false
   requires:
@@ -24,11 +24,11 @@ metadata:
 
 # Presentation
 
-Create slide decks that render inline as HTML and can be downloaded as PPTX. Use this skill whenever the user wants to build a presentation, pitch deck, report, or any slide-based content.
+Create slide decks that render as HTML and can be exported to PPTX/PNG via code execution. Use this skill whenever the user wants to build a presentation, pitch deck, report, or any slide-based content.
 
 ## Architecture Rules
 
-Every presentation is a **single, self-contained HTML file** with all CSS and JS inline, saved with the `.slides` extension. The file renders inside a sandboxed iframe and can be converted to native PPTX via the `@0-ai/slide-gen` package.
+Every presentation is a **single, self-contained HTML file** with all CSS and JS inline. The file can be converted to PPTX via the `@0-ai/slide-gen` package running in `runCode`.
 
 ### Slide Structure
 
@@ -36,7 +36,7 @@ Each slide is a `<div class="slide">` at exactly **1920x1080px** with `overflow:
 
 ### Boilerplate
 
-Every `.slides` file must start with this structure:
+Every presentation file must start with this structure:
 
 ```html
 <!DOCTYPE html>
@@ -74,27 +74,46 @@ Every `.slides` file must start with this structure:
 ## Workflow
 
 1. **Analyze the content** — Understand the topic, key messages, and how many slides are needed
-2. **Compose the deck** — Write all slides in a single `.slides` file following the supported CSS rules below
-3. **Write the file** — Save as `.slides` in its own folder under `presentations/`
-4. **Render & review** — Render the slides to PNG and visually inspect them, then iterate
+2. **Compose the deck** — Write all slides in a single HTML file following the supported CSS rules below
+3. **Write the file** — Save as `.html` in its own folder under `presentations/`
+4. **Render & review** — Use `runCode` to render the slides to PNG and visually inspect them, then iterate
+5. **Export** — Ask the user if they'd like a PPTX. If yes, run the export via `runCode`
 
 ## File Naming
 
 Each presentation gets its own folder under `presentations/`. Examples:
-- `presentations/q1-revenue-report/q1-revenue-report.slides`
-- `presentations/product-launch-pitch/product-launch-pitch.slides`
-- `presentations/team-onboarding/team-onboarding.slides`
+- `presentations/q1-revenue-report/q1-revenue-report.html`
+- `presentations/product-launch-pitch/product-launch-pitch.html`
+- `presentations/team-onboarding/team-onboarding.html`
+
+## Setup
+
+Before running any conversion code, ensure `@0-ai/slide-gen` is available. Write a `package.json` if one doesn't exist:
+
+```js
+// setup.js
+import { writeFileSync, existsSync, readFileSync } from "node:fs";
+
+const pkgPath = "package.json";
+let pkg = existsSync(pkgPath) ? JSON.parse(readFileSync(pkgPath, "utf-8")) : {};
+pkg.dependencies = pkg.dependencies || {};
+pkg.dependencies["@0-ai/slide-gen"] = "latest";
+writeFileSync(pkgPath, JSON.stringify(pkg, null, 2));
+console.log("Dependencies updated — bun will auto-install");
+```
+
+Run this once with `runCode`. The companion auto-installs when `package.json` changes.
 
 ## Visual Iteration
 
-After writing or editing a `.slides` file, render it to PNG images so you can visually verify the result. Write a small script and run it with `runCode`:
+After writing or editing a presentation file, render it to PNG so you can visually verify the result:
 
 ```js
 // render-preview.js
 import { convertHtmlBuffers } from "@0-ai/slide-gen";
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 
-const html = readFileSync("presentations/my-deck/my-deck.slides", "utf-8");
+const html = readFileSync("presentations/my-deck/my-deck.html", "utf-8");
 const result = await convertHtmlBuffers({ html, noPdf: true, noPptx: true, noPng: false });
 
 for (const [i, buf] of result.pngBuffers.entries()) {
@@ -103,7 +122,22 @@ for (const [i, buf] of result.pngBuffers.entries()) {
 console.log(`Rendered ${result.pngBuffers.length} slide(s)`);
 ```
 
-Then read the generated PNG files with `readFile` to see what each slide looks like. If the layout, spacing, or content needs adjustment, edit the `.slides` file and re-render until the result looks good.
+Then read the generated PNG files with `readFile` to see what each slide looks like. If the layout, spacing, or content needs adjustment, edit the HTML file and re-render until the result looks good.
+
+## PPTX Export
+
+After the user approves the slides, ask if they'd like to download as PPTX. If yes:
+
+```js
+// export-pptx.js
+import { convertHtmlBuffers } from "@0-ai/slide-gen";
+import { readFileSync, writeFileSync } from "node:fs";
+
+const html = readFileSync("presentations/my-deck/my-deck.html", "utf-8");
+const result = await convertHtmlBuffers({ html, noPdf: true, noPng: true, noPptx: false });
+writeFileSync("presentations/my-deck/my-deck.pptx", result.pptxBuffer);
+console.log("PPTX exported");
+```
 
 ## Supported CSS
 

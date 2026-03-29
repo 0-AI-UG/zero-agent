@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mind Map</title>
+<style>
+  :root { --bg: #fff; --text: #2c2c2a; --text-s: #5f5e5a; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); }
+  svg { display: block; }
+  .branch { fill: none; stroke-width: 2; }
+  .cn { fill: #EEEDFE; stroke: #7F77DD; stroke-width: 1.5; }
+  .cl { font-size: 14px; font-weight: 500; fill: #26215C; text-anchor: middle; dominant-baseline: central; }
+  .bn { stroke-width: 0.5; transition: stroke-width 0.15s; }
+  .bn:hover { stroke-width: 1.5; }
+  .bl { font-size: 13px; dominant-baseline: central; pointer-events: none; text-anchor: middle; }
+  .ll { font-size: 11px; fill: var(--text-s); dominant-baseline: central; pointer-events: none; }
+  .leaf-line { stroke-width: 1; fill: none; opacity: 0.4; }
+  @keyframes dl { from { stroke-dashoffset: var(--l); } to { stroke-dashoffset: 0; } }
+  @keyframes fi { from { opacity: 0; } to { opacity: 1; } }
+</style>
+</head>
+<body>
+<svg id="m" width="100%" viewBox="0 0 680 520"><g id="br"></g><g id="nd"></g></svg>
+<script>
+  const CX=340,CY=260,BR=150,LR=90;
+  const ramps=[
+    {bg:'#EEEDFE',s:'#7F77DD',t:'#534AB7'},
+    {bg:'#E1F5EE',s:'#1D9E75',t:'#0F6E56'},
+    {bg:'#FAECE7',s:'#D85A30',t:'#993C1D'},
+    {bg:'#E6F1FB',s:'#378ADD',t:'#185FA5'},
+    {bg:'#EAF3DE',s:'#639922',t:'#3B6D11'},
+  ];
+  const tree={label:'Project Plan',branches:[
+    {label:'Research',leaves:['User interviews','Competitor analysis','Market sizing']},
+    {label:'Design',leaves:['Wireframes','Prototypes','Design system']},
+    {label:'Engineering',leaves:['Frontend','Backend','Infrastructure']},
+    {label:'Launch',leaves:['Beta testing','Marketing','Docs']},
+    {label:'Growth',leaves:['Analytics','Feedback','Iteration']},
+  ]};
+  const brG=document.getElementById('br'),ndG=document.getElementById('nd');
+  const n=tree.branches.length,step=2*Math.PI/n,start=-Math.PI/2;
+  let bH='',nH='';
+  nH+=`<circle class="cn" cx="${CX}" cy="${CY}" r="36"/>`;
+  nH+=`<text class="cl" x="${CX}" y="${CY}">${tree.label}</text>`;
+  tree.branches.forEach((b,i)=>{
+    const a=start+i*step,r=ramps[i%ramps.length];
+    const bx=CX+Math.cos(a)*BR,by=CY+Math.sin(a)*BR;
+    bH+=`<path class="branch" d="M${CX} ${CY}Q${CX+Math.cos(a)*BR*0.4} ${CY+Math.sin(a)*BR*0.4} ${bx} ${by}" stroke="${r.s}" style="stroke-dasharray:var(--l);stroke-dashoffset:var(--l);--l:200;animation:dl 0.6s cubic-bezier(0.4,0,0.2,1) ${i*100}ms forwards"/>`;
+    const w=b.label.length*8+24;
+    nH+=`<g style="animation:fi 0.4s ease ${i*100+200}ms both"><rect class="bn" x="${bx-w/2}" y="${by-16}" width="${w}" height="32" rx="16" fill="${r.bg}" stroke="${r.s}"/><text class="bl" x="${bx}" y="${by}" fill="${r.t}">${b.label}</text></g>`;
+    const nl=b.leaves.length,sp=Math.PI*0.4,ls=a-sp/2,lst=nl>1?sp/(nl-1):0;
+    b.leaves.forEach((l,j)=>{
+      const la=nl===1?a:ls+j*lst,lx=bx+Math.cos(la)*LR,ly=by+Math.sin(la)*LR;
+      bH+=`<line class="leaf-line" x1="${bx}" y1="${by}" x2="${lx}" y2="${ly}" stroke="${r.s}" style="animation:fi 0.3s ease ${i*100+j*60+400}ms both"/>`;
+      const ta=Math.cos(la)>=0?'start':'end',tx=Math.cos(la)>=0?lx+6:lx-6;
+      nH+=`<g style="animation:fi 0.3s ease ${i*100+j*60+400}ms both"><circle cx="${lx}" cy="${ly}" r="4" fill="${r.s}" opacity="0.6"/><text class="ll" x="${tx}" y="${ly}" text-anchor="${ta}">${l}</text></g>`;
+    });
+  });
+  brG.innerHTML=bH;ndG.innerHTML=nH;
+</script>
+</body>
+</html>

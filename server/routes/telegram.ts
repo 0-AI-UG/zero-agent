@@ -25,7 +25,7 @@ import { getProjectById } from "@/db/queries/projects.ts";
 import { startPollingForProject, stopPollingForProject } from "@/lib/telegram-polling.ts";
 import type { ChatRow, MessageRow } from "@/db/types.ts";
 import type { ModelMessage } from "ai";
-import sharp from "sharp";
+import { Jimp } from "jimp";
 
 const tgLog = log.child({ module: "routes:telegram" });
 
@@ -148,13 +148,14 @@ export async function processIncomingUpdate(projectId: string, update: TelegramU
     const buffer = await downloadTelegramFile(cred.botToken, bestPhoto.file_id);
     if (buffer) {
       try {
-        const resized = await sharp(buffer)
-          .resize(1024, undefined, { withoutEnlargement: true })
-          .jpeg({ quality: 80 })
-          .toBuffer();
+        const image = await Jimp.read(buffer);
+        if (image.width > 1024) {
+          image.resize({ w: 1024 });
+        }
+        const resized = await image.getBuffer("image/jpeg", { quality: 80 });
         imageData = { base64: resized.toString("base64"), mediaType: "image/jpeg" };
       } catch {
-        // If sharp fails, use original
+        // If resize fails, use original
         imageData = { base64: buffer.toString("base64"), mediaType: "image/jpeg" };
       }
     }

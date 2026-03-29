@@ -31,7 +31,7 @@ export async function handleSetupComplete(request: Request): Promise<Response> {
     }
 
     const body = await request.json();
-    const { email, password, openrouterApiKey, openrouterModel } = body;
+    const { email, password, openrouterApiKey, openrouterModel, braveSearchApiKey } = body;
 
     if (!email || !password) {
       return Response.json(
@@ -59,6 +59,9 @@ export async function handleSetupComplete(request: Request): Promise<Response> {
     setSetting("OPENROUTER_API_KEY", openrouterApiKey);
     if (openrouterModel) {
       setSetting("OPENROUTER_MODEL", openrouterModel);
+    }
+    if (braveSearchApiKey) {
+      setSetting("BRAVE_SEARCH_API_KEY", braveSearchApiKey);
     }
 
     // Create JWT token

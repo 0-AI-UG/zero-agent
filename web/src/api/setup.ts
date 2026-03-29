@@ -14,6 +14,7 @@ export interface SetupCompleteRequest {
   password: string;
   openrouterApiKey: string;
   openrouterModel?: string;
+  braveSearchApiKey?: string;
 }
 
 export interface SetupCompleteResponse {

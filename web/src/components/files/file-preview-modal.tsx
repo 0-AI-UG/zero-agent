@@ -24,7 +24,6 @@ import { CodePreview } from "./code-preview";
 import { CsvPreview } from "./csv-preview";
 import { HtmlPreview } from "./html-preview";
 import { VizPreview } from "./viz-preview";
-import { SlidesPreview } from "./slides-preview";
 import { DownloadFallback } from "./download-fallback";
 
 interface FilePreviewModalProps {
@@ -125,9 +124,6 @@ function ModalPreviewContent({
   if (file.mimeType.startsWith("image/") && url) {
     return <ImagePreview file={file} url={url} thumbnailUrl={thumbnailUrl} />;
   }
-  if (isSlidesFile(file)) {
-    return <SlidesPreview file={file} projectId={projectId} />;
-  }
   if (isVizFile(file) && content !== undefined) {
     return <VizPreview file={file} content={content} />;
   }
@@ -154,9 +150,6 @@ function ModalPreviewContent({
 
 function isMarkdownFile(file: FileItem) {
   return file.mimeType === "text/markdown" || file.filename.endsWith(".md");
-}
-function isSlidesFile(file: FileItem) {
-  return file.mimeType === "text/html+slides" || file.filename.endsWith(".slides");
 }
 function isVizFile(file: FileItem) {
   return file.mimeType === "text/html+viz" || file.filename.endsWith(".viz");

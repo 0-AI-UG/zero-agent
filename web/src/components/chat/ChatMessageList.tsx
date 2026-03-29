@@ -12,6 +12,7 @@ import { Suggestions, Suggestion } from "@/components/ai/suggestion";
 import { getToolActiveLabel } from "@/components/chat/ToolPartRenderer";
 import { QuickActionsManager } from "@/components/chat/QuickActionsManager";
 import { ChatMessageItem, type ChatMessage } from "@/components/chat/ChatMessageItem";
+import { getQuickActionIcon } from "@/components/chat/QuickActionsManager";
 import { AlertCircleIcon, RefreshCcwIcon, PackageIcon, SearchIcon, TargetIcon } from "lucide-react";
 import { useCallback, useRef, type ReactNode } from "react";
 import logoSvg from "@/logo.svg";
@@ -173,7 +174,15 @@ export function ChatMessageList({
       {messages.length === 1 && messages[0]?.role === "assistant" && !isStreaming && (
         <div className="flex justify-center pb-4">
           <Suggestions className="justify-center flex-wrap">
-            {ONBOARDING_SUGGESTIONS.map((s) => (
+            {((messages[0] as any).metadata?.onboardingSuggestions as Array<{ text: string; icon: string; description: string }> | undefined)?.map((s) => (
+              <Suggestion
+                key={s.text}
+                suggestion={s.text}
+                icon={getQuickActionIcon(s.icon)}
+                description={s.description}
+                onClick={onSuggestion}
+              />
+            )) ?? ONBOARDING_SUGGESTIONS.map((s) => (
               <Suggestion
                 key={s.text}
                 suggestion={s.text}

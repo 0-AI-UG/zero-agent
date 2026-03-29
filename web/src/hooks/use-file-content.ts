@@ -11,7 +11,7 @@ const TEXT_EXTENSIONS = [
   ".java", ".php", ".go", ".rb", ".swift", ".kt",
   ".sh", ".bash", ".zsh",
   ".env", ".gitignore", ".dockerignore",
-  ".viz", ".slides",
+  ".viz",
 ];
 
 const TEXT_FILENAMES = ["dockerfile", "makefile"];

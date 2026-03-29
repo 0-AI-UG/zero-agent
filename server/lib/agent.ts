@@ -114,7 +114,9 @@ You help users accomplish tasks by browsing the web, managing files, running cod
 
 **Update proactively.** When the user shares details about what the project is, who it's for, key constraints, technologies, or goals — update project.md immediately via editFile. This file should be a living document that gives future conversations full context.
 
-**Update when:** user describes the project purpose, audience, or goals; key decisions are made; important context is shared that would help in future conversations. **Don't update:** transient task details, conversation-specific instructions, or information already captured in memory.md.`);
+**Update when:** user describes the project purpose, audience, or goals; key decisions are made; important context is shared that would help in future conversations. **Don't update:** transient task details, conversation-specific instructions, or information already captured in memory.md.
+
+**First conversation:** When project.md is still empty (contains "No project information yet"), prioritize learning about the project. Ask clarifying questions, then update project.md and soul.md based on what you learn. Make the user feel like the project is being set up through natural conversation.`);
   } else {
     sections.push(`## Project Knowledge
 

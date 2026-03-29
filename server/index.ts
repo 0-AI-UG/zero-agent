@@ -117,11 +117,6 @@ import {
   handleDeleteSkill,
 } from "@/routes/skills.ts";
 
-import {
-  handleConvertSlides,
-  handleConvertSlidesPdf,
-  handleSlidePreviews,
-} from "@/routes/slides.ts";
 import { startScheduler } from "@/lib/scheduler.ts";
 import { handleListUsers, handleCreateUser, handleDeleteUser, handleUpdateUser } from "@/routes/admin.ts";
 import { handleSetupStatus, handleSetupComplete } from "@/routes/setup.ts";
@@ -139,7 +134,13 @@ import { processIncomingUpdate } from "@/routes/telegram.ts";
 
 const httpLog = log.child({ module: "http" });
 const PORT = parseInt(process.env.PORT ?? "3000");
-const IS_PROD = process.env.NODE_ENV === "production";
+
+// Embedded assets (populated at compile time, null in dev/normal prod)
+let embeddedAssets: Record<string, { data: Buffer; mime: string; immutable: boolean }> | null = null;
+// @ts-ignore — _generated/assets.ts only exists at compile time
+try { embeddedAssets = (await import("./_generated/assets.ts")).assets; } catch {}
+
+const IS_PROD = process.env.NODE_ENV === "production" || !!embeddedAssets;
 
 // ── Frontend serving ──
 const WEB_DIST = path.resolve(import.meta.dir, "../web/dist");
@@ -158,6 +159,16 @@ const MIME_TYPES: Record<string, string> = {
   ".woff2": "font/woff2",
 };
 
+function serveEmbedded(pathname: string): Response | null {
+  if (!embeddedAssets) return null;
+  const key = pathname === "/" ? "/index.html" : pathname;
+  const asset = embeddedAssets[key];
+  if (!asset) return null;
+  const headers: Record<string, string> = { "Content-Type": asset.mime };
+  if (asset.immutable) headers["Cache-Control"] = "public, max-age=31536000, immutable";
+  return new Response(asset.data, { headers });
+}
+
 async function serveStatic(filePath: string): Promise<Response | null> {
   const file = Bun.file(filePath);
   if (!(await file.exists())) return null;
@@ -173,8 +184,7 @@ async function serveStatic(filePath: string): Promise<Response | null> {
 // In dev, use Bun's HTML import for HMR
 let devIndex: any = null;
 if (!IS_PROD) {
-  const htmlPath = "../web/src/index.html";
-  devIndex = (await import(htmlPath)).default;
+  devIndex = (await import("../web/src/index.html")).default;
 }
 
 function withLogging(handler: (req: any, ...args: any[]) => Response | Promise<Response>) {
@@ -422,16 +432,6 @@ const server = Bun.serve<{ userId: string; projectId: string; authenticated: boo
     "/api/settings/:key": {
       PUT: withLogging(handleUpdateSettings),
     },
-    // Slides
-    "/api/projects/:projectId/slides/convert": {
-      POST: withLogging(handleConvertSlides),
-    },
-    "/api/projects/:projectId/slides/convert-pdf": {
-      POST: withLogging(handleConvertSlidesPdf),
-    },
-    "/api/projects/:projectId/slides/previews": {
-      POST: withLogging(handleSlidePreviews),
-    },
     // Credentials (saved logins)
     "/api/projects/:projectId/credentials": {
       GET: withLogging(handleListCredentials),
@@ -441,6 +441,9 @@ const server = Bun.serve<{ userId: string; projectId: string; authenticated: boo
       PUT: withLogging(handleUpdateCredential),
       DELETE: withLogging(handleDeleteCredential),
     },
+
+    // S3 presigned file serving (must be before catch-all)
+    "/api/s3/*": (req: Request) => presignHandler.handleRequest(req),
 
     // Frontend catch-all (dev mode only — prod uses fetch fallback)
     ...(!IS_PROD && devIndex ? { "/*": devIndex } : {}) as Record<string, never>,
@@ -483,13 +486,17 @@ const server = Bun.serve<{ userId: string; projectId: string; authenticated: boo
       );
     }
 
-    // Production: serve static frontend files with SPA fallback
+    // Production: serve frontend (embedded in binary, or from web/dist/)
     if (IS_PROD) {
+      const embedded = serveEmbedded(url.pathname);
+      if (embedded) return embedded;
+
       const filePath = path.join(WEB_DIST, url.pathname === "/" ? "index.html" : url.pathname);
       const staticRes = await serveStatic(filePath);
       if (staticRes) return staticRes;
+
       // SPA fallback
-      return (await serveStatic(path.join(WEB_DIST, "index.html")))!;
+      return serveEmbedded("/") ?? (await serveStatic(path.join(WEB_DIST, "index.html")))!;
     }
 
     // Dev: return undefined to let Bun's internal dev server handle /_bun/* etc.

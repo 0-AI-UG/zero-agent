@@ -137,9 +137,16 @@ export async function handleCreateProject(request: Request): Promise<Response> {
       parts: [
         {
           type: "text",
-          text: "Welcome! I'm your AI assistant. I can browse the web, manage files, run code, schedule tasks, and more.\n\nTo get started, tell me about your project — what are you working on and how can I help?",
+          text: `Welcome to ${body.name}! I'm your AI assistant — I can browse the web, manage files, run code, and automate tasks for you.\n\nTo help me be most useful, tell me a bit about this project:\n\n1. **What are you working on?** A brief description of the project or goal.\n2. **How can I help?** What kind of tasks do you see me handling — research, writing, coding, organizing, something else?\n3. **Any preferences?** For example: keep responses short, always cite sources, be proactive with suggestions, etc.\n\nYou can answer all at once or just start with what matters most — I'll learn as we go.`,
         },
       ],
+      metadata: {
+        onboardingSuggestions: [
+          { text: "Here's what this project is about", icon: "package", description: "Describe your project so I can tailor my help" },
+          { text: "Help me research something", icon: "search", description: "Find and summarize information on a topic" },
+          { text: "Set up my preferences", icon: "target", description: "Tell me how you like to work" },
+        ],
+      },
     };
     insertChatMessage(
       onboardingMessage.id,
