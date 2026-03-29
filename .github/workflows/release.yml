@@ -25,7 +25,7 @@ jobs:
           - os: macos-latest
             target: bun-darwin-arm64
             artifact: zero-agent-darwin-arm64
-          - os: macos-13
+          - os: macos-latest
             target: bun-darwin-x64
             artifact: zero-agent-darwin-x64
     runs-on: ${{ matrix.os }}
@@ -79,7 +79,7 @@ jobs:
           - os: macos-latest
             platform: mac
             artifact: zero-agent-companion-darwin-arm64
-          - os: macos-13
+          - os: macos-latest
             platform: mac
             artifact: zero-agent-companion-darwin-x64
     runs-on: ${{ matrix.os }}
