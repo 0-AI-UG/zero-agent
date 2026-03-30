@@ -8,6 +8,9 @@ import {
 } from "lucide-react";
 import { usePresignedUrl } from "@/hooks/use-presigned-url";
 import { useFilesStore } from "@/stores/files-store";
+import { Shimmer } from "@/components/ai/shimmer";
+import { injectVizDesignSystem } from "@/lib/viz-design-system";
+import { useTheme } from "next-themes";
 
 // ---------------------------------------------------------------------------
 // Registry types
@@ -18,6 +21,8 @@ export interface WriteFileRendererProps {
   projectId: string;
   filename: string;
   output: any;
+  /** When provided, render directly from this content instead of fetching from S3. */
+  content?: string;
 }
 
 export interface WriteFileRendererEntry {
@@ -99,11 +104,61 @@ function injectResizeScript(html: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// StreamingVizPreview — incremental "painting" while the model writes
+// ---------------------------------------------------------------------------
+
+export function StreamingVizPreview({ content, filename }: { content: string; filename: string }) {
+  const { resolvedTheme } = useTheme();
+  const isDark = resolvedTheme === "dark";
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [iframeHeight, setIframeHeight] = useState(300);
+
+  const handleMessage = useCallback((e: MessageEvent) => {
+    if (
+      e.source === iframeRef.current?.contentWindow &&
+      e.data?.type === "viz-resize" &&
+      typeof e.data.height === "number"
+    ) {
+      setIframeHeight(Math.max(100, e.data.height));
+    }
+  }, []);
+
+  useEffect(() => {
+    window.addEventListener("message", handleMessage);
+    return () => window.removeEventListener("message", handleMessage);
+  }, [handleMessage]);
+
+  return (
+    <div className="group w-full my-1 relative">
+      <iframe
+        ref={iframeRef}
+        srcDoc={injectVizDesignSystem(injectResizeScript(content), { isDark, streaming: true })}
+        sandbox="allow-scripts"
+        title={filename}
+        className="w-full border-none"
+        style={{
+          height: iframeHeight,
+          transition: "height 0.15s ease",
+        }}
+      />
+      <div className="flex items-center gap-1.5 mt-1 px-0.5 text-xs text-muted-foreground">
+        <PenToolIcon className="size-3 shrink-0" />
+        <Shimmer className="text-xs" duration={1.5}>Painting</Shimmer>
+        <span className="truncate ml-1">{filename}</span>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // VizPreview — dynamic height, canvas feel
 // ---------------------------------------------------------------------------
 
-function VizPreview({ fileId, projectId, filename }: WriteFileRendererProps) {
-  const { htmlContent, loading, url } = useHtmlContent(projectId, fileId);
+function VizPreview({ fileId, projectId, filename, content: directContent }: WriteFileRendererProps) {
+  const { resolvedTheme } = useTheme();
+  const isDark = resolvedTheme === "dark";
+  const { htmlContent: fetchedContent, loading, url } = useHtmlContent(projectId, fileId);
+  const htmlContent = directContent ?? fetchedContent;
   const { openFilePreview } = useFilesStore();
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [iframeHeight, setIframeHeight] = useState(300);
@@ -123,7 +178,7 @@ function VizPreview({ fileId, projectId, filename }: WriteFileRendererProps) {
     return () => window.removeEventListener("message", handleMessage);
   }, [handleMessage]);
 
-  if (loading || !htmlContent) {
+  if (!directContent && (loading || !htmlContent)) {
     return (
       <div
         className="w-full my-1 flex items-center justify-center bg-muted/30 rounded-lg"
@@ -138,7 +193,7 @@ function VizPreview({ fileId, projectId, filename }: WriteFileRendererProps) {
     <div className="group w-full my-1 relative">
       <iframe
         ref={iframeRef}
-        srcDoc={injectResizeScript(htmlContent)}
+        srcDoc={injectVizDesignSystem(injectResizeScript(htmlContent!), { isDark, streaming: false })}
         sandbox="allow-scripts"
         title={filename}
         className="w-full border-none"

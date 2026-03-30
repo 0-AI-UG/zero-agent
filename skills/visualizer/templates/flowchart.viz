@@ -5,47 +5,43 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Flowchart</title>
 <style>
-  :root { --bg: #fff; --bg-s: #f8f7f5; --text: #2c2c2a; --text-s: #5f5e5a; --text-t: #888780; --border: rgba(0,0,0,0.12); --teal-50: #E1F5EE; --teal-400: #1D9E75; --coral-50: #FAECE7; --coral-400: #D85A30; }
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); }
+  body { background: var(--viz-bg); }
   svg { display: block; }
-  .proc { fill: var(--bg); stroke: var(--border); stroke-width: 0.5; }
-  .proc:hover { fill: var(--bg-s); }
-  .term { fill: var(--teal-50); stroke: var(--teal-400); stroke-width: 1; }
-  .err { fill: var(--coral-50); stroke: var(--coral-400); stroke-width: 1; }
-  .lbl { font-size: 13px; fill: var(--text); text-anchor: middle; dominant-baseline: central; pointer-events: none; }
-  .elbl { font-size: 11px; fill: var(--text-s); text-anchor: middle; }
-  .edge { stroke: var(--text-t); stroke-width: 1.5; fill: none; }
-  @keyframes fi { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-  .s { animation: fi 0.4s cubic-bezier(0.4,0,0.2,1) both; }
+  .proc { fill: var(--viz-card); stroke: var(--viz-border); stroke-width: 0.5; }
+  .term { fill: var(--viz-chart-1); stroke: var(--viz-chart-1); stroke-width: 1; }
+  .err { fill: var(--viz-destructive); stroke: var(--viz-destructive); stroke-width: 1; }
+  .lbl { font-size: 13px; fill: var(--viz-fg); text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+  .elbl { font-size: 11px; fill: var(--viz-muted-fg); text-anchor: middle; }
+  .edge { stroke: var(--viz-muted); stroke-width: 1.5; fill: none; }
 </style>
 </head>
 <body>
 <svg width="100%" viewBox="0 0 680 560">
-  <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="var(--text-t)"/></marker></defs>
+  <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="var(--viz-muted)"/></marker></defs>
 
-  <g class="s" style="animation-delay:0ms"><rect class="term" x="280" y="20" width="120" height="40" rx="20"/><text class="lbl" x="340" y="40">Start</text></g>
+  <g data-viz="node" data-viz-delay="1"><rect class="term" x="280" y="20" width="120" height="40" rx="20"/><text class="lbl" x="340" y="40">Start</text></g>
   <line class="edge" x1="340" y1="60" x2="340" y2="90" marker-end="url(#a)"/>
 
-  <g class="s" style="animation-delay:50ms"><rect class="proc" x="260" y="90" width="160" height="44" rx="8"/><text class="lbl" x="340" y="112">Receive request</text></g>
+  <g data-viz="node" data-viz-delay="2"><rect class="proc" x="260" y="90" width="160" height="44" rx="8"/><text class="lbl" x="340" y="112">Receive request</text></g>
   <line class="edge" x1="340" y1="134" x2="340" y2="168" marker-end="url(#a)"/>
 
-  <g class="s" style="animation-delay:100ms"><rect class="proc" x="295" y="168" width="90" height="90" rx="4" transform="rotate(45 340 213)"/><text class="lbl" x="340" y="213">Valid?</text></g>
+  <g data-viz="node" data-viz-delay="3"><rect class="proc" x="295" y="168" width="90" height="90" rx="4" transform="rotate(45 340 213)"/><text class="lbl" x="340" y="213">Valid?</text></g>
   <line class="edge" x1="403" y1="213" x2="500" y2="213" marker-end="url(#a)"/><text class="elbl" x="450" y="203">No</text>
-  <g class="s" style="animation-delay:150ms"><rect class="err" x="500" y="191" width="110" height="44" rx="8"/><text class="lbl" x="555" y="213">Return error</text></g>
+  <g data-viz="node" data-viz-delay="4"><rect class="err" x="500" y="191" width="110" height="44" rx="8"/><text class="lbl" x="555" y="213">Return error</text></g>
 
   <line class="edge" x1="340" y1="278" x2="340" y2="310" marker-end="url(#a)"/><text class="elbl" x="355" y="296">Yes</text>
-  <g class="s" style="animation-delay:200ms"><rect class="proc" x="260" y="310" width="160" height="44" rx="8"/><text class="lbl" x="340" y="332">Process data</text></g>
+  <g data-viz="node" data-viz-delay="5"><rect class="proc" x="260" y="310" width="160" height="44" rx="8"/><text class="lbl" x="340" y="332">Process data</text></g>
   <line class="edge" x1="340" y1="354" x2="340" y2="386" marker-end="url(#a)"/>
 
-  <g class="s" style="animation-delay:250ms"><rect class="proc" x="260" y="386" width="160" height="44" rx="8"/><text class="lbl" x="340" y="408">Save to database</text></g>
+  <g data-viz="node" data-viz-delay="6"><rect class="proc" x="260" y="386" width="160" height="44" rx="8"/><text class="lbl" x="340" y="408">Save to database</text></g>
   <line class="edge" x1="340" y1="430" x2="340" y2="460" marker-end="url(#a)"/>
 
-  <g class="s" style="animation-delay:300ms"><rect class="proc" x="295" y="460" width="90" height="90" rx="4" transform="rotate(45 340 505)"/><text class="lbl" x="340" y="505">Saved?</text></g>
+  <g data-viz="node" data-viz-delay="7"><rect class="proc" x="295" y="460" width="90" height="90" rx="4" transform="rotate(45 340 505)"/><text class="lbl" x="340" y="505">Saved?</text></g>
   <line class="edge" x1="277" y1="505" x2="190" y2="505"/><line class="edge" x1="190" y1="505" x2="190" y2="332"/><line class="edge" x1="190" y1="332" x2="258" y2="332" marker-end="url(#a)"/><text class="elbl" x="225" y="495">No</text>
 
   <line class="edge" x1="340" y1="570" x2="340" y2="520" marker-end="url(#a)"/><text class="elbl" x="355" y="555">Yes</text>
-  <g class="s" style="animation-delay:350ms"><rect class="term" x="280" y="520" width="120" height="40" rx="20"/><text class="lbl" x="340" y="540">End</text></g>
+  <g data-viz="node" data-viz-delay="8"><rect class="term" x="280" y="520" width="120" height="40" rx="20"/><text class="lbl" x="340" y="540">End</text></g>
 </svg>
 </body>
 </html>

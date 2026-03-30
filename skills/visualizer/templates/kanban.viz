@@ -5,35 +5,33 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Kanban</title>
 <style>
-  :root { --bg: #fff; --bg-s: #f8f7f5; --text: #2c2c2a; --text-s: #5f5e5a; --text-t: #888780; --border: rgba(0,0,0,0.12); }
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); padding: 12px; }
+  body { padding: 12px; }
   .board { display: flex; gap: 8px; overflow-x: auto; }
-  .col { flex: 1; min-width: 160px; background: var(--bg-s); border-radius: 10px; padding: 8px; }
-  .col-hd { display: flex; align-items: center; gap: 6px; padding-left: 8px; border-left: 3px solid var(--text-t); margin-bottom: 6px; }
+  .col { flex: 1; min-width: 160px; padding: 8px; }
+  .col-hd { display: flex; align-items: center; gap: 6px; padding-left: 8px; border-left: 3px solid var(--viz-muted-fg); margin-bottom: 6px; }
   .col-name { font-size: 13px; font-weight: 500; }
-  .col-ct { font-size: 11px; color: var(--text-t); background: var(--border); padding: 1px 7px; border-radius: 99px; }
-  .card { background: var(--bg); border: 0.5px solid var(--border); border-radius: 8px; padding: 8px; margin-bottom: 6px; transition: background 0.15s; }
-  .card:hover { background: var(--bg-s); }
+  .col-ct { font-size: 11px; padding: 1px 7px; }
+  .card { border: 0.5px solid var(--viz-border); padding: 8px; margin-bottom: 6px; }
   .card-title { font-size: 12px; font-weight: 500; }
-  .card-desc { font-size: 11px; color: var(--text-s); margin-top: 2px; }
+  .card-desc { font-size: 11px; margin-top: 2px; }
   .tags { display: flex; gap: 4px; margin-top: 6px; flex-wrap: wrap; }
-  .tag { font-size: 10px; padding: 1px 6px; border-radius: 99px; background: var(--bg-s); color: var(--text-t); }
+  .tag { font-size: 10px; padding: 1px 6px; }
 </style>
 </head>
 <body>
 <div class="board" id="b"></div>
 <script>
   const data = [
-    { name:'Backlog', color:'#5f5e5a', cards:[{t:'Research competitors',d:'Analyze top 5',tags:['research']},{t:'Update docs',tags:['docs']}]},
-    { name:'In Progress', color:'#534AB7', cards:[{t:'Redesign dashboard',d:'New layout',tags:['design']},{t:'API rate limiting',tags:['backend']}]},
-    { name:'Review', color:'#EF9F27', cards:[{t:'Payment integration',d:'Stripe webhooks',tags:['backend']}]},
-    { name:'Done', color:'#639922', cards:[{t:'Login redesign',tags:['design']},{t:'DB migration',tags:['backend']}]},
+    { name:'Backlog', cards:[{t:'Research competitors',d:'Analyze top 5',tags:['research']},{t:'Update docs',tags:['docs']}]},
+    { name:'In Progress', cards:[{t:'Redesign dashboard',d:'New layout',tags:['design']},{t:'API rate limiting',tags:['backend']}]},
+    { name:'Review', cards:[{t:'Payment integration',d:'Stripe webhooks',tags:['backend']}]},
+    { name:'Done', cards:[{t:'Login redesign',tags:['design']},{t:'DB migration',tags:['backend']}]},
   ];
   const b=document.getElementById('b');
-  data.forEach(col=>{
-    let h=`<div class="col"><div class="col-hd" style="border-left-color:${col.color}"><span class="col-name">${col.name}</span><span class="col-ct">${col.cards.length}</span></div>`;
-    col.cards.forEach(c=>{h+=`<div class="card"><div class="card-title">${c.t}</div>${c.d?`<div class="card-desc">${c.d}</div>`:''}${c.tags?`<div class="tags">${c.tags.map(t=>`<span class="tag">${t}</span>`).join('')}</div>`:''}</div>`;});
+  data.forEach((col,ci)=>{
+    let h=`<div class="col" data-viz="card" data-viz-delay="${ci+1}"><div class="col-hd" style="border-left-color:var(--viz-chart-${(ci%5)+1})"><span class="col-name">${col.name}</span><span class="col-ct" data-viz="badge">${col.cards.length}</span></div>`;
+    col.cards.forEach(c=>{h+=`<div class="card" data-viz="card"><div class="card-title">${c.t}</div>${c.d?`<div class="card-desc" data-viz="muted">${c.d}</div>`:''}${c.tags?`<div class="tags">${c.tags.map(t=>`<span class="tag" data-viz="badge">${t}</span>`).join('')}</div>`:''}</div>`;});
     h+='</div>';b.innerHTML+=h;
   });
 </script>

@@ -5,17 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Dependency Tree</title>
 <style>
-  :root { --bg: #fff; --text: #2c2c2a; --text-s: #5f5e5a; --text-t: #888780; --border: rgba(0,0,0,0.12); --border-e: rgba(0,0,0,0.25); --p50: #EEEDFE; --p4: #7F77DD; --t50: #E1F5EE; --t4: #1D9E75; --b50: #E6F1FB; --b4: #378ADD; --c50: #FAECE7; --c4: #D85A30; }
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); }
+  body { background: var(--viz-bg); }
   svg { display: block; }
-  .nr { stroke-width: 0.5; cursor: pointer; transition: stroke 0.15s; }
-  .nr:hover { stroke: var(--border-e); }
-  .nl { font-size: 12px; fill: var(--text); text-anchor: middle; dominant-baseline: central; pointer-events: none; }
-  .edge { stroke: var(--text-t); stroke-width: 1; fill: none; }
-  .tog { fill: var(--bg); stroke: var(--border-e); stroke-width: 0.5; cursor: pointer; }
-  .tog:hover { fill: #f8f7f5; }
-  .ti { font-size: 11px; fill: var(--text-s); text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+  .nr { stroke-width: 0.5; cursor: pointer; }
+  .nl { font-size: 12px; fill: var(--viz-fg); text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+  .edge { stroke: var(--viz-muted); stroke-width: 1; fill: none; }
+  .tog { fill: var(--viz-card); stroke: var(--viz-border); stroke-width: 0.5; cursor: pointer; }
+  .ti { font-size: 11px; fill: var(--viz-muted-fg); text-anchor: middle; dominant-baseline: central; pointer-events: none; }
 </style>
 </head>
 <body>
@@ -28,7 +25,7 @@
     {id:'tw',label:'tailwindcss',ch:[{id:'auto',label:'autoprefixer',ch:[]},{id:'nano',label:'cssnano',ch:[]}]},
   ]};
   const NW=120,NH=32,GX=36,GY=14,TR=7;
-  const col=[[`var(--p50)`,`var(--p4)`],[`var(--t50)`,`var(--t4)`],[`var(--b50)`,`var(--b4)`],[`var(--c50)`,`var(--c4)`]];
+  const col=[[`var(--viz-chart-1)`,`var(--viz-chart-1)`],[`var(--viz-chart-2)`,`var(--viz-chart-2)`],[`var(--viz-chart-3)`,`var(--viz-chart-3)`],[`var(--viz-chart-4)`,`var(--viz-chart-4)`]];
   const collapsed=new Set();
   const svg=document.getElementById('t');
 
@@ -50,7 +47,7 @@
     svg.setAttribute('viewBox',`0 0 ${mxX} ${mxY}`);
     let h='';
     flat.forEach(n=>{if(n.d===0)return;const orig=findNode(data,n.id);flat.forEach(p=>{if(p.d!==n.d-1)return;const pn=findNode(data,p.id);if(!pn||!pn.ch.some(c=>c.id===n.id))return;const x1=p.x+NW/2,y1=p.y+NH/2,x2=n.x-NW/2,y2=n.y+NH/2,mx=(x1+x2)/2;h+=`<path class="edge" d="M${x1} ${y1}C${mx} ${y1},${mx} ${y2},${x2} ${y2}"/>`;});});
-    const c=col;flat.forEach(n=>{const rx=n.x-NW/2,ry=n.y,ci=Math.min(n.d,c.length-1);h+=`<rect class="nr" x="${rx}" y="${ry}" width="${NW}" height="${NH}" rx="8" fill="${c[ci][0]}" stroke="${c[ci][1]}"/>`;h+=`<text class="nl" x="${n.x}" y="${ry+NH/2}">${n.label}</text>`;if(n.hc){const tx=rx+NW+4,ty=ry+NH/2;h+=`<circle class="tog" cx="${tx}" cy="${ty}" r="${TR}" data-t="${n.id}"/><text class="ti" x="${tx}" y="${ty}">${collapsed.has(n.id)?'+':'\u2212'}</text>`;}});
+    const c=col;flat.forEach(n=>{const rx=n.x-NW/2,ry=n.y,ci=Math.min(n.d,c.length-1);h+=`<rect class="nr" data-viz="node" x="${rx}" y="${ry}" width="${NW}" height="${NH}" rx="8" fill="${c[ci][0]}" stroke="${c[ci][1]}"/>`;h+=`<text class="nl" x="${n.x}" y="${ry+NH/2}">${n.label}</text>`;if(n.hc){const tx=rx+NW+4,ty=ry+NH/2;h+=`<circle class="tog" cx="${tx}" cy="${ty}" r="${TR}" data-t="${n.id}"/><text class="ti" x="${tx}" y="${ty}">${collapsed.has(n.id)?'+':'\u2212'}</text>`;}});
     svg.innerHTML=h;
   }
   svg.addEventListener('click',e=>{const t=e.target.closest('[data-t]');if(!t)return;const id=t.getAttribute('data-t');collapsed.has(id)?collapsed.delete(id):collapsed.add(id);render();});

@@ -5,42 +5,38 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>State Machine</title>
 <style>
-  :root { --bg: #fff; --text: #2c2c2a; --text-s: #5f5e5a; --text-t: #888780; --border: rgba(0,0,0,0.12); --teal-50: #E1F5EE; --teal-400: #1D9E75; --teal-600: #0F6E56; --purple-50: #EEEDFE; --purple-400: #7F77DD; --red-50: #FCEBEB; --red-400: #E24B4A; }
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); }
+  body { background: var(--viz-bg); }
   svg { display: block; }
-  .st { fill: var(--bg); stroke: var(--border); stroke-width: 0.5; }
-  .st:hover { stroke: rgba(0,0,0,0.25); }
-  .st-i { fill: var(--teal-50); stroke: var(--teal-400); stroke-width: 1; }
-  .st-f { fill: var(--purple-50); stroke: var(--purple-400); stroke-width: 1; }
-  .st-e { fill: var(--red-50); stroke: var(--red-400); stroke-width: 1; }
-  .sl { font-size: 13px; fill: var(--text); text-anchor: middle; dominant-baseline: central; pointer-events: none; }
-  .tr { stroke: var(--text-t); stroke-width: 1.5; fill: none; }
-  .tl { font-size: 11px; fill: var(--text-s); text-anchor: middle; dominant-baseline: central; }
-  .tlb { fill: var(--bg); }
-  @keyframes fi { from { opacity: 0; } to { opacity: 1; } }
-  .a { animation: fi 0.4s cubic-bezier(0.4,0,0.2,1) both; }
+  .st { fill: var(--viz-card); stroke: var(--viz-border); stroke-width: 0.5; }
+  .st-i { fill: var(--viz-chart-1); stroke: var(--viz-chart-1); stroke-width: 1; }
+  .st-f { fill: var(--viz-chart-2); stroke: var(--viz-chart-2); stroke-width: 1; }
+  .st-e { fill: var(--viz-destructive); stroke: var(--viz-destructive); stroke-width: 1; }
+  .sl { font-size: 13px; fill: var(--viz-fg); text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+  .tr { stroke: var(--viz-muted); stroke-width: 1.5; fill: none; }
+  .tl { font-size: 11px; fill: var(--viz-muted-fg); text-anchor: middle; dominant-baseline: central; }
+  .tlb { fill: var(--viz-bg); }
 </style>
 </head>
 <body>
 <svg width="100%" viewBox="0 0 680 260">
-  <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="var(--text-t)"/></marker></defs>
+  <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="var(--viz-muted)"/></marker></defs>
 
   <!-- Initial marker -->
-  <g class="a"><circle cx="40" cy="100" r="6" fill="var(--teal-600)"/><line class="tr" x1="46" y1="100" x2="78" y2="100" marker-end="url(#a)"/></g>
+  <g data-viz="node" data-viz-delay="1"><circle cx="40" cy="100" r="6" fill="var(--viz-chart-1)"/><line class="tr" x1="46" y1="100" x2="78" y2="100" marker-end="url(#a)"/></g>
 
   <!-- States -->
-  <g class="a" style="animation-delay:50ms"><rect class="st st-i" x="80" y="72" width="120" height="56" rx="28"/><text class="sl" x="140" y="100">Idle</text></g>
-  <g class="a" style="animation-delay:100ms"><rect class="st" x="300" y="72" width="120" height="56" rx="28"/><text class="sl" x="360" y="100">Loading</text></g>
-  <g class="a" style="animation-delay:150ms"><rect class="st st-f" x="520" y="48" width="120" height="56" rx="28"/><text class="sl" x="580" y="76">Success</text></g>
-  <g class="a" style="animation-delay:150ms"><rect class="st st-e" x="520" y="120" width="120" height="56" rx="28"/><text class="sl" x="580" y="148">Error</text></g>
+  <g data-viz="node" data-viz-delay="2"><rect class="st st-i" x="80" y="72" width="120" height="56" rx="28"/><text class="sl" x="140" y="100">Idle</text></g>
+  <g data-viz="node" data-viz-delay="3"><rect class="st" x="300" y="72" width="120" height="56" rx="28"/><text class="sl" x="360" y="100">Loading</text></g>
+  <g data-viz="node" data-viz-delay="4"><rect class="st st-f" x="520" y="48" width="120" height="56" rx="28"/><text class="sl" x="580" y="76">Success</text></g>
+  <g data-viz="node" data-viz-delay="4"><rect class="st st-e" x="520" y="120" width="120" height="56" rx="28"/><text class="sl" x="580" y="148">Error</text></g>
 
   <!-- Transitions -->
-  <g class="a" style="animation-delay:100ms"><path class="tr" d="M200 100 L298 100" marker-end="url(#a)"/><rect class="tlb" x="225" y="82" width="48" height="16" rx="3"/><text class="tl" x="249" y="91">fetch()</text></g>
-  <g class="a" style="animation-delay:150ms"><path class="tr" d="M420 85 C470 60,490 60,518 76" marker-end="url(#a)"/><rect class="tlb" x="444" y="52" width="50" height="16" rx="3"/><text class="tl" x="469" y="61">resolve</text></g>
-  <g class="a" style="animation-delay:150ms"><path class="tr" d="M420 115 C470 140,490 140,518 138" marker-end="url(#a)"/><rect class="tlb" x="447" y="132" width="40" height="16" rx="3"/><text class="tl" x="467" y="141">reject</text></g>
-  <g class="a" style="animation-delay:200ms"><path class="tr" d="M580 176 C580 230,360 230,360 128" marker-end="url(#a)"/><rect class="tlb" x="452" y="218" width="34" height="16" rx="3"/><text class="tl" x="469" y="227">retry</text></g>
-  <g class="a" style="animation-delay:200ms"><path class="tr" d="M580 48 C580 20,140 20,140 72" marker-end="url(#a)"/><rect class="tlb" x="340" y="12" width="34" height="16" rx="3"/><text class="tl" x="357" y="21">reset</text></g>
+  <g data-viz="node" data-viz-delay="3"><path class="tr" d="M200 100 L298 100" marker-end="url(#a)"/><rect class="tlb" x="225" y="82" width="48" height="16" rx="3"/><text class="tl" x="249" y="91">fetch()</text></g>
+  <g data-viz="node" data-viz-delay="4"><path class="tr" d="M420 85 C470 60,490 60,518 76" marker-end="url(#a)"/><rect class="tlb" x="444" y="52" width="50" height="16" rx="3"/><text class="tl" x="469" y="61">resolve</text></g>
+  <g data-viz="node" data-viz-delay="4"><path class="tr" d="M420 115 C470 140,490 140,518 138" marker-end="url(#a)"/><rect class="tlb" x="447" y="132" width="40" height="16" rx="3"/><text class="tl" x="467" y="141">reject</text></g>
+  <g data-viz="node" data-viz-delay="5"><path class="tr" d="M580 176 C580 230,360 230,360 128" marker-end="url(#a)"/><rect class="tlb" x="452" y="218" width="34" height="16" rx="3"/><text class="tl" x="469" y="227">retry</text></g>
+  <g data-viz="node" data-viz-delay="5"><path class="tr" d="M580 48 C580 20,140 20,140 72" marker-end="url(#a)"/><rect class="tlb" x="340" y="12" width="34" height="16" rx="3"/><text class="tl" x="357" y="21">reset</text></g>
 </svg>
 </body>
 </html>

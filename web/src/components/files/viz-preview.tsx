@@ -3,6 +3,8 @@ import { DownloadIcon, ImageIcon, Loader2Icon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { usePreviewActions } from "./preview-actions-context";
 import { exportAsPng, exportAsPdf } from "@/lib/export-html";
+import { injectVizDesignSystem } from "@/lib/viz-design-system";
+import { useTheme } from "next-themes";
 import type { FileItem } from "@/hooks/use-files";
 
 interface VizPreviewProps {
@@ -11,6 +13,8 @@ interface VizPreviewProps {
 }
 
 export function VizPreview({ file, content }: VizPreviewProps) {
+  const { resolvedTheme } = useTheme();
+  const isDark = resolvedTheme === "dark";
   const { setActions } = usePreviewActions();
   const [exporting, setExporting] = useState(false);
 
@@ -53,7 +57,7 @@ export function VizPreview({ file, content }: VizPreviewProps) {
   return (
     <div className="p-4 flex flex-col h-full">
       <iframe
-        srcDoc={content}
+        srcDoc={injectVizDesignSystem(content, { isDark, streaming: false })}
         sandbox="allow-scripts"
         title={file.filename}
         className="w-full flex-1 rounded-md border bg-white"

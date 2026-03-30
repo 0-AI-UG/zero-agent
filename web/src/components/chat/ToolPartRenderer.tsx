@@ -25,7 +25,7 @@ import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePresignedUrl } from "@/hooks/use-presigned-url";
 import { FileArtifact } from "@/components/files/file-artifact";
-import { findWriteFileRenderer } from "@/components/chat/write-file-renderers";
+import { findWriteFileRenderer, StreamingVizPreview } from "@/components/chat/write-file-renderers";
 import { ParallelSubagentCard } from "./ParallelSubagentCard";
 import {
   Confirmation,
@@ -708,6 +708,10 @@ export const ToolCallPart = memo(function ToolCallPart({
       const fname = inp.path.split("/").pop() ?? "";
       const customRenderer = findWriteFileRenderer(fname);
       if (customRenderer) {
+        // Incremental rendering: show the viz iframe with partial content as it streams
+        if (typeof inp.content === "string" && inp.content) {
+          return <StreamingVizPreview content={inp.content} filename={fname} />;
+        }
         const CustomIcon = customRenderer.loading.icon;
         return (
           <div className="flex items-center gap-2 text-sm py-1 text-muted-foreground animate-in fade-in-0 slide-in-from-top-1">
@@ -751,6 +755,16 @@ export const ToolCallPart = memo(function ToolCallPart({
     }
     if (toolName === "writeFile") {
       const output = part.output as any;
+      // For custom-rendered files (e.g. .viz), render from input content
+      const inp = (part.input ?? {}) as Record<string, unknown>;
+      if (typeof inp.path === "string") {
+        const fname = inp.path.split("/").pop() ?? "";
+        const customRenderer = findWriteFileRenderer(fname);
+        if (customRenderer && typeof inp.content === "string" && inp.content) {
+          const Component = customRenderer.component;
+          return <Component fileId={output?.fileId ?? ""} projectId={projectId ?? ""} filename={fname} output={output} content={inp.content} />;
+        }
+      }
       if (output?.fileId) return <WriteFileCard output={output} projectId={projectId} />;
     }
     if (toolName === "listFiles") {

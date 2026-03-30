@@ -5,25 +5,22 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Data Table</title>
 <style>
-  :root { --bg: #fff; --bg-s: #f8f7f5; --text: #2c2c2a; --text-t: #888780; --border: rgba(0,0,0,0.12); --info: #378add; }
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); padding: 12px; }
-  .search { width: 100%; padding: 8px 12px; border: 0.5px solid var(--border); border-radius: 8px; font-size: 13px; margin-bottom: 8px; outline: none; }
-  .search:focus { border-color: var(--info); }
-  .wrap { overflow: auto; border: 0.5px solid var(--border); border-radius: 8px; }
+  body { background: var(--viz-bg); color: var(--viz-fg); padding: 12px; }
+  .search { width: 100%; padding: 8px 12px; border: 0.5px solid var(--viz-border); font-size: 13px; margin-bottom: 8px; outline: none; background: var(--viz-bg); color: var(--viz-fg); }
+  .search:focus { border-color: var(--viz-primary); }
+  .wrap { overflow: auto; border: 0.5px solid var(--viz-border); }
   table { width: 100%; border-collapse: collapse; }
-  th { background: var(--bg-s); padding: 8px 12px; text-align: left; font-size: 11px; font-weight: 500; color: var(--text-t); cursor: pointer; border-bottom: 0.5px solid var(--border); white-space: nowrap; }
-  th:hover { color: var(--text); }
-  td { padding: 8px 12px; font-size: 13px; border-bottom: 0.5px solid var(--border); }
+  th { background: var(--viz-card); padding: 8px 12px; text-align: left; font-size: 11px; font-weight: 500; color: var(--viz-muted-fg); cursor: pointer; border-bottom: 0.5px solid var(--viz-border); white-space: nowrap; }
+  td { padding: 8px 12px; font-size: 13px; border-bottom: 0.5px solid var(--viz-border); }
   tr:last-child td { border-bottom: none; }
-  tr:hover td { background: var(--bg-s); }
-  .count { font-size: 11px; color: var(--text-t); margin-top: 8px; }
+  .count { font-size: 11px; color: var(--viz-muted-fg); margin-top: 8px; }
 </style>
 </head>
 <body>
 <input type="text" class="search" id="s" placeholder="Search..." aria-label="Search">
-<div class="wrap"><table><thead><tr id="hd"></tr></thead><tbody id="bd"></tbody></table></div>
-<div class="count" id="ct"></div>
+<div class="wrap" data-viz="card"><table><thead><tr id="hd"></tr></thead><tbody id="bd"></tbody></table></div>
+<div class="count" id="ct" data-viz="muted"></div>
 <script>
   const cols = ['Name','Category','Value','Status'];
   const data = [
