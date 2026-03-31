@@ -22,7 +22,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { MonitorIcon, TrashIcon, CopyIcon, CheckIcon, TerminalSquareIcon, KeyRoundIcon, ShieldCheckIcon, PencilIcon, EyeIcon, EyeOffIcon, FingerprintIcon, SmartphoneIcon, MessageSquareIcon, ImageIcon, AlertTriangleIcon } from "lucide-react";
+import { MonitorIcon, TrashIcon, CopyIcon, CheckIcon, TerminalSquareIcon, KeyRoundIcon, ShieldCheckIcon, PencilIcon, EyeIcon, EyeOffIcon, FingerprintIcon, SmartphoneIcon, MessageSquareIcon, ImageIcon, AlertTriangleIcon, DownloadIcon } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { type Project, useUpdateProject } from "@/api/projects";
 import { decodeQrImage } from "@/lib/qr-decode";
@@ -135,6 +135,9 @@ export function CompanionManager({ projectId, project, updateProject }: Companio
             No devices connected yet. Generate a token to link your browser.
           </p>
         )}
+
+        {/* Download companion app */}
+        {!desktopMode && !status?.connected && <CompanionDownload />}
 
         {/* Token list */}
         {!desktopMode && tokens && tokens.length > 0 && (
@@ -311,6 +314,76 @@ export function CompanionManager({ projectId, project, updateProject }: Companio
 
       <SavedLogins projectId={projectId} />
     </section>
+  );
+}
+
+// ── Companion Download ──
+
+type Platform = { os: string; artifact: string } | null;
+
+function detectPlatform(): Platform {
+  const ua = navigator.userAgent;
+  if (ua.includes("Mac")) return { os: "macOS", artifact: "zero-agent-companion-darwin-arm64.tar.gz" };
+  if (ua.includes("Linux")) return { os: "Linux", artifact: "zero-agent-companion-linux-x64.tar.gz" };
+  return null;
+}
+
+const GITHUB_LATEST = "https://api.github.com/repos/0-AI-UG/zero-agent/releases/latest";
+
+function CompanionDownload() {
+  const platform = detectPlatform();
+  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(false);
+
+  const handleDownload = async () => {
+    if (downloadUrl) {
+      window.open(downloadUrl, "_blank");
+      return;
+    }
+    if (!platform) {
+      window.open("https://github.com/0-AI-UG/zero-agent/releases/latest", "_blank");
+      return;
+    }
+    setLoading(true);
+    setError(false);
+    try {
+      const res = await fetch(GITHUB_LATEST);
+      const release = await res.json();
+      const asset = release.assets?.find((a: { name: string }) => a.name === platform.artifact);
+      if (asset?.browser_download_url) {
+        setDownloadUrl(asset.browser_download_url);
+        window.open(asset.browser_download_url, "_blank");
+      } else {
+        window.open("https://github.com/0-AI-UG/zero-agent/releases/latest", "_blank");
+      }
+    } catch {
+      setError(true);
+      window.open("https://github.com/0-AI-UG/zero-agent/releases/latest", "_blank");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="rounded-md border p-3 space-y-2.5">
+      <p className="text-xs text-muted-foreground">
+        Install the companion app to enable browser automation and code execution on your computer.
+      </p>
+      <button
+        onClick={handleDownload}
+        disabled={loading}
+        className="w-full rounded-md bg-primary hover:bg-primary/90 px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50 flex items-center justify-center gap-2"
+      >
+        <DownloadIcon className="size-4" />
+        {loading ? "Preparing download..." : platform ? `Download for ${platform.os}` : "Download companion"}
+      </button>
+      {error && (
+        <p className="text-[11px] text-muted-foreground text-center">
+          Download will open in a new tab.
+        </p>
+      )}
+    </div>
   );
 }
 
