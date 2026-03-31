@@ -45,6 +45,8 @@ export interface AgentOptions {
   mode?: "chat" | "automation";
   /** Pre-created lazy browser session — if provided, skips auto-creation in createAgent(). */
   lazyBrowserSession?: { id: string; created: boolean; label?: string };
+  /** File paths already read/written in prior turns — seeds the read guard so the agent doesn't need to re-read. */
+  initialReadPaths?: string[];
 }
 
 async function buildSystemPrompt(project: {
@@ -274,6 +276,7 @@ export async function createAgent(project: ProjectForAgent, options: AgentOption
     onlySkills: options.onlySkills,
     codeExecutionEnabled: project.code_execution_enabled === 1,
     modelId: options.model,
+    initialReadPaths: options.initialReadPaths,
   });
 
   // Pre-activate tools that appear in message history so the AI SDK

@@ -69,12 +69,13 @@ export function createToolRegistry(
     onlyTools?: string[];
     onlySkills?: string[];
     codeExecutionEnabled?: boolean;
+    initialReadPaths?: string[];
   },
 ): ToolRegistry {
   const registry: ToolRegistry = {
     searchWeb: createSearchWebTool(),
     fetchUrl: fetchUrlTool,
-    ...createFileTools(projectId, { modelId: options.modelId }),
+    ...createFileTools(projectId, { modelId: options.modelId, initialReadPaths: options.initialReadPaths }),
     ...createGenerateImageTool(projectId),
     ...createSchedulingTools(projectId),
     ...(options.chatId ? createTodoTools(projectId, options.chatId) : {}),
@@ -148,6 +149,7 @@ export function createDiscoverableToolset(
     onlyTools?: string[];
     onlySkills?: string[];
     codeExecutionEnabled?: boolean;
+    initialReadPaths?: string[];
   },
 ): { activeTools: ToolRegistry; fullRegistry: ToolRegistry; toolIndex: string } {
   const context = options.context ?? "chat";

@@ -47,21 +47,25 @@ export async function handleChat(request: BunRequest): Promise<Response> {
     };
     chatLog.info("starting agent stream", { projectId, chatId, messageCount: messages.length, language });
 
-    // Extract tool names from message history so dynamically-discovered
-    // tools are pre-activated for validation by the AI SDK.
-    // Tool parts have type "tool-{toolName}" (e.g. "tool-generateImage").
+    // Extract tool names and previously-read file paths from message history.
+    // Tool parts have type "tool-{toolName}" (e.g. "tool-readFile") with an `input` field.
     const usedToolNames: string[] = [];
+    const readPaths: string[] = [];
     for (const msg of messages) {
       for (const part of msg.parts ?? []) {
         if (typeof part.type === "string" && part.type.startsWith("tool-")) {
-          usedToolNames.push(part.type.slice(5));
+          const toolName = part.type.slice(5);
+          usedToolNames.push(toolName);
+          if ((toolName === "readFile" || toolName === "writeFile") && (part as any).input?.path) {
+            readPaths.push((part as any).input.path);
+          }
         }
       }
     }
 
     // Create the agent for this project
     const cw = model ? getModelContextWindow(model) : 128_000;
-    const agent = await createAgent(project, { model, language, disabledTools, chatId, userId, preActivateTools: usedToolNames, contextWindow: cw });
+    const agent = await createAgent(project, { model, language, disabledTools, chatId, userId, preActivateTools: usedToolNames, contextWindow: cw, initialReadPaths: readPaths });
 
     // Predict whether compaction will trigger so we can send metadata early.
     // Use contextTokens (last step's actual input tokens) if available,

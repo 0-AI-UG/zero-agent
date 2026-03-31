@@ -12,6 +12,7 @@ import { nanoid } from "nanoid";
 import { events } from "@/lib/events.ts";
 import { log } from "@/lib/logger.ts";
 import { DESKTOP_MODE } from "@/lib/auth.ts";
+import { clearReadyWorkspaces } from "@/tools/code.ts";
 
 const bridgeLog = log.child({ module: "browser-bridge" });
 
@@ -301,6 +302,7 @@ class BrowserBridge {
       this.companions.delete(key);
       bridgeLog.info("companion disconnected", { userId, projectId });
       events.emit("companion.disconnected", { projectId, userId });
+      clearReadyWorkspaces();
 
       const disconnectError = new Error("Browser companion disconnected");
 

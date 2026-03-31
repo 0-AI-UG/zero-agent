@@ -83,9 +83,16 @@ function buildFileManifest(projectId: string): Record<string, string> {
   return manifest;
 }
 
+/** Track which workspaces have been created across agent instances (persists within the process). */
+const readyWorkspaces = new Set<string>();
+
+/** Clear all tracked workspaces (e.g. when companion disconnects). */
+export function clearReadyWorkspaces(): void {
+  readyWorkspaces.clear();
+}
+
 export function createCodeTools(userId: string, projectId: string, chatId: string) {
   const workspaceId = `chat-${chatId}`;
-  let workspaceReady = false;
 
   async function waitForCompanion(): Promise<void> {
     if (!browserBridge.isConnected(userId, projectId)) {
@@ -104,18 +111,18 @@ export function createCodeTools(userId: string, projectId: string, chatId: strin
   async function ensureWorkspace(): Promise<string> {
     const manifest = buildFileManifest(projectId);
 
-    if (workspaceReady) {
+    if (readyWorkspaces.has(workspaceId)) {
       try {
         await browserBridge.syncWorkspace(userId, projectId, workspaceId, manifest);
         return workspaceId;
       } catch {
         toolLog.info("workspace sync failed, recreating", { userId, projectId, workspaceId });
-        workspaceReady = false;
+        readyWorkspaces.delete(workspaceId);
       }
     }
 
     await browserBridge.createWorkspace(userId, projectId, workspaceId, manifest);
-    workspaceReady = true;
+    readyWorkspaces.add(workspaceId);
     toolLog.info("workspace created", { userId, projectId, workspaceId, fileCount: Object.keys(manifest).length });
     return workspaceId;
   }

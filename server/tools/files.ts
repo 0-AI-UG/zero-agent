@@ -134,8 +134,8 @@ function cleanupEmptyFolders(projectId: string, folderPath: string) {
   }
 }
 
-export function createFileTools(projectId: string, options?: { modelId?: string }) {
-  const readPaths = new Set<string>();
+export function createFileTools(projectId: string, options?: { modelId?: string; initialReadPaths?: string[] }) {
+  const readPaths = new Set<string>(options?.initialReadPaths);
 
   return {
     readFile: tool({
@@ -307,6 +307,9 @@ export function createFileTools(projectId: string, options?: { modelId?: string 
           if (diagnostics.length > 0) {
             toolLog.warn("writeFile lint issues", { projectId, path, diagnostics });
           }
+
+          // Mark as read so subsequent edits don't require a redundant readFile
+          readPaths.add(path);
 
           toolLog.info("writeFile success", { projectId, path, fileId: fileRow.id, sizeBytes: buffer.length });
           return {
