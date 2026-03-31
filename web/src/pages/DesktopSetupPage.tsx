@@ -44,7 +44,7 @@ export function DesktopSetupPage() {
         braveSearchApiKey: braveSearchApiKey || undefined,
       });
       useAuthStore.getState().login(token, user);
-      await queryClient.invalidateQueries({ queryKey: ["setup", "status"] });
+      queryClient.setQueryData(["setup", "status"], { setupComplete: true, desktopMode: true });
       navigate("/", { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Setup failed");

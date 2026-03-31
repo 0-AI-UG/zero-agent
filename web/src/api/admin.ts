@@ -53,7 +53,7 @@ export function useAdminSettings() {
   return useQuery({
     queryKey: ["admin", "settings"],
     queryFn: async () => {
-      const res = await apiFetch<{ settings: Record<string, string> }>("/admin/settings");
+      const res = await apiFetch<{ settings: Record<string, string> }>("/settings");
       return res.settings;
     },
     staleTime: 30_000,
@@ -64,7 +64,8 @@ export function useUpdateSettings() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (settings: Record<string, string>) => {
-      return apiFetch<{ success: boolean }>("/admin/settings", {
+      const key = Object.keys(settings)[0]!;
+      return apiFetch<{ success: boolean }>(`/settings/${encodeURIComponent(key)}`, {
         method: "PUT",
         body: JSON.stringify({ settings }),
       });
