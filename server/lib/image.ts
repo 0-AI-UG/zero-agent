@@ -1,5 +1,5 @@
 import { generateImage } from "ai";
-import { imageModel } from "@/lib/openrouter.ts";
+import { getImageModel } from "@/lib/openrouter.ts";
 import { log } from "@/lib/logger.ts";
 
 const imgLog = log.child({ module: "image" });
@@ -12,7 +12,7 @@ export async function generateImageViaOpenRouter(
 
   try {
     const result = await generateImage({
-      model: imageModel,
+      model: getImageModel(),
       prompt,
       n: 1,
       aspectRatio: "9:16",

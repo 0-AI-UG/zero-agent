@@ -10,7 +10,7 @@ import { truncateText } from "@/lib/truncate-result.ts";
 import { indexFileContent, searchFileContent, removeFileIndex } from "@/db/queries/search.ts";
 import { log } from "@/lib/logger.ts";
 import { isModelMultimodal } from "@/config/models.ts";
-import { visionModel } from "@/lib/openrouter.ts";
+import { getVisionModel } from "@/lib/openrouter.ts";
 import { Jimp } from "jimp";
 
 const MAX_READ_CHARS = 15_000;
@@ -177,7 +177,7 @@ export function createFileTools(projectId: string, options?: { modelId?: string;
               toolLog.info("readFile image captioning", { projectId, path, modelId });
               const base64 = resized.toString("base64");
               const { text: caption } = await generateText({
-                model: visionModel,
+                model: getVisionModel(),
                 messages: [{
                   role: "user",
                   content: [

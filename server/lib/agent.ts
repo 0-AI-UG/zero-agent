@@ -1,5 +1,5 @@
 import { ToolLoopAgent, stepCountIs } from "ai";
-import { chatModel, createChatModel } from "@/lib/openrouter.ts";
+import { getChatModel, createChatModel } from "@/lib/openrouter.ts";
 import { createDiscoverableToolset, type ExecutionContext } from "@/tools/registry.ts";
 import { getSkillSummaries } from "@/lib/skills/loader.ts";
 import { buildSkillsIndex } from "@/lib/skills/injector.ts";
@@ -307,7 +307,7 @@ export async function createAgent(project: ProjectForAgent, options: AgentOption
     }
   }
 
-  const model = options.model ? createChatModel(options.model) : chatModel;
+  const model = options.model ? createChatModel(options.model) : getChatModel();
 
   return new ToolLoopAgent({
     model,

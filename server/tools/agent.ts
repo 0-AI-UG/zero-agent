@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { tool, ToolLoopAgent, stepCountIs } from "ai";
 import { createDiscoverableToolset } from "@/tools/registry.ts";
-import { chatModel, enrichModel } from "@/lib/openrouter.ts";
+import { getChatModel, getEnrichModel } from "@/lib/openrouter.ts";
 import { browserBridge } from "@/lib/browser/bridge.ts";
 import { getSkillSummaries } from "@/lib/skills/loader.ts";
 import { buildSkillsIndex } from "@/lib/skills/injector.ts";
@@ -68,7 +68,7 @@ export function createAgentTool(projectId: string, toolOptions: AgentToolOptions
           modelId: toolOptions.modelId,
         });
 
-        const selectedModel = task.model === "default" ? chatModel : enrichModel;
+        const selectedModel = task.model === "default" ? getChatModel() : getEnrichModel();
         let stepNum = 0;
 
         toolLog.info("subagent setup", {

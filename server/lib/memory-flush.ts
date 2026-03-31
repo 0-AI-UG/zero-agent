@@ -1,6 +1,6 @@
 import { generateText } from "ai";
 import type { UIMessage } from "ai";
-import { enrichModel } from "@/lib/openrouter.ts";
+import { getEnrichModel } from "@/lib/openrouter.ts";
 import { readFromS3, writeToS3 } from "@/lib/s3.ts";
 import { extractConversationText } from "@/lib/message-utils.ts";
 import { log } from "@/lib/logger.ts";
@@ -127,7 +127,7 @@ export async function flushConversationMemory(
   // Ask LLM to extract new memories (with retry for transient API errors)
   const callLLM = () =>
     generateText({
-      model: enrichModel,
+      model: getEnrichModel(),
       system: `You extract important information from conversations. Output new memory entries, one per line, in the format:
 section: content
 

@@ -1,7 +1,7 @@
 import type { ModelMessage } from "@ai-sdk/provider-utils";
 import type { PrepareStepFunction } from "ai";
 import { generateText } from "ai";
-import { enrichModel } from "@/lib/openrouter.ts";
+import { getEnrichModel } from "@/lib/openrouter.ts";
 import { clearStaleToolResults } from "@/lib/clear-stale-results.ts";
 import { log } from "@/lib/logger.ts";
 
@@ -173,7 +173,7 @@ export function createCompactPrepareStep(contextWindow: number): PrepareStepFunc
         .join("\n");
 
       const result = await generateText({
-        model: enrichModel,
+        model: getEnrichModel(),
         prompt: `Summarize this conversation concisely, preserving key facts, decisions, user preferences, and any active tasks. Output only the summary, no preamble.\n\n${oldText}`,
         maxOutputTokens: 1024,
       });

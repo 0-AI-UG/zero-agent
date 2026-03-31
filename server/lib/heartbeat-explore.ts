@@ -1,6 +1,6 @@
 import { generateText } from "ai";
 import type { UIMessage } from "ai";
-import { enrichModel } from "@/lib/openrouter.ts";
+import { getEnrichModel } from "@/lib/openrouter.ts";
 import { readFromS3, writeToS3 } from "@/lib/s3.ts";
 import { extractConversationText } from "@/lib/message-utils.ts";
 import { log } from "@/lib/logger.ts";
@@ -74,7 +74,7 @@ export async function detectExploreItems(
 
   const callLLM = () =>
     generateText({
-      model: enrichModel,
+      model: getEnrichModel(),
       system: `You identify knowledge gaps and unanswered questions from conversations that an AI agent could investigate autonomously during its next heartbeat check.
 
 Output format: one item per line, prefixed with "- [ ] "

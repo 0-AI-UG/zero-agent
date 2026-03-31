@@ -2,14 +2,24 @@ import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { wrapLanguageModel, extractReasoningMiddleware } from "ai";
 import type { LanguageModelV3Middleware, LanguageModelV3Message } from "@ai-sdk/provider";
 import { getProviderRouting } from "@/config/models.ts";
+import { getSetting } from "@/lib/settings.ts";
 
-export const openrouter = createOpenRouter({
-  apiKey: process.env.OPENROUTER_API_KEY,
-});
+// Lazily create and cache the OpenRouter provider, recreating when the API key changes.
+let _cachedKey: string | null = null;
+let _cachedProvider: ReturnType<typeof createOpenRouter> | null = null;
+
+function getOpenRouter() {
+  const key = getSetting("OPENROUTER_API_KEY") ?? "";
+  if (_cachedProvider && key === _cachedKey) return _cachedProvider;
+  _cachedKey = key;
+  _cachedProvider = createOpenRouter({ apiKey: key });
+  return _cachedProvider;
+}
 
 export function openrouterWithRouting(modelId: string) {
   const routing = getProviderRouting(modelId);
-  return openrouter(modelId, routing ? { extraBody: { provider: routing } } : {});
+  const or = getOpenRouter();
+  return or(modelId, routing ? { extraBody: { provider: routing } } : {});
 }
 
 /**
@@ -88,17 +98,22 @@ const imageToolResultMiddleware: LanguageModelV3Middleware = {
   },
 };
 
-const baseChatModel = openrouterWithRouting(
-  process.env.OPENROUTER_MODEL ?? "minimax/minimax-m2.7",
-);
+function getDefaultModelId(): string {
+  return getSetting("OPENROUTER_MODEL") ?? "minimax/minimax-m2.7";
+}
 
-export const chatModel = wrapLanguageModel({
-  model: baseChatModel,
-  middleware: [
-    imageToolResultMiddleware,
-    extractReasoningMiddleware({ tagName: "think" }),
-  ],
-});
+export function getChatModel() {
+  return wrapLanguageModel({
+    model: openrouterWithRouting(getDefaultModelId()),
+    middleware: [
+      imageToolResultMiddleware,
+      extractReasoningMiddleware({ tagName: "think" }),
+    ],
+  });
+}
+
+/** @deprecated Use getChatModel() for dynamic key support */
+export const chatModel = getChatModel();
 
 export function createChatModel(modelId: string) {
   return wrapLanguageModel({
@@ -110,34 +125,61 @@ export function createChatModel(modelId: string) {
   });
 }
 
-export const imageModel = openrouter.imageModel(
-  process.env.IMAGE_MODEL ?? "black-forest-labs/flux.2-klein-4b",
-);
-
-export function createImageModelInstance(modelId?: string) {
-  return openrouter.imageModel(
+export function getImageModel(modelId?: string) {
+  const or = getOpenRouter();
+  return or.imageModel(
     modelId ?? process.env.IMAGE_MODEL ?? "black-forest-labs/flux.2-klein-4b",
   );
 }
 
-export const searchParseModel = openrouterWithRouting(
-  process.env.SEARCH_PARSE_MODEL ??
-    process.env.OPENROUTER_MODEL ??
-    "minimax/minimax-m2.7",
-);
+/** @deprecated Use getImageModel() for dynamic key support */
+export const imageModel = getImageModel();
 
-export const editApplyModel = openrouterWithRouting(
-  process.env.EDIT_APPLY_MODEL ?? "openai/gpt-4o",
-);
+export function createImageModelInstance(modelId?: string) {
+  return getImageModel(modelId);
+}
 
-export const visionModel = openrouterWithRouting(
-  process.env.VISION_MODEL ?? "qwen/qwen3.5-flash-02-23",
-);
+export function getSearchParseModel() {
+  return openrouterWithRouting(
+    process.env.SEARCH_PARSE_MODEL ?? getDefaultModelId(),
+  );
+}
 
-export const enrichModel = openrouterWithRouting(
-  process.env.ENRICH_MODEL ?? "qwen/qwen3.5-flash-02-23",
-);
+/** @deprecated Use getSearchParseModel() for dynamic key support */
+export const searchParseModel = getSearchParseModel();
 
-export const extractModel = openrouterWithRouting(
-  process.env.EXTRACT_MODEL ?? "google/gemini-2.5-flash",
-);
+export function getEditApplyModel() {
+  return openrouterWithRouting(
+    process.env.EDIT_APPLY_MODEL ?? "openai/gpt-4o",
+  );
+}
+
+/** @deprecated Use getEditApplyModel() for dynamic key support */
+export const editApplyModel = getEditApplyModel();
+
+export function getVisionModel() {
+  return openrouterWithRouting(
+    process.env.VISION_MODEL ?? "qwen/qwen3.5-flash-02-23",
+  );
+}
+
+/** @deprecated Use getVisionModel() for dynamic key support */
+export const visionModel = getVisionModel();
+
+export function getEnrichModel() {
+  return openrouterWithRouting(
+    process.env.ENRICH_MODEL ?? "qwen/qwen3.5-flash-02-23",
+  );
+}
+
+/** @deprecated Use getEnrichModel() for dynamic key support */
+export const enrichModel = getEnrichModel();
+
+export function getExtractModel() {
+  return openrouterWithRouting(
+    process.env.EXTRACT_MODEL ?? "google/gemini-2.5-flash",
+  );
+}
+
+/** @deprecated Use getExtractModel() for dynamic key support */
+export const extractModel = getExtractModel();
