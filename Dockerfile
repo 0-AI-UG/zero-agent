@@ -2,29 +2,22 @@ FROM oven/bun:1.3.5
 
 WORKDIR /app
 
-# Install procps (provides `ps`, needed by Crawlee memory monitoring)
-# and Playwright system dependencies
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends procps && \
-    rm -rf /var/lib/apt/lists/*
-
 # Install dependencies first (layer caching)
 COPY package.json ./package.json
 COPY web/package.json ./web/package.json
 COPY bun.lock ./
 RUN bun install
 
-# Install Playwright browsers (chromium only)
-RUN bunx playwright install --with-deps chromium
-
-# Copy tsconfig (needed for @/* path alias resolution)
+# Copy config files needed for build & runtime
 COPY tsconfig.json ./tsconfig.json
+COPY bunfig.toml ./bunfig.toml
 
 # Copy server source
 COPY server/ ./server/
 
 # Copy skills
 COPY skills/ ./skills/
+COPY skills-lock.json ./skills-lock.json
 
 # Build frontend
 COPY web/ ./web/

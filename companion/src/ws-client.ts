@@ -54,18 +54,69 @@ export async function createWsClient(options: WsClientOptions) {
       console.error("Failed to emit event:", err, event);
     }
   }
-  // Detect and prepare container runtime
-  const runtimeStatus = detectRuntime();
-  if (!runtimeStatus.ready) {
-    throw new Error("Docker is not running. Please set it up from the companion home screen.");
-  }
-  options.logger.info("Using Docker");
-  await prepareRuntime();
+  // Detect container runtime — don't crash if Docker is missing
+  let dockerInstalled = false;
+  let dockerRunning = false;
+  let workspaceManager: WorkspaceManager | null = null;
 
-  const workspaceManager = new WorkspaceManager({
-    logger: options.logger,
-    backend: new ContainerBackend(),
-  });
+  async function initDocker() {
+    const runtimeStatus = detectRuntime();
+    if (!runtimeStatus.ready) {
+      dockerInstalled = runtimeStatus.installed;
+      dockerRunning = false;
+      if (dockerInstalled) {
+        options.logger.warn("Docker is installed but not running. Code execution will be unavailable.");
+      } else {
+        options.logger.warn("Docker is not installed. Code execution will be unavailable.");
+      }
+      return;
+    }
+    try {
+      await prepareRuntime();
+      workspaceManager = new WorkspaceManager({
+        logger: options.logger,
+        backend: new ContainerBackend(),
+      });
+      dockerInstalled = true;
+      dockerRunning = true;
+      options.logger.info("Using Docker");
+    } catch (err) {
+      options.logger.warn(`Docker preparation failed: ${err instanceof Error ? err.message : String(err)}`);
+      dockerInstalled = true;
+      dockerRunning = false;
+    }
+  }
+
+  await initDocker();
+
+  // Periodically re-check Docker availability (every 30s)
+  const dockerCheckInterval = setInterval(async () => {
+    if (dockerRunning && workspaceManager) return; // Already ready
+    const prevInstalled = dockerInstalled;
+    const prevRunning = dockerRunning;
+    const status = detectRuntime();
+    if (status.ready && !workspaceManager) {
+      options.logger.info("Docker is now available, initializing...");
+      await initDocker();
+      sendCapabilities();
+    } else if (!status.ready) {
+      dockerInstalled = status.installed;
+      dockerRunning = false;
+      // Send update if status changed
+      if (dockerInstalled !== prevInstalled || dockerRunning !== prevRunning) {
+        sendCapabilities();
+      }
+    }
+  }, 30_000);
+
+  function sendCapabilities() {
+    if (!ws) return;
+    const msg: CompanionMessage = {
+      type: "status",
+      capabilities: { dockerInstalled, dockerRunning, chromeAvailable: true },
+    };
+    ws.send(JSON.stringify(msg));
+  }
 
   // Session idle reaper — runs every 60s, cleans up sessions idle for 5+ min
   const sessionReaper = setInterval(() => {
@@ -220,6 +271,11 @@ export async function createWsClient(options: WsClientOptions) {
     // ── Workspace handlers ──
 
     if (data.type === "createWorkspace") {
+      if (!workspaceManager) {
+        const msg: CompanionMessage = { type: "workspaceError", workspaceId: data.workspaceId, error: "Docker is not running. Install and start Docker to enable code execution." };
+        ws?.send(JSON.stringify(msg));
+        return;
+      }
       workspaceManager.createWorkspace(data.workspaceId, data.manifest).then(() => {
         emitEvent({ type: "workspace:created", workspaceId: data.workspaceId });
         emitEvent({ type: "workspace:files", workspaceId: data.workspaceId, files: Object.keys(data.manifest) });
@@ -236,6 +292,11 @@ export async function createWsClient(options: WsClientOptions) {
     }
 
     if (data.type === "syncWorkspace") {
+      if (!workspaceManager) {
+        const msg: CompanionMessage = { type: "workspaceError", workspaceId: data.workspaceId, error: "Docker is not running. Install and start Docker to enable code execution." };
+        ws?.send(JSON.stringify(msg));
+        return;
+      }
       workspaceManager.syncWorkspace(data.workspaceId, data.manifest).then(() => {
         emitEvent({ type: "workspace:files", workspaceId: data.workspaceId, files: Object.keys(data.manifest) });
         workspaceFiles.set(data.workspaceId, Object.keys(data.manifest));
@@ -249,6 +310,11 @@ export async function createWsClient(options: WsClientOptions) {
     }
 
     if (data.type === "runBash") {
+      if (!workspaceManager) {
+        const msg: CompanionMessage = { type: "workspaceError", workspaceId: data.workspaceId, commandId: data.commandId, error: "Docker is not running. Install and start Docker to enable code execution." };
+        ws?.send(JSON.stringify(msg));
+        return;
+      }
       emitEvent({ type: "workspace:bash-started", workspaceId: data.workspaceId, command: data.command });
       emitEvent({ type: "workspace:running", workspaceId: data.workspaceId });
       workspaceStatuses.set(data.workspaceId, "running");
@@ -279,6 +345,11 @@ export async function createWsClient(options: WsClientOptions) {
     }
 
     if (data.type === "destroyWorkspace") {
+      if (!workspaceManager) {
+        const msg: CompanionMessage = { type: "workspaceDestroyed", workspaceId: data.workspaceId };
+        ws?.send(JSON.stringify(msg));
+        return;
+      }
       workspaceManager.destroyWorkspace(data.workspaceId).then(() => {
         emitEvent({ type: "workspace:destroyed", workspaceId: data.workspaceId });
         workspaceFiles.delete(data.workspaceId);
@@ -402,7 +473,7 @@ export async function createWsClient(options: WsClientOptions) {
             resetServerPingTimer();
             options.onConnected?.();
 
-            // Send initial status
+            // Send initial status with capabilities
             try {
               const cdp = options.getCdp();
               const result = await cdp.send("Runtime.evaluate", {
@@ -412,10 +483,14 @@ export async function createWsClient(options: WsClientOptions) {
               const msg: CompanionMessage = {
                 type: "status",
                 url: result.result?.value ?? "about:blank",
+                capabilities: { dockerInstalled, dockerRunning, chromeAvailable: true },
               };
               ws!.send(JSON.stringify(msg));
             } catch {
-              const msg: CompanionMessage = { type: "status" };
+              const msg: CompanionMessage = {
+                type: "status",
+                capabilities: { dockerInstalled, dockerRunning, chromeAvailable: true },
+              };
               ws!.send(JSON.stringify(msg));
             }
             return;
@@ -454,8 +529,9 @@ export async function createWsClient(options: WsClientOptions) {
   function stop() {
     stopped = true;
     clearInterval(sessionReaper);
+    clearInterval(dockerCheckInterval);
     destroyAllSessions();
-    workspaceManager.stop();
+    workspaceManager?.stop();
     ws?.close();
   }
 

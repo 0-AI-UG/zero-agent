@@ -19,8 +19,9 @@ export function AuthLayout() {
   }
 
   if (setupStatus && !setupStatus.setupComplete) {
-    if (location.pathname !== "/setup") {
-      return <Navigate to="/setup" replace />;
+    const setupPath = setupStatus.desktopMode ? "/setup/desktop" : "/setup";
+    if (location.pathname !== setupPath) {
+      return <Navigate to={setupPath} replace />;
     }
     return <Outlet />;
   }

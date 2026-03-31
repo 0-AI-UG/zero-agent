@@ -17,6 +17,9 @@ export interface CompanionStatus {
   lastConnectedAt?: string;
   browserUrl?: string;
   browserTitle?: string;
+  dockerInstalled?: boolean;
+  dockerRunning?: boolean;
+  chromeAvailable?: boolean;
 }
 
 export function useCompanionTokens(projectId: string) {

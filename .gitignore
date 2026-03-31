@@ -11,3 +11,6 @@ dist/
 .browser-state/
 storage/
 data/
+companion/build/
+companion/output.txt
+desktop/build/

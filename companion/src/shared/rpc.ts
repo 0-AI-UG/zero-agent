@@ -35,6 +35,10 @@ export type CompanionRPC = {
 				params: { token: string; server: string };
 				response: { ok: boolean; error?: string };
 			};
+			getAutoConnect: {
+				params: {};
+				response: { token?: string; server?: string };
+			};
 			getState: {
 				params: {};
 				response: {
@@ -44,7 +48,11 @@ export type CompanionRPC = {
 			};
 			checkRuntime: {
 				params: {};
-				response: { ready: boolean; canSetup: boolean; needsWsl: boolean };
+				response: { ready: boolean; installed: boolean; canSetup: boolean; needsWsl: boolean };
+			};
+			checkChrome: {
+				params: {};
+				response: { available: boolean; path?: string };
 			};
 			setupDocker: {
 				params: {};

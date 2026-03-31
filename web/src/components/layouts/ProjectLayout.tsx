@@ -3,6 +3,7 @@ import { useProject } from "@/api/projects";
 import { useFiles } from "@/hooks/use-files";
 import { useAuthStore } from "@/stores/auth";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useDesktopMode } from "@/hooks/use-desktop-mode";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -145,6 +146,7 @@ export function ProjectLayout() {
   const location = useLocation();
   const logout = useAuthStore((s) => s.logout);
   const isMobile = useIsMobile();
+  const desktopMode = useDesktopMode();
 
   const resetFilesNavigation = useFilesStore((s) => s.resetNavigation);
 
@@ -249,14 +251,16 @@ export function ProjectLayout() {
           <span className="text-sm font-semibold truncate flex-1">
             {project.name}
           </span>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={logout}
-            aria-label="Sign out"
-          >
-            <LogOutIcon className="size-4" />
-          </Button>
+          {!desktopMode && (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={logout}
+              aria-label="Sign out"
+            >
+              <LogOutIcon className="size-4" />
+            </Button>
+          )}
         </header>
 
         {/* Content */}
@@ -303,22 +307,24 @@ export function ProjectLayout() {
         </nav>
 
         {/* Logout */}
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={logout}
-              aria-label="Sign out"
-              className="text-sidebar-foreground/50 hover:text-sidebar-foreground"
-            >
-              <LogOutIcon className="size-4" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="right" sideOffset={8}>
-            Sign out
-          </TooltipContent>
-        </Tooltip>
+        {!desktopMode && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={logout}
+                aria-label="Sign out"
+                className="text-sidebar-foreground/50 hover:text-sidebar-foreground"
+              >
+                <LogOutIcon className="size-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="right" sideOffset={8}>
+              Sign out
+            </TooltipContent>
+          </Tooltip>
+        )}
       </aside>
 
       {/* Content */}

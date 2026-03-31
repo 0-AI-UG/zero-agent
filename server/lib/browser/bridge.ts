@@ -11,6 +11,7 @@ import type {
 import { nanoid } from "nanoid";
 import { events } from "@/lib/events.ts";
 import { log } from "@/lib/logger.ts";
+import { DESKTOP_MODE } from "@/lib/auth.ts";
 
 const bridgeLog = log.child({ module: "browser-bridge" });
 
@@ -144,6 +145,11 @@ class BrowserBridge {
         if (conn) {
           conn.status.browserUrl = data.url;
           conn.status.browserTitle = data.title;
+          if (data.capabilities) {
+            conn.status.dockerInstalled = data.capabilities.dockerInstalled;
+            conn.status.dockerRunning = data.capabilities.dockerRunning;
+            conn.status.chromeAvailable = data.capabilities.chromeAvailable;
+          }
         }
         return;
       }
@@ -551,6 +557,7 @@ class BrowserBridge {
   /**
    * Find a companion connection for the project.
    * Prefers the given user's own connection, falls back to any project member's.
+   * In desktop mode, falls back to any companion (single user, single companion).
    */
   private findConnection(userId: string, projectId: string): CompanionConnection | undefined {
     // Try the requesting user's own companion first
@@ -562,6 +569,14 @@ class BrowserBridge {
     for (const [key, conn] of this.companions) {
       if (key.endsWith(suffix)) return conn;
     }
+
+    // In desktop mode, there's a single companion instance — use it for any project
+    if (DESKTOP_MODE) {
+      for (const [, conn] of this.companions) {
+        return conn;
+      }
+    }
+
     return undefined;
   }
 
@@ -580,6 +595,13 @@ class BrowserBridge {
     for (const userId of memberUserIds) {
       if (this.companions.has(connKey(userId, projectId))) {
         return userId;
+      }
+    }
+    // In desktop mode, any companion connection belongs to the single user
+    if (DESKTOP_MODE) {
+      for (const [key] of this.companions) {
+        const userId = key.split(":")[0] ?? "";
+        if (memberUserIds.includes(userId)) return userId;
       }
     }
     return undefined;

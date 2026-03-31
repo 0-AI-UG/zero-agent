@@ -5,6 +5,7 @@
  * 2. Embeds the built assets into a TS module
  * 3. Compiles server + frontend into dist/zero-agent
  * 4. Compiles companion into dist/zero-agent-companion
+ * 5. Builds desktop Electrobun app (combined server + web + companion)
  */
 import { readdirSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join, extname } from "node:path";
@@ -52,22 +53,43 @@ writeFileSync(
   `// Auto-generated — do not edit\nexport const assets: Record<string, { data: Buffer; mime: string; immutable: boolean }> = {\n${entries.join(",\n")}\n};\n`,
 );
 
-// Step 3: Compile server + companion in parallel
+// Step 3: Compile server, companion, and desktop in parallel
 const OUT_DIR = join(import.meta.dir, "dist");
 mkdirSync(OUT_DIR, { recursive: true });
 
-console.log("3/4 Compiling server...");
+console.log("3/5 Compiling server...");
 const serverBuild = $`bun build --compile --minify --target=bun server/index.ts --outfile=dist/zero-agent --external=../web/src/index.html 2>&1 | grep -E "compile|bundle|minify|error"`.nothrow();
 
-console.log("4/4 Building companion...");
+console.log("4/5 Building companion...");
 const companionBuild = $`cd companion && bunx electrobun build 2>&1`.nothrow();
 
-await Promise.all([serverBuild, companionBuild]);
+console.log("5/5 Building desktop app...");
+const desktopBuild = $`cd desktop && bunx electrobun build 2>&1`.nothrow();
+
+await Promise.all([serverBuild, companionBuild, desktopBuild]);
 
 // Clean up generated files
 await $`rm -rf ${GENERATED}`;
+
+// Step 6: Bundle server binary + companion app into the desktop app
+console.log("6/6 Bundling desktop app...");
+const desktopAppDir = (await $`ls -d desktop/build/*/`.text()).trim();
+const desktopAppName = (await $`ls ${desktopAppDir}`.text()).trim();
+const resourcesDir = join(desktopAppDir, desktopAppName, "Contents", "Resources");
+
+// Copy compiled server binary
+await $`cp dist/zero-agent ${resourcesDir}/zero-agent`;
+
+// Copy companion .app bundle
+const companionBuildDir = (await $`ls -d companion/build/*/`.text()).trim();
+const companionAppName = (await $`ls ${companionBuildDir}`.text()).trim();
+await $`cp -R ${join(companionBuildDir, companionAppName)} ${join(resourcesDir, "zero-agent-companion.app")}`;
+
+// Set DESKTOP_PRODUCTION in the desktop app's Info.plist environment
+// (Electrobun reads env from the process, so we rely on the launcher or wrapper to set it)
 
 const serverSize = ((await Bun.file("dist/zero-agent").size) / 1024 / 1024).toFixed(1);
 console.log(`\nDone:`);
 console.log(`  dist/zero-agent  (${serverSize} MB)`);
 console.log(`  companion/build/ (electrobun app)`);
+console.log(`  desktop/build/   (electrobun desktop app — bundled with server + companion)`);

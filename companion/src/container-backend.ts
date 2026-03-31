@@ -6,7 +6,7 @@ import { readCapped } from "./workspace-utils.ts";
 
 export type RuntimeStatus =
   | { ready: true }
-  | { ready: false; canSetup: boolean; needsWsl: boolean };
+  | { ready: false; installed: boolean; canSetup: boolean; needsWsl: boolean };
 
 const IMAGE = "zero-workspace:latest";
 const MAX_OUTPUT = 1_048_576; // 1 MB
@@ -60,12 +60,12 @@ export function isWslAvailable(): boolean {
 /** Detect runtime status. */
 export function detectRuntime(): RuntimeStatus {
   if (!isInstalled()) {
-    return { ready: false, canSetup: true, needsWsl: IS_WINDOWS && !isWslAvailable() };
+    return { ready: false, installed: false, canSetup: true, needsWsl: IS_WINDOWS && !isWslAvailable() };
   }
 
   if (!isDaemonRunning()) {
     // Docker is installed but not running — user needs to start Docker Desktop
-    return { ready: false, canSetup: true, needsWsl: false };
+    return { ready: false, installed: true, canSetup: true, needsWsl: false };
   }
 
   return { ready: true };

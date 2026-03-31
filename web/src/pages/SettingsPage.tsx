@@ -9,11 +9,13 @@ import {
 import { MembersManager } from "@/components/settings/MembersManager";
 import { CompanionManager } from "@/components/settings/CompanionManager";
 import { TelegramManager } from "@/components/settings/TelegramManager";
+import { useDesktopMode } from "@/hooks/use-desktop-mode";
 
 export function SettingsPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const { project } = useOutletContext<{ project: Project }>();
   const updateProject = useUpdateProject(projectId!);
+  const desktopMode = useDesktopMode();
 
   return (
     <div className="h-full overflow-y-auto">
@@ -28,7 +30,7 @@ export function SettingsPage() {
         </div>
 
         {/* Members section */}
-        <MembersManager projectId={projectId!} project={project} />
+        {!desktopMode && <MembersManager projectId={projectId!} project={project} />}
 
         {/* Browser Companion section */}
         <CompanionManager projectId={projectId!} project={project} updateProject={updateProject} />

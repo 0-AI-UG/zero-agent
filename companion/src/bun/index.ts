@@ -2,6 +2,7 @@ import { BrowserWindow, BrowserView, ApplicationMenu } from "electrobun/bun";
 import { startCompanion } from "../companion.ts";
 import type { CompanionRPC } from "../shared/rpc.ts";
 import { detectRuntime, setupDocker, installWsl, getDockerResources, removeContainer, removeImage, pruneAll } from "../container-backend.ts";
+import { detectChrome } from "../chrome-discovery.ts";
 
 let companionShutdown: (() => Promise<void>) | null = null;
 let companionGetState: (() => { sessions: Array<{ id: string; url?: string; title?: string }>; workspaces: Array<{ id: string; status: string; files: string[] }> }) | null = null;
@@ -10,6 +11,12 @@ const rpc = BrowserView.defineRPC<CompanionRPC>({
 	maxRequestTime: 30000,
 	handlers: {
 		requests: {
+			getAutoConnect: async () => {
+				const token = process.env.COMPANION_TOKEN;
+				const server = process.env.COMPANION_SERVER;
+				if (token) return { token, server };
+				return {};
+			},
 			connect: async ({ token, server }) => {
 				if (companionShutdown) {
 					await companionShutdown();
@@ -53,8 +60,11 @@ const rpc = BrowserView.defineRPC<CompanionRPC>({
 			},
 			checkRuntime: async () => {
 				const status = detectRuntime();
-				if (status.ready) return { ready: true, canSetup: false, needsWsl: false };
-				return { ready: false, canSetup: status.canSetup, needsWsl: status.needsWsl };
+				if (status.ready) return { ready: true, installed: true, canSetup: false, needsWsl: false };
+				return { ready: false, installed: status.installed, canSetup: status.canSetup, needsWsl: status.needsWsl };
+			},
+			checkChrome: async () => {
+				return detectChrome();
 			},
 			setupDocker: async () => {
 				return setupDocker((step, detail) => {

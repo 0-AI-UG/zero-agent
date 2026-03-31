@@ -8,8 +8,10 @@ interface ConnectPanelProps {
 	onConnect: (token: string, server: string) => void;
 	error: string;
 	runtimeReady: boolean | "checking" | "setting-up";
+	dockerInstalled: boolean;
 	canSetup: boolean;
 	needsWsl: boolean;
+	chromeAvailable: boolean | "checking";
 	onSetup: () => void;
 	onInstallWsl: () => void;
 }
@@ -120,7 +122,7 @@ function SetupProgress({ error }: { error: string }) {
 	);
 }
 
-export function ConnectPanel({ onConnect, error, runtimeReady, canSetup, needsWsl, onSetup, onInstallWsl }: ConnectPanelProps) {
+export function ConnectPanel({ onConnect, error, runtimeReady, dockerInstalled, canSetup, needsWsl, chromeAvailable, onSetup, onInstallWsl }: ConnectPanelProps) {
 	const [token, setToken] = useState("");
 	const [server, setServer] = useState("http://localhost:3000");
 	const [submitting, setSubmitting] = useState(false);
@@ -136,12 +138,12 @@ export function ConnectPanel({ onConnect, error, runtimeReady, canSetup, needsWs
 		if (error) setSubmitting(false);
 	}, [error]);
 
-	if (runtimeReady === "checking") {
+	if (runtimeReady === "checking" || chromeAvailable === "checking") {
 		return (
 			<section className="flex flex-1 items-center justify-center px-8">
 				<div className="flex items-center gap-2">
 					<div style={{ color: "var(--primary)" }}><Spinner /></div>
-					<p className="text-xs text-muted-foreground">Checking container runtime</p>
+					<p className="text-xs text-muted-foreground">Checking runtime dependencies</p>
 				</div>
 			</section>
 		);
@@ -151,12 +153,33 @@ export function ConnectPanel({ onConnect, error, runtimeReady, canSetup, needsWs
 		return <SetupProgress error={error} />;
 	}
 
+	if (!chromeAvailable) {
+		return (
+			<section className="flex flex-1 items-center justify-center px-8">
+				<div className="w-full">
+					<h2 className="text-lg font-bold tracking-tight mb-1 font-display">Chrome Required</h2>
+					<p className="text-xs text-muted-foreground mb-5 leading-relaxed">
+						Google Chrome is required for browser automation.
+						Please install Chrome and restart the companion.
+					</p>
+					{error && <p className="text-[11px] text-destructive text-center mt-3">{error}</p>}
+				</div>
+			</section>
+		);
+	}
+
 	if (!runtimeReady) {
 		return (
 			<section className="flex flex-1 items-center justify-center px-8">
 				<div className="w-full">
-					<h2 className="text-lg font-bold tracking-tight mb-1 font-display">Setup Required</h2>
-					{needsWsl ? (
+					<h2 className="text-lg font-bold tracking-tight mb-1 font-display">
+						{dockerInstalled ? "Docker Not Running" : "Setup Required"}
+					</h2>
+					{dockerInstalled ? (
+						<p className="text-xs text-muted-foreground mb-5 leading-relaxed">
+							Docker is installed but not running. Please start Docker Desktop to enable code execution.
+						</p>
+					) : needsWsl ? (
 						<>
 							<p className="text-xs text-muted-foreground mb-5 leading-relaxed">
 								Docker requires WSL2 (Windows Subsystem for Linux) to run containers.

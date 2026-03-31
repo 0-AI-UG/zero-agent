@@ -7,7 +7,11 @@
     "dev": "bun --env-file=.env --hot server/index.ts",
     "build": "bun run --cwd web build",
     "compile": "bun run build.ts",
-    "start": "NODE_ENV=production bun server/index.ts"
+    "start": "NODE_ENV=production bun server/index.ts",
+    "desktop:dev": "cd desktop && bunx electrobun dev --watch",
+    "desktop:build": "cd desktop && bunx electrobun build",
+    "companion:dev": "cd companion && bunx electrobun dev --watch",
+    "companion:build": "cd companion && bunx electrobun build"
   },
   "dependencies": {
     "@0-ai/s3lite": "latest",

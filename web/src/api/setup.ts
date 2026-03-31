@@ -2,6 +2,7 @@ const API_BASE = "/api";
 
 export interface SetupStatus {
   setupComplete: boolean;
+  desktopMode?: boolean;
 }
 
 export async function getSetupStatus(): Promise<SetupStatus> {

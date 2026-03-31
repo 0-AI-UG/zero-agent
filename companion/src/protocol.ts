@@ -63,7 +63,7 @@ export type CompanionControl =
 
 export type CompanionMessage =
   | { type: "pong" }
-  | { type: "status"; url?: string; title?: string }
+  | { type: "status"; url?: string; title?: string; capabilities?: { dockerInstalled: boolean; dockerRunning: boolean; chromeAvailable: boolean } }
   | { type: "response"; response: BrowserResponse }
   | { type: "sessionCreated"; sessionId: string }
   | { type: "sessionDestroyed"; sessionId: string }

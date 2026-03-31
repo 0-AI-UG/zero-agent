@@ -132,6 +132,11 @@ import { handleUsageSummary, handleUsageByModel, handleUsageByUser } from "@/rou
 import { startAllPollers } from "@/lib/telegram-polling.ts";
 import { processIncomingUpdate } from "@/routes/telegram.ts";
 
+import { initDesktopUser } from "@/lib/desktop-init.ts";
+import { DESKTOP_MODE } from "@/lib/auth.ts";
+import { db } from "@/db/index.ts";
+await initDesktopUser();
+
 const httpLog = log.child({ module: "http" });
 const PORT = parseInt(process.env.PORT ?? "3000");
 
@@ -457,10 +462,12 @@ const server = Bun.serve<{ userId: string; projectId: string; authenticated: boo
     // WebSocket upgrade for companion agent
     const url = new URL(request.url);
     if (url.pathname === "/ws/companion") {
-      // Rate limit by IP
-      const ip = server.requestIP(request)?.address ?? "unknown";
-      if (isWsRateLimited(ip)) {
-        return Response.json({ error: "Too many connection attempts" }, { status: 429, headers: corsHeaders });
+      // Rate limit by IP (skip in desktop mode — local connections only)
+      if (!DESKTOP_MODE) {
+        const ip = server.requestIP(request)?.address ?? "unknown";
+        if (isWsRateLimited(ip)) {
+          return Response.json({ error: "Too many connection attempts" }, { status: 429, headers: corsHeaders });
+        }
       }
 
       // Upgrade without auth — token is sent as the first message
@@ -523,6 +530,17 @@ const server = Bun.serve<{ userId: string; projectId: string; authenticated: boo
             ws.close(4002, "Invalid auth message");
             return;
           }
+
+          if (DESKTOP_MODE) {
+            const firstProject = db.query<{ id: string }, []>("SELECT id FROM projects LIMIT 1").get();
+            ws.data.userId = "desktop-user";
+            ws.data.projectId = data.projectId ?? firstProject?.id ?? "";
+            ws.data.authenticated = true;
+            ws.send(JSON.stringify({ type: "auth_ok" }));
+            browserBridge.handleOpen(ws as any);
+            return;
+          }
+
           const tokenRow = getCompanionTokenByToken(data.token);
           if (!tokenRow) {
             ws.send(JSON.stringify({ type: "error", error: "Invalid or expired token" }));
@@ -555,6 +573,7 @@ const server = Bun.serve<{ userId: string; projectId: string; authenticated: boo
   },
 });
 
+export { server };
 log.info("server started", { port: server.port, url: server.url.href, logLevel: process.env.LOG_LEVEL ?? "debug" });
 
 startScheduler();

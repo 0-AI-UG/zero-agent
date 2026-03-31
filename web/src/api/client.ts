@@ -4,7 +4,9 @@ const API_BASE = "/api";
 
 function isTokenExpired(token: string): boolean {
   try {
-    const payload = JSON.parse(atob(token.split(".")[1]!));
+    const parts = token.split(".");
+    if (parts.length !== 3) return false; // Non-JWT token (e.g. desktop mode)
+    const payload = JSON.parse(atob(parts[1]!));
     // Expire 30s early to avoid race conditions
     return typeof payload.exp === "number" && payload.exp * 1000 < Date.now() + 30_000;
   } catch {

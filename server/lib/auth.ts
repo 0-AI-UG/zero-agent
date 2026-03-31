@@ -2,10 +2,14 @@ import { jwtVerify, SignJWT } from "jose";
 import { AuthError, ForbiddenError } from "@/lib/errors.ts";
 import { getUserById } from "@/db/queries/users.ts";
 
+export const DESKTOP_MODE = process.env.DESKTOP_MODE === "1";
+
 export interface TokenPayload {
   userId: string;
   email: string;
 }
+
+const DESKTOP_USER: TokenPayload = { userId: "desktop-user", email: "desktop@local" };
 
 // HS256 requires at least 256 bits (32 bytes). Hash the secret to guarantee length.
 const rawSecret = new TextEncoder().encode(
@@ -18,6 +22,7 @@ const JWT_SECRET = new Uint8Array(
 export async function authenticateRequest(
   request: Request,
 ): Promise<TokenPayload> {
+  if (DESKTOP_MODE) return DESKTOP_USER;
   const header = request.headers.get("Authorization");
   if (!header?.startsWith("Bearer ")) {
     throw new AuthError("Unauthorized");
@@ -40,6 +45,7 @@ export async function createToken(payload: TokenPayload): Promise<string> {
 }
 
 export async function requireAdmin(request: Request): Promise<TokenPayload> {
+  if (DESKTOP_MODE) return DESKTOP_USER;
   const payload = await authenticateRequest(request);
   const user = getUserById(payload.userId);
   if (!user?.is_admin) {

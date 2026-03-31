@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { setHandlers, connect, getState, checkRuntime, setupDocker, installWsl } from "./rpc-bridge.ts";
+import { setHandlers, connect, getAutoConnect, getState, checkRuntime, checkChrome, setupDocker, installWsl } from "./rpc-bridge.ts";
 import type { ActivityEvent } from "../shared/rpc.ts";
 import type {
 	SessionDetail, WorkspaceDetail, CodeExecution,
@@ -22,8 +22,11 @@ export function App() {
 	const [error, setError] = useState("");
 	const [route, setRoute] = useState<Route>({ view: "overview" });
 	const [runtimeReady, setRuntimeReady] = useState<boolean | "checking" | "setting-up">("checking");
+	const [dockerInstalled, setDockerInstalled] = useState(false);
 	const [canSetup, setCanSetup] = useState(false);
 	const [needsWsl, setNeedsWsl] = useState(false);
+	const [chromeAvailable, setChromeAvailable] = useState<boolean | "checking">("checking");
+	const [autoConnectChecked, setAutoConnectChecked] = useState(false);
 	const [sessions, setSessions] = useState<Map<string, SessionDetail>>(new Map());
 	const [workspaces, setWorkspaces] = useState<Map<string, WorkspaceDetail>>(new Map());
 
@@ -138,14 +141,31 @@ export function App() {
 	const refreshRuntimeStatus = () => {
 		checkRuntime().then((r) => {
 			setRuntimeReady(r.ready);
+			setDockerInstalled(r.installed);
 			setCanSetup(r.canSetup);
 			setNeedsWsl(r.needsWsl);
 		}).catch(() => setRuntimeReady(false));
+		checkChrome().then((r) => {
+			setChromeAvailable(r.available);
+		}).catch(() => setChromeAvailable(false));
 	};
 
 	useEffect(() => {
 		refreshRuntimeStatus();
 	}, []);
+
+	// Auto-connect when launched with COMPANION_TOKEN env var (desktop mode)
+	useEffect(() => {
+		if (autoConnectChecked) return;
+		if (runtimeReady !== true || chromeAvailable !== true) return;
+		if (connection !== "disconnected") return;
+		setAutoConnectChecked(true);
+		getAutoConnect().then((auto) => {
+			if (auto.token) {
+				handleConnect(auto.token, auto.server ?? "http://localhost:3000");
+			}
+		}).catch(() => {});
+	}, [runtimeReady, chromeAvailable, connection, autoConnectChecked]);
 
 	const handleSetup = async () => {
 		setRuntimeReady("setting-up");
@@ -276,8 +296,10 @@ export function App() {
 					onConnect={handleConnect}
 					error={error}
 					runtimeReady={runtimeReady}
+					dockerInstalled={dockerInstalled}
 					canSetup={canSetup}
 					needsWsl={needsWsl}
+					chromeAvailable={chromeAvailable}
 					onSetup={handleSetup}
 					onInstallWsl={handleInstallWsl}
 				/>

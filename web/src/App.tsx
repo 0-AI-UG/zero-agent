@@ -14,6 +14,7 @@ import { SkillsPage } from "@/pages/SkillsPage";
 import { HelpPage } from "@/pages/HelpPage";
 import { AdminPage } from "@/pages/AdminPage";
 import { SetupPage } from "@/pages/SetupPage";
+import { DesktopSetupPage } from "@/pages/DesktopSetupPage";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import "./index.css";
 
@@ -24,6 +25,7 @@ export function App() {
       <BrowserRouter>
         <Routes>
           {/* Public routes */}
+          <Route path="/setup/desktop" element={<DesktopSetupPage />} />
           <Route element={<AuthLayout />}>
             <Route path="/login" element={<LoginPage />} />
             <Route path="/setup" element={<SetupPage />} />

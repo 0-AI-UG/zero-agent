@@ -32,3 +32,8 @@ export function discoverChrome(): string | null {
   }
   return null;
 }
+
+export function detectChrome(): { available: boolean; path?: string } {
+  const p = discoverChrome();
+  return p ? { available: true, path: p } : { available: false };
+}

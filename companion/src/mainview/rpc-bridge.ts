@@ -31,6 +31,10 @@ const rpc = Electroview.defineRPC<CompanionRPC>({
 
 const electroview = new Electroview({ rpc });
 
+export async function getAutoConnect() {
+	return electroview.rpc!.request.getAutoConnect({});
+}
+
 export async function connect(token: string, server: string) {
 	return electroview.rpc!.request.connect({ token, server });
 }
@@ -41,6 +45,10 @@ export async function getState() {
 
 export async function checkRuntime() {
 	return electroview.rpc!.request.checkRuntime({});
+}
+
+export async function checkChrome() {
+	return electroview.rpc!.request.checkChrome({});
 }
 
 export async function setupDocker() {

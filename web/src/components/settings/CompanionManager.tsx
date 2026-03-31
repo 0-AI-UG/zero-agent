@@ -5,6 +5,7 @@ import {
   useDeleteCompanionToken,
   useCompanionStatus,
 } from "@/api/companion";
+import { useDesktopMode } from "@/hooks/use-desktop-mode";
 import {
   useCredentials,
   useCreateCredential,
@@ -21,7 +22,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { MonitorIcon, TrashIcon, CopyIcon, CheckIcon, TerminalSquareIcon, KeyRoundIcon, ShieldCheckIcon, PencilIcon, EyeIcon, EyeOffIcon, FingerprintIcon, SmartphoneIcon, MessageSquareIcon, ImageIcon } from "lucide-react";
+import { MonitorIcon, TrashIcon, CopyIcon, CheckIcon, TerminalSquareIcon, KeyRoundIcon, ShieldCheckIcon, PencilIcon, EyeIcon, EyeOffIcon, FingerprintIcon, SmartphoneIcon, MessageSquareIcon, ImageIcon, AlertTriangleIcon } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { type Project, useUpdateProject } from "@/api/projects";
 import { decodeQrImage } from "@/lib/qr-decode";
@@ -33,6 +34,7 @@ interface CompanionManagerProps {
 }
 
 export function CompanionManager({ projectId, project, updateProject }: CompanionManagerProps) {
+  const desktopMode = useDesktopMode();
   const { data: tokens, isLoading } = useCompanionTokens(projectId);
   const { data: status } = useCompanionStatus(projectId);
   const createToken = useCreateCompanionToken(projectId);
@@ -95,18 +97,47 @@ export function CompanionManager({ projectId, project, updateProject }: Companio
           )}
         </div>
 
-        {isLoading && (
+        {/* Docker/Chrome status warnings (when connected — reported by companion) */}
+        {status?.connected && status.dockerRunning === false && (
+          <div className="flex items-start gap-2 rounded-md bg-amber-500/10 border border-amber-500/20 px-3 py-2">
+            <AlertTriangleIcon className="size-4 text-amber-500 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-xs font-medium text-amber-700 dark:text-amber-400">
+                {status.dockerInstalled ? "Docker is not running" : "Docker is not installed"}
+              </p>
+              <p className="text-[11px] text-amber-600/80 dark:text-amber-400/70">
+                {status.dockerInstalled
+                  ? "Start Docker Desktop to enable code execution."
+                  : "Install Docker Desktop to enable code execution."}
+              </p>
+            </div>
+          </div>
+        )}
+        {status?.connected && status.chromeAvailable === false && (
+          <div className="flex items-start gap-2 rounded-md bg-amber-500/10 border border-amber-500/20 px-3 py-2">
+            <AlertTriangleIcon className="size-4 text-amber-500 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-xs font-medium text-amber-700 dark:text-amber-400">Chrome is not available</p>
+              <p className="text-[11px] text-amber-600/80 dark:text-amber-400/70">
+                Browser automation requires Google Chrome. Please install it.
+              </p>
+            </div>
+          </div>
+        )}
+
+
+        {!desktopMode && isLoading && (
           <p className="text-xs text-muted-foreground">Loading tokens...</p>
         )}
 
-        {!isLoading && (!tokens || tokens.length === 0) && (
+        {!desktopMode && !isLoading && (!tokens || tokens.length === 0) && (
           <p className="text-xs text-muted-foreground">
             No devices connected yet. Generate a token to link your browser.
           </p>
         )}
 
         {/* Token list */}
-        {tokens && tokens.length > 0 && (
+        {!desktopMode && tokens && tokens.length > 0 && (
           <div className="space-y-2">
             {tokens.map((t) => (
               <div
@@ -145,14 +176,16 @@ export function CompanionManager({ projectId, project, updateProject }: Companio
         )}
 
         {/* Actions */}
-        <div className="flex items-center gap-2 pt-2 border-t">
-          <button
-            onClick={() => setCreateOpen(true)}
-            className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
-          >
-            Generate token
-          </button>
-        </div>
+        {!desktopMode && (
+          <div className="flex items-center gap-2 pt-2 border-t">
+            <button
+              onClick={() => setCreateOpen(true)}
+              className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+            >
+              Generate token
+            </button>
+          </div>
+        )}
 
         {/* Browser Automation toggle */}
         <div className="flex items-center justify-between gap-4 pt-2 border-t">
