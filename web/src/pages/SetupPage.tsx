@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
+import { useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@/stores/auth";
 import { completeSetup } from "@/api/setup";
 import { Button } from "@/components/ui/button";
@@ -17,6 +18,7 @@ import logoSvg from "@/logo.svg";
 
 export function SetupPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [step, setStep] = useState(1);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -67,6 +69,7 @@ export function SetupPage() {
         braveSearchApiKey: braveSearchApiKey || undefined,
       });
       useAuthStore.getState().login(token, user);
+      queryClient.setQueryData(["setup", "status"], { setupComplete: true });
       navigate("/", { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Setup failed");
