@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "electrobun dev",
-    "dev": "electrobun dev --watch",
+    "start": "ZERO_AGENT_DEV=1 ZERO_AGENT_ROOT=$(cd .. && pwd) electrobun dev",
+    "dev": "ZERO_AGENT_DEV=1 ZERO_AGENT_ROOT=$(cd .. && pwd) electrobun dev --watch",
     "build": "electrobun build"
   },
   "dependencies": {

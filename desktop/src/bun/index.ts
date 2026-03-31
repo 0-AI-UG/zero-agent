@@ -1,38 +1,18 @@
 import Electrobun, { BrowserWindow, BrowserView, ApplicationMenu } from "electrobun/bun";
 import { join } from "node:path";
 import { homedir } from "node:os";
-import { mkdirSync, existsSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 
 // ── Data directory ──
 const dataDir = join(homedir(), "Library", "Application Support", "com.zero-agent.desktop");
 mkdirSync(dataDir, { recursive: true });
 
 // ── Dev vs production ──
-// In dev, import.meta.dir is inside the repo (desktop/src/bun/).
-// In production, it's inside the .app bundle (Resources/app/bun/).
-// Detect by checking if bundled server binary exists in Resources.
-
-function findResourcesDir(): string | null {
-	let dir = import.meta.dir;
-	for (let i = 0; i < 10; i++) {
-		dir = join(dir, "..");
-		if (existsSync(join(dir, "zero-agent"))) return dir;
-	}
-	return null;
-}
-
-function findRepoRoot(): string | null {
-	let dir = import.meta.dir;
-	for (let i = 0; i < 10; i++) {
-		dir = join(dir, "..");
-		if (existsSync(join(dir, "server/index.ts"))) return dir;
-	}
-	return null;
-}
-
-const resourcesDir = findResourcesDir();
-const repoRoot = findRepoRoot();
-const isDev = resourcesDir === null;
+// Dev scripts set ZERO_AGENT_DEV=1 and ZERO_AGENT_ROOT. Production builds don't.
+const isDev = process.env.ZERO_AGENT_DEV === "1";
+// In dev: repo root from env. In production: Resources dir is two levels up from app/bun/.
+const repoRoot = isDev ? process.env.ZERO_AGENT_ROOT! : null;
+const resourcesDir = isDev ? null : join(import.meta.dir, "..", "..");
 
 const PORT = "17380";
 const serverUrl = `http://localhost:${PORT}`;
@@ -97,6 +77,37 @@ const rpc = BrowserView.defineRPC<{ requests: {}; messages: {} }>({
 	handlers: { requests: {}, messages: {} },
 });
 
+function launchCompanion() {
+	const companionEnv = {
+		...process.env,
+		COMPANION_TOKEN: "desktop-mode",
+		COMPANION_SERVER: serverUrl,
+	};
+
+	try {
+		let companionProc;
+		if (isDev) {
+			companionProc = Bun.spawn(["bunx", "electrobun", "dev"], {
+				cwd: join(repoRoot!, "companion"),
+				env: companionEnv,
+				stdout: "inherit",
+				stderr: "inherit",
+			});
+		} else {
+			const companionApp = join(resourcesDir!, "zero-agent-companion.app");
+			const launcherPath = join(companionApp, "Contents", "MacOS", "launcher");
+			companionProc = Bun.spawn([launcherPath], {
+				env: companionEnv,
+				stdout: "inherit",
+				stderr: "inherit",
+			});
+		}
+		childPids.push(companionProc.pid);
+	} catch (err) {
+		console.warn("Companion failed to start:", err);
+	}
+}
+
 ApplicationMenu.setApplicationMenu([
 	{
 		label: "Edit",
@@ -107,7 +118,19 @@ ApplicationMenu.setApplicationMenu([
 			{ role: "selectAll" },
 		],
 	},
+	{
+		label: "Companion",
+		submenu: [
+			{ label: "Launch Companion", action: "launch-companion" },
+		],
+	},
 ]);
+
+ApplicationMenu.on("application-menu-clicked", (event: any) => {
+	if (event?.data?.action === "launch-companion") {
+		launchCompanion();
+	}
+});
 
 // ── Create main window ──
 const mainWindow = new BrowserWindow({
@@ -125,36 +148,6 @@ const mainWindow = new BrowserWindow({
 Electrobun.events.on("before-quit", () => {
 	killChildren();
 });
-
-// ── Start companion app ──
-const companionEnv = {
-	...process.env,
-	COMPANION_TOKEN: "desktop-mode",
-	COMPANION_SERVER: serverUrl,
-};
-
-try {
-	let companionProc;
-	if (isDev) {
-		companionProc = Bun.spawn(["bunx", "electrobun", "dev"], {
-			cwd: join(repoRoot!, "companion"),
-			env: companionEnv,
-			stdout: "inherit",
-			stderr: "inherit",
-		});
-	} else {
-		const companionApp = join(resourcesDir!, "zero-agent-companion.app");
-		const launcherPath = join(companionApp, "Contents", "MacOS", "launcher");
-		companionProc = Bun.spawn([launcherPath], {
-			env: companionEnv,
-			stdout: "inherit",
-			stderr: "inherit",
-		});
-	}
-	childPids.push(companionProc.pid);
-} catch (err) {
-	console.warn("Companion failed to start:", err);
-}
 
 // ── Watchdog: if our parent (Electrobun launcher) dies, clean up ──
 const parentPid = process.ppid;

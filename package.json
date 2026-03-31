@@ -8,7 +8,7 @@
     "build": "bun run --cwd web build",
     "compile": "bun run build.ts",
     "start": "NODE_ENV=production bun server/index.ts",
-    "desktop:dev": "cd desktop && bunx electrobun dev --watch",
+    "desktop:dev": "ZERO_AGENT_DEV=1 ZERO_AGENT_ROOT=$PWD sh -c 'cd desktop && bunx electrobun dev --watch'",
     "desktop:build": "cd desktop && bunx electrobun build",
     "companion:dev": "cd companion && bunx electrobun dev --watch",
     "companion:build": "cd companion && bunx electrobun build"
