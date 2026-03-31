@@ -118,9 +118,12 @@ export function App() {
 					const ws = next.get(event.workspaceId);
 					if (ws && ws.executions.length > 0) {
 						const executions = [...ws.executions];
-						const last = executions[executions.length - 1];
-						executions[executions.length - 1] = {
-							...last,
+						// Find the last running execution to update (not just the last entry)
+						let idx = executions.length - 1;
+						while (idx >= 0 && executions[idx].status !== "running") idx--;
+						if (idx < 0) idx = executions.length - 1; // fallback to last
+						executions[idx] = {
+							...executions[idx],
 							stdout: event.stdout,
 							stderr: event.stderr,
 							exitCode: event.exitCode,

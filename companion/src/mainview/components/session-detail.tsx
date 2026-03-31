@@ -11,22 +11,22 @@ function timeAgo(ts: number): string {
 }
 
 const ACTION_CONFIG: Record<string, { label: string; dot: string }> = {
-	navigate: { label: "Navigate", dot: "bg-blue-500" },
-	click: { label: "Click", dot: "bg-emerald-500" },
-	type: { label: "Type", dot: "bg-emerald-500" },
-	screenshot: { label: "Screenshot", dot: "bg-violet-500" },
-	snapshot: { label: "Read page", dot: "bg-violet-500" },
-	scroll: { label: "Scroll", dot: "bg-slate-400" },
-	evaluate: { label: "Run script", dot: "bg-amber-500" },
-	back: { label: "Back", dot: "bg-slate-400" },
-	forward: { label: "Forward", dot: "bg-slate-400" },
-	reload: { label: "Reload", dot: "bg-slate-400" },
-	wait: { label: "Wait", dot: "bg-slate-400" },
-	hover: { label: "Hover", dot: "bg-emerald-500" },
-	select: { label: "Select", dot: "bg-emerald-500" },
-	tabs: { label: "List tabs", dot: "bg-slate-400" },
-	switchTab: { label: "Switch tab", dot: "bg-blue-500" },
-	closeTab: { label: "Close tab", dot: "bg-red-400" },
+	navigate: { label: "Navigate", dot: "bg-primary" },
+	click: { label: "Click", dot: "bg-foreground" },
+	type: { label: "Type", dot: "bg-foreground" },
+	screenshot: { label: "Screenshot", dot: "bg-muted-foreground" },
+	snapshot: { label: "Read page", dot: "bg-muted-foreground" },
+	scroll: { label: "Scroll", dot: "bg-muted-foreground" },
+	evaluate: { label: "Run script", dot: "bg-foreground" },
+	back: { label: "Back", dot: "bg-muted-foreground" },
+	forward: { label: "Forward", dot: "bg-muted-foreground" },
+	reload: { label: "Reload", dot: "bg-muted-foreground" },
+	wait: { label: "Wait", dot: "bg-muted-foreground" },
+	hover: { label: "Hover", dot: "bg-foreground" },
+	select: { label: "Select", dot: "bg-foreground" },
+	tabs: { label: "List tabs", dot: "bg-muted-foreground" },
+	switchTab: { label: "Switch tab", dot: "bg-primary" },
+	closeTab: { label: "Close tab", dot: "bg-destructive" },
 };
 
 export function SessionDetailView({
@@ -43,11 +43,11 @@ export function SessionDetailView({
 			{/* Status header */}
 			<div className="rounded-lg border border-border bg-card p-3">
 				<div className="flex items-center gap-2">
-					<span className="w-2 h-2 rounded-full shrink-0 bg-blue-500" />
+					<span className="w-2 h-2 rounded-full shrink-0 bg-primary" />
 					<span className="text-xs font-semibold truncate flex-1 min-w-0">
 						{session.label ?? session.title ?? "Browser Tab"}
 					</span>
-					<Badge variant="outline" className="h-4 px-1.5 text-[9px] bg-blue-50 text-blue-700 border-blue-200">
+					<Badge variant="outline" className="h-4 px-1.5 text-[9px] bg-muted text-muted-foreground border-border">
 						{session.actions.length} action{session.actions.length !== 1 ? "s" : ""}
 					</Badge>
 				</div>

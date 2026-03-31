@@ -29,7 +29,7 @@ export function Overview({
 								onClick={() => onSelectSession(id)}
 								className="flex items-center gap-2.5 px-3.5 py-2.5 w-full text-left hover:bg-accent"
 							>
-								<span className="w-1.5 h-1.5 rounded-full shrink-0 bg-blue-500" />
+								<span className="w-1.5 h-1.5 rounded-full shrink-0 bg-primary" />
 								<div className="flex flex-col min-w-0 flex-1">
 									<span className="text-[11px] font-medium leading-tight truncate">
 										{s.label ?? s.title ?? `Session ${id.slice(0, 6)}`}
@@ -61,7 +61,7 @@ export function Overview({
 								onClick={() => onSelectWorkspace(id)}
 								className="flex items-center gap-2.5 px-3.5 py-2.5 w-full text-left hover:bg-accent"
 							>
-								<span className={cn("w-1.5 h-1.5 rounded-full shrink-0", ws.status === "running" ? "bg-amber-500" : ws.status === "error" ? "bg-destructive" : "bg-purple-500")} />
+								<span className={cn("w-1.5 h-1.5 rounded-full shrink-0", ws.status === "running" ? "bg-muted-foreground" : ws.status === "error" ? "bg-destructive" : "bg-primary")} />
 								<div className="flex flex-col min-w-0 flex-1">
 									<span className="text-[11px] font-medium leading-tight font-mono">{id.slice(0, 8)}</span>
 									<span className="text-[10px] text-muted-foreground leading-tight">

@@ -5,13 +5,13 @@ import type { CodeExecution } from "../types.ts";
 
 function ExitCodeBadge({ code, status }: { code?: number; status: string }) {
 	if (status === "running") {
-		return <Badge variant="outline" className="h-5 px-2 text-[10px] bg-amber-100 text-amber-700 border-amber-200">Running</Badge>;
+		return <Badge variant="outline" className="h-5 px-2 text-[10px] bg-muted text-muted-foreground border-border">Running</Badge>;
 	}
 	if (code === undefined) return null;
 	if (code === 0) {
-		return <Badge variant="outline" className="h-5 px-2 text-[10px] bg-emerald-100 text-emerald-700 border-emerald-200">Exit 0</Badge>;
+		return <Badge variant="outline" className="h-5 px-2 text-[10px] bg-muted text-muted-foreground border-border">Exit 0</Badge>;
 	}
-	return <Badge variant="outline" className="h-5 px-2 text-[10px] bg-red-100 text-red-700 border-red-200">Exit {code}</Badge>;
+	return <Badge variant="outline" className="h-5 px-2 text-[10px] bg-muted text-destructive border-border">Exit {code}</Badge>;
 }
 
 export function ExecutionDetailView({

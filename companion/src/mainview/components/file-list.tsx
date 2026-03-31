@@ -51,7 +51,7 @@ function FolderNode({ node, depth }: { node: TreeNode; depth: number }) {
 				>
 					<path d="M3.5 2L6.5 5L3.5 8" />
 				</svg>
-				<svg width="12" height="12" viewBox="0 0 12 12" fill="none" className="shrink-0 text-amber-500">
+				<svg width="12" height="12" viewBox="0 0 12 12" fill="none" className="shrink-0 text-muted-foreground">
 					<path d="M1.5 3C1.5 2.44772 1.94772 2 2.5 2H4.79289C5.05811 2 5.31246 2.10536 5.5 2.29289L6 2.79289C6.18754 2.98043 6.44189 3.08579 6.70711 3.08579H9.5C10.0523 3.08579 10.5 3.5335 10.5 4.08579V9C10.5 9.55228 10.0523 10 9.5 10H2.5C1.94772 10 1.5 9.55228 1.5 9V3Z" fill="currentColor" opacity="0.2" stroke="currentColor" strokeWidth="0.8" />
 				</svg>
 				<span className="text-[11px] font-mono truncate">{node.name}</span>

@@ -13,13 +13,13 @@ function timeAgo(ts: number): string {
 
 function ExitCodeBadge({ code, status }: { code?: number; status: string }) {
 	if (status === "running") {
-		return <Badge variant="outline" className="h-4 px-1.5 text-[9px] bg-amber-100 text-amber-700 border-amber-200">running</Badge>;
+		return <Badge variant="outline" className="h-4 px-1.5 text-[9px] bg-muted text-muted-foreground border-border">running</Badge>;
 	}
 	if (code === undefined) return null;
 	if (code === 0) {
-		return <Badge variant="outline" className="h-4 px-1.5 text-[9px] bg-emerald-100 text-emerald-700 border-emerald-200">exit 0</Badge>;
+		return <Badge variant="outline" className="h-4 px-1.5 text-[9px] bg-muted text-muted-foreground border-border">exit 0</Badge>;
 	}
-	return <Badge variant="outline" className="h-4 px-1.5 text-[9px] bg-red-100 text-red-700 border-red-200">exit {code}</Badge>;
+	return <Badge variant="outline" className="h-4 px-1.5 text-[9px] bg-muted text-destructive border-border">exit {code}</Badge>;
 }
 
 export function WorkspaceDetailView({
@@ -31,9 +31,9 @@ export function WorkspaceDetailView({
 	workspace: WorkspaceDetail;
 	onSelectExecution: (index: number) => void;
 }) {
-	const statusDot = workspace.status === "running" ? "bg-amber-500"
+	const statusDot = workspace.status === "running" ? "bg-muted-foreground"
 		: workspace.status === "error" ? "bg-destructive"
-		: "bg-purple-500";
+		: "bg-primary";
 
 	const statusLabel = workspace.status === "running" ? "Running"
 		: workspace.status === "error" ? "Error"

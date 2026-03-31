@@ -7,8 +7,8 @@ type ConnectionState = "disconnected" | "connecting" | "connected";
 function StatusBadge({ state }: { state: ConnectionState }) {
 	const config: Record<ConnectionState, { label: string; dot: string; className: string }> = {
 		disconnected: { label: "Offline", dot: "bg-muted-foreground", className: "" },
-		connecting: { label: "Connecting", dot: "bg-amber-500", className: "bg-amber-100 text-amber-700 border-amber-200" },
-		connected: { label: "Online", dot: "bg-emerald-500", className: "bg-emerald-100 text-emerald-700 border-emerald-200" },
+		connecting: { label: "Connecting", dot: "bg-muted-foreground", className: "bg-muted text-muted-foreground border-border" },
+		connected: { label: "Online", dot: "bg-primary", className: "bg-muted text-foreground border-border" },
 	};
 	const { label, dot, className } = config[state];
 	return (
