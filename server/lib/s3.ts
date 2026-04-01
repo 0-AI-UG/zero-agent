@@ -10,7 +10,7 @@ export const s3 = new S3Client({
 });
 
 export const presignHandler = new PresignHandler(s3, {
-  baseUrl: `${process.env.BASE_URL ?? `http://localhost:${process.env.PORT ?? 3000}`}/api/s3`,
+  baseUrl: `${process.env.BASE_URL ?? ""}/api/s3`,
   corsHeaders,
 });
 
