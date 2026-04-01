@@ -871,7 +871,7 @@ export type PromptInputFooterProps = Omit<ComponentProps<typeof InputGroupAddon>
 export const PromptInputFooter = ({ className, ...props }: PromptInputFooterProps) => (
   <InputGroupAddon
     align="block-end"
-    className={cn("justify-between gap-1", className)}
+    className={cn("justify-between gap-1 flex-wrap overflow-hidden", className)}
     {...props}
   />
 )

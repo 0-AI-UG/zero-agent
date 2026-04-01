@@ -121,7 +121,7 @@ export function ChatInputArea({
   }, [input, imageAttachment, isStreaming, sendMessage]);
 
   return (
-    <div className="px-6 py-4 md:px-10 space-y-2">
+    <div className="px-3 py-4 sm:px-6 md:px-10 space-y-2">
       <TodoProgress messages={messages} />
       {imageAttachment && (
         <div className="flex items-center gap-2 pb-2">
@@ -148,7 +148,7 @@ export function ChatInputArea({
           />
         </PromptInputBody>
         <PromptInputFooter>
-          <div className="flex items-center gap-1">
+          <div className="flex flex-wrap items-center gap-1 min-w-0">
             <ToolSelector />
             <FilePickerButton
               projectId={projectId}
