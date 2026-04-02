@@ -75,7 +75,7 @@ export function useReindexProject(projectId: string) {
       try {
         const token = useAuthStore.getState().token;
         const res = await fetch(`/api/projects/${projectId}/reindex/status`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         });
         if (!res.ok || cancelled) return;
 
@@ -90,7 +90,7 @@ export function useReindexProject(projectId: string) {
         abortRef.current = controller;
 
         const streamRes = await fetch(`/api/projects/${projectId}/reindex/stream`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
           signal: controller.signal,
         });
 
@@ -134,7 +134,7 @@ export function useReindexProject(projectId: string) {
 
     try {
       const token = useAuthStore.getState().token;
-      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {};
 
       // Kick off the reindex
       const res = await fetch(`/api/projects/${projectId}/reindex`, {
