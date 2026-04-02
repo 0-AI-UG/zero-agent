@@ -14,7 +14,7 @@
     "companion:build": "cd companion && bunx electrobun build"
   },
   "dependencies": {
-    "@0-ai/s3lite": "^0.2.1",
+    "@0-ai/s3lite": "^0.3.0",
     "@ai-sdk/react": "^3.0.110",
     "@codemirror/lang-cpp": "^6.0.3",
     "@codemirror/lang-css": "^6.3.1",
