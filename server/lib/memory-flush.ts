@@ -3,6 +3,7 @@ import type { UIMessage } from "ai";
 import { getEnrichModel } from "@/lib/openrouter.ts";
 import { readFromS3, writeToS3 } from "@/lib/s3.ts";
 import { extractConversationText } from "@/lib/message-utils.ts";
+import { embedEntries } from "@/lib/vectors.ts";
 import { log } from "@/lib/logger.ts";
 
 const memLog = log.child({ module: "memory-flush" });
@@ -218,6 +219,19 @@ ${conversationText}`,
 
   const newMemoryMd = renderMemory(existingSections);
   await writeToS3(`projects/${projectId}/memory.md`, newMemoryMd);
+
+  // Embed all memory entries for semantic retrieval (fire-and-forget)
+  const allEntries: { id: string; text: string }[] = [];
+  for (const key of MEMORY_SECTIONS) {
+    for (let i = 0; i < existingSections[key].length; i++) {
+      allEntries.push({ id: `${key}:${i}`, text: `[${key}] ${existingSections[key][i]}` });
+    }
+  }
+  if (allEntries.length > 0) {
+    embedEntries(projectId, "memory", allEntries).catch((err) =>
+      memLog.warn("memory embedding failed", { projectId, error: String(err) }),
+    );
+  }
 
   memLog.info("memory flushed", {
     projectId,

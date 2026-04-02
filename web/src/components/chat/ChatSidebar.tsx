@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router";
-import { useChats, useCreateChat, useDeleteChat } from "@/api/chats";
+import { useChats, useCreateChat, useDeleteChat, useSearchChats } from "@/api/chats";
 import {
   Sidebar,
   SidebarContent,
@@ -14,7 +14,8 @@ import {
   SidebarGroupContent,
 } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
-import { BotIcon, PlusIcon, TrashIcon, SendIcon, ChevronDownIcon } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { BotIcon, PlusIcon, TrashIcon, SendIcon, SearchIcon, XIcon, ChevronDownIcon, LoaderIcon } from "lucide-react";
 import { useMembers } from "@/api/members";
 import { useDesktopMode } from "@/hooks/use-desktop-mode";
 
@@ -55,24 +56,89 @@ export function ChatSidebar({ projectId }: { projectId: string }) {
     await deleteChat.mutateAsync(chatId);
   };
 
+  const [searchInput, setSearchInput] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedQuery(searchInput.trim()), 300);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
+
+  const isSearching = debouncedQuery.length > 0;
+  const searchQuery = useSearchChats(projectId, debouncedQuery);
+
   const regularChats = chats?.filter((c) => !c.isAutonomous) ?? [];
   const autonomousChats = chats?.filter((c) => c.isAutonomous) ?? [];
 
   return (
     <Sidebar className="left-16">
-      <SidebarHeader className="flex-row items-center justify-between">
-        <span className="text-sm font-semibold px-1">Chats</span>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          onClick={handleNewChat}
-          disabled={createChat.isPending}
-          aria-label="New Chat"
-        >
-          <PlusIcon className="size-4" />
-        </Button>
+      <SidebarHeader className="flex-col gap-2">
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-semibold px-1">Chats</span>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={handleNewChat}
+            disabled={createChat.isPending}
+            aria-label="New Chat"
+          >
+            <PlusIcon className="size-4" />
+          </Button>
+        </div>
+        <div className="relative">
+          <SearchIcon className="absolute left-2 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
+          <Input
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            placeholder="Search conversations..."
+            className="pl-7 pr-7 h-8 text-xs"
+          />
+          {searchInput && (
+            <button
+              onClick={() => { setSearchInput(""); setDebouncedQuery(""); }}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            >
+              <XIcon className="size-3.5" />
+            </button>
+          )}
+        </div>
       </SidebarHeader>
       <SidebarContent className="scroll-shadow">
+        {isSearching ? (
+          <SidebarGroup>
+            <SidebarGroupLabel>Search results</SidebarGroupLabel>
+            <SidebarGroupContent>
+              {searchQuery.isLoading && (
+                <div className="flex items-center justify-center py-4">
+                  <LoaderIcon className="size-4 animate-spin text-muted-foreground" />
+                </div>
+              )}
+              {searchQuery.data?.results.length === 0 && !searchQuery.isLoading && (
+                <p className="text-xs text-muted-foreground px-3 py-4">No matching conversations</p>
+              )}
+              <SidebarMenu>
+                {searchQuery.data?.results.map((result) => (
+                  <SidebarMenuItem key={result.chatId}>
+                    <SidebarMenuButton
+                      isActive={result.chatId === activeChatId}
+                      onClick={() => {
+                        navigate(`/projects/${projectId}/c/${result.chatId}`);
+                        setSearchInput("");
+                        setDebouncedQuery("");
+                      }}
+                    >
+                      <div className="flex flex-col min-w-0 gap-0.5">
+                        <span className="truncate text-xs font-medium">{result.title}</span>
+                        <span className="truncate text-[11px] text-muted-foreground">{result.snippet}</span>
+                      </div>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        ) : (
+        <>
         <SidebarGroup>
           <SidebarGroupLabel className="sr-only">Chat list</SidebarGroupLabel>
           <SidebarGroupContent>
@@ -127,6 +193,8 @@ export function ChatSidebar({ projectId }: { projectId: string }) {
             onNavigate={(chatId) => navigate(`/projects/${projectId}/c/${chatId}`)}
             onDelete={handleDeleteChat}
           />
+        )}
+        </>
         )}
       </SidebarContent>
     </Sidebar>

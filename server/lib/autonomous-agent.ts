@@ -5,6 +5,7 @@ import { touchChat } from "@/db/queries/chats.ts";
 import { db } from "@/db/index.ts";
 import { readFromS3 } from "@/lib/s3.ts";
 import { browserBridge } from "@/lib/browser/bridge.ts";
+import { semanticSearch, isEmbeddingConfigured } from "@/lib/vectors.ts";
 import { log } from "@/lib/logger.ts";
 
 const autoLog = log.child({ module: "autonomous-agent" });
@@ -51,7 +52,41 @@ export async function runAutonomousTask(
     // Read heartbeat.md deterministically before calling the LLM
     const checklist = await readHeartbeatChecklist(project.id);
 
-    let fullPrompt = prompt;
+    // Retrieve semantic context for the task prompt
+    let contextBlock = "";
+    if (isEmbeddingConfigured()) {
+      try {
+        const [relevantFiles, relevantMemories, relevantHistory] = await Promise.all([
+          semanticSearch(project.id, "file", prompt, 3),
+          semanticSearch(project.id, "memory", prompt, 5),
+          semanticSearch(project.id, "message", prompt, 3),
+        ]);
+
+        const parts: string[] = [];
+        if (relevantFiles.length > 0) {
+          parts.push("### Related Files\n" + relevantFiles.map((r) =>
+            `- [${r.metadata.filename ?? "file"}] ${r.content.slice(0, 200)}`
+          ).join("\n"));
+        }
+        if (relevantMemories.length > 0) {
+          parts.push("### Related Memories\n" + relevantMemories.map((r) =>
+            `- ${r.content}`
+          ).join("\n"));
+        }
+        if (relevantHistory.length > 0) {
+          parts.push("### Related Past Conversations\n" + relevantHistory.map((r) =>
+            `- ${r.content.slice(0, 200)}`
+          ).join("\n"));
+        }
+        if (parts.length > 0) {
+          contextBlock = `\n\n## Auto-Retrieved Context\n\n${parts.join("\n\n")}`;
+        }
+      } catch (err) {
+        autoLog.warn("failed to retrieve semantic context", { projectId: project.id, error: String(err) });
+      }
+    }
+
+    let fullPrompt = prompt + contextBlock;
     if (checklist) {
       fullPrompt = `${prompt}\n\n## Current heartbeat.md checklist\n\n${checklist}\n\n---\nItems under "## Explore" are self-directed investigations added automatically from past conversations. Pick ONE explore item to investigate using available tools. If the finding is interesting, report it. If not worth reporting, remove the item from heartbeat.md via editFile. Mark completed explore items with [x] or remove them.`;
       autoLog.info("injected heartbeat checklist", {

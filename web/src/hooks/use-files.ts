@@ -36,6 +36,7 @@ export function useSearchFiles(projectId: string, query: string) {
   });
 }
 
+
 export function useFiles(projectId: string, folderPath?: string) {
   const path = folderPath ?? "/";
   return useQuery({

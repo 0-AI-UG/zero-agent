@@ -1,10 +1,17 @@
 import { useParams, useOutletContext } from "react-router";
 import { useUpdateProject } from "@/api/projects";
 import type { Project } from "@/api/projects";
+import { useReindexProject } from "@/api/files";
 import { Switch } from "@/components/ui/switch";
+import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
 import {
+  DatabaseIcon,
   FolderIcon,
   ZapIcon,
+  CheckIcon,
+  LoaderIcon,
+  AlertCircleIcon,
 } from "lucide-react";
 import { MembersManager } from "@/components/settings/MembersManager";
 import { CompanionManager } from "@/components/settings/CompanionManager";
@@ -15,6 +22,7 @@ export function SettingsPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const { project } = useOutletContext<{ project: Project }>();
   const updateProject = useUpdateProject(projectId!);
+  const reindex = useReindexProject(projectId!);
   const desktopMode = useDesktopMode();
 
   return (
@@ -92,7 +100,107 @@ export function SettingsPage() {
           </div>
         </section>
 
+        {/* Knowledge Base section */}
+        <section className="space-y-4">
+          <div className="flex items-center gap-2">
+            <DatabaseIcon className="size-4 text-blue-500" />
+            <h3 className="text-sm font-semibold">Knowledge Base</h3>
+          </div>
+
+          <div className="rounded-lg border p-4 space-y-4">
+            <div className="flex items-center justify-between gap-4">
+              <div className="space-y-1">
+                <p className="text-sm font-medium">Reindex embeddings</p>
+                <p className="text-xs text-muted-foreground">
+                  Rebuild search index for all files, memories, and chat history.
+                </p>
+              </div>
+              <ReindexButton reindex={reindex} />
+            </div>
+
+            <ReindexStatus progress={reindex.progress} onDismiss={reindex.reset} />
+          </div>
+        </section>
+
       </div>
+    </div>
+  );
+}
+
+function ReindexButton({ reindex }: { reindex: ReturnType<typeof useReindexProject> }) {
+  if (reindex.isRunning) {
+    return (
+      <Button variant="outline" size="sm" disabled>
+        <LoaderIcon className="size-3.5 mr-1.5 animate-spin" />
+        Reindexing
+      </Button>
+    );
+  }
+
+  if (reindex.progress?.phase === "done") {
+    return (
+      <Button variant="outline" size="sm" disabled>
+        <CheckIcon className="size-3.5 mr-1.5" />
+        Done
+      </Button>
+    );
+  }
+
+  return (
+    <Button variant="outline" size="sm" onClick={() => reindex.start()}>
+      Reindex
+    </Button>
+  );
+}
+
+function ReindexStatus({
+  progress,
+  onDismiss,
+}: {
+  progress: import("@/api/files").ReindexProgress | null;
+  onDismiss: () => void;
+}) {
+  if (!progress) return null;
+
+  const { phase, current, total, detail } = progress;
+
+  if (phase === "error") {
+    return (
+      <div className="flex items-center justify-between gap-2 text-xs text-destructive">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <AlertCircleIcon className="size-3.5 shrink-0" />
+          <span className="truncate">{detail || "Reindex failed"}</span>
+        </div>
+        <button className="text-muted-foreground hover:text-foreground shrink-0" onClick={onDismiss}>
+          Dismiss
+        </button>
+      </div>
+    );
+  }
+
+  if (phase === "done") {
+    return (
+      <p className="text-xs text-muted-foreground">
+        {detail || "Reindex complete"}
+      </p>
+    );
+  }
+
+  const labels: Record<string, string> = {
+    queued: "Queued",
+    files: "Files",
+    memories: "Memories",
+    messages: "Messages",
+  };
+  const percent = total > 0 ? Math.round((current / total) * 100) : 0;
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between text-xs text-muted-foreground">
+        <span>{labels[phase] ?? phase}{detail ? ` — ${detail}` : ""}</span>
+        {total > 0 && <span className="tabular-nums">{current}/{total}</span>}
+      </div>
+      {total > 0 && <Progress value={percent} className="h-1" />}
     </div>
   );
 }

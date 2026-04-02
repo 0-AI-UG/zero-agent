@@ -47,6 +47,8 @@ export interface AgentOptions {
   lazyBrowserSession?: { id: string; created: boolean; label?: string };
   /** File paths already read/written in prior turns — seeds the read guard so the agent doesn't need to re-read. */
   initialReadPaths?: string[];
+  /** Semantically relevant memory entries retrieved via RAG for this conversation. */
+  relevantMemories?: { content: string; score: number }[];
 }
 
 async function buildSystemPrompt(project: {
@@ -151,6 +153,12 @@ You help users accomplish tasks by browsing the web, managing files, running cod
     sections.push(`## Memory
 
 \`memory.md\` persists across conversations. If this task reveals something worth remembering (a significant finding, a changed status, a lesson learned), update memory.md via editFile.`);
+  }
+
+  // ── Relevant Memories (RAG-retrieved, both modes) ──
+  if (options.relevantMemories?.length) {
+    const memLines = options.relevantMemories.map((m) => `- ${m.content}`).join("\n");
+    sections.push(`### Relevant Memories (auto-retrieved for this conversation)\n\n${memLines}`);
   }
 
   // ── Project context (both modes — automation needs project context to do its job) ──

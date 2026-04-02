@@ -183,3 +183,7 @@ export function getExtractModel() {
 
 /** @deprecated Use getExtractModel() for dynamic key support */
 export const extractModel = getExtractModel();
+
+export function getEmbeddingModel() {
+  return getOpenRouter().textEmbeddingModel("openai/text-embedding-3-small");
+}

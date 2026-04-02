@@ -149,6 +149,12 @@ export const chatRequestSchema = z.object({
   model: z.string().optional(),
   language: z.enum(["en", "zh"]).optional(),
   disabledTools: z.array(z.string()).optional(),
+  pinnedContext: z.array(z.object({
+    key: z.string(),
+    content: z.string(),
+    type: z.enum(["memory", "file"]),
+  })).optional(),
+  dismissedContext: z.array(z.string()).optional(),
 });
 
 // Validation helper

@@ -13,6 +13,7 @@ import { touchChat, updateChat } from "@/db/queries/chats.ts";
 import { flushConversationMemory } from "@/lib/memory-flush.ts";
 import { detectExploreItems } from "@/lib/heartbeat-explore.ts";
 import { events } from "@/lib/events.ts";
+import { semanticSearch, embedAndStore } from "@/lib/vectors.ts";
 import { log } from "@/lib/logger.ts";
 import { streamContext, setActiveStreamId, clearActiveStreamId, getActiveStreamId, setAbortController, clearAbortController, abortStream } from "@/lib/resumable-stream.ts";
 import { ConflictError } from "@/lib/errors.ts";
@@ -39,11 +40,13 @@ export async function handleChat(request: BunRequest): Promise<Response> {
       throw new ConflictError("Another member is already sending a message in this chat");
     }
 
-    const { messages, model, language, disabledTools } = await validateBody(request, chatRequestSchema) as {
+    const { messages, model, language, disabledTools, pinnedContext, dismissedContext } = await validateBody(request, chatRequestSchema) as {
       messages: UIMessage[];
       model?: string;
       language?: "en" | "zh";
       disabledTools?: string[];
+      pinnedContext?: { key: string; content: string; type: "memory" | "file" }[];
+      dismissedContext?: string[];
     };
     chatLog.info("starting agent stream", { projectId, chatId, messageCount: messages.length, language });
 
@@ -63,9 +66,28 @@ export async function handleChat(request: BunRequest): Promise<Response> {
       }
     }
 
+    // Retrieve relevant memories for this conversation via semantic search
+    let relevantMemories: { content: string; score: number }[] | undefined;
+    const latestUserMsg = [...messages].reverse().find((m) => m.role === "user");
+    const latestUserText = (latestUserMsg?.parts?.find((p: { type: string }) => p.type === "text") as { type: "text"; text: string } | undefined)?.text;
+    if (latestUserText) {
+      const dismissedKeys = new Set(dismissedContext ?? []);
+      const searchResults = (await semanticSearch(projectId, "memory", latestUserText, 8).catch(() => []))
+        .filter((r) => !dismissedKeys.has(r.key))
+        .map((r) => ({ content: r.content, score: r.score }));
+
+      // Add pinned context items (memories and file snippets)
+      const pinnedItems = (pinnedContext ?? []).map((p) => ({
+        content: p.type === "file" ? `[File] ${p.content}` : p.content,
+        score: 1.0,
+      }));
+
+      relevantMemories = [...pinnedItems, ...searchResults];
+    }
+
     // Create the agent for this project
     const cw = model ? getModelContextWindow(model) : 128_000;
-    const agent = await createAgent(project, { model, language, disabledTools, chatId, userId, preActivateTools: usedToolNames, contextWindow: cw, initialReadPaths: readPaths });
+    const agent = await createAgent(project, { model, language, disabledTools, chatId, userId, preActivateTools: usedToolNames, contextWindow: cw, initialReadPaths: readPaths, relevantMemories });
 
     // Predict whether compaction will trigger so we can send metadata early.
     // Use contextTokens (last step's actual input tokens) if available,
@@ -238,6 +260,17 @@ export async function handleChat(request: BunRequest): Promise<Response> {
           }),
         );
 
+        // Embed new messages for semantic chat history search (fire and forget)
+        for (const msg of finalMessages) {
+          const textContent = msg.parts
+            ?.filter((p: { type: string }) => p.type === "text")
+            .map((p: any) => p.text)
+            .join("\n") ?? "";
+          if (textContent.length > 50) {
+            embedAndStore(projectId, "message", msg.id, textContent, { chatId, role: msg.role }).catch(() => {});
+          }
+        }
+
         // Detect knowledge gaps and add explore items to heartbeat.md (fire and forget)
         detectExploreItems(projectId, finalMessages).catch((err) =>
           chatLog.error("heartbeat explore detection failed", {
@@ -256,6 +289,42 @@ export async function handleChat(request: BunRequest): Promise<Response> {
     }
 
     chatLog.error("chat request failed", error, { durationMs: Date.now() - start });
+    return handleError(error);
+  }
+}
+
+export async function handleContextPreview(request: BunRequest): Promise<Response> {
+  try {
+    const { userId } = await authenticateRequest(request);
+    const { projectId } = request.params as { projectId: string };
+    verifyProjectAccess(projectId, userId);
+
+    const url = new URL(request.url);
+    const query = url.searchParams.get("q")?.trim();
+    if (!query) {
+      return Response.json({ memories: [], files: [] }, { headers: corsHeaders });
+    }
+
+    const [memories, files] = await Promise.all([
+      semanticSearch(projectId, "memory", query, 5).catch(() => []),
+      semanticSearch(projectId, "file", query, 3).catch(() => []),
+    ]);
+
+    return Response.json({
+      memories: memories.map((r) => ({
+        key: r.key,
+        content: r.content,
+        score: r.score,
+      })),
+      files: files.map((r) => ({
+        key: r.key,
+        fileId: r.metadata.sourceId as string,
+        filename: r.metadata.filename as string,
+        snippet: r.content.slice(0, 200),
+        score: r.score,
+      })),
+    }, { headers: corsHeaders });
+  } catch (error) {
     return handleError(error);
   }
 }

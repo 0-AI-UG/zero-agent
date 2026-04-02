@@ -86,6 +86,11 @@ const TOOL_CONFIG: Record<
     activeLabel: "Searching files",
     icon: SearchIcon,
   },
+  searchChatHistory: {
+    label: "Searched chat history",
+    activeLabel: "Searching chat history",
+    icon: SearchIcon,
+  },
   loadTools: {
     label: "Loaded tools",
     activeLabel: "Loading tools",
@@ -199,6 +204,7 @@ function getToolDetail(toolName: string, input: unknown): string | null {
       return tasks ? `${tasks.length} parallel tasks` : null;
     }
     case "searchFiles":
+    case "searchChatHistory":
       return typeof inp.query === "string" ? inp.query : null;
     case "createFolder":
       return typeof inp.path === "string" ? inp.path : null;
@@ -384,6 +390,38 @@ function SearchFilesCard({ output, input }: { output: any; input: any }) {
       )}
       {results.length > 5 && (
         <p className="text-xs text-muted-foreground mt-2">+{results.length - 5} more</p>
+      )}
+    </div>
+  );
+}
+
+function ChatHistoryCard({ output, input }: { output: any; input: any }) {
+  const results = Array.isArray(output) ? output : [];
+  const query = input?.query ?? "";
+  return (
+    <div className="rounded-lg border bg-card p-3 max-w-md">
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-2">
+        <SearchIcon className="size-3" />
+        <span>History: "{query}" — {results.length} result{results.length !== 1 ? "s" : ""}</span>
+      </div>
+      {results.length > 0 ? (
+        <ul className="space-y-1.5">
+          {results.slice(0, 5).map((r: any, i: number) => (
+            <li key={i} className="text-sm">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] font-medium uppercase text-muted-foreground">{r.role ?? "message"}</span>
+                {typeof r.score === "number" && (
+                  <span className="text-[10px] text-muted-foreground tabular-nums">{(r.score * 100).toFixed(0)}%</span>
+                )}
+              </div>
+              {r.snippet && (
+                <p className="text-xs text-muted-foreground mt-0.5 line-clamp-3">{r.snippet}</p>
+              )}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-xs text-muted-foreground">No matching conversations found</p>
       )}
     </div>
   );
@@ -752,6 +790,10 @@ export const ToolCallPart = memo(function ToolCallPart({
     if (toolName === "searchFiles") {
       const output = part.output as any;
       if (Array.isArray(output)) return <SearchFilesCard output={output} input={part.input} />;
+    }
+    if (toolName === "searchChatHistory") {
+      const output = part.output as any;
+      if (Array.isArray(output)) return <ChatHistoryCard output={output} input={part.input} />;
     }
     if (toolName === "writeFile") {
       const output = part.output as any;

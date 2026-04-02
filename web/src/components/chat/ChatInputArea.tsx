@@ -25,6 +25,8 @@ import { ImageUploadButton, type ImageAttachment } from "@/components/chat/Scree
 import { ToolSelector } from "@/components/chat/ToolSelector";
 import { FilePickerButton } from "@/components/chat/FilePickerButton";
 import { TodoProgress } from "@/components/chat/TodoProgress";
+import { ContextPreview } from "@/components/chat/ContextPreview";
+import type { ContextPreviewItem } from "@/api/context";
 import { apiFetch } from "@/api/client";
 import { getSelectedModel } from "@/stores/model";
 import {
@@ -36,6 +38,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useModelStore, getModelsCache } from "@/stores/model";
 import type { ChatMessage } from "@/components/chat/ChatMessageItem";
 
+export interface PinnedContextItem {
+  key: string;
+  content: string;
+  type: "memory" | "file";
+}
+
 interface ChatInputAreaProps {
   projectId: string;
   chatId: string;
@@ -45,6 +53,7 @@ interface ChatInputAreaProps {
   sendMessage: (opts: { text: string; files?: Array<{ type: "file"; mediaType: string; url: string }> }) => void;
   stop: () => void;
   companionStatus: { connected: boolean; browserTitle?: string } | undefined;
+  onContextChange?: (pinned: PinnedContextItem[], dismissed: string[]) => void;
 }
 
 export function ChatInputArea({
@@ -56,8 +65,23 @@ export function ChatInputArea({
   sendMessage,
   stop,
   companionStatus,
+  onContextChange,
 }: ChatInputAreaProps) {
   const [input, setInput] = useState("");
+  const [debouncedInput, setDebouncedInput] = useState("");
+  const [pinnedItems, setPinnedItems] = useState<Map<string, PinnedContextItem>>(new Map());
+  const [dismissedKeys, setDismissedKeys] = useState<Set<string>>(new Set());
+
+  // Debounce input for context preview
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedInput(input.trim()), 500);
+    return () => clearTimeout(timer);
+  }, [input]);
+
+  // Notify parent of context changes
+  useEffect(() => {
+    onContextChange?.(Array.from(pinnedItems.values()), Array.from(dismissedKeys));
+  }, [pinnedItems, dismissedKeys, onContextChange]);
   const [imageAttachment, setImageAttachment] = useState<ImageAttachment | null>(null);
   const richTextareaRef = useRef<RichTextareaHandle>(null);
   const selectedModelId = useModelStore((s) => s.selectedModelId);
@@ -117,12 +141,42 @@ export function ChatInputArea({
       sendMessage({ text: input || "Describe this image.", files });
       setInput("");
       setImageAttachment(null);
+      setPinnedItems(new Map());
+      setDismissedKeys(new Set());
     }
   }, [input, imageAttachment, isStreaming, sendMessage]);
 
   return (
     <div className="px-3 py-4 sm:px-6 md:px-10 space-y-2">
       <TodoProgress messages={messages} />
+      <ContextPreview
+        projectId={projectId}
+        query={debouncedInput}
+        pinnedKeys={new Set(pinnedItems.keys())}
+        dismissedKeys={dismissedKeys}
+        onPin={(item, type) => {
+          setPinnedItems((prev) => {
+            const next = new Map(prev);
+            next.set(item.key, { key: item.key, content: item.snippet ?? item.content, type });
+            return next;
+          });
+        }}
+        onUnpin={(key) => {
+          setPinnedItems((prev) => {
+            const next = new Map(prev);
+            next.delete(key);
+            return next;
+          });
+        }}
+        onDismiss={(key) => {
+          setDismissedKeys((prev) => new Set(prev).add(key));
+          setPinnedItems((prev) => {
+            const next = new Map(prev);
+            next.delete(key);
+            return next;
+          });
+        }}
+      />
       {imageAttachment && (
         <div className="flex items-center gap-2 pb-2">
           <div className="relative rounded border bg-muted overflow-hidden">

@@ -17,8 +17,9 @@ import {
   handleCreateChat,
   handleUpdateChat,
   handleDeleteChat,
+  handleSearchChats,
 } from "@/routes/chats.ts";
-import { handleChat, handleAbortChat } from "@/routes/chat.ts";
+import { handleChat, handleAbortChat, handleContextPreview } from "@/routes/chat.ts";
 import { handleResumeStream } from "@/routes/stream.ts";
 import { handleGetMessages } from "@/routes/messages.ts";
 import {
@@ -35,6 +36,11 @@ import {
   handleGetUploadUrl,
   handleUpdateFileBinary,
 } from "@/routes/files.ts";
+import {
+  handleReindex,
+  handleReindexStatus,
+  handleReindexStream,
+} from "@/routes/reindex.ts";
 import {
   handleListTasks,
   handleCreateTask,
@@ -192,8 +198,9 @@ if (!IS_PROD) {
   devIndex = (await import("../web/src/index.html")).default;
 }
 
-function withLogging(handler: (req: any, ...args: any[]) => Response | Promise<Response>) {
-  return async (req: Request, ...args: any[]) => {
+function withLogging(handler: (req: any, ...args: any[]) => Response | Promise<Response>, opts?: { noTimeout?: boolean }) {
+  return async (req: Request, server: any, ...args: any[]) => {
+    if (opts?.noTimeout) server.timeout(req, 0);
     const start = Date.now();
     const method = req.method;
     const url = new URL(req.url);
@@ -242,25 +249,21 @@ const server = Bun.serve<{ userId: string; projectId: string; authenticated: boo
       GET: withLogging(handleListChats),
       POST: withLogging(handleCreateChat),
     },
+    "/api/projects/:projectId/chats/search": {
+      GET: withLogging(handleSearchChats),
+    },
     "/api/projects/:projectId/chats/:chatId": {
       PUT: withLogging(handleUpdateChat),
       DELETE: withLogging(handleDeleteChat),
     },
     "/api/projects/:projectId/chats/:chatId/chat": {
-      POST: (req: any, server: any) => {
-        server.timeout(req, 0);
-        httpLog.info("request", { method: "POST", path: new URL(req.url).pathname, note: "streaming" });
-        return handleChat(req);
-      },
+      POST: withLogging(handleChat, { noTimeout: true }),
     },
     "/api/projects/:projectId/chats/:chatId/abort": {
       POST: withLogging(handleAbortChat),
     },
     "/api/projects/:projectId/chats/:chatId/stream": {
-      GET: (req: any, server: any) => {
-        server.timeout(req, 0);
-        return handleResumeStream(req);
-      },
+      GET: withLogging(handleResumeStream, { noTimeout: true }),
     },
     "/api/projects/:projectId/chats/:chatId/messages": {
       GET: withLogging(handleGetMessages),
@@ -271,6 +274,18 @@ const server = Bun.serve<{ userId: string; projectId: string; authenticated: boo
     },
     "/api/projects/:projectId/files/search": {
       GET: withLogging(handleSearchFiles),
+    },
+    "/api/projects/:projectId/context-preview": {
+      GET: withLogging(handleContextPreview),
+    },
+    "/api/projects/:projectId/reindex": {
+      POST: withLogging(handleReindex, { noTimeout: true }),
+    },
+    "/api/projects/:projectId/reindex/status": {
+      GET: withLogging(handleReindexStatus),
+    },
+    "/api/projects/:projectId/reindex/stream": {
+      GET: withLogging(handleReindexStream, { noTimeout: true }),
     },
     "/api/projects/:projectId/files/upload": {
       POST: withLogging(handleUploadRequest),

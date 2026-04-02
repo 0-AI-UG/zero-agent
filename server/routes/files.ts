@@ -28,6 +28,7 @@ import { generateDownloadUrl, generateUploadUrl, deleteFromS3, writeToS3 } from 
 import { generateId } from "@/db/index.ts";
 import { searchFileContent } from "@/db/queries/search.ts";
 import { events } from "@/lib/events.ts";
+import { embedAndStore, deleteVectorsBySource, semanticSearch } from "@/lib/vectors.ts";
 
 function formatFile(row: import("@/db/types.ts").FileRow) {
   return {
@@ -186,6 +187,7 @@ export async function handleUpdateFileBinary(request: BunRequest): Promise<Respo
     // Index text content for FTS if provided (extracted by client from XLSX sheets)
     if (typeof body.textContent === "string") {
       indexFileContent(id, projectId, file.filename, body.textContent);
+      embedAndStore(projectId, "file", id, body.textContent, { filename: file.filename }).catch(() => {});
     }
 
     events.emit("file.updated", { projectId, path: file.folder_path, filename: file.filename, mimeType: file.mime_type });
@@ -213,8 +215,9 @@ export async function handleDeleteFile(request: BunRequest): Promise<Response> {
       await deleteFromS3(file.thumbnail_s3_key).catch(() => {});
     }
 
-    // Delete metadata and FTS index
+    // Delete metadata, FTS index, and vector embeddings
     removeFileIndex(id);
+    deleteVectorsBySource(projectId, "file", id);
     deleteFileRecord(id);
     events.emit("file.deleted", { projectId, path: file.folder_path, filename: file.filename });
 
@@ -261,6 +264,21 @@ export async function handleSearchFiles(request: BunRequest): Promise<Response> 
       throw new ValidationError("Search query parameter 'q' is required");
     }
 
+    // Use hybrid search (dense + sparse via RRF fusion) with FTS fallback
+    const vectorResults = await semanticSearch(projectId, "file", query, 10);
+
+    if (vectorResults.length > 0) {
+      return Response.json({
+        results: vectorResults.map((r) => ({
+          fileId: r.metadata.sourceId as string,
+          filename: r.metadata.filename as string,
+          snippet: r.content.slice(0, 300),
+          score: r.score,
+        })),
+      }, { headers: corsHeaders });
+    }
+
+    // Fallback to FTS when no embeddings exist
     const results = searchFileContent(projectId, query);
     return Response.json({ results }, { headers: corsHeaders });
   } catch (error) {
@@ -298,6 +316,7 @@ export async function handleUpdateFileContent(request: BunRequest): Promise<Resp
     await writeToS3(file.s3_key, buffer);
     const updated = updateFileSize(id, buffer.length);
     indexFileContent(id, projectId, file.filename, body.content);
+    embedAndStore(projectId, "file", id, body.content, { filename: file.filename }).catch(() => {});
     events.emit("file.updated", { projectId, path: file.folder_path, filename: file.filename, mimeType: file.mime_type });
 
     return Response.json({ success: true, file: formatFile(updated) }, { headers: corsHeaders });
@@ -416,3 +435,4 @@ export async function handleDeleteFolder(request: BunRequest): Promise<Response>
     return handleError(error);
   }
 }
+

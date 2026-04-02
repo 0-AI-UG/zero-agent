@@ -207,6 +207,12 @@ export async function handleDeleteProject(request: Request): Promise<Response> {
     const { id } = (request as RequestWithId).params;
     verifyProjectOwnership(id, userId);
     deleteProject(id);
+    // Clean up vector embeddings (fire-and-forget, non-critical)
+    try {
+      const { deleteProjectIndex } = await import("@/lib/vectors.ts");
+      deleteProjectIndex(id);
+    } catch {}
+
     return Response.json(
       { success: true },
       { headers: corsHeaders },

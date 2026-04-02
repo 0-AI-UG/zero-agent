@@ -13,6 +13,8 @@ import {
 import type { ChatRow } from "@/db/types.ts";
 import { events } from "@/lib/events.ts";
 import { browserBridge } from "@/lib/browser/bridge.ts";
+import { semanticSearch } from "@/lib/vectors.ts";
+import { ValidationError } from "@/lib/errors.ts";
 
 function formatChat(row: ChatRow) {
   return {
@@ -87,6 +89,50 @@ export async function handleUpdateChat(request: BunRequest): Promise<Response> {
       { chat: formatChat(chat) },
       { headers: corsHeaders },
     );
+  } catch (error) {
+    return handleError(error);
+  }
+}
+
+export async function handleSearchChats(request: BunRequest): Promise<Response> {
+  try {
+    const { userId } = await authenticateRequest(request);
+    const projectId = (request.params as { projectId: string }).projectId;
+    verifyProjectAccess(projectId, userId);
+
+    const url = new URL(request.url);
+    const query = url.searchParams.get("q")?.trim();
+    if (!query) {
+      throw new ValidationError("Search query parameter 'q' is required");
+    }
+
+    const results = await semanticSearch(projectId, "message", query, 10);
+
+    // Group results by chatId and return the best snippet per chat
+    const chatMap = new Map<string, { chatId: string; snippet: string; score: number; role: string }>();
+    for (const r of results) {
+      const chatId = r.metadata.chatId as string;
+      if (!chatId) continue;
+      if (!chatMap.has(chatId) || (chatMap.get(chatId)!.score > r.score)) {
+        chatMap.set(chatId, {
+          chatId,
+          snippet: r.content.slice(0, 200),
+          score: r.score,
+          role: (r.metadata.role as string) ?? "assistant",
+        });
+      }
+    }
+
+    // Enrich with chat titles
+    const enriched = [...chatMap.values()].map((hit) => {
+      const chat = getChatById(hit.chatId);
+      return {
+        ...hit,
+        title: chat?.title ?? "Untitled",
+      };
+    });
+
+    return Response.json({ results: enriched }, { headers: corsHeaders });
   } catch (error) {
     return handleError(error);
   }

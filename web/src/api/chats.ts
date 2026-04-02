@@ -2,6 +2,26 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "@/api/client";
 import { queryKeys } from "@/lib/query-keys";
 
+export interface ChatSearchResult {
+  chatId: string;
+  title: string;
+  snippet: string;
+  score: number;
+  role: string;
+}
+
+export function useSearchChats(projectId: string, query: string) {
+  return useQuery({
+    queryKey: [...queryKeys.chats.byProject(projectId), "search", query],
+    queryFn: () =>
+      apiFetch<{ results: ChatSearchResult[] }>(
+        `/projects/${projectId}/chats/search?q=${encodeURIComponent(query)}`,
+      ),
+    enabled: query.length > 0,
+    staleTime: 30_000,
+  });
+}
+
 export interface Chat {
   id: string;
   projectId: string;

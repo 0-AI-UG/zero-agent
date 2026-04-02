@@ -8,6 +8,7 @@ import { lintContent } from "@/lib/lint.ts";
 import { sanitizePath } from "@/lib/sanitize.ts";
 import { truncateText } from "@/lib/truncate-result.ts";
 import { indexFileContent, searchFileContent, removeFileIndex } from "@/db/queries/search.ts";
+import { embedAndStore, semanticSearch, deleteVectorsBySource } from "@/lib/vectors.ts";
 import { log } from "@/lib/logger.ts";
 import { isModelMultimodal } from "@/config/models.ts";
 import { getVisionModel } from "@/lib/openrouter.ts";
@@ -302,6 +303,13 @@ export function createFileTools(projectId: string, options?: { modelId?: string;
           // Index for FTS search (text files get content indexed, others just filename)
           indexFileContent(fileRow.id, projectId, filename, isTextMime(mimeType) ? content : "");
 
+          // Embed for semantic search (fire-and-forget)
+          if (isTextMime(mimeType)) {
+            embedAndStore(projectId, "file", fileRow.id, content, { filename }).catch((err) =>
+              toolLog.warn("embedding failed", { projectId, path, error: String(err) }),
+            );
+          }
+
           // Lint the written content and surface any issues
           const diagnostics = lintContent(content, mimeType);
           if (diagnostics.length > 0) {
@@ -392,6 +400,13 @@ export function createFileTools(projectId: string, options?: { modelId?: string;
           // Re-index for FTS search
           indexFileContent(fileRow.id, projectId, filename, isTextMime(mimeType) ? updated : "");
 
+          // Re-embed for semantic search (fire-and-forget)
+          if (isTextMime(mimeType)) {
+            embedAndStore(projectId, "file", fileRow.id, updated, { filename }).catch((err) =>
+              toolLog.warn("embedding failed", { projectId, path, error: String(err) }),
+            );
+          }
+
           // Lint the updated content and surface any issues
           const diagnostics = lintContent(updated, mimeType);
           if (diagnostics.length > 0) {
@@ -456,17 +471,32 @@ export function createFileTools(projectId: string, options?: { modelId?: string;
 
     searchFiles: tool({
       description:
-        "Search for content across project files using keyword search. Returns matching files with relevant text snippets.",
+        "Search for files using hybrid search (keyword + semantic). Works for both exact keyword matches and conceptual/natural language queries. Returns matching files with relevant text snippets.",
       inputSchema: z.object({
         query: z
           .string()
-          .describe("Search keywords to find in file contents or filenames"),
+          .describe("Search query — can be keywords or natural language (e.g., 'quarterly revenue analysis')"),
       }),
       execute: async ({ query }) => {
         toolLog.info("searchFiles", { projectId, query });
-        const results = searchFileContent(projectId, query);
-        toolLog.info("searchFiles result", { projectId, count: results.length });
-        return results;
+
+        // Try hybrid vector search first (dense + sparse RRF fusion)
+        const vectorResults = await semanticSearch(projectId, "file", query, 5);
+        if (vectorResults.length > 0) {
+          const results = vectorResults.map((r) => ({
+            fileId: r.metadata.sourceId,
+            filename: r.metadata.filename,
+            snippet: r.content.slice(0, 300),
+            score: r.score,
+          }));
+          toolLog.info("searchFiles result (hybrid)", { projectId, count: results.length });
+          return results;
+        }
+
+        // Fallback to FTS when embeddings are not configured
+        const ftsResults = searchFileContent(projectId, query);
+        toolLog.info("searchFiles result (fts)", { projectId, count: ftsResults.length });
+        return ftsResults;
       },
     }),
 
@@ -635,9 +665,10 @@ export function createFileTools(projectId: string, options?: { modelId?: string;
             })
           );
 
-          // Remove FTS indexes for all files
+          // Remove FTS indexes and vector embeddings for all files
           for (const f of files) {
             removeFileIndex(f.id);
+            deleteVectorsBySource(projectId, "file", f.id);
             deleteFileRecord(f.id);
           }
 
@@ -667,6 +698,7 @@ export function createFileTools(projectId: string, options?: { modelId?: string;
         }
 
         removeFileIndex(file.id);
+        deleteVectorsBySource(projectId, "file", file.id);
         deleteFileRecord(file.id);
 
         // Clean up empty ancestor folders

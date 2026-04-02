@@ -12,6 +12,7 @@ import { createBrowserTool } from "@/tools/browser.ts";
 import { createCodeTools } from "@/tools/code.ts";
 import { createCredentialTools } from "@/tools/credentials.ts";
 import { createTelegramTools } from "@/tools/telegram.ts";
+import { createChatHistoryTools } from "@/tools/chat-history.ts";
 
 export type ToolRegistry = Record<string, Tool<any, any>>;
 
@@ -84,6 +85,7 @@ export function createToolRegistry(
     ...(options.userId && options.chatId && options.codeExecutionEnabled ? createCodeTools(options.userId, projectId, options.chatId) : {}),
     ...createCredentialTools(projectId, options.userId ?? undefined),
     ...createTelegramTools(projectId),
+    ...createChatHistoryTools(projectId),
   };
 
   // 1. Scope filtering — remove tools not available in this context
