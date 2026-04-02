@@ -96,6 +96,9 @@ export interface CurrentUser {
   email: string;
   isAdmin: boolean;
   canCreateProjects: boolean;
+  companionSharing: boolean;
+  totpEnabled: boolean;
+  totpRequired: boolean;
 }
 
 export function useCurrentUser() {
@@ -106,6 +109,22 @@ export function useCurrentUser() {
       return res.user;
     },
     staleTime: 60_000,
+  });
+}
+
+export function useUpdateMe() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: { companionSharing?: boolean }) => {
+      const res = await apiFetch<{ user: CurrentUser }>("/me", {
+        method: "PUT",
+        body: JSON.stringify(data),
+      });
+      return res.user;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["me"] });
+    },
   });
 }
 

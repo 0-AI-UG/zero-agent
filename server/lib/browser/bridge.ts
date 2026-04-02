@@ -12,6 +12,7 @@ import { nanoid } from "nanoid";
 import { events } from "@/lib/events.ts";
 import { log } from "@/lib/logger.ts";
 import { DESKTOP_MODE } from "@/lib/auth.ts";
+import { getUserById } from "@/db/queries/users.ts";
 import { clearReadyWorkspaces } from "@/tools/code.ts";
 
 const bridgeLog = log.child({ module: "browser-bridge" });
@@ -566,10 +567,14 @@ class BrowserBridge {
     const own = this.companions.get(connKey(userId, projectId));
     if (own) return own;
 
-    // Fall back to any companion connected for this project
+    // Fall back to any companion connected for this project whose owner allows sharing
     const suffix = `:${projectId}`;
     for (const [key, conn] of this.companions) {
-      if (key.endsWith(suffix)) return conn;
+      if (key.endsWith(suffix)) {
+        const ownerId = key.split(":")[0]!;
+        const owner = getUserById(ownerId);
+        if (owner?.companion_sharing === 1) return conn;
+      }
     }
 
     // In desktop mode, there's a single companion instance — use it for any project
@@ -592,11 +597,12 @@ class BrowserBridge {
     return { ...conn.status };
   }
 
-  /** Find any connected companion for a project (any member). */
+  /** Find any connected companion for a project (any member who allows sharing). */
   findConnectedMember(projectId: string, memberUserIds: string[]): string | undefined {
     for (const userId of memberUserIds) {
       if (this.companions.has(connKey(userId, projectId))) {
-        return userId;
+        const user = getUserById(userId);
+        if (user?.companion_sharing === 1) return userId;
       }
     }
     // In desktop mode, any companion connection belongs to the single user

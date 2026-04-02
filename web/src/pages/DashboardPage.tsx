@@ -11,7 +11,7 @@ import { CreateProjectDialog } from "@/components/projects/CreateProjectDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { CircleHelpIcon, LogOutIcon, MailIcon, SearchIcon, ShieldIcon } from "lucide-react";
+import { CircleHelpIcon, LogOutIcon, MailIcon, SearchIcon, ShieldIcon, UserIcon } from "lucide-react";
 import { EmptyProjectsIllustration } from "@/components/ui/illustrations";
 
 export function DashboardPage() {
@@ -54,6 +54,13 @@ export function DashboardPage() {
               <Button variant="ghost" size="icon-sm" asChild aria-label="Admin settings">
                 <Link to="/admin">
                   <ShieldIcon className="size-4" />
+                </Link>
+              </Button>
+            )}
+            {!desktopMode && (
+              <Button variant="ghost" size="icon-sm" asChild aria-label="Account settings">
+                <Link to="/account">
+                  <UserIcon className="size-4" />
                 </Link>
               </Button>
             )}

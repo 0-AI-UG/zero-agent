@@ -12,6 +12,7 @@ import { TasksPage } from "@/pages/TasksPage";
 import { SettingsPage } from "@/pages/SettingsPage";
 import { SkillsPage } from "@/pages/SkillsPage";
 import { HelpPage } from "@/pages/HelpPage";
+import { AccountPage } from "@/pages/AccountPage";
 import { AdminPage } from "@/pages/AdminPage";
 import { SetupPage } from "@/pages/SetupPage";
 import { DesktopSetupPage } from "@/pages/DesktopSetupPage";
@@ -34,6 +35,7 @@ export function App() {
           {/* Protected routes */}
           <Route element={<ProtectedRoute />}>
             <Route path="/" element={<DashboardPage />} />
+            <Route path="/account" element={<AccountPage />} />
             <Route path="/help" element={<HelpPage />} />
             <Route path="/admin" element={<AdminPage />} />
             <Route path="/projects/:projectId" element={<ProjectLayout />}>

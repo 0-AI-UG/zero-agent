@@ -4,6 +4,17 @@ export interface UserRow {
   password_hash: string;
   is_admin?: number;
   can_create_projects?: number;
+  companion_sharing?: number;
+  totp_secret?: string | null;
+  totp_enabled?: number;
+  created_at: string;
+}
+
+export interface TotpBackupCodeRow {
+  id: string;
+  user_id: string;
+  code_hash: string;
+  used: number;
   created_at: string;
 }
 

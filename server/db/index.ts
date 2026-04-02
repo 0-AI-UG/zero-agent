@@ -311,6 +311,20 @@ for (const col of [
 
 // Users migrations
 try { db.run(`ALTER TABLE users ADD COLUMN can_create_projects INTEGER NOT NULL DEFAULT 1`); } catch {}
+try { db.run(`ALTER TABLE users ADD COLUMN companion_sharing INTEGER NOT NULL DEFAULT 0`); } catch {}
+try { db.run(`ALTER TABLE users ADD COLUMN totp_secret TEXT`); } catch {}
+try { db.run(`ALTER TABLE users ADD COLUMN totp_enabled INTEGER NOT NULL DEFAULT 0`); } catch {}
+
+db.run(`
+  CREATE TABLE IF NOT EXISTS totp_backup_codes (
+    id         TEXT PRIMARY KEY,
+    user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    code_hash  TEXT NOT NULL,
+    used       INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )
+`);
+db.run(`CREATE INDEX IF NOT EXISTS idx_totp_backup_user ON totp_backup_codes(user_id, used)`);
 
 // ── Indexes ──
 

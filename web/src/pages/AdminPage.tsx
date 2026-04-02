@@ -45,6 +45,7 @@ import {
   TrashIcon,
   KeyIcon,
   ShieldIcon,
+  ShieldCheckIcon,
   PlusIcon,
   EyeIcon,
   EyeOffIcon,
@@ -83,6 +84,7 @@ import {
   useUsageByUser,
 } from "@/api/usage";
 import type { ModelConfig } from "@/stores/model";
+import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 
 const AVATAR_COLORS = [
@@ -160,6 +162,7 @@ export function AdminPage() {
       <main className="flex-1 overflow-y-auto">
         <div className="max-w-3xl mx-auto px-6 py-6 space-y-8">
           <InstanceSettingsSection />
+          <SecuritySection />
           <ModelManagementSection />
           <UsageSection />
           <UserManagementSection />
@@ -257,6 +260,45 @@ function InstanceSettingsSection() {
           currentValue={settings?.BRAVE_SEARCH_API_KEY}
           settingKey="BRAVE_SEARCH_API_KEY"
         />
+      </div>
+    </section>
+  );
+}
+
+function SecuritySection() {
+  const { data: settings } = useAdminSettings();
+  const updateSettings = useUpdateSettings();
+  const require2FA = settings?.REQUIRE_2FA === "1";
+
+  return (
+    <section className="space-y-4">
+      <div className="flex items-center gap-2">
+        <ShieldCheckIcon className="size-4 text-amber-500" />
+        <h3 className="text-sm font-semibold">Security</h3>
+      </div>
+      <div className="rounded-lg border p-4">
+        <div className="flex items-center justify-between gap-4">
+          <div className="space-y-1">
+            <p className="text-sm font-medium">Require two-factor authentication</p>
+            <p className="text-xs text-muted-foreground">
+              When enabled, all users must set up 2FA before they can access the app. Admins always require 2FA regardless of this setting.
+            </p>
+          </div>
+          <Switch
+            checked={require2FA}
+            onCheckedChange={(checked) => {
+              updateSettings.mutate(
+                { REQUIRE_2FA: checked ? "1" : "0" },
+                {
+                  onSuccess: () => toast.success(checked ? "2FA required for all users" : "2FA no longer required"),
+                  onError: (err) => toast.error(err.message),
+                },
+              );
+            }}
+            disabled={updateSettings.isPending}
+            aria-label="Require two-factor authentication"
+          />
+        </div>
       </div>
     </section>
   );

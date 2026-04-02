@@ -23,3 +23,7 @@ export function getUserById(id: string): UserRow | null {
     "SELECT * FROM users WHERE id = ?",
   ).get(id);
 }
+
+export function updateUserCompanionSharing(userId: string, enabled: boolean): void {
+  db.run("UPDATE users SET companion_sharing = ? WHERE id = ?", [enabled ? 1 : 0, userId]);
+}

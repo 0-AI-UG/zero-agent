@@ -2,7 +2,16 @@ import path from "path";
 import { corsHeaders } from "@/lib/cors.ts";
 import { log } from "@/lib/logger.ts";
 import { handleHealth } from "@/routes/health.ts";
-import { handleLogin, handleMe } from "@/routes/auth.ts";
+import { handleLogin, handleMe, handleUpdateMe } from "@/routes/auth.ts";
+import {
+  handleTotpSetup,
+  handleTotpConfirm,
+  handleTotpLogin,
+  handleTotpDisable,
+  handleTotpStatus,
+  handleTotpSetupFromLogin,
+  handleTotpConfirmFromLogin,
+} from "@/routes/totp.ts";
 import {
   handleListProjects,
   handleCreateProject,
@@ -229,6 +238,28 @@ const server = Bun.serve<{ userId: string; projectId: string; authenticated: boo
     },
     "/api/me": {
       GET: withLogging(handleMe),
+      PUT: withLogging(handleUpdateMe),
+    },
+    "/api/auth/totp/setup": {
+      POST: withLogging(handleTotpSetup),
+    },
+    "/api/auth/totp/confirm": {
+      POST: withLogging(handleTotpConfirm),
+    },
+    "/api/auth/totp/login": {
+      POST: withLogging(handleTotpLogin),
+    },
+    "/api/auth/totp/disable": {
+      POST: withLogging(handleTotpDisable),
+    },
+    "/api/auth/totp/status": {
+      GET: withLogging(handleTotpStatus),
+    },
+    "/api/auth/totp/setup-from-login": {
+      POST: withLogging(handleTotpSetupFromLogin),
+    },
+    "/api/auth/totp/confirm-from-login": {
+      POST: withLogging(handleTotpConfirmFromLogin),
     },
     "/api/projects": {
       GET: withLogging(handleListProjects),
