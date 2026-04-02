@@ -149,6 +149,7 @@ import { processIncomingUpdate } from "@/routes/telegram.ts";
 
 import { initDesktopUser } from "@/lib/desktop-init.ts";
 import { DESKTOP_MODE } from "@/lib/auth.ts";
+import { webOnly } from "@/routes/utils.ts";
 import { db } from "@/db/index.ts";
 await initDesktopUser();
 
@@ -234,32 +235,32 @@ const server = Bun.serve<{ userId: string; projectId: string; authenticated: boo
       GET: withLogging(handleHealth),
     },
     "/api/auth/login": {
-      POST: withLogging(handleLogin),
+      POST: withLogging(webOnly(handleLogin)),
     },
     "/api/me": {
       GET: withLogging(handleMe),
       PUT: withLogging(handleUpdateMe),
     },
     "/api/auth/totp/setup": {
-      POST: withLogging(handleTotpSetup),
+      POST: withLogging(webOnly(handleTotpSetup)),
     },
     "/api/auth/totp/confirm": {
-      POST: withLogging(handleTotpConfirm),
+      POST: withLogging(webOnly(handleTotpConfirm)),
     },
     "/api/auth/totp/login": {
-      POST: withLogging(handleTotpLogin),
+      POST: withLogging(webOnly(handleTotpLogin)),
     },
     "/api/auth/totp/disable": {
-      POST: withLogging(handleTotpDisable),
+      POST: withLogging(webOnly(handleTotpDisable)),
     },
     "/api/auth/totp/status": {
-      GET: withLogging(handleTotpStatus),
+      GET: withLogging(webOnly(handleTotpStatus)),
     },
     "/api/auth/totp/setup-from-login": {
-      POST: withLogging(handleTotpSetupFromLogin),
+      POST: withLogging(webOnly(handleTotpSetupFromLogin)),
     },
     "/api/auth/totp/confirm-from-login": {
-      POST: withLogging(handleTotpConfirmFromLogin),
+      POST: withLogging(webOnly(handleTotpConfirmFromLogin)),
     },
     "/api/projects": {
       GET: withLogging(handleListProjects),

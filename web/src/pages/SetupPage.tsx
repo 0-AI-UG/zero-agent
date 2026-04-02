@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { useNavigate } from "react-router";
-import { useQueryClient } from "@tanstack/react-query";
+import { useNavigate, Navigate } from "react-router";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@/stores/auth";
-import { completeSetup } from "@/api/setup";
+import { completeSetup, getSetupStatus } from "@/api/setup";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -19,6 +19,10 @@ import logoSvg from "@/logo.svg";
 export function SetupPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { data: setupStatus, isLoading: statusLoading } = useQuery({
+    queryKey: ["setup", "status"],
+    queryFn: getSetupStatus,
+  });
   const [step, setStep] = useState(1);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -32,6 +36,9 @@ export function SetupPage() {
   const [openrouterApiKey, setOpenrouterApiKey] = useState("");
   const [openrouterModel, setOpenrouterModel] = useState("");
   const [braveSearchApiKey, setBraveSearchApiKey] = useState("");
+
+  if (statusLoading) return null;
+  if (setupStatus?.setupComplete) return <Navigate to="/login" replace />;
 
   const handleNext = () => {
     setError(null);

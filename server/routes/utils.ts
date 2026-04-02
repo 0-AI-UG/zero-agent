@@ -14,6 +14,14 @@ import { log } from "@/lib/logger.ts";
 
 const routeLog = log.child({ module: "routes" });
 
+/** Middleware: reject requests to web-only endpoints when running in desktop mode. */
+export function webOnly(handler: (request: Request) => Promise<Response>): (request: Request) => Promise<Response> {
+  if (!DESKTOP_MODE) return handler;
+  return () => Promise.resolve(
+    Response.json({ error: "Not available in desktop mode" }, { status: 404, headers: corsHeaders }),
+  );
+}
+
 export function handleError(error: unknown): Response {
   if (error instanceof Error) {
     const name = error.constructor.name;
