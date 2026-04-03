@@ -36,14 +36,15 @@ export function DesktopSetupPage() {
 
     setLoading(true);
     try {
-      const { token, user } = await completeSetup({
+      const result = await completeSetup({
         email: "desktop@local",
         password: "desktop",
         openrouterApiKey,
         openrouterModel: openrouterModel || undefined,
         braveSearchApiKey: braveSearchApiKey || undefined,
       });
-      useAuthStore.getState().login(token, user);
+      if (!("token" in result)) throw new Error("Unexpected response");
+      useAuthStore.getState().login(result.token, result.user);
       queryClient.setQueryData(["setup", "status"], { setupComplete: true, desktopMode: true });
       navigate("/", { replace: true });
     } catch (err) {

@@ -26,6 +26,17 @@ WORKDIR /workspace
 
 const IS_WINDOWS = os.platform() === "win32";
 
+// GUI apps on macOS inherit a minimal PATH that often excludes /usr/local/bin,
+// /opt/homebrew/bin, etc. Augment PATH so we can find docker, brew, colima, etc.
+if (os.platform() === "darwin") {
+  const extra = ["/usr/local/bin", "/opt/homebrew/bin", "/opt/orbstack/bin"];
+  const current = process.env.PATH ?? "";
+  const missing = extra.filter((p) => !current.split(":").includes(p));
+  if (missing.length) {
+    process.env.PATH = [...missing, current].join(":");
+  }
+}
+
 /** Progress callback for setup steps. */
 export type SetupProgressFn = (step: string, detail?: string) => void;
 
@@ -103,59 +114,53 @@ async function runWithProgress(cmd: string[], progress: SetupProgressFn): Promis
   return await proc.exited;
 }
 
-/** Install Docker (via Colima) on macOS. */
-async function installDockerMacOS(progress: SetupProgressFn): Promise<{ ok: boolean; error?: string }> {
+/** Try to start the Docker daemon on macOS (Colima or Docker Desktop / OrbStack). */
+async function startDockerMacOS(progress: SetupProgressFn): Promise<{ ok: boolean; error?: string }> {
   try {
-    // Ensure Homebrew is available
-    if (!hasBrew()) {
-      progress("Installing Homebrew");
-      const exit = await runWithProgress(
-        ["bash", "-c", 'NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'],
-        progress,
-      );
-      if (exit !== 0) return { ok: false, error: "Failed to install Homebrew" };
-    }
-
-    // Install colima + docker CLI
-    if (!hasColima()) {
-      progress("Installing Colima");
-      const exit = await runWithProgress(["brew", "install", "colima"], progress);
-      if (exit !== 0) return { ok: false, error: "Failed to install Colima" };
-    }
-
     if (!isInstalled()) {
-      progress("Installing Docker CLI");
-      const exit = await runWithProgress(["brew", "install", "docker"], progress);
-      if (exit !== 0) return { ok: false, error: "Failed to install Docker CLI" };
+      return {
+        ok: false,
+        error: "Docker not found. Please install Docker via OrbStack, Docker Desktop, or `brew install docker` in your terminal, then retry.",
+      };
     }
 
-    // Start Colima
-    if (!isColimaRunning()) {
+    // Docker is installed but daemon not running — try to start it
+    if (hasColima() && !isColimaRunning()) {
       progress("Starting Colima");
       const exit = await runWithProgress(["colima", "start"], progress);
-      if (exit !== 0) return { ok: false, error: "Failed to start Colima" };
+      if (exit === 0 && isDaemonRunning()) {
+        progress("Docker is ready");
+        return { ok: true };
+      }
     }
 
-    // Verify docker works
-    progress("Verifying Docker");
-    if (!isDaemonRunning()) {
-      return { ok: false, error: "Docker daemon not available after Colima start" };
+    // Try launching Docker Desktop / OrbStack via `open`
+    progress("Starting Docker");
+    Bun.spawn(["open", "-a", "Docker"], { stdout: "pipe", stderr: "pipe" });
+
+    progress("Waiting for Docker daemon");
+    for (let i = 0; i < 30; i++) {
+      await new Promise((r) => setTimeout(r, 2000));
+      if (isDaemonRunning()) {
+        progress("Docker is ready");
+        return { ok: true };
+      }
+      progress("output", `Waiting for daemon (${(i + 1) * 2}s)`);
     }
 
-    progress("Docker is ready");
-    return { ok: true };
+    return { ok: false, error: "Docker daemon did not start. Please start it manually and retry." };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
 }
 
-/** Install Docker via the platform package manager or installer. */
+/** Install or start Docker via platform-appropriate means. */
 export async function installDocker(onProgress?: SetupProgressFn): Promise<{ ok: boolean; error?: string }> {
   const progress = onProgress ?? (() => {});
   const platform = os.platform();
 
   if (platform === "darwin") {
-    return installDockerMacOS(progress);
+    return startDockerMacOS(progress);
   }
 
   let cmd: string[];
@@ -240,36 +245,8 @@ async function streamLines(
 export async function setupDocker(onProgress?: SetupProgressFn): Promise<{ ok: boolean; error?: string }> {
   const progress = onProgress ?? (() => {});
 
-  try {
-    if (!isInstalled()) {
-      const result = await installDocker(progress);
-      if (!result.ok) return result;
-    } else if (!isDaemonRunning()) {
-      // Installed but not running — try to start
-      if (os.platform() === "darwin" && hasColima()) {
-        progress("Starting Colima");
-        const exit = await runWithProgress(["colima", "start"], progress);
-        if (exit !== 0) return { ok: false, error: "Failed to start Colima" };
-      } else if (os.platform() === "darwin") {
-        progress("Starting Docker Desktop");
-        Bun.spawn(["open", "-a", "Docker"], { stdout: "pipe", stderr: "pipe" });
-      }
-      progress("Waiting for Docker daemon");
-      for (let i = 0; i < 30; i++) {
-        await new Promise((r) => setTimeout(r, 2000));
-        if (isDaemonRunning()) {
-          progress("Docker is ready");
-          return { ok: true };
-        }
-        progress("output", `Waiting for daemon (${(i + 1) * 2}s)`);
-      }
-      return { ok: false, error: "Docker daemon did not start" };
-    }
-
-    return { ok: true };
-  } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
-  }
+  if (isDaemonRunning()) return { ok: true };
+  return installDocker(progress);
 }
 
 /** Prepare Docker for use — start Colima/Docker Desktop if daemon is not running. */

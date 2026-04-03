@@ -3,7 +3,7 @@ import { useNavigate, Navigate } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@/stores/auth";
 import { completeSetup, getSetupStatus } from "@/api/setup";
-import { totpSetup, totpConfirm } from "@/api/totp";
+import { totpSetupFromLogin, totpConfirmFromLogin } from "@/api/totp";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -20,11 +20,12 @@ import logoSvg from "@/logo.svg";
 export function SetupPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const [step, setStep] = useState(1);
   const { data: setupStatus, isLoading: statusLoading } = useQuery({
     queryKey: ["setup", "status"],
     queryFn: getSetupStatus,
+    enabled: step === 1,
   });
-  const [step, setStep] = useState(1);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -39,6 +40,7 @@ export function SetupPage() {
   const [braveSearchApiKey, setBraveSearchApiKey] = useState("");
 
   // Step 3 fields (2FA)
+  const [tempToken, setTempToken] = useState("");
   const [qrCode, setQrCode] = useState("");
   const [totpSecret, setTotpSecret] = useState("");
   const [setupCode, setSetupCode] = useState("");
@@ -76,18 +78,18 @@ export function SetupPage() {
 
     setLoading(true);
     try {
-      const { token, user } = await completeSetup({
+      const result = await completeSetup({
         email,
         password,
         openrouterApiKey,
         openrouterModel: openrouterModel || undefined,
         braveSearchApiKey: braveSearchApiKey || undefined,
       });
-      useAuthStore.getState().login(token, user);
-      queryClient.setQueryData(["setup", "status"], { setupComplete: true });
+      if (!("tempToken" in result)) throw new Error("Unexpected response");
+      setTempToken(result.tempToken);
 
-      // Initiate 2FA setup for admin
-      const data = await totpSetup();
+      // Initiate 2FA setup using temp token (no full JWT yet)
+      const data = await totpSetupFromLogin(result.tempToken);
       setQrCode(data.qrCode);
       setTotpSecret(data.secret);
       setStep(3);
@@ -105,7 +107,8 @@ export function SetupPage() {
     setLoading(true);
 
     try {
-      const result = await totpConfirm(setupCode);
+      const result = await totpConfirmFromLogin(tempToken, setupCode);
+      useAuthStore.getState().login(result.token, result.user);
       setBackupCodes(result.backupCodes);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Verification failed");
@@ -123,6 +126,7 @@ export function SetupPage() {
   };
 
   const handleSetupDone = () => {
+    queryClient.setQueryData(["setup", "status"], { setupComplete: true });
     navigate("/", { replace: true });
   };
 

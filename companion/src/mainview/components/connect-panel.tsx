@@ -193,10 +193,13 @@ export function ConnectPanel({ onConnect, error, runtimeReady, dockerInstalled, 
 						<>
 							<p className="text-xs text-muted-foreground mb-5 leading-relaxed">
 								Docker is required to run isolated workspaces.
-								This will install Colima and the Docker CLI via Homebrew.
+								Install Docker via{" "}
+								<a href="https://orbstack.dev" target="_blank" rel="noopener" className="underline">OrbStack</a>,{" "}
+								<a href="https://docker.com/products/docker-desktop" target="_blank" rel="noopener" className="underline">Docker Desktop</a>,
+								{" "}or <code className="text-[11px]">brew install docker</code> in your terminal.
 							</p>
 							<Button size="sm" className="w-full" onClick={onSetup}>
-								Install Docker
+								Retry Detection
 							</Button>
 						</>
 					) : (

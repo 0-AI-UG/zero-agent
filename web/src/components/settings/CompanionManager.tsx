@@ -327,7 +327,7 @@ type Platform = { os: string; artifact: string } | null;
 
 function detectPlatform(): Platform {
   const ua = navigator.userAgent;
-  if (ua.includes("Mac")) return { os: "macOS", artifact: "zero-agent-companion-darwin-arm64.tar.gz" };
+  if (ua.includes("Mac")) return { os: "macOS", artifact: "zero-agent-companion-darwin-arm64.dmg" };
   if (ua.includes("Linux")) return { os: "Linux", artifact: "zero-agent-companion-linux-x64.tar.gz" };
   return null;
 }

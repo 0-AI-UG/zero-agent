@@ -1,6 +1,6 @@
 import { corsHeaders } from "@/lib/cors.ts";
 import { db, generateId } from "@/db/index.ts";
-import { createToken, DESKTOP_MODE } from "@/lib/auth.ts";
+import { createTempToken, DESKTOP_MODE } from "@/lib/auth.ts";
 import { setSetting } from "@/lib/settings.ts";
 import { handleError } from "@/routes/utils.ts";
 import { log } from "@/lib/logger.ts";
@@ -87,13 +87,13 @@ export async function handleSetupComplete(request: Request): Promise<Response> {
       setSetting("BRAVE_SEARCH_API_KEY", braveSearchApiKey);
     }
 
-    // Create JWT token
-    const token = await createToken({ userId, email });
+    // Return temp token — full JWT is only issued after 2FA setup
+    const tempToken = await createTempToken(userId);
 
-    setupLog.info("setup completed", { userId, email });
+    setupLog.info("setup completed, awaiting 2FA", { userId, email });
 
     return Response.json(
-      { token, user: { id: userId, email } },
+      { tempToken, requires2FASetup: true, user: { id: userId, email } },
       { status: 201, headers: corsHeaders }
     );
   } catch (error) {

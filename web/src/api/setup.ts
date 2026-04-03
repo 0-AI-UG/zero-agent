@@ -18,10 +18,9 @@ export interface SetupCompleteRequest {
   braveSearchApiKey?: string;
 }
 
-export interface SetupCompleteResponse {
-  token: string;
-  user: { id: string; email: string };
-}
+export type SetupCompleteResponse =
+  | { tempToken: string; requires2FASetup: true; user: { id: string; email: string } }
+  | { token: string; user: { id: string; email: string } };
 
 export async function completeSetup(data: SetupCompleteRequest): Promise<SetupCompleteResponse> {
   const res = await fetch(`${API_BASE}/setup/complete`, {
