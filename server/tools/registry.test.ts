@@ -10,23 +10,20 @@ describe("tool scoping by execution context", () => {
     expect(registry.loadSkill).toBeDefined();
   });
 
-  test("automation context excludes chat-only tools", () => {
+  test("automation context excludes agent tool", () => {
     const registry = createToolRegistry(PROJECT_ID, { context: "automation" });
-    expect(registry.todoCreate).toBeUndefined();
-    expect(registry.todoUpdate).toBeUndefined();
-    expect(registry.todoList).toBeUndefined();
     expect(registry.agent).toBeUndefined();
     // loadSkill is now available in all contexts
     expect(registry.loadSkill).toBeDefined();
   });
 
-  test("chat context includes chat-only tools when deps are met", () => {
+  test("chat context includes progress tools when deps are met", () => {
     const registry = createToolRegistry(PROJECT_ID, {
       context: "chat",
       chatId: "chat-1",
       userId: "user-1",
     });
-    expect(registry.todoCreate).toBeDefined();
+    expect(registry.progressCreate).toBeDefined();
     expect(registry.browser).toBeDefined();
     expect(registry.loadSkill).toBeDefined();
   });
@@ -36,7 +33,7 @@ describe("tool scoping by execution context", () => {
       chatId: "chat-1",
       userId: "user-1",
     });
-    expect(registry.todoCreate).toBeDefined();
+    expect(registry.progressCreate).toBeDefined();
     expect(registry.searchWeb).toBeDefined();
   });
 
@@ -70,12 +67,11 @@ describe("tool scoping by execution context", () => {
 });
 
 describe("subagent context", () => {
-  test("excludes chat-only and denied tools, but includes loadSkill", () => {
+  test("excludes denied tools, but includes loadSkill", () => {
     const registry = createToolRegistry(PROJECT_ID, {
       context: "subagent",
     });
-    // Chat-only tools excluded
-    expect(registry.todoCreate).toBeUndefined();
+    // Agent tool excluded in subagent
     expect(registry.agent).toBeUndefined();
     // loadSkill is now available everywhere
     expect(registry.loadSkill).toBeDefined();
@@ -100,7 +96,6 @@ describe("subagent context", () => {
     const available = getAlwaysAvailable("subagent");
     expect(available.has("readFile")).toBe(true);
     expect(available.has("loadSkill")).toBe(true);
-    expect(available.has("todoCreate")).toBe(false);
     expect(available.has("browser")).toBe(false);
   });
 });
@@ -118,7 +113,6 @@ describe("getAlwaysAvailable", () => {
     expect(available.has("readFile")).toBe(true);
     expect(available.has("writeFile")).toBe(true);
     expect(available.has("loadSkill")).toBe(true);
-    expect(available.has("todoCreate")).toBe(false);
     expect(available.has("browser")).toBe(false);
   });
 });

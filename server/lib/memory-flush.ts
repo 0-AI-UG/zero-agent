@@ -12,6 +12,7 @@ const MEMORY_SECTIONS = [
   "facts",
   "preferences",
   "decisions",
+  "entities",
 ] as const;
 
 type MemorySection = (typeof MEMORY_SECTIONS)[number];
@@ -20,6 +21,7 @@ const SECTION_HEADERS: Record<MemorySection, string> = {
   facts: "## Facts",
   preferences: "## Preferences",
   decisions: "## Decisions",
+  entities: "## Entities",
 };
 
 /** Parse existing memory.md into section -> entries map */
@@ -30,6 +32,7 @@ function parseMemory(
     facts: [],
     preferences: [],
     decisions: [],
+    entities: [],
   };
 
   let current: MemorySection | null = null;
@@ -99,6 +102,68 @@ function parseMemoryResponse(text: string): { section: MemorySection; content: s
 const MAX_MEMORY_ENTRIES = 100;
 
 /**
+ * Flush extracted learnings directly into memory.md.
+ * Called incrementally during compaction (Phase 3) — no LLM call needed
+ * since learnings are already extracted by the anchor extraction prompt.
+ */
+export async function flushLearnings(
+  projectId: string,
+  learnings: string[],
+): Promise<void> {
+  if (learnings.length === 0) return;
+
+  let existingRaw = "";
+  try {
+    existingRaw = await readFromS3(`projects/${projectId}/memory.md`);
+  } catch {
+    // No existing memory
+  }
+
+  const sections = parseMemory(existingRaw);
+
+  for (const learning of learnings) {
+    // Route learnings to the facts section
+    const isDuplicate = sections.facts.some(
+      (existing) =>
+        existing.toLowerCase().includes(learning.toLowerCase()) ||
+        learning.toLowerCase().includes(existing.toLowerCase()),
+    );
+    if (!isDuplicate) {
+      sections.facts.push(learning);
+    }
+  }
+
+  // Cap total entries
+  const totalEntries = Object.values(sections).flat().length;
+  if (totalEntries > MAX_MEMORY_ENTRIES) {
+    for (const key of MEMORY_SECTIONS) {
+      const max = Math.ceil(MAX_MEMORY_ENTRIES / MEMORY_SECTIONS.length);
+      if (sections[key].length > max) {
+        sections[key] = sections[key].slice(-max);
+      }
+    }
+  }
+
+  const newMemoryMd = renderMemory(sections);
+  await writeToS3(`projects/${projectId}/memory.md`, newMemoryMd);
+
+  // Embed for semantic retrieval
+  const allEntries: { id: string; text: string }[] = [];
+  for (const key of MEMORY_SECTIONS) {
+    for (let i = 0; i < sections[key].length; i++) {
+      allEntries.push({ id: `${key}:${i}`, text: `[${key}] ${sections[key][i]}` });
+    }
+  }
+  if (allEntries.length > 0) {
+    embedEntries(projectId, "memory", allEntries).catch((err) =>
+      memLog.warn("learning embedding failed", { projectId, error: String(err) }),
+    );
+  }
+
+  memLog.info("learnings flushed", { projectId, count: learnings.length });
+}
+
+/**
  * Run after a conversation finishes. Extracts key facts/preferences/decisions
  * from the recent messages and merges them into memory.md.
  */
@@ -132,12 +197,13 @@ export async function flushConversationMemory(
       system: `You extract important information from conversations. Output new memory entries, one per line, in the format:
 section: content
 
-Valid sections: facts, preferences, decisions
+Valid sections: facts, preferences, decisions, entities
 
 Categories:
 - facts: Concrete facts about the user, their business, market, or product
 - preferences: User preferences for workflow, communication, content style
 - decisions: Strategic decisions made during the conversation
+- entities: Structured facts about specific things (APIs, services, configs, people)
 
 Rules:
 - Only extract information worth remembering across conversations

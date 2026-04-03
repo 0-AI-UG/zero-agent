@@ -3,6 +3,47 @@ import { wrapLanguageModel, extractReasoningMiddleware } from "ai";
 import type { LanguageModelV3Middleware, LanguageModelV3Message } from "@ai-sdk/provider";
 import { getProviderRouting } from "@/config/models.ts";
 import { getSetting } from "@/lib/settings.ts";
+import { llmCircuitBreaker, CircuitBreakerOpenError } from "@/lib/durability/circuit-breaker.ts";
+import { log } from "@/lib/logger.ts";
+
+const orLog = log.child({ module: "openrouter" });
+
+// ── Retry fetch wrapper ──
+
+const MAX_RETRIES = 3;
+const BASE_DELAY_MS = 1000;
+const JITTER_FACTOR = 0.25;
+
+function isRetryable(status: number): boolean {
+  return status === 429 || (status >= 500 && status < 600);
+}
+
+function retryFetch(originalFetch: typeof fetch): typeof fetch {
+  const wrapper = async (input: any, init?: any) => {
+    let lastError: unknown;
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        const response = await originalFetch(input, init);
+        if (attempt < MAX_RETRIES && isRetryable(response.status)) {
+          const delay = BASE_DELAY_MS * Math.pow(2, attempt) * (1 + (Math.random() - 0.5) * 2 * JITTER_FACTOR);
+          orLog.warn("retrying LLM request", { attempt: attempt + 1, status: response.status, delayMs: Math.round(delay) });
+          await new Promise((r) => setTimeout(r, delay));
+          continue;
+        }
+        return response;
+      } catch (err) {
+        lastError = err;
+        if (attempt < MAX_RETRIES) {
+          const delay = BASE_DELAY_MS * Math.pow(2, attempt) * (1 + (Math.random() - 0.5) * 2 * JITTER_FACTOR);
+          orLog.warn("retrying LLM request after error", { attempt: attempt + 1, error: err instanceof Error ? err.message : String(err), delayMs: Math.round(delay) });
+          await new Promise((r) => setTimeout(r, delay));
+        }
+      }
+    }
+    throw lastError;
+  };
+  return wrapper as typeof fetch;
+}
 
 // Lazily create and cache the OpenRouter provider, recreating when the API key changes.
 let _cachedKey: string | null = null;
@@ -12,7 +53,7 @@ function getOpenRouter() {
   const key = getSetting("OPENROUTER_API_KEY") ?? "";
   if (_cachedProvider && key === _cachedKey) return _cachedProvider;
   _cachedKey = key;
-  _cachedProvider = createOpenRouter({ apiKey: key });
+  _cachedProvider = createOpenRouter({ apiKey: key, fetch: retryFetch(fetch) });
   return _cachedProvider;
 }
 
@@ -98,6 +139,37 @@ const imageToolResultMiddleware: LanguageModelV3Middleware = {
   },
 };
 
+/**
+ * Middleware that integrates the circuit breaker — fails fast when the
+ * LLM API is experiencing repeated failures, and records success/failure
+ * to drive circuit state transitions.
+ */
+const circuitBreakerMiddleware: LanguageModelV3Middleware = {
+  specificationVersion: "v3",
+  wrapGenerate: async ({ doGenerate }) => {
+    if (llmCircuitBreaker.isOpen()) throw new CircuitBreakerOpenError();
+    try {
+      const result = await doGenerate();
+      llmCircuitBreaker.recordSuccess();
+      return result;
+    } catch (err) {
+      llmCircuitBreaker.recordFailure();
+      throw err;
+    }
+  },
+  wrapStream: async ({ doStream }) => {
+    if (llmCircuitBreaker.isOpen()) throw new CircuitBreakerOpenError();
+    try {
+      const result = await doStream();
+      llmCircuitBreaker.recordSuccess();
+      return result;
+    } catch (err) {
+      llmCircuitBreaker.recordFailure();
+      throw err;
+    }
+  },
+};
+
 function getDefaultModelId(): string {
   return getSetting("OPENROUTER_MODEL") ?? "minimax/minimax-m2.7";
 }
@@ -106,6 +178,7 @@ export function getChatModel() {
   return wrapLanguageModel({
     model: openrouterWithRouting(getDefaultModelId()),
     middleware: [
+      circuitBreakerMiddleware,
       imageToolResultMiddleware,
       extractReasoningMiddleware({ tagName: "think" }),
     ],
@@ -119,6 +192,7 @@ export function createChatModel(modelId: string) {
   return wrapLanguageModel({
     model: openrouterWithRouting(modelId),
     middleware: [
+      circuitBreakerMiddleware,
       imageToolResultMiddleware,
       extractReasoningMiddleware({ tagName: "think" }),
     ],

@@ -19,8 +19,8 @@ interface Todo {
 
 /**
  * Extract todos from message tool call parts.
- * todoCreate outputs: { id, title, status }
- * todoUpdate outputs: { id, title, status }
+ * progressCreate outputs: { id, title, status }
+ * progressUpdate outputs: { id, title, status }
  */
 function extractTodos(messages: UIMessage[]): Todo[] {
   const todosMap = new Map<string, Todo>();
@@ -33,13 +33,13 @@ function extractTodos(messages: UIMessage[]): Todo[] {
       const toolName = getToolName(part);
       const output = part.output as any;
 
-      if (toolName === "todoCreate" && output?.id) {
+      if (toolName === "progressCreate" && output?.id) {
         todosMap.set(output.id, {
           id: output.id,
           title: output.title,
           status: output.status ?? "pending",
         });
-      } else if (toolName === "todoUpdate" && output?.id) {
+      } else if (toolName === "progressUpdate" && output?.id) {
         const existing = todosMap.get(output.id);
         todosMap.set(output.id, {
           id: output.id,

@@ -3,9 +3,23 @@ import { createAgent } from "@/lib/agent.ts";
 import { createAutonomousChat } from "@/db/queries/chats.ts";
 import { touchChat } from "@/db/queries/chats.ts";
 import { db } from "@/db/index.ts";
+import { generateId as dbGenerateId } from "@/db/index.ts";
 import { readFromS3 } from "@/lib/s3.ts";
 import { browserBridge } from "@/lib/browser/bridge.ts";
 import { semanticSearch, isEmbeddingConfigured } from "@/lib/vectors.ts";
+import { saveCheckpoint, deleteCheckpoint } from "@/lib/durability/checkpoint.ts";
+import { isShuttingDown, registerRun, deregisterRun } from "@/lib/durability/shutdown.ts";
+import {
+  type SessionAnchor,
+  createEmptyAnchor,
+  extractAnchor,
+  renderAnchor,
+  saveAnchor,
+  loadAnchor,
+  deleteAnchor,
+} from "@/lib/session-anchor.ts";
+import { flushLearnings } from "@/lib/memory-flush.ts";
+import { decomposeTask, shouldDecompose } from "@/lib/task-decomposition.ts";
 import { log } from "@/lib/logger.ts";
 
 const autoLog = log.child({ module: "autonomous-agent" });
@@ -28,7 +42,18 @@ interface RunResult {
   chatId: string;
   summary: string;
   suppressed: boolean;
+  /** True if the task was suspended mid-execution and needs continuation */
+  suspended?: boolean;
 }
+
+/** Max steps per autonomous session to prevent runaway execution */
+const AUTONOMOUS_MAX_STEPS = 50;
+
+/** Save a checkpoint every N steps to limit data loss on crash */
+const CHECKPOINT_INTERVAL = 5;
+
+/** Max number of continuations to prevent infinite loops */
+const MAX_CONTINUATIONS = 5;
 
 const insertOne = db.query<void, [string, string, string, string, string]>(
   "INSERT OR REPLACE INTO messages (id, project_id, chat_id, role, content) VALUES (?, ?, ?, ?, ?)",
@@ -38,7 +63,7 @@ export async function runAutonomousTask(
   project: { id: string; name: string },
   taskName: string,
   prompt: string,
-  options?: { onlyTools?: string[]; onlySkills?: string[]; userId?: string },
+  options?: { onlyTools?: string[]; onlySkills?: string[]; userId?: string; continuationNumber?: number; anchorRunId?: string; decompose?: boolean },
 ): Promise<RunResult> {
   const chat = createAutonomousChat(project.id, taskName);
 
@@ -101,25 +126,181 @@ export async function runAutonomousTask(
       ? { id: `auto-${chat.id}`, created: false }
       : undefined;
 
+    const runId = dbGenerateId();
+    // Reuse anchor run ID across continuations so the anchor accumulates
+    const anchorRunId = options?.anchorRunId ?? runId;
+
+    const continuationNumber = options?.continuationNumber ?? 0;
+
+    // Load existing anchor for continuations
+    let anchor: SessionAnchor | null = null;
+    if (continuationNumber > 0) {
+      anchor = await loadAnchor(project.id, anchorRunId);
+    }
+    if (!anchor) {
+      anchor = createEmptyAnchor(anchorRunId);
+    }
+    anchor.continuationNumber = continuationNumber;
+
+    // Decompose task into subtasks on first run if warranted
+    if (continuationNumber === 0 && shouldDecompose(prompt, options?.decompose)) {
+      try {
+        const subtasks = await decomposeTask(prompt);
+        if (subtasks) {
+          anchor.plan = subtasks;
+          autoLog.info("decomposed task into subtasks", {
+            projectId: project.id,
+            taskName,
+            subtaskCount: subtasks.length,
+          });
+        }
+      } catch (err) {
+        autoLog.warn("task decomposition failed, proceeding without", {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    // Accumulate response messages across steps for mid-run checkpointing
+    const accumulatedResponseMessages: unknown[] = [];
+
     const agent = await createAgent(project, {
       onlyTools: options?.onlyTools,
       onlySkills: options?.onlySkills,
       userId: options?.userId,
       lazyBrowserSession,
+      runId,
+      chatId: chat.id,
+      maxSteps: AUTONOMOUS_MAX_STEPS,
+      anchorRunId,
+      onStepCheckpoint: (stepNumber, responseMessages) => {
+        accumulatedResponseMessages.push(...responseMessages);
+        if (stepNumber % CHECKPOINT_INTERVAL === 0) {
+          saveCheckpoint({
+            runId,
+            chatId: chat.id,
+            projectId: project.id,
+            stepNumber,
+            messages: [{ role: "user", content: fullPrompt }, ...accumulatedResponseMessages],
+            metadata: { taskName, continuationNumber, anchorRunId },
+          });
+        }
+      },
     });
 
+    // Save initial checkpoint so crash recovery knows this run is in-progress
+    saveCheckpoint({
+      runId,
+      chatId: chat.id,
+      projectId: project.id,
+      stepNumber: 0,
+      messages: [{ role: "user", content: fullPrompt }],
+      metadata: { taskName, continuationNumber, anchorRunId },
+    });
+
+    // Register for graceful shutdown tracking
+    registerRun({ runId, chatId: chat.id, projectId: project.id, startedAt: Date.now() });
+
     let responseText: string;
+    let isSuspended = false;
     try {
+      let taskPrompt: string;
+      if (continuationNumber > 0 && anchor.intent) {
+        const anchorContext = renderAnchor(anchor);
+
+        // Find next incomplete subtask for focused continuation
+        const nextSubtask = anchor.plan?.find((s) => s.status === "pending" || s.status === "in_progress");
+        const focusLine = nextSubtask
+          ? `Focus on this subtask: "${nextSubtask.title}". Use progressUpdate to mark it completed when done, then move to the next pending subtask.`
+          : "Review the session context above and continue working on the next steps listed.";
+
+        taskPrompt = `${fullPrompt}\n\n---\n${anchorContext}\n\n---\n[CONTINUATION ${continuationNumber}/${MAX_CONTINUATIONS}] ${focusLine} If you've completed all work, provide your final report.`;
+      } else if (anchor.plan && anchor.plan.length > 0) {
+        // First run with decomposed plan — inject the plan
+        const anchorContext = renderAnchor(anchor);
+        taskPrompt = `${fullPrompt}\n\n---\n${anchorContext}\n\nStart with the first pending subtask. Use progressCreate/progressUpdate to track your progress.`;
+      } else {
+        taskPrompt = fullPrompt;
+      }
+
       const result = await agent.generate({
-        prompt: fullPrompt,
+        prompt: taskPrompt,
       });
       responseText = result.text || "No response generated.";
+
+      // Save final checkpoint to capture any steps since the last interval
+      saveCheckpoint({
+        runId,
+        chatId: chat.id,
+        projectId: project.id,
+        stepNumber: AUTONOMOUS_MAX_STEPS,
+        messages: [{ role: "user", content: fullPrompt }, ...accumulatedResponseMessages],
+        metadata: { taskName, continuationNumber, anchorRunId },
+      });
+
+      // Check if execution was bounded by step limit
+      if (result.finishReason === "length" && continuationNumber < MAX_CONTINUATIONS) {
+        isSuspended = true;
+
+        // Extract anchor from this session's conversation before suspending
+        const sessionMessages = [
+          { role: "user" as const, content: taskPrompt },
+          { role: "assistant" as const, content: responseText },
+        ];
+        const { anchor: updatedAnchor, learnings } = await extractAnchor(sessionMessages, anchor);
+        updatedAnchor.totalStepsExecuted += AUTONOMOUS_MAX_STEPS;
+        updatedAnchor.continuationNumber = continuationNumber + 1;
+        await saveAnchor(project.id, anchorRunId, updatedAnchor);
+
+        // Flush any learnings to memory
+        if (learnings.length > 0) {
+          flushLearnings(project.id, learnings).catch((err) => {
+            autoLog.warn("failed to flush learnings on suspend", { error: String(err) });
+          });
+        }
+
+        autoLog.info("autonomous task suspended at step limit", {
+          projectId: project.id,
+          chatId: chat.id,
+          taskName,
+          continuationNumber: continuationNumber + 1,
+          anchorIntent: updatedAnchor.intent.slice(0, 80),
+        });
+
+        // Save suspended checkpoint for scheduler to resume
+        saveCheckpoint({
+          runId,
+          chatId: chat.id,
+          projectId: project.id,
+          stepNumber: AUTONOMOUS_MAX_STEPS,
+          messages: [{ role: "user", content: fullPrompt }],
+          metadata: { taskName, continuationNumber: continuationNumber + 1, anchorRunId },
+          status: "suspended",
+        });
+      }
     } finally {
+      if (!isSuspended) {
+        deleteCheckpoint(runId);
+        // Promote anchor decisions to memory before cleanup
+        const finalAnchor = await loadAnchor(project.id, anchorRunId);
+        if (finalAnchor?.activeDecisions.length) {
+          flushLearnings(project.id, finalAnchor.activeDecisions).catch((err) => {
+            autoLog.warn("failed to promote anchor decisions", { error: String(err) });
+          });
+        }
+        deleteAnchor(project.id, anchorRunId).catch(() => {});
+      }
+      deregisterRun(runId);
       if (lazyBrowserSession?.created && options?.userId) {
         browserBridge.destroySession(options.userId, project.id, lazyBrowserSession.id).catch((err) => {
           autoLog.warn("failed to destroy browser session", { error: String(err) });
         });
       }
+    }
+
+    // If suspended, return early with partial summary
+    if (isSuspended) {
+      return { chatId: chat.id, summary: `[Suspended — continuation ${continuationNumber + 1}/${MAX_CONTINUATIONS}]`, suppressed: true, suspended: true };
     }
 
     // If the agent says nothing needs attention, skip persisting to chat

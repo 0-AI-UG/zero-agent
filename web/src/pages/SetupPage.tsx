@@ -3,6 +3,7 @@ import { useNavigate, Navigate } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@/stores/auth";
 import { completeSetup, getSetupStatus } from "@/api/setup";
+import { totpSetup, totpConfirm } from "@/api/totp";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,7 +14,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { UsersIcon, BotIcon, ClockIcon } from "lucide-react";
+import { UsersIcon, BotIcon, ClockIcon, CopyIcon, ClipboardCheckIcon } from "lucide-react";
 import logoSvg from "@/logo.svg";
 
 export function SetupPage() {
@@ -36,6 +37,13 @@ export function SetupPage() {
   const [openrouterApiKey, setOpenrouterApiKey] = useState("");
   const [openrouterModel, setOpenrouterModel] = useState("");
   const [braveSearchApiKey, setBraveSearchApiKey] = useState("");
+
+  // Step 3 fields (2FA)
+  const [qrCode, setQrCode] = useState("");
+  const [totpSecret, setTotpSecret] = useState("");
+  const [setupCode, setSetupCode] = useState("");
+  const [backupCodes, setBackupCodes] = useState<string[] | null>(null);
+  const [copied, setCopied] = useState(false);
 
   if (statusLoading) return null;
   if (setupStatus?.setupComplete) return <Navigate to="/login" replace />;
@@ -77,12 +85,45 @@ export function SetupPage() {
       });
       useAuthStore.getState().login(token, user);
       queryClient.setQueryData(["setup", "status"], { setupComplete: true });
-      navigate("/", { replace: true });
+
+      // Initiate 2FA setup for admin
+      const data = await totpSetup();
+      setQrCode(data.qrCode);
+      setTotpSecret(data.secret);
+      setStep(3);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Setup failed");
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleTotpConfirm = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (setupCode.length !== 6) return;
+    setError(null);
+    setLoading(true);
+
+    try {
+      const result = await totpConfirm(setupCode);
+      setBackupCodes(result.backupCodes);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Verification failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const copyBackupCodes = () => {
+    if (backupCodes) {
+      navigator.clipboard.writeText(backupCodes.join("\n"));
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  const handleSetupDone = () => {
+    navigate("/", { replace: true });
   };
 
   return (
@@ -105,16 +146,22 @@ export function SetupPage() {
           <CardHeader>
             <div className="flex items-center justify-between mb-1">
               <span className="text-xs text-muted-foreground font-medium">
-                Step {step} of 2
+                Step {step} of 3
               </span>
             </div>
             <CardTitle className="font-display">
-              {step === 1 ? "Create Admin Account" : "Configure LLM"}
+              {step === 1
+                ? "Create Admin Account"
+                : step === 2
+                  ? "Configure LLM"
+                  : "Set Up Two-Factor Authentication"}
             </CardTitle>
             <CardDescription>
               {step === 1
                 ? "Set up the first admin account for your instance."
-                : "Connect an LLM provider to power the agent."}
+                : step === 2
+                  ? "Connect an LLM provider to power the agent."
+                  : "Admin accounts require 2FA. Scan the QR code with your authenticator app."}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -160,7 +207,7 @@ export function SetupPage() {
                   Next
                 </Button>
               </div>
-            ) : (
+            ) : step === 2 ? (
               <form onSubmit={handleSubmit} className="space-y-4">
                 {error && (
                   <div className="text-sm text-destructive">{error}</div>
@@ -209,9 +256,65 @@ export function SetupPage() {
                     Back
                   </Button>
                   <Button type="submit" className="flex-1" disabled={loading}>
-                    {loading ? "Setting up..." : "Complete Setup"}
+                    {loading ? "Setting up..." : "Next"}
                   </Button>
                 </div>
+              </form>
+            ) : backupCodes ? (
+              <div className="space-y-4">
+                <p className="text-sm text-muted-foreground">
+                  Save these backup codes in a safe place. Each code can only be used once.
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  {backupCodes.map((c) => (
+                    <code key={c} className="text-xs bg-muted px-3 py-1.5 rounded text-center font-mono">
+                      {c}
+                    </code>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" onClick={copyBackupCodes}>
+                    {copied ? (
+                      <><ClipboardCheckIcon className="size-3.5 mr-1.5" />Copied</>
+                    ) : (
+                      <><CopyIcon className="size-3.5 mr-1.5" />Copy all</>
+                    )}
+                  </Button>
+                  <Button size="sm" onClick={handleSetupDone}>
+                    Complete Setup
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <form onSubmit={handleTotpConfirm} className="space-y-4">
+                {error && (
+                  <div className="text-sm text-destructive">{error}</div>
+                )}
+                <div className="flex justify-center">
+                  <img src={qrCode} alt="TOTP QR Code" className="size-48 rounded-lg" />
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground">Or enter this key manually:</p>
+                  <code className="block text-xs bg-muted px-3 py-2 rounded select-all break-all">{totpSecret}</code>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="setup-totp-code">Verification Code</Label>
+                  <Input
+                    id="setup-totp-code"
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    maxLength={6}
+                    value={setupCode}
+                    onChange={(e) => { setSetupCode(e.target.value); setError(null); }}
+                    placeholder="000000"
+                    autoFocus
+                    autoComplete="one-time-code"
+                  />
+                </div>
+                <Button type="submit" className="w-full" disabled={loading || setupCode.length !== 6}>
+                  {loading ? "Verifying..." : "Verify & Enable"}
+                </Button>
               </form>
             )}
           </CardContent>

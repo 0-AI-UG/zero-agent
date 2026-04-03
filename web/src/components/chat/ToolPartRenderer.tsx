@@ -702,7 +702,7 @@ export const ToolCallPart = memo(function ToolCallPart({
 
   // Hide internal tools from chat
   if (toolName === "loadTools") return null;
-  if (toolName === "todoCreate" || toolName === "todoUpdate" || toolName === "todoList") return null;
+  if (toolName === "progressCreate" || toolName === "progressUpdate" || toolName === "progressList") return null;
 
 
 

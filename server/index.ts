@@ -132,7 +132,9 @@ import {
   handleDeleteSkill,
 } from "@/routes/skills.ts";
 
-import { startScheduler } from "@/lib/scheduler.ts";
+import { startScheduler, stopScheduler } from "@/lib/scheduler.ts";
+import { requestShutdown, drainActiveRuns, isShuttingDown } from "@/lib/durability/shutdown.ts";
+import { recoverInterruptedRuns } from "@/lib/durability/recovery.ts";
 import { handleListUsers, handleCreateUser, handleDeleteUser, handleUpdateUser } from "@/routes/admin.ts";
 import { handleSetupStatus, handleSetupComplete } from "@/routes/setup.ts";
 import { handleGetSettings, handleUpdateSettings } from "@/routes/settings.ts";
@@ -623,6 +625,9 @@ const server = Bun.serve<{ userId: string; projectId: string; authenticated: boo
 export { server };
 log.info("server started", { port: server.port, url: server.url.href, logLevel: process.env.LOG_LEVEL ?? "debug" });
 
+// Recover any interrupted runs from a previous crash before starting scheduler
+recoverInterruptedRuns();
+
 startScheduler();
 
 import { startEventTriggers } from "@/lib/event-trigger.ts";
@@ -632,3 +637,19 @@ startEventTriggers();
 if (!process.env.TELEGRAM_WEBHOOK_BASE_URL) {
   startAllPollers(processIncomingUpdate);
 }
+
+// ── Graceful Shutdown ──
+
+async function handleShutdown(signal: string) {
+  if (isShuttingDown()) return; // prevent double-shutdown
+  log.info("shutdown signal received", { signal });
+  requestShutdown();
+  stopScheduler();
+  await drainActiveRuns(30_000);
+  db.close();
+  log.info("shutdown complete");
+  process.exit(0);
+}
+
+process.on("SIGTERM", () => handleShutdown("SIGTERM"));
+process.on("SIGINT", () => handleShutdown("SIGINT"));

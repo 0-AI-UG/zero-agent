@@ -78,18 +78,18 @@ export const TOOL_GROUPS: ToolGroup[] = [
     tools: ["sendTelegramMessage"],
   },
   {
-    id: "todos",
-    label: "Todos",
+    id: "progress",
+    label: "Progress",
     icon: "ListTodo",
-    tools: ["todoCreate", "todoUpdate", "todoList"],
+    tools: ["progressCreate", "progressUpdate", "progressList"],
   },
 ];
 
 export const ALL_TOOL_NAMES = TOOL_GROUPS.flatMap((g) => g.tools);
 
-/** Tool groups available to automation/scheduled tasks (excludes chat-only tools like todos). */
+/** Tool groups available to automation/scheduled tasks (excludes agent spawning). */
 export const AUTOMATION_TOOL_GROUPS: ToolGroup[] = TOOL_GROUPS.filter(
-  (g) => g.id !== "agent" && g.id !== "todos",
+  (g) => g.id !== "agent",
 );
 
 interface ToolsState {

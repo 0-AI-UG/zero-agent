@@ -17,7 +17,7 @@ import { AlertCircleIcon, RefreshCcwIcon, PackageIcon, SearchIcon, TargetIcon } 
 import { useCallback, useRef, type ReactNode } from "react";
 import logoSvg from "@/logo.svg";
 
-const HIDDEN_TOOLS = new Set(["loadTools", "todoCreate", "todoUpdate", "todoList", "searchFiles", "readFile", "loadSkill"]);
+const HIDDEN_TOOLS = new Set(["loadTools", "progressCreate", "progressUpdate", "progressList", "searchFiles", "readFile", "loadSkill"]);
 
 const ONBOARDING_SUGGESTIONS = [
   {

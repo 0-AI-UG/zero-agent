@@ -19,11 +19,15 @@ import { streamContext, setActiveStreamId, clearActiveStreamId, getActiveStreamI
 import { ConflictError } from "@/lib/errors.ts";
 import { insertUsageLog } from "@/db/queries/usage-logs.ts";
 import { getModelPricing } from "@/config/models.ts";
+import { saveCheckpoint, deleteCheckpoint } from "@/lib/durability/checkpoint.ts";
+import { isShuttingDown, registerRun, deregisterRun } from "@/lib/durability/shutdown.ts";
+import { CircuitBreakerOpenError } from "@/lib/durability/circuit-breaker.ts";
 
 const chatLog = log.child({ module: "chat" });
 
 export async function handleChat(request: BunRequest): Promise<Response> {
   const start = Date.now();
+  let runId: string | undefined;
   try {
     const { userId } = await authenticateRequest(request);
     const { projectId, chatId } = request.params as {
@@ -34,6 +38,11 @@ export async function handleChat(request: BunRequest): Promise<Response> {
 
     const project = verifyProjectAccess(projectId, userId);
     const chat = verifyChatOwnership(chatId, projectId);
+
+    // Reject new requests during shutdown
+    if (isShuttingDown()) {
+      return Response.json({ error: "Server is shutting down" }, { status: 503, headers: corsHeaders });
+    }
 
     // Reject if another stream is already active for this chat
     if (getActiveStreamId(chatId)) {
@@ -87,7 +96,8 @@ export async function handleChat(request: BunRequest): Promise<Response> {
 
     // Create the agent for this project
     const cw = model ? getModelContextWindow(model) : 128_000;
-    const agent = await createAgent(project, { model, language, disabledTools, chatId, userId, preActivateTools: usedToolNames, contextWindow: cw, initialReadPaths: readPaths, relevantMemories });
+    runId = generateId();
+    const agent = await createAgent(project, { model, language, disabledTools, chatId, userId, preActivateTools: usedToolNames, contextWindow: cw, initialReadPaths: readPaths, relevantMemories, runId });
 
     // Predict whether compaction will trigger so we can send metadata early.
     // Use contextTokens (last step's actual input tokens) if available,
@@ -114,6 +124,19 @@ export async function handleChat(request: BunRequest): Promise<Response> {
 
     const abortController = new AbortController();
     setAbortController(chatId, abortController);
+
+    // Save initial checkpoint so crash recovery knows this run was in-progress
+    saveCheckpoint({
+      runId,
+      chatId,
+      projectId,
+      stepNumber: 0,
+      messages,
+      metadata: { userId, model, streamId },
+    });
+
+    // Register this run for graceful shutdown tracking
+    registerRun({ runId, chatId, projectId, abortController, startedAt: Date.now() });
 
     // Track the last step's usage so we can report actual context window consumption.
     // totalUsage accumulates inputTokens across all agent steps (tool calls),
@@ -168,6 +191,10 @@ export async function handleChat(request: BunRequest): Promise<Response> {
       onFinish: ({ messages: finalMessages, isAborted }) => {
         clearActiveStreamId(chatId);
         clearAbortController(chatId);
+        if (runId) {
+          deleteCheckpoint(runId);
+          deregisterRun(runId);
+        }
         const durationMs = Date.now() - start;
 
         if (isAborted) {
@@ -286,6 +313,19 @@ export async function handleChat(request: BunRequest): Promise<Response> {
     if (chatId) {
       clearActiveStreamId(chatId);
       clearAbortController(chatId);
+    }
+    // Clean up checkpoint and run registration on error
+    if (runId) {
+      deleteCheckpoint(runId);
+      deregisterRun(runId);
+    }
+
+    // Return 503 for circuit breaker instead of generic error
+    if (error instanceof CircuitBreakerOpenError) {
+      return Response.json(
+        { error: "AI service is temporarily unavailable. Please try again in a moment." },
+        { status: 503, headers: corsHeaders },
+      );
     }
 
     chatLog.error("chat request failed", error, { durationMs: Date.now() - start });

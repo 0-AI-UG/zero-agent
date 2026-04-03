@@ -298,6 +298,37 @@ db.run(`
   )
 `);
 
+// ── Durability: event log & checkpoints ──
+
+db.run(`
+  CREATE TABLE IF NOT EXISTS agent_events (
+    id          TEXT PRIMARY KEY,
+    run_id      TEXT NOT NULL,
+    chat_id     TEXT,
+    project_id  TEXT NOT NULL,
+    step_number INTEGER NOT NULL,
+    event_type  TEXT NOT NULL,
+    tool_names  TEXT,
+    data        TEXT NOT NULL,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+  )
+`);
+db.run(`CREATE INDEX IF NOT EXISTS idx_agent_events_run ON agent_events(run_id, step_number)`);
+
+db.run(`
+  CREATE TABLE IF NOT EXISTS agent_checkpoints (
+    run_id      TEXT PRIMARY KEY,
+    chat_id     TEXT,
+    project_id  TEXT NOT NULL,
+    step_number INTEGER NOT NULL,
+    messages    TEXT NOT NULL,
+    metadata    TEXT,
+    status      TEXT NOT NULL DEFAULT 'active',
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+  )
+`);
+
 // ── Migrations (idempotent column additions) ──
 
 for (const col of [
@@ -305,6 +336,7 @@ for (const col of [
   "trigger_event TEXT",
   "trigger_filter TEXT",
   "cooldown_seconds INTEGER NOT NULL DEFAULT 0",
+  "decompose INTEGER NOT NULL DEFAULT 0",
 ]) {
   try { db.run(`ALTER TABLE scheduled_tasks ADD COLUMN ${col}`); } catch {}
 }

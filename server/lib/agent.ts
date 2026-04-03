@@ -7,6 +7,7 @@ import { createAgentTool } from "@/tools/agent.ts";
 import { createCompactPrepareStep } from "@/lib/compact-conversation.ts";
 import { readFromS3 } from "@/lib/s3.ts";
 import { browserBridge } from "@/lib/browser/bridge.ts";
+import { insertEvent } from "@/lib/durability/event-log.ts";
 import { log } from "@/lib/logger.ts";
 
 const agentLog = log.child({ module: "agent" });
@@ -49,6 +50,14 @@ export interface AgentOptions {
   initialReadPaths?: string[];
   /** Semantically relevant memory entries retrieved via RAG for this conversation. */
   relevantMemories?: { content: string; score: number }[];
+  /** Unique ID for this agent run — used for event logging and checkpointing. */
+  runId?: string;
+  /** Callback fired after each step with the current step number and response messages — used for checkpointing. */
+  onStepCheckpoint?: (stepNumber: number, responseMessages: Array<{ role: string; content: unknown }>) => void;
+  /** Maximum number of agent steps before stopping. Defaults to 100. */
+  maxSteps?: number;
+  /** Anchor run ID for progress tool sync in automation mode. */
+  anchorRunId?: string;
 }
 
 async function buildSystemPrompt(project: {
@@ -188,13 +197,13 @@ ${skillsIndex}
 - Don't specify tools — agents discover them via \`loadTools\`
 - Use "fast" model for research/scraping, "default" for nuanced writing/reasoning`);
 
-  // ── Todos (chat only — automation tasks are already planned) ──
+  // ── Progress tracking (chat only — automation tasks are already planned) ──
   if (isChat) {
-    sections.push(`## Todos — Planning Before Execution
+    sections.push(`## Progress — Planning Before Execution
 
-For tasks with 3+ steps, create ALL todos upfront before starting work. Each todo = one actionable step (1-3 tool calls), ordered by dependency, with success criteria in the description.
+For tasks with 3+ steps, create ALL progress items upfront before starting work. Each item = one actionable step, ordered by dependency, with success criteria in the description.
 
-**Lifecycle:** create todos → mark \`in_progress\` → do work → mark \`completed\`. Add new todos if scope grows. Mark \`failed\` with reason if blocked, then continue.
+**Lifecycle:** progressCreate → mark \`in_progress\` via progressUpdate → do work → mark \`completed\`. Add new items if scope grows. Mark \`failed\` with reason if blocked, then continue.
 
 Do NOT skip planning for complex tasks — the user should always see what you're working on.`);
   }
@@ -285,6 +294,7 @@ export async function createAgent(project: ProjectForAgent, options: AgentOption
     codeExecutionEnabled: project.code_execution_enabled === 1,
     modelId: options.model,
     initialReadPaths: options.initialReadPaths,
+    anchorRunId: options.anchorRunId,
   });
 
   // Pre-activate tools that appear in message history so the AI SDK
@@ -319,7 +329,7 @@ export async function createAgent(project: ProjectForAgent, options: AgentOption
 
   return new ToolLoopAgent({
     model,
-    stopWhen: stepCountIs(100),
+    stopWhen: stepCountIs(options.maxSteps ?? 100),
     instructions: {
       role: "system",
       content: await buildSystemPrompt({
@@ -336,8 +346,12 @@ export async function createAgent(project: ProjectForAgent, options: AgentOption
       },
     },
     tools: activeTools,
-    prepareStep: createCompactPrepareStep(options.contextWindow ?? 128_000),
-    onStepFinish: async ({ toolCalls }) => {
+    prepareStep: createCompactPrepareStep({
+      contextWindow: options.contextWindow ?? 128_000,
+      projectId: project.id,
+      runId: options.runId,
+    }),
+    onStepFinish: async ({ toolCalls, usage, text, response }) => {
       stepCount++;
       const toolNames = toolCalls.filter((tc): tc is NonNullable<typeof tc> => !!tc).map((tc) => tc.toolName);
       agentLog.info("step finished", {
@@ -346,6 +360,26 @@ export async function createAgent(project: ProjectForAgent, options: AgentOption
         toolCount: toolCalls.length,
         tools: toolNames,
       });
+
+      // Write event log entry for this step
+      if (options.runId) {
+        insertEvent({
+          runId: options.runId,
+          chatId: options.chatId,
+          projectId: project.id,
+          stepNumber: stepCount,
+          eventType: "step_finish",
+          toolNames,
+          data: {
+            inputTokens: usage.inputTokens ?? 0,
+            outputTokens: usage.outputTokens ?? 0,
+            textSnippet: text?.slice(0, 200),
+          },
+        });
+      }
+
+      // Notify checkpoint callback with this step's response messages
+      options.onStepCheckpoint?.(stepCount, response.messages);
     },
   });
 }

@@ -93,6 +93,7 @@ export interface ScheduledTaskRow {
   trigger_event: string | null;
   trigger_filter: string | null;
   cooldown_seconds: number;
+  decompose: number;
   created_at: string;
   updated_at: string;
 }

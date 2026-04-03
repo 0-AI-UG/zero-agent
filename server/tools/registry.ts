@@ -6,7 +6,7 @@ import { fetchUrlTool } from "@/tools/fetchUrl.ts";
 import { createFileTools } from "@/tools/files.ts";
 import { createGenerateImageTool } from "@/tools/generateImage.ts";
 import { createSchedulingTools } from "@/tools/scheduling.ts";
-import { createTodoTools } from "@/tools/todos.ts";
+import { createProgressTools } from "@/tools/progress.ts";
 import { createSkillTools } from "@/tools/skills.ts";
 import { createBrowserTool } from "@/tools/browser.ts";
 import { createCodeTools } from "@/tools/code.ts";
@@ -20,9 +20,6 @@ export type ToolScope = "chat" | "automation" | "all";
 export type ExecutionContext = "chat" | "automation" | "subagent";
 
 const TOOL_SCOPES: Record<string, ToolScope> = {
-  todoCreate: "chat",
-  todoUpdate: "chat",
-  todoList: "chat",
   agent: "all",
 };
 
@@ -71,6 +68,7 @@ export function createToolRegistry(
     onlySkills?: string[];
     codeExecutionEnabled?: boolean;
     initialReadPaths?: string[];
+    anchorRunId?: string;
   },
 ): ToolRegistry {
   const registry: ToolRegistry = {
@@ -79,7 +77,7 @@ export function createToolRegistry(
     ...createFileTools(projectId, { modelId: options.modelId, initialReadPaths: options.initialReadPaths }),
     ...createGenerateImageTool(projectId),
     ...createSchedulingTools(projectId),
-    ...(options.chatId ? createTodoTools(projectId, options.chatId) : {}),
+    ...(options.chatId ? createProgressTools({ projectId, chatId: options.chatId, anchorRunId: options.anchorRunId }) : {}),
     ...createSkillTools(projectId, options.chatId),
     ...(options.userId ? createBrowserTool(options.userId, projectId, options.browserSessionId, options.lazyBrowserSession) : {}),
     ...(options.userId && options.chatId && options.codeExecutionEnabled ? createCodeTools(options.userId, projectId, options.chatId) : {}),
@@ -152,6 +150,7 @@ export function createDiscoverableToolset(
     onlySkills?: string[];
     codeExecutionEnabled?: boolean;
     initialReadPaths?: string[];
+    anchorRunId?: string;
   },
 ): { activeTools: ToolRegistry; fullRegistry: ToolRegistry; toolIndex: string } {
   const context = options.context ?? "chat";

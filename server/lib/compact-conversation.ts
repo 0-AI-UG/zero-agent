@@ -1,24 +1,21 @@
 import type { ModelMessage } from "@ai-sdk/provider-utils";
 import type { PrepareStepFunction } from "ai";
-import { generateText } from "ai";
-import { getEnrichModel } from "@/lib/openrouter.ts";
 import { clearStaleToolResults } from "@/lib/clear-stale-results.ts";
+import {
+  type SessionAnchor,
+  createEmptyAnchor,
+  extractAnchor,
+  renderAnchor,
+  saveAnchor,
+  loadAnchor,
+} from "@/lib/session-anchor.ts";
+import { flushLearnings } from "@/lib/memory-flush.ts";
 import { log } from "@/lib/logger.ts";
 
 const compactLog = log.child({ module: "compact" });
 
 const THRESHOLD = 0.85;
 const RECENT_MESSAGE_COUNT = 20;
-
-/** Simple hash for cache key */
-function hashString(str: string): string {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i);
-    hash = ((hash << 5) - hash + char) | 0;
-  }
-  return hash.toString(36);
-}
 
 /**
  * Calculate actual context token usage from the last message's metadata.
@@ -112,8 +109,15 @@ function patchOrphanedToolCalls(messages: ModelMessage[]): ModelMessage[] {
   return patched.length !== messages.length ? patched : messages;
 }
 
-export function createCompactPrepareStep(contextWindow: number): PrepareStepFunction {
-  const summaryCache = new Map<string, string>();
+interface CompactOptions {
+  contextWindow: number;
+  projectId?: string;
+  runId?: string;
+}
+
+export function createCompactPrepareStep(options: CompactOptions): PrepareStepFunction {
+  const { contextWindow, projectId, runId } = options;
+  let currentAnchor: SessionAnchor | null = null;
 
   return async ({ messages }) => {
     // Layer 0: Patch orphaned tool calls from aborted streams
@@ -155,41 +159,47 @@ export function createCompactPrepareStep(contextWindow: number): PrepareStepFunc
     const oldMessages = cleaned.slice(0, -RECENT_MESSAGE_COUNT);
     const recentMessages = cleaned.slice(-RECENT_MESSAGE_COUNT);
 
-    const oldKey = hashString(JSON.stringify(oldMessages));
-
-    let summary = summaryCache.get(oldKey);
-    if (!summary) {
-      // Strip tool result content from summarizer input to save budget
-      const oldText = oldMessages
-        .map((m) => {
-          if (m.role === "tool") {
-            return formatToolMessageForSummary(m);
-          }
-          const content = typeof m.content === "string"
-            ? m.content
-            : JSON.stringify(m.content);
-          return `${m.role}: ${content}`;
-        })
-        .join("\n");
-
-      const result = await generateText({
-        model: getEnrichModel(),
-        prompt: `Summarize this conversation concisely, preserving key facts, decisions, user preferences, and any active tasks. Output only the summary, no preamble.\n\n${oldText}`,
-        maxOutputTokens: 1024,
-      });
-
-      summary = result.text;
-      summaryCache.set(oldKey, summary);
-      compactLog.info("generated summary", {
-        oldMessageCount: oldMessages.length,
-        summaryLength: summary.length,
-      });
+    // Load existing anchor if we have project context and haven't loaded yet
+    if (projectId && runId && !currentAnchor) {
+      currentAnchor = await loadAnchor(projectId, runId);
     }
+    if (!currentAnchor) {
+      currentAnchor = createEmptyAnchor(runId ?? "");
+    }
+
+    // Extract structured state from evicted messages and merge into anchor
+    const { anchor, learnings } = await extractAnchor(oldMessages, currentAnchor);
+    currentAnchor = anchor;
+
+    // Save anchor to S3 if we have project context
+    if (projectId && runId) {
+      await saveAnchor(projectId, runId, anchor).catch((err) => {
+        compactLog.warn("failed to save anchor during compaction", {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+
+      // Flush learnings to memory incrementally (Phase 3)
+      if (learnings.length > 0) {
+        flushLearnings(projectId, learnings).catch((err) => {
+          compactLog.warn("failed to flush learnings", {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        });
+      }
+    }
+
+    compactLog.info("anchored compaction complete", {
+      oldMessageCount: oldMessages.length,
+      anchorIntent: anchor.intent.slice(0, 80),
+      completedWork: anchor.completedWork.length,
+      decisions: anchor.activeDecisions.length,
+    });
 
     const compactedMessages: ModelMessage[] = [
       {
         role: "user" as const,
-        content: `Previous conversation summary:\n${summary}`,
+        content: renderAnchor(anchor),
       },
       ...recentMessages,
     ];
