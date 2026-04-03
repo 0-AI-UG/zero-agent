@@ -76,9 +76,12 @@ export function isEmbeddingConfigured(): boolean {
 
 /**
  * Embed text values via direct fetch to OpenRouter.
- * Uses raw fetch instead of AI SDK's embedMany because AbortSignal.timeout()
- * causes fetch to hang indefinitely in Bun.serve() contexts.
+ * Uses raw fetch instead of AI SDK's embedMany, and defers the fetch with
+ * setTimeout(0) to avoid running concurrently with AbortSignal-bearing
+ * fetches in Bun.serve() — concurrent AbortSignal + fetch causes event loop
+ * stalls in Bun (see oven-sh/bun#6366 and related issues).
  */
+
 async function embedValues(values: string[]): Promise<number[][]> {
   const apiKey = getSetting("OPENROUTER_API_KEY");
   const res = await fetch("https://openrouter.ai/api/v1/embeddings", {
@@ -94,7 +97,7 @@ async function embedValues(values: string[]): Promise<number[][]> {
   return json.data.map((d: any) => d.embedding);
 }
 
-async function embedValue(value: string): Promise<number[]> {
+export async function embedValue(value: string): Promise<number[]> {
   const [embedding] = await embedValues([value]);
   return embedding!;
 }
@@ -269,11 +272,25 @@ export interface SemanticResult {
  * Hybrid search within a project and collection.
  * Uses both dense (semantic) and sparse (keyword) vectors with RRF fusion.
  */
+/** Cosine distance between two vectors (0 = identical, 1 = unrelated). */
+function cosineDistance(a: number[] | Float32Array, b: number[] | Float32Array): number {
+  let dot = 0, normA = 0, normB = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i]! * b[i]!;
+    normA += a[i]! * a[i]!;
+    normB += b[i]! * b[i]!;
+  }
+  const denom = Math.sqrt(normA) * Math.sqrt(normB);
+  return denom === 0 ? 1 : 1 - dot / denom;
+}
+
 export async function semanticSearch(
   projectId: string,
   collection: string,
   query: string,
-  topK = 5,
+  topK = 10,
+  maxDistance = 0.7,
+  precomputedEmbedding?: number[],
 ): Promise<SemanticResult[]> {
   if (!isEmbeddingConfigured() || !query.trim()) return [];
 
@@ -282,14 +299,57 @@ export async function semanticSearch(
   const indexConfig = client.getIndex(indexName);
   if (!indexConfig) return [];
 
-  const embedding = await embedValue(query);
+  const embedding = precomputedEmbedding ?? await embedValue(query);
 
   const sparseQuery = textToSparseVector(query);
   const useSparse = indexConfig.sparse && sparseQuery.indices.length > 0;
 
+  // Use hybrid search for ranking, but include vectors so we can
+  // filter by actual cosine distance (RRF scores are rank-based and
+  // don't reflect absolute relevance).
   const { results } = client.query(indexName, {
     vector: embedding,
     ...(useSparse ? { sparseVector: sparseQuery } : {}),
+    topK,
+    filter: { collection: { $eq: collection } },
+    includeMetadata: true,
+    includeVectors: true,
+  });
+
+  return results
+    .filter((r: QueryResult) => {
+      if (!r.vector) return false;
+      return cosineDistance(embedding, r.vector) <= maxDistance;
+    })
+    .map((r: QueryResult) => ({
+      key: r.key,
+      content: (r.metadata?.content as string) ?? "",
+      metadata: r.metadata ?? {},
+      score: r.score,
+    }));
+}
+
+/**
+ * Fast keyword-only search using sparse vectors. No embedding API call needed.
+ */
+export function keywordSearch(
+  projectId: string,
+  collection: string,
+  query: string,
+  topK = 10,
+): SemanticResult[] {
+  if (!query.trim()) return [];
+
+  const client = getClient();
+  const indexName = `project:${projectId}`;
+  const indexConfig = client.getIndex(indexName);
+  if (!indexConfig) return [];
+
+  const sparseQuery = textToSparseVector(query);
+  if (sparseQuery.indices.length === 0) return [];
+
+  const { results } = client.query(indexName, {
+    sparseVector: sparseQuery,
     topK,
     filter: { collection: { $eq: collection } },
     includeMetadata: true,

@@ -5,6 +5,7 @@ export default {
 		name: "zero-agent-companion",
 		identifier: "com.zero-agent.companion",
 		version: "0.1.0",
+		urlSchemes: ["zero-agent-companion"],
 	},
 	build: {
 		views: {

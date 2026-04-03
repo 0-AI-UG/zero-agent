@@ -292,7 +292,7 @@ function MockupFiles() {
 
       {/* File list */}
       {[
-        { icon: "📄", name: "project.md", size: "4.2 KB", selected: false },
+        { icon: "📄", name: "soul.md", size: "2.1 KB", selected: false },
         { icon: "📄", name: "memory.md", size: "1.8 KB", selected: false },
         { icon: "📄", name: "heartbeat.md", size: "0.9 KB", selected: true },
         { icon: "📁", name: "research/", size: "3 files", selected: false },
@@ -457,14 +457,14 @@ function MockupKnowledge() {
       {/* Three file cards side by side */}
       {[
         {
-          name: "project.md",
-          desc: "Goals, context, strategy",
-          lines: ["# My Project", "Goal: Launch by Q2", "Audience: ..."],
+          name: "soul.md",
+          desc: "Identity & personality",
+          lines: ["# My Assistant", "Tone: professional", "Style: concise"],
         },
         {
           name: "memory.md",
           desc: "Facts & preferences",
-          lines: ["Tone: professional", "Timezone: PST", "Focus: AI tools"],
+          lines: ["Timezone: PST", "Focus: AI tools", "Prefers: dark mode"],
         },
         {
           name: "heartbeat.md",

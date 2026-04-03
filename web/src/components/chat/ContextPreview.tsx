@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useQuery, keepPreviousData } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { fetchContextPreview, type ContextPreviewItem } from "@/api/context";
 import {
   Collapsible,
@@ -11,8 +11,10 @@ import {
   BrainIcon,
   ChevronDownIcon,
   FileTextIcon,
+  LoaderIcon,
   PinIcon,
   PinOffIcon,
+  SearchXIcon,
   XIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -38,12 +40,13 @@ export function ContextPreview({
 }: ContextPreviewProps) {
   const [open, setOpen] = useState(false);
 
-  const { data } = useQuery({
+  const queryEnabled = query.trim().length > 10;
+
+  const { data, isFetching } = useQuery({
     queryKey: ["context-preview", projectId, query],
     queryFn: () => fetchContextPreview(projectId, query),
-    enabled: query.trim().length > 10,
+    enabled: queryEnabled,
     staleTime: 15_000,
-    placeholderData: keepPreviousData,
   });
 
   const memories = (data?.memories ?? []).filter((m) => !dismissedKeys.has(m.key));
@@ -53,10 +56,37 @@ export function ContextPreview({
     (k) => memories.some((m) => m.key === k) || files.some((f) => f.key === k),
   ).length;
 
-  // Auto-close when query clears
+  // Auto-open when results arrive or loading, auto-close when query clears
   useEffect(() => {
-    if (!query.trim() || query.trim().length <= 10) setOpen(false);
-  }, [query]);
+    if (!queryEnabled) {
+      setOpen(false);
+    } else if (totalCount > 0 || isFetching) {
+      setOpen(true);
+    }
+  }, [queryEnabled, totalCount, isFetching]);
+
+  // Nothing to show when query is too short
+  if (!queryEnabled) return null;
+
+  // Show loading state
+  if (isFetching && totalCount === 0) {
+    return (
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground px-1 py-0.5">
+        <LoaderIcon className="h-3 w-3 animate-spin" />
+        <span>Searching for context</span>
+      </div>
+    );
+  }
+
+  // No results found
+  if (!isFetching && totalCount === 0 && data) {
+    return (
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground px-1 py-0.5">
+        <SearchXIcon className="h-3 w-3" />
+        <span>No relevant context found</span>
+      </div>
+    );
+  }
 
   if (totalCount === 0) return null;
 
@@ -64,12 +94,16 @@ export function ContextPreview({
     <Collapsible open={open} onOpenChange={setOpen}>
       <CollapsibleTrigger asChild>
         <button className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground px-1 py-0.5 rounded">
-          <ChevronDownIcon
-            className={cn(
-              "h-3 w-3 transition-transform",
-              !open && "-rotate-90",
-            )}
-          />
+          {isFetching ? (
+            <LoaderIcon className="h-3 w-3 animate-spin" />
+          ) : (
+            <ChevronDownIcon
+              className={cn(
+                "h-3 w-3 transition-transform",
+                !open && "-rotate-90",
+              )}
+            />
+          )}
           <span>
             {totalCount} context item{totalCount !== 1 ? "s" : ""} will be retrieved
             {pinnedCount > 0 && ` (${pinnedCount} pinned)`}

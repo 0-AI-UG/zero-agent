@@ -20,7 +20,6 @@ export interface SearchResponse {
 // ── Constants ──────────────────────────────────────────────────────────
 
 const CACHE_TTL_MS = 30 * 60 * 1000;
-const FETCH_TIMEOUT_MS = 15_000;
 
 // ── Cache ──────────────────────────────────────────────────────────────
 
@@ -64,16 +63,18 @@ export async function search(query: string): Promise<SearchResponse> {
 
   try {
     const params = new URLSearchParams({ q: query, count: "10" });
-    const res = await fetch(
-      `https://api.search.brave.com/res/v1/web/search?${params}`,
-      {
-        headers: {
-          "X-Subscription-Token": apiKey,
-          Accept: "application/json",
-        },
-        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-      },
-    );
+    // Defer fetch with setTimeout(0) to avoid running concurrently with
+    // AbortSignal-bearing fetches in Bun.serve() — causes event loop stalls.
+    const res = await new Promise<Response>((resolve, reject) => {
+      setTimeout(() => {
+        fetch(`https://api.search.brave.com/res/v1/web/search?${params}`, {
+          headers: {
+            "X-Subscription-Token": apiKey,
+            Accept: "application/json",
+          },
+        }).then(resolve, reject);
+      }, 0);
+    });
 
     if (!res.ok) {
       searchLog.warn("brave returned non-ok", { status: res.status });

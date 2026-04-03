@@ -78,6 +78,15 @@ export function ChatInputArea({
     return () => clearTimeout(timer);
   }, [input]);
 
+  // Reset dismissed keys when the debounced query changes
+  const prevQueryRef = useRef(debouncedInput);
+  useEffect(() => {
+    if (prevQueryRef.current !== debouncedInput) {
+      setDismissedKeys(new Set());
+      prevQueryRef.current = debouncedInput;
+    }
+  }, [debouncedInput]);
+
   // Notify parent of context changes
   useEffect(() => {
     onContextChange?.(Array.from(pinnedItems.values()), Array.from(dismissedKeys));

@@ -98,7 +98,7 @@ import {
 } from "@/routes/telegram.ts";
 import { browserBridge } from "@/lib/browser/bridge.ts";
 import { getCompanionTokenByToken, touchCompanionToken } from "@/db/queries/companion-tokens.ts";
-import { presignHandler } from "@/lib/s3.ts";
+import { presignHandler, s3 } from "@/lib/s3.ts";
 
 // ── Rate limiter for WebSocket upgrade attempts ──
 const WS_RATE_WINDOW = 60_000; // 1 minute
@@ -232,6 +232,7 @@ const AUTH_TIMEOUT = 5_000; // 5 seconds to send auth message after connecting
 
 const server = Bun.serve<{ userId: string; projectId: string; authenticated: boolean }>({
   port: PORT,
+  hostname: "0.0.0.0",
   routes: {
     "/api/health": {
       GET: withLogging(handleHealth),
@@ -646,6 +647,7 @@ async function handleShutdown(signal: string) {
   requestShutdown();
   stopScheduler();
   await drainActiveRuns(30_000);
+  s3.close();
   db.close();
   log.info("shutdown complete");
   process.exit(0);

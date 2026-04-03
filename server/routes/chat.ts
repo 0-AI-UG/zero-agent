@@ -13,7 +13,7 @@ import { touchChat, updateChat } from "@/db/queries/chats.ts";
 import { flushConversationMemory } from "@/lib/memory-flush.ts";
 import { detectExploreItems } from "@/lib/heartbeat-explore.ts";
 import { events } from "@/lib/events.ts";
-import { semanticSearch, embedAndStore } from "@/lib/vectors.ts";
+import { semanticSearch, embedAndStore, embedValue, keywordSearch } from "@/lib/vectors.ts";
 import { log } from "@/lib/logger.ts";
 import { streamContext, setActiveStreamId, clearActiveStreamId, getActiveStreamId, setAbortController, clearAbortController, abortStream } from "@/lib/resumable-stream.ts";
 import { ConflictError } from "@/lib/errors.ts";
@@ -75,29 +75,53 @@ export async function handleChat(request: BunRequest): Promise<Response> {
       }
     }
 
-    // Retrieve relevant memories for this conversation via semantic search
+    // Retrieve relevant context via semantic search
     let relevantMemories: { content: string; score: number }[] | undefined;
+    let relevantFiles: { content: string; score: number; filename: string; fileId: string }[] | undefined;
     const latestUserMsg = [...messages].reverse().find((m) => m.role === "user");
     const latestUserText = (latestUserMsg?.parts?.find((p: { type: string }) => p.type === "text") as { type: "text"; text: string } | undefined)?.text;
     if (latestUserText) {
       const dismissedKeys = new Set(dismissedContext ?? []);
-      const searchResults = (await semanticSearch(projectId, "memory", latestUserText, 8).catch(() => []))
+
+      const chatEmbedding = await embedValue(latestUserText).catch(() => null);
+      const [memoryResults, fileResults] = await Promise.all([
+        semanticSearch(projectId, "memory", latestUserText, 10, 0.7, chatEmbedding ?? undefined).catch(() => []),
+        semanticSearch(projectId, "file", latestUserText, 10, 0.7, chatEmbedding ?? undefined).catch(() => []),
+      ]);
+
+      const searchMemories = memoryResults
         .filter((r) => !dismissedKeys.has(r.key))
         .map((r) => ({ content: r.content, score: r.score }));
 
-      // Add pinned context items (memories and file snippets)
-      const pinnedItems = (pinnedContext ?? []).map((p) => ({
-        content: p.type === "file" ? `[File] ${p.content}` : p.content,
-        score: 1.0,
-      }));
+      // Add pinned memory items
+      const pinnedMemories = (pinnedContext ?? [])
+        .filter((p) => p.type !== "file")
+        .map((p) => ({ content: p.content, score: 1.0 }));
 
-      relevantMemories = [...pinnedItems, ...searchResults];
+      relevantMemories = [...pinnedMemories, ...searchMemories];
+
+      // File context from search + pinned files
+      const searchFiles = fileResults
+        .filter((r) => !dismissedKeys.has(r.key))
+        .map((r) => ({
+          content: r.content,
+          score: r.score,
+          filename: (r.metadata.filename as string) ?? "unknown",
+          fileId: (r.metadata.sourceId as string) ?? "",
+        }));
+
+      const pinnedFiles = (pinnedContext ?? [])
+        .filter((p) => p.type === "file")
+        .map((p) => ({ content: p.content, score: 1.0, filename: p.key, fileId: "" }));
+
+      relevantFiles = [...pinnedFiles, ...searchFiles];
+      if (relevantFiles.length === 0) relevantFiles = undefined;
     }
 
     // Create the agent for this project
     const cw = model ? getModelContextWindow(model) : 128_000;
     runId = generateId();
-    const agent = await createAgent(project, { model, language, disabledTools, chatId, userId, preActivateTools: usedToolNames, contextWindow: cw, initialReadPaths: readPaths, relevantMemories, runId });
+    const agent = await createAgent(project, { model, language, disabledTools, chatId, userId, preActivateTools: usedToolNames, contextWindow: cw, initialReadPaths: readPaths, relevantMemories, relevantFiles, runId });
 
     // Predict whether compaction will trigger so we can send metadata early.
     // Use contextTokens (last step's actual input tokens) if available,
@@ -345,9 +369,10 @@ export async function handleContextPreview(request: BunRequest): Promise<Respons
       return Response.json({ memories: [], files: [] }, { headers: corsHeaders });
     }
 
+    const embedding = await embedValue(query);
     const [memories, files] = await Promise.all([
-      semanticSearch(projectId, "memory", query, 5).catch(() => []),
-      semanticSearch(projectId, "file", query, 3).catch(() => []),
+      semanticSearch(projectId, "memory", query, 10, 0.7, embedding).catch(() => []),
+      semanticSearch(projectId, "file", query, 10, 0.7, embedding).catch(() => []),
     ]);
 
     return Response.json({

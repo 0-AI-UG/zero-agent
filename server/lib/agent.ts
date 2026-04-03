@@ -38,8 +38,6 @@ export interface AgentOptions {
   /** Pre-loaded project files injected into system prompt. */
   preloadedFiles?: {
     soulMd?: string;
-    projectMd?: string;
-    memoryMd?: string;
     heartbeatMd?: string;
   };
   /** Prompt mode — controls which sections are included. Auto-derived from context if not set. */
@@ -50,6 +48,8 @@ export interface AgentOptions {
   initialReadPaths?: string[];
   /** Semantically relevant memory entries retrieved via RAG for this conversation. */
   relevantMemories?: { content: string; score: number }[];
+  /** Semantically relevant file snippets retrieved via RAG for this conversation. */
+  relevantFiles?: { content: string; score: number; filename: string; fileId: string }[];
   /** Unique ID for this agent run — used for event logging and checkpointing. */
   runId?: string;
   /** Callback fired after each step with the current step number and response messages — used for checkpointing. */
@@ -83,19 +83,9 @@ async function buildSystemPrompt(project: {
     ? files.soulMd.slice(0, MAX_FILE_LEN)
     : `You are an AI assistant.`;
 
-  // Build pre-loaded project context section
-  const projectContextParts: string[] = [];
-  if (files.projectMd) {
-    projectContextParts.push(`### Project\n${files.projectMd.slice(0, MAX_FILE_LEN)}`);
-  }
-  if (files.memoryMd) {
-    projectContextParts.push(`### Memory\n${files.memoryMd.slice(0, MAX_FILE_LEN)}`);
-  }
-  if (files.heartbeatMd) {
-    projectContextParts.push(`### Heartbeat\n${files.heartbeatMd.slice(0, MAX_FILE_LEN)}`);
-  }
-  const projectContext = projectContextParts.length > 0
-    ? `## Project Context (pre-loaded)\n\nThese files are already loaded — do NOT re-read them via tool calls. You can still update them via editFile during the conversation.\n\n${projectContextParts.join("\n\n")}`
+  // Build pre-loaded heartbeat context (automation mode only)
+  const heartbeatContext = (!isChat && files.heartbeatMd)
+    ? `## Heartbeat (pre-loaded)\n\nThis file is already loaded — do NOT re-read it via tool calls. Update via editFile when appropriate.\n\n${files.heartbeatMd.slice(0, MAX_FILE_LEN)}`
     : "";
 
   const sections: string[] = [];
@@ -105,7 +95,7 @@ async function buildSystemPrompt(project: {
 
 Today's date is ${today}.
 
-You help users accomplish tasks by browsing the web, managing files, running code, scheduling automations, and using skills. Project knowledge files (soul.md, project.md, memory.md, heartbeat.md) are pre-loaded below — do NOT re-read them. Update them via editFile when appropriate.`);
+You help users accomplish tasks by browsing the web, managing files, running code, scheduling automations, and using skills. Your identity is defined by soul.md (pre-loaded above). Relevant memories and file context are auto-retrieved for each conversation. You can update soul.md, memory.md, and heartbeat.md via editFile.`);
 
   if (language === "zh") {
     sections.push("Write all responses and generated content in Chinese unless the user explicitly asks for another language.");
@@ -120,23 +110,6 @@ You help users accomplish tasks by browsing the web, managing files, running cod
 **This file is yours to evolve.** As you learn who you are through conversations — your strengths, the user's preferred interaction style, what tone works best — update soul.md to reflect that. If you change soul.md, briefly tell the user what you changed and why — it's your identity, and they should know.
 
 **Update when:** you discover a communication style that works well, the user gives feedback about your personality or tone, or you develop domain expertise worth encoding into your identity. **Don't update:** for trivial or one-off adjustments.`);
-  }
-
-  // ── Project Knowledge (both modes) ──
-  if (isChat) {
-    sections.push(`## Project Knowledge
-
-\`project.md\` captures the project's goals, context, key decisions, and important details.
-
-**Update proactively.** When the user shares details about what the project is, who it's for, key constraints, technologies, or goals — update project.md immediately via editFile. This file should be a living document that gives future conversations full context.
-
-**Update when:** user describes the project purpose, audience, or goals; key decisions are made; important context is shared that would help in future conversations. **Don't update:** transient task details, conversation-specific instructions, or information already captured in memory.md.
-
-**First conversation:** When project.md is still empty (contains "No project information yet"), prioritize learning about the project. Ask clarifying questions, then update project.md and soul.md based on what you learn. Make the user feel like the project is being set up through natural conversation.`);
-  } else {
-    sections.push(`## Project Knowledge
-
-\`project.md\` captures the project's goals, context, and key decisions. Update it via editFile if you discover important new information during this task.`);
   }
 
   // ── Memory (both modes) ──
@@ -157,7 +130,7 @@ You help users accomplish tasks by browsing the web, managing files, running cod
 - A significant decision is made with reasoning worth preserving
 - You learn a lesson about what works or doesn't work
 
-**Don't update:** transient info, one-time requests, small talk, credentials, or things already in project.md.`);
+**Don't update:** transient info, one-time requests, small talk, or credentials.`);
   } else {
     sections.push(`## Memory
 
@@ -170,9 +143,15 @@ You help users accomplish tasks by browsing the web, managing files, running cod
     sections.push(`### Relevant Memories (auto-retrieved for this conversation)\n\n${memLines}`);
   }
 
-  // ── Project context (both modes — automation needs project context to do its job) ──
-  if (projectContext) {
-    sections.push(projectContext);
+  // ── Relevant Files (RAG-retrieved, both modes) ──
+  if (options.relevantFiles?.length) {
+    const fileLines = options.relevantFiles.map((f) => `- **${f.filename}**: ${f.content}`).join("\n");
+    sections.push(`### Relevant Files (auto-retrieved for this conversation)\n\n${fileLines}`);
+  }
+
+  // ── Heartbeat context (automation only — pre-loaded) ──
+  if (heartbeatContext) {
+    sections.push(heartbeatContext);
   }
 
   // ── Skills (both modes) ──
@@ -266,11 +245,9 @@ async function readProjectFile(projectId: string, filename: string): Promise<str
 export async function createAgent(project: ProjectForAgent, options: AgentOptions = {}) {
   agentLog.info("creating agent", { projectId: project.id, projectName: project.name, disabledTools: options.disabledTools });
 
-  // Pre-load all project files in parallel
-  const [soulMd, projectMd, memoryMd, heartbeatMd] = await Promise.all([
+  // Pre-load project files in parallel (soul.md always, heartbeat.md for automation)
+  const [soulMd, heartbeatMd] = await Promise.all([
     readProjectFile(project.id, "soul.md"),
-    readProjectFile(project.id, "project.md"),
-    readProjectFile(project.id, "memory.md"),
     readProjectFile(project.id, "heartbeat.md"),
   ]);
 
@@ -338,7 +315,7 @@ export async function createAgent(project: ProjectForAgent, options: AgentOption
       }, {
         ...options,
         toolIndex,
-        preloadedFiles: { soulMd, projectMd, memoryMd, heartbeatMd },
+        preloadedFiles: { soulMd, heartbeatMd },
         mode: options.mode ?? (options.chatId ? "chat" : "automation"),
       }),
       providerOptions: {

@@ -6,7 +6,7 @@ import { db } from "@/db/index.ts";
 import { generateId as dbGenerateId } from "@/db/index.ts";
 import { readFromS3 } from "@/lib/s3.ts";
 import { browserBridge } from "@/lib/browser/bridge.ts";
-import { semanticSearch, isEmbeddingConfigured } from "@/lib/vectors.ts";
+import { semanticSearch, isEmbeddingConfigured, embedValue } from "@/lib/vectors.ts";
 import { saveCheckpoint, deleteCheckpoint } from "@/lib/durability/checkpoint.ts";
 import { isShuttingDown, registerRun, deregisterRun } from "@/lib/durability/shutdown.ts";
 import {
@@ -81,10 +81,11 @@ export async function runAutonomousTask(
     let contextBlock = "";
     if (isEmbeddingConfigured()) {
       try {
+        const agentEmbedding = await embedValue(prompt);
         const [relevantFiles, relevantMemories, relevantHistory] = await Promise.all([
-          semanticSearch(project.id, "file", prompt, 3),
-          semanticSearch(project.id, "memory", prompt, 5),
-          semanticSearch(project.id, "message", prompt, 3),
+          semanticSearch(project.id, "file", prompt, 3, 0.7, agentEmbedding),
+          semanticSearch(project.id, "memory", prompt, 5, 0.7, agentEmbedding),
+          semanticSearch(project.id, "message", prompt, 3, 0.7, agentEmbedding),
         ]);
 
         const parts: string[] = [];

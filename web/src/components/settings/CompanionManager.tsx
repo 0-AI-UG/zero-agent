@@ -22,7 +22,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { MonitorIcon, TrashIcon, CopyIcon, CheckIcon, TerminalSquareIcon, KeyRoundIcon, ShieldCheckIcon, PencilIcon, EyeIcon, EyeOffIcon, FingerprintIcon, SmartphoneIcon, MessageSquareIcon, ImageIcon, AlertTriangleIcon, DownloadIcon } from "lucide-react";
+import { MonitorIcon, TrashIcon, CopyIcon, CheckIcon, TerminalSquareIcon, KeyRoundIcon, ShieldCheckIcon, PencilIcon, EyeIcon, EyeOffIcon, FingerprintIcon, SmartphoneIcon, MessageSquareIcon, ImageIcon, AlertTriangleIcon, DownloadIcon, PlayIcon } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { type Project, useUpdateProject } from "@/api/projects";
 import { decodeQrImage } from "@/lib/qr-decode";
@@ -136,8 +136,12 @@ export function CompanionManager({ projectId, project, updateProject }: Companio
           </p>
         )}
 
-        {/* Download companion app */}
-        {!desktopMode && !status?.connected && <CompanionDownload />}
+        {/* Download or run companion app */}
+        {!desktopMode && !status?.connected && (
+          tokens?.some((t) => t.lastConnectedAt)
+            ? <CompanionRun />
+            : <CompanionDownload />
+        )}
 
         {/* Token list */}
         {!desktopMode && tokens && tokens.length > 0 && (
@@ -383,6 +387,27 @@ function CompanionDownload() {
           Download will open in a new tab.
         </p>
       )}
+    </div>
+  );
+}
+
+function CompanionRun() {
+  const handleRun = () => {
+    window.location.href = "zero-agent-companion://open";
+  };
+
+  return (
+    <div className="rounded-md border p-3 space-y-2.5">
+      <p className="text-xs text-muted-foreground">
+        The companion app is installed but not running. Open it to reconnect.
+      </p>
+      <button
+        onClick={handleRun}
+        className="w-full rounded-md bg-primary hover:bg-primary/90 px-4 py-2 text-sm font-medium text-primary-foreground flex items-center justify-center gap-2"
+      >
+        <PlayIcon className="size-4" />
+        Run companion
+      </button>
     </div>
   );
 }

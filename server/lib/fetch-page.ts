@@ -168,22 +168,26 @@ function extractRelevantExcerpts(
 
 // ── Fetch ─────────────────────────────────────────────────────────────
 
-const FETCH_TIMEOUT_MS = 20_000;
 
 async function fetchHtml(
   url: string,
 ): Promise<{ html: string; ok: boolean }> {
   try {
-    const res = await fetch(url, {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-        Accept:
-          "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9",
-      },
-      redirect: "follow",
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    // Defer fetch with setTimeout(0) to avoid running concurrently with
+    // AbortSignal-bearing fetches in Bun.serve() — causes event loop stalls.
+    const res = await new Promise<Response>((resolve, reject) => {
+      setTimeout(() => {
+        fetch(url, {
+          headers: {
+            "User-Agent":
+              "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+            Accept:
+              "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+          },
+          redirect: "follow",
+        }).then(resolve, reject);
+      }, 0);
     });
 
     if (!res.ok) {

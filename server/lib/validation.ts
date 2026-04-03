@@ -70,7 +70,7 @@ export const uploadRequestSchema = z.object({
   sizeBytes: z
     .number()
     .int()
-    .positive()
+    .nonnegative()
     .max(50 * 1024 * 1024, "File too large (max 50 MB)"),
 });
 

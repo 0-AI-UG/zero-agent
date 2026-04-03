@@ -56,10 +56,6 @@ export async function handleListProjects(request: Request): Promise<Response> {
 }
 
 async function createDefaultProjectFiles(projectId: string, projectName: string): Promise<void> {
-  const projectMd = `# ${projectName}
-
-_No project information yet. The assistant will update this file as you share details about your goals, context, and how it can help you._
-`;
   const memoryMd = `# Memory
 
 ## Facts
@@ -104,7 +100,6 @@ You are a helpful AI assistant.
 
   const files = [
     { path: "soul.md", content: soulMd },
-    { path: "project.md", content: projectMd },
     { path: "memory.md", content: memoryMd },
     { path: "heartbeat.md", content: heartbeatMd },
   ];
