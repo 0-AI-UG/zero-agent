@@ -73,15 +73,12 @@ jobs:
     strategy:
       matrix:
         include:
+          - os: macos-latest
+            artifact: companion-darwin
           - os: ubuntu-latest
-            platform: linux
-            artifact: zero-agent-companion-linux-x64
-          - os: macos-latest
-            platform: mac
-            artifact: zero-agent-companion-darwin-arm64
-          - os: macos-latest
-            platform: mac
-            artifact: zero-agent-companion-darwin-x64
+            artifact: companion-linux
+          - os: windows-latest
+            artifact: companion-windows
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -90,15 +87,13 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
 
       - run: cd companion && bun install
-      - run: cd companion && bunx electrobun build
+      - run: cd companion && bunx electrobun build --env=stable
 
-      - name: Archive companion build
-        run: tar -czf ${{ matrix.artifact }}.tar.gz -C companion/build .
-
-      - uses: actions/upload-artifact@v4
+      - name: Upload companion artifacts
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
-          path: ${{ matrix.artifact }}.tar.gz
+          path: companion/artifacts/*
 
   release:
     needs: [build-server, build-companion]
