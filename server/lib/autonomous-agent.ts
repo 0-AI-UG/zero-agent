@@ -203,7 +203,7 @@ export async function runAutonomousTask(
     // Register for graceful shutdown tracking
     registerRun({ runId, chatId: chat.id, projectId: project.id, startedAt: Date.now() });
 
-    let responseText: string;
+    let responseText: string | undefined;
     let isSuspended = false;
     try {
       let taskPrompt: string;

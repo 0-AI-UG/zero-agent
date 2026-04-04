@@ -16,7 +16,7 @@ const proxyLog = log.child({ module: "novnc-proxy" });
  */
 export function handleNoVncUpgrade(
   request: Request,
-  server: Server,
+  server: Server<unknown>,
   localBackend: LocalBackend | null,
 ): boolean {
   const url = new URL(request.url);
