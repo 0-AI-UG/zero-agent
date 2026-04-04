@@ -4,6 +4,7 @@ import {
   useCreateCompanionToken,
   useDeleteCompanionToken,
   useCompanionStatus,
+  useServerCapabilities,
 } from "@/api/companion";
 import { useDesktopMode } from "@/hooks/use-desktop-mode";
 import {
@@ -37,6 +38,7 @@ export function CompanionManager({ projectId, project, updateProject }: Companio
   const desktopMode = useDesktopMode();
   const { data: tokens, isLoading } = useCompanionTokens(projectId);
   const { data: status } = useCompanionStatus(projectId);
+  const { data: capabilities } = useServerCapabilities();
   const createToken = useCreateCompanionToken(projectId);
   const deleteToken = useDeleteCompanionToken(projectId);
 
@@ -85,10 +87,18 @@ export function CompanionManager({ projectId, project, updateProject }: Companio
         {/* Connection status */}
         <div className="flex items-center gap-3">
           <span
-            className={`size-2 rounded-full ${status?.connected ? "bg-emerald-500" : "bg-zinc-400"}`}
+            className={`size-2 rounded-full ${
+              capabilities?.serverDocker || status?.connected ? "bg-emerald-500" : "bg-zinc-400"
+            }`}
           />
           <span className="text-sm">
-            {status?.connected ? "Connected" : "Not connected"}
+            {capabilities?.serverDocker
+              ? status?.connected
+                ? "Server execution + Companion connected"
+                : "Server execution active"
+              : status?.connected
+                ? "Companion connected"
+                : "Not connected"}
           </span>
           {status?.connected && status.browserUrl && (
             <span className="text-xs text-muted-foreground truncate">
@@ -97,8 +107,8 @@ export function CompanionManager({ projectId, project, updateProject }: Companio
           )}
         </div>
 
-        {/* Docker/Chrome status warnings (when connected — reported by companion) */}
-        {status?.connected && status.dockerRunning === false && (
+        {/* Docker/Chrome status warnings (only when no server-side execution & companion connected) */}
+        {!capabilities?.serverDocker && status?.connected && status.dockerRunning === false && (
           <div className="flex items-start gap-2 rounded-md bg-amber-500/10 border border-amber-500/20 px-3 py-2">
             <AlertTriangleIcon className="size-4 text-amber-500 shrink-0 mt-0.5" />
             <div>
@@ -113,7 +123,7 @@ export function CompanionManager({ projectId, project, updateProject }: Companio
             </div>
           </div>
         )}
-        {status?.connected && status.chromeAvailable === false && (
+        {!capabilities?.serverDocker && status?.connected && status.chromeAvailable === false && (
           <div className="flex items-start gap-2 rounded-md bg-amber-500/10 border border-amber-500/20 px-3 py-2">
             <AlertTriangleIcon className="size-4 text-amber-500 shrink-0 mt-0.5" />
             <div>
@@ -125,73 +135,31 @@ export function CompanionManager({ projectId, project, updateProject }: Companio
           </div>
         )}
 
-
-        {!desktopMode && isLoading && (
-          <p className="text-xs text-muted-foreground">Loading tokens...</p>
-        )}
-
-        {!desktopMode && !isLoading && (!tokens || tokens.length === 0) && (
-          <p className="text-xs text-muted-foreground">
-            No devices connected yet. Generate a token to link your browser.
-          </p>
-        )}
-
-        {/* Download or run companion app */}
-        {!desktopMode && !status?.connected && (
-          tokens?.some((t) => t.lastConnectedAt)
-            ? <CompanionRun />
-            : <CompanionDownload />
-        )}
-
-        {/* Token list */}
-        {!desktopMode && tokens && tokens.length > 0 && (
-          <div className="space-y-2">
-            {tokens.map((t) => (
-              <div
-                key={t.id}
-                className="flex items-center justify-between gap-3 py-1.5"
-              >
-                <div className="min-w-0">
-                  <span className="text-sm font-medium truncate block">
-                    {t.name}
-                  </span>
-                  <div className="flex items-center gap-2">
-                    {t.lastConnectedAt && (
-                      <p className="text-xs text-muted-foreground">
-                        Last active {new Date(t.lastConnectedAt).toLocaleDateString()}
-                      </p>
-                    )}
-                    {t.expiresAt && (
-                      <p className={`text-xs ${new Date(t.expiresAt + "Z") < new Date() ? "text-destructive" : "text-muted-foreground"}`}>
-                        {new Date(t.expiresAt + "Z") < new Date()
-                          ? "Expired"
-                          : `Expires ${new Date(t.expiresAt + "Z").toLocaleDateString()}`}
-                      </p>
-                    )}
-                  </div>
-                </div>
-                <button
-                  onClick={() => deleteToken.mutate(t.id)}
-                  className="text-muted-foreground hover:text-destructive p-1 shrink-0"
-                  aria-label={`Delete token ${t.name}`}
-                >
-                  <TrashIcon className="size-3.5" />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Actions */}
+        {/* Companion setup — collapsed when server execution covers it */}
         {!desktopMode && (
-          <div className="flex items-center gap-2 pt-2 border-t">
-            <button
-              onClick={() => setCreateOpen(true)}
-              className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
-            >
-              Generate token
-            </button>
-          </div>
+          capabilities?.serverDocker && !status?.connected ? (
+            <details className="group">
+              <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground select-none">
+                Connect your own browser (optional)
+              </summary>
+              <div className="mt-3 space-y-3">
+                <CompanionTokenSection
+                  tokens={tokens}
+                  isLoading={isLoading}
+                  deleteToken={deleteToken}
+                  onCreateOpen={() => setCreateOpen(true)}
+                />
+              </div>
+            </details>
+          ) : (
+            <CompanionTokenSection
+              tokens={tokens}
+              isLoading={isLoading}
+              status={status}
+              deleteToken={deleteToken}
+              onCreateOpen={() => setCreateOpen(true)}
+            />
+          )
         )}
 
         {/* Browser Automation toggle */}
@@ -221,7 +189,7 @@ export function CompanionManager({ projectId, project, updateProject }: Companio
               <p className="text-sm font-medium">Code execution</p>
             </div>
             <p className="text-xs text-muted-foreground">
-              Allow the assistant to run bash commands in a Docker container on the companion machine.
+              Allow the assistant to run bash commands.
             </p>
           </div>
           <Switch
@@ -318,6 +286,92 @@ export function CompanionManager({ projectId, project, updateProject }: Companio
 
       <SavedLogins projectId={projectId} />
     </section>
+  );
+}
+
+// ── Companion Token Section ──
+
+function CompanionTokenSection({
+  tokens,
+  isLoading,
+  status,
+  deleteToken,
+  onCreateOpen,
+}: {
+  tokens: import("@/api/companion").CompanionToken[] | undefined;
+  isLoading: boolean;
+  status?: import("@/api/companion").CompanionStatus;
+  deleteToken: { mutate: (id: string) => void };
+  onCreateOpen: () => void;
+}) {
+  return (
+    <>
+      {isLoading && (
+        <p className="text-xs text-muted-foreground">Loading tokens...</p>
+      )}
+
+      {!isLoading && (!tokens || tokens.length === 0) && (
+        <p className="text-xs text-muted-foreground">
+          No devices connected yet. Generate a token to link your browser.
+        </p>
+      )}
+
+      {/* Download or run companion app */}
+      {status && !status.connected && (
+        tokens?.some((t) => t.lastConnectedAt)
+          ? <CompanionRun />
+          : <CompanionDownload />
+      )}
+
+      {/* Token list */}
+      {tokens && tokens.length > 0 && (
+        <div className="space-y-2">
+          {tokens.map((t) => (
+            <div
+              key={t.id}
+              className="flex items-center justify-between gap-3 py-1.5"
+            >
+              <div className="min-w-0">
+                <span className="text-sm font-medium truncate block">
+                  {t.name}
+                </span>
+                <div className="flex items-center gap-2">
+                  {t.lastConnectedAt && (
+                    <p className="text-xs text-muted-foreground">
+                      Last active {new Date(t.lastConnectedAt).toLocaleDateString()}
+                    </p>
+                  )}
+                  {t.expiresAt && (
+                    <p className={`text-xs ${new Date(t.expiresAt + "Z") < new Date() ? "text-destructive" : "text-muted-foreground"}`}>
+                      {new Date(t.expiresAt + "Z") < new Date()
+                        ? "Expired"
+                        : `Expires ${new Date(t.expiresAt + "Z").toLocaleDateString()}`}
+                    </p>
+                  )}
+                </div>
+              </div>
+              <button
+                onClick={() => deleteToken.mutate(t.id)}
+                className="text-muted-foreground hover:text-destructive p-1 shrink-0"
+                aria-label={`Delete token ${t.name}`}
+              >
+                <TrashIcon className="size-3.5" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Actions */}
+      <div className="flex items-center gap-2 pt-2 border-t">
+        <button
+          onClick={onCreateOpen}
+          className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+        >
+          Generate token
+        </button>
+      </div>
+    </>
   );
 }
 

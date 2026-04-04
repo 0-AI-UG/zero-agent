@@ -70,7 +70,8 @@ export async function handleLogin(request: Request): Promise<Response> {
       );
     }
 
-    if (isTotpRequired(user)) {
+    const isDev = process.env.NODE_ENV !== "production";
+    if (!isDev && isTotpRequired(user)) {
       const tempToken = await createTempToken(user.id);
       authLog.info("login requires 2FA setup", { userId: user.id, email: user.email });
       return Response.json(

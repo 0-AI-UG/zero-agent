@@ -67,6 +67,15 @@ export function stopPollingForProject(projectId: string): void {
   }
 }
 
+export function stopAllPollers(): void {
+  for (const [projectId, poller] of pollers) {
+    poller.running = false;
+    poller.abortController.abort();
+    pollLog.info("stopping polling", { projectId });
+  }
+  pollers.clear();
+}
+
 export async function startAllPollers(handler: UpdateHandler): Promise<void> {
   pollLog.info("scanning for telegram bots to poll");
 

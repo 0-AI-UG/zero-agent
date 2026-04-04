@@ -19,7 +19,7 @@ import { streamContext, setActiveStreamId, clearActiveStreamId, getActiveStreamI
 import { ConflictError } from "@/lib/errors.ts";
 import { insertUsageLog } from "@/db/queries/usage-logs.ts";
 import { getModelPricing } from "@/config/models.ts";
-import { saveCheckpoint, deleteCheckpoint } from "@/lib/durability/checkpoint.ts";
+import { saveCheckpoint, deleteCheckpoint, loadCheckpoint } from "@/lib/durability/checkpoint.ts";
 import { isShuttingDown, registerRun, deregisterRun } from "@/lib/durability/shutdown.ts";
 import { CircuitBreakerOpenError } from "@/lib/durability/circuit-breaker.ts";
 
@@ -41,6 +41,7 @@ export async function handleChat(request: BunRequest): Promise<Response> {
 
     // Reject new requests during shutdown
     if (isShuttingDown()) {
+      chatLog.warn("rejecting chat request — server shutting down", { projectId, chatId });
       return Response.json({ error: "Server is shutting down" }, { status: 503, headers: corsHeaders });
     }
 
@@ -121,7 +122,22 @@ export async function handleChat(request: BunRequest): Promise<Response> {
     // Create the agent for this project
     const cw = model ? getModelContextWindow(model) : 128_000;
     runId = generateId();
-    const agent = await createAgent(project, { model, language, disabledTools, chatId, userId, preActivateTools: usedToolNames, contextWindow: cw, initialReadPaths: readPaths, relevantMemories, relevantFiles, runId });
+    const accumulatedResponseMessages: unknown[] = [];
+    const agent = await createAgent(project, {
+      model, language, disabledTools, chatId, userId, preActivateTools: usedToolNames,
+      contextWindow: cw, initialReadPaths: readPaths, relevantMemories, relevantFiles, runId,
+      onStepCheckpoint: (stepNumber, responseMessages) => {
+        accumulatedResponseMessages.push(...responseMessages);
+        saveCheckpoint({
+          runId: runId!,
+          chatId,
+          projectId,
+          stepNumber,
+          messages: [...messages, ...accumulatedResponseMessages],
+          metadata: { userId, model, streamId },
+        });
+      },
+    });
 
     // Predict whether compaction will trigger so we can send metadata early.
     // Use contextTokens (last step's actual input tokens) if available,
@@ -338,21 +354,41 @@ export async function handleChat(request: BunRequest): Promise<Response> {
       clearActiveStreamId(chatId);
       clearAbortController(chatId);
     }
-    // Clean up checkpoint and run registration on error
+    // Persist any accumulated agent work from checkpoint before cleaning up
     if (runId) {
+      try {
+        const cp = loadCheckpoint(runId);
+        if (cp && cp.stepNumber > 0 && chatId) {
+          const cpMessages = cp.messages as Array<{ id: string; role: string; parts?: unknown[] }>;
+          if (Array.isArray(cpMessages) && cpMessages.length > 0) {
+            saveChatMessages(
+              cp.projectId,
+              chatId,
+              cpMessages
+                .filter((m) => m.id && ((m.parts as unknown[])?.length ?? 0) > 0)
+                .map((m) => ({ id: m.id, role: m.role, content: JSON.stringify(m) })),
+            );
+            touchChat(chatId);
+            chatLog.info("persisted checkpoint messages on stream error", { runId, chatId, stepNumber: cp.stepNumber });
+          }
+        }
+      } catch (err) {
+        chatLog.warn("failed to persist checkpoint on error", { runId, chatId, error: err instanceof Error ? err.message : String(err) });
+      }
       deleteCheckpoint(runId);
       deregisterRun(runId);
     }
 
     // Return 503 for circuit breaker instead of generic error
     if (error instanceof CircuitBreakerOpenError) {
+      chatLog.warn("circuit breaker open — returning 503", { chatId });
       return Response.json(
         { error: "AI service is temporarily unavailable. Please try again in a moment." },
         { status: 503, headers: corsHeaders },
       );
     }
 
-    chatLog.error("chat request failed", error, { durationMs: Date.now() - start });
+    chatLog.error("chat request failed", error, { chatId, durationMs: Date.now() - start });
     return handleError(error);
   }
 }

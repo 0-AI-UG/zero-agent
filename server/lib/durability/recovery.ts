@@ -1,3 +1,4 @@
+import { generateId } from "ai";
 import { getActiveCheckpoints, deleteAllActiveCheckpoints } from "@/lib/durability/checkpoint.ts";
 import { saveChatMessages } from "@/db/queries/messages.ts";
 import { touchChat } from "@/db/queries/chats.ts";
@@ -41,11 +42,18 @@ export function recoverInterruptedRuns(): void {
         continue;
       }
 
+      // Append an interrupted marker so the user knows the run didn't finish
+      const interruptedMsg = {
+        id: generateId(),
+        role: "assistant",
+        parts: [{ type: "text", text: `⚠ This response was interrupted at step ${cp.stepNumber} due to a server restart. You can continue the conversation normally.` }],
+      };
+
       // Persist messages to the chat (same format as onFinish in chat.ts)
       saveChatMessages(
         cp.projectId,
         cp.chatId,
-        messages
+        [...messages, interruptedMsg]
           .filter((m) => m.id && (m.parts?.length ?? 0) > 0)
           .map((m) => ({
             id: m.id,

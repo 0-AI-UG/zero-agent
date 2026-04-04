@@ -37,6 +37,9 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useModelStore, getModelsCache } from "@/stores/model";
 import type { ChatMessage } from "@/components/chat/ChatMessageItem";
+import type { ServerCapabilities } from "@/api/companion";
+import { useChatContainerStatus } from "@/api/containers";
+import { BrowserPreview } from "@/components/chat/BrowserPreview";
 
 export interface PinnedContextItem {
   key: string;
@@ -53,6 +56,7 @@ interface ChatInputAreaProps {
   sendMessage: (opts: { text: string; files?: Array<{ type: "file"; mediaType: string; url: string }> }) => void;
   stop: () => void;
   companionStatus: { connected: boolean; browserTitle?: string } | undefined;
+  capabilities: ServerCapabilities | undefined;
   onContextChange?: (pinned: PinnedContextItem[], dismissed: string[]) => void;
 }
 
@@ -65,8 +69,10 @@ export function ChatInputArea({
   sendMessage,
   stop,
   companionStatus,
+  capabilities,
   onContextChange,
 }: ChatInputAreaProps) {
+  const { data: containerStatus } = useChatContainerStatus(projectId, chatId);
   const [input, setInput] = useState("");
   const [debouncedInput, setDebouncedInput] = useState("");
   const [pinnedItems, setPinnedItems] = useState<Map<string, PinnedContextItem>>(new Map());
@@ -229,19 +235,46 @@ export function ChatInputArea({
                 onRemove={() => setImageAttachment(null)}
               />
             )}
+            {containerStatus?.status === "running" && (
+              <BrowserPreview projectId={projectId} chatId={chatId} />
+            )}
             <Tooltip>
               <TooltipTrigger asChild>
                 <div className="flex items-center gap-1.5 px-2 py-1 text-xs text-muted-foreground">
                   <span
-                    className={`size-2 rounded-full ${companionStatus?.connected ? "bg-emerald-500" : "bg-muted-foreground/40"}`}
+                    className={`size-2 rounded-full ${
+                      containerStatus?.status === "running"
+                        ? "bg-emerald-500"
+                        : containerStatus?.status === "paused"
+                          ? "bg-amber-500"
+                          : capabilities?.serverDocker || companionStatus?.connected
+                            ? "bg-emerald-500/50"
+                            : "bg-muted-foreground/40"
+                    }`}
                   />
-                  <span>{companionStatus?.connected ? "Companion connected" : "Companion offline"}</span>
+                  <span>
+                    {containerStatus?.status === "running"
+                      ? "Container running"
+                      : containerStatus?.status === "paused"
+                        ? "Container paused"
+                        : capabilities?.serverDocker
+                          ? "Server execution"
+                          : companionStatus?.connected
+                            ? "Companion connected"
+                            : "Execution unavailable"}
+                  </span>
                 </div>
               </TooltipTrigger>
               <TooltipContent side="top">
-                {companionStatus?.connected
-                  ? `Connected${companionStatus.browserTitle ? `: ${companionStatus.browserTitle}` : ""}`
-                  : "No companion connected"}
+                {containerStatus?.status === "running"
+                  ? "Container is running — code and browser execute on the server"
+                  : containerStatus?.status === "paused"
+                    ? "Container is paused — will resume automatically on next action"
+                    : capabilities?.serverDocker
+                      ? "No container yet — one will be created on first action"
+                      : companionStatus?.connected
+                        ? `Connected${companionStatus.browserTitle ? `: ${companionStatus.browserTitle}` : ""}`
+                        : "Connect a companion or enable server execution"}
               </TooltipContent>
             </Tooltip>
             {(totalUsage.totalTokens ?? 0) > 0 && (

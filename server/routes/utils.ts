@@ -46,7 +46,7 @@ export function handleError(error: unknown): Response {
       return Response.json({ error: error.message }, { status: 409, headers: corsHeaders });
     }
   }
-  routeLog.error("unhandled error", error);
+  routeLog.error("unhandled error", error instanceof Error ? error : new Error(String(error)));
   return Response.json({ error: "Internal server error" }, { status: 500, headers: corsHeaders });
 }
 

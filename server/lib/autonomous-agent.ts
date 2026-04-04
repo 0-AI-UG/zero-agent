@@ -6,8 +6,9 @@ import { db } from "@/db/index.ts";
 import { generateId as dbGenerateId } from "@/db/index.ts";
 import { readFromS3 } from "@/lib/s3.ts";
 import { browserBridge } from "@/lib/browser/bridge.ts";
+import { backendRouter } from "@/lib/execution/router.ts";
 import { semanticSearch, isEmbeddingConfigured, embedValue } from "@/lib/vectors.ts";
-import { saveCheckpoint, deleteCheckpoint } from "@/lib/durability/checkpoint.ts";
+import { saveCheckpoint, deleteCheckpoint, loadCheckpoint } from "@/lib/durability/checkpoint.ts";
 import { isShuttingDown, registerRun, deregisterRun } from "@/lib/durability/shutdown.ts";
 import {
   type SessionAnchor,
@@ -123,7 +124,7 @@ export async function runAutonomousTask(
       autoLog.info("no heartbeat checklist found", { projectId: project.id });
     }
 
-    const lazyBrowserSession = options?.userId && browserBridge.isConnected(options.userId, project.id)
+    const lazyBrowserSession = options?.userId && (browserBridge.isConnected(options.userId, project.id) || backendRouter.isAvailable(options.userId, project.id))
       ? { id: `auto-${chat.id}`, created: false }
       : undefined;
 
@@ -281,6 +282,32 @@ export async function runAutonomousTask(
       }
     } finally {
       if (!isSuspended) {
+        // Persist any accumulated agent work before deleting checkpoint
+        // (on success, messages are persisted later; on error, this is the only chance)
+        if (!responseText && accumulatedResponseMessages.length > 0) {
+          try {
+            const cp = loadCheckpoint(runId);
+            if (cp && cp.stepNumber > 0) {
+              const partialMsgId = generateId();
+              const partialText = accumulatedResponseMessages
+                .filter((m: any) => m.role === "assistant" && typeof m.content === "string")
+                .map((m: any) => m.content)
+                .join("\n\n");
+              if (partialText) {
+                const partialMsg = {
+                  id: partialMsgId,
+                  role: "assistant" as const,
+                  parts: [{ type: "text" as const, text: `[Interrupted at step ${cp.stepNumber}]\n\n${partialText}` }],
+                };
+                insertOne.run(partialMsgId, project.id, chat.id, "assistant", JSON.stringify(partialMsg));
+                touchChat(chat.id);
+                autoLog.info("persisted checkpoint messages on autonomous task error", { runId, chatId: chat.id, stepNumber: cp.stepNumber });
+              }
+            }
+          } catch (err) {
+            autoLog.warn("failed to persist checkpoint on error", { runId, error: err instanceof Error ? err.message : String(err) });
+          }
+        }
         deleteCheckpoint(runId);
         // Promote anchor decisions to memory before cleanup
         const finalAnchor = await loadAnchor(project.id, anchorRunId);
@@ -293,7 +320,8 @@ export async function runAutonomousTask(
       }
       deregisterRun(runId);
       if (lazyBrowserSession?.created && options?.userId) {
-        browserBridge.destroySession(options.userId, project.id, lazyBrowserSession.id).catch((err) => {
+        const backend = backendRouter.getBackend(options.userId, project.id);
+        (backend ?? browserBridge).destroySession(options.userId, project.id, lazyBrowserSession.id).catch((err: unknown) => {
           autoLog.warn("failed to destroy browser session", { error: String(err) });
         });
       }

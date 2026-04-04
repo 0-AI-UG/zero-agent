@@ -11,7 +11,7 @@ import { ChatInputArea, type PinnedContextItem } from "@/components/chat/ChatInp
 import { getQuickActionIcon } from "@/components/chat/QuickActionsManager";
 import { useQuickActions } from "@/api/quick-actions";
 import { useProject } from "@/api/projects";
-import { useCompanionStatus } from "@/api/companion";
+import { useCompanionStatus, useServerCapabilities } from "@/api/companion";
 import { useMembers } from "@/api/members";
 import { useAuthStore } from "@/stores/auth";
 import { useModelStore } from "@/stores/model";
@@ -47,6 +47,7 @@ interface ChatPanelProps {
 export function ChatPanel({ projectId, chatId, initialMessages, isAutonomous }: ChatPanelProps) {
   const queryClient = useQueryClient();
   const { data: companionStatus } = useCompanionStatus(projectId);
+  const { data: capabilities } = useServerCapabilities();
   const { data: project } = useProject(projectId);
   const { data: quickActions } = useQuickActions(projectId);
   const { data: membersData } = useMembers(projectId);
@@ -166,6 +167,8 @@ export function ChatPanel({ projectId, chatId, initialMessages, isAutonomous }: 
         <ConversationScrollButton />
       </Conversation>
 
+
+
       {isAutonomous ? (
         <div className="px-6 py-4 md:px-10">
           <p className="text-xs text-muted-foreground text-center">
@@ -182,6 +185,7 @@ export function ChatPanel({ projectId, chatId, initialMessages, isAutonomous }: 
           sendMessage={sendMessage}
           stop={stop}
           companionStatus={companionStatus}
+          capabilities={capabilities}
           onContextChange={handleContextChange}
         />
       )}

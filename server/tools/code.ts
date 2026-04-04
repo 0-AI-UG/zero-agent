@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { tool } from "ai";
-import { browserBridge } from "@/lib/browser/bridge.ts";
+import { backendRouter } from "@/lib/execution/router.ts";
 import { writeToS3 } from "@/lib/s3.ts";
 import { generateDownloadUrl } from "@/lib/s3.ts";
 import { insertFile, getFileByS3Key } from "@/db/queries/files.ts";
@@ -94,14 +94,14 @@ export function clearReadyWorkspaces(): void {
 export function createCodeTools(userId: string, projectId: string, chatId: string) {
   const workspaceId = `chat-${chatId}`;
 
-  async function waitForCompanion(): Promise<void> {
-    if (!browserBridge.isConnected(userId, projectId)) {
-      for (const delay of [1000, 2000, 4000]) {
+  async function waitForBackend(): Promise<void> {
+    if (!backendRouter.isAvailable(userId, projectId)) {
+      for (const delay of [500, 1000, 1500]) {
         await new Promise((r) => setTimeout(r, delay));
-        if (browserBridge.isConnected(userId, projectId)) break;
+        if (backendRouter.isAvailable(userId, projectId)) break;
       }
     }
-    if (!browserBridge.isConnected(userId, projectId)) {
+    if (!backendRouter.isAvailable(userId, projectId)) {
       throw new Error(
         "Browser companion is not connected. The user needs to start the companion agent on their machine and connect it with a token from Settings.",
       );
@@ -109,11 +109,14 @@ export function createCodeTools(userId: string, projectId: string, chatId: strin
   }
 
   async function ensureWorkspace(): Promise<string> {
+    const backend = backendRouter.getBackend(userId, projectId);
+    if (!backend) throw new Error("No execution backend available");
+
     const manifest = buildFileManifest(projectId);
 
     if (readyWorkspaces.has(workspaceId)) {
       try {
-        await browserBridge.syncWorkspace(userId, projectId, workspaceId, manifest);
+        await backend.syncWorkspace(userId, projectId, workspaceId, manifest);
         return workspaceId;
       } catch {
         toolLog.info("workspace sync failed, recreating", { userId, projectId, workspaceId });
@@ -121,7 +124,7 @@ export function createCodeTools(userId: string, projectId: string, chatId: strin
       }
     }
 
-    await browserBridge.createWorkspace(userId, projectId, workspaceId, manifest);
+    await backend.createWorkspace(userId, projectId, workspaceId, manifest);
     readyWorkspaces.add(workspaceId);
     toolLog.info("workspace created", { userId, projectId, workspaceId, fileCount: Object.keys(manifest).length });
     return workspaceId;
@@ -149,9 +152,12 @@ export function createCodeTools(userId: string, projectId: string, chatId: strin
         toolLog.info("bash", { userId, projectId, command });
 
         try {
-          await waitForCompanion();
+          await waitForBackend();
           const wsId = await ensureWorkspace();
-          const result = await browserBridge.runBash(
+          const backend = backendRouter.getBackend(userId, projectId);
+          if (!backend) throw new Error("No execution backend available");
+
+          const result = await backend.runBash(
             userId,
             projectId,
             wsId,

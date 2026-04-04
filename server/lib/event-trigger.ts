@@ -65,6 +65,13 @@ export function unregisterEventTask(taskId: string) {
   eventBuffers.delete(taskId);
 }
 
+export function stopAllEventTriggers() {
+  for (const taskId of [...unsubscribers.keys()]) {
+    unregisterEventTask(taskId);
+  }
+  triggerLog.info("all event triggers stopped");
+}
+
 export function refreshEventTask(taskId: string) {
   const task = getTaskById(taskId);
   if (!task || task.trigger_type !== "event" || !task.enabled) {

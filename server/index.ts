@@ -99,6 +99,15 @@ import {
 import { browserBridge } from "@/lib/browser/bridge.ts";
 import { getCompanionTokenByToken, touchCompanionToken } from "@/db/queries/companion-tokens.ts";
 import { presignHandler, s3 } from "@/lib/s3.ts";
+import { backendRouter } from "@/lib/execution/router.ts";
+import { LocalBackend } from "@/lib/execution/local-backend.ts";
+import { handleNoVncUpgrade, createNoVncProxyConnection } from "@/lib/execution/novnc-proxy.ts";
+
+// Local execution backend (DinD) — initialized after server starts
+let localBackend: LocalBackend | null = null;
+
+// noVNC proxy connections (client ws → target ws)
+const noVncProxies = new Map<WebSocket, WebSocket>();
 
 // ── Rate limiter for WebSocket upgrade attempts ──
 const WS_RATE_WINDOW = 60_000; // 1 minute
@@ -106,7 +115,7 @@ const WS_RATE_MAX = 10; // max attempts per IP per window
 const wsRateMap = new Map<string, { count: number; resetAt: number }>();
 
 // Clean up stale entries every 5 minutes
-setInterval(() => {
+const wsRateCleanupTimer = setInterval(() => {
   const now = Date.now();
   for (const [ip, entry] of wsRateMap) {
     if (now > entry.resetAt) wsRateMap.delete(ip);
@@ -146,11 +155,11 @@ import {
   handleDeleteModel,
 } from "@/routes/models.ts";
 import { handleUsageSummary, handleUsageByModel, handleUsageByUser } from "@/routes/usage.ts";
-import { startAllPollers } from "@/lib/telegram-polling.ts";
+import { startAllPollers, stopAllPollers } from "@/lib/telegram-polling.ts";
 import { processIncomingUpdate } from "@/routes/telegram.ts";
 
 import { initDesktopUser } from "@/lib/desktop-init.ts";
-import { DESKTOP_MODE } from "@/lib/auth.ts";
+import { DESKTOP_MODE, requireAdmin } from "@/lib/auth.ts";
 import { webOnly } from "@/routes/utils.ts";
 import { db } from "@/db/index.ts";
 await initDesktopUser();
@@ -219,10 +228,17 @@ function withLogging(handler: (req: any, ...args: any[]) => Response | Promise<R
     const path = url.pathname;
     try {
       const res = await handler(req, ...args);
-      httpLog.info("request", { method, path, status: res.status, durationMs: Date.now() - start });
+      const durationMs = Date.now() - start;
+      if (res.status >= 500) {
+        httpLog.error("request failed", undefined, { method, path, status: res.status, durationMs });
+      } else if (res.status >= 400) {
+        httpLog.warn("request error", { method, path, status: res.status, durationMs });
+      } else {
+        httpLog.info("request", { method, path, status: res.status, durationMs });
+      }
       return res;
     } catch (err) {
-      httpLog.error("request error", err, { method, path, durationMs: Date.now() - start });
+      httpLog.error("unhandled request exception", err, { method, path, durationMs: Date.now() - start });
       throw err;
     }
   };
@@ -497,6 +513,75 @@ const server = Bun.serve<{ userId: string; projectId: string; authenticated: boo
       DELETE: withLogging(handleDeleteCredential),
     },
 
+    // Containers (admin — list, pause, resume, destroy)
+    "/api/admin/containers": {
+      GET: withLogging(async (req: Request) => {
+        await requireAdmin(req);
+        const containers = localBackend?.listContainers() ?? [];
+        return Response.json({ containers }, { headers: corsHeaders });
+      }),
+    },
+    "/api/admin/containers/:sessionId/pause": {
+      POST: withLogging(async (req: Request) => {
+        await requireAdmin(req);
+        const url = new URL(req.url);
+        const sessionId = url.pathname.split("/")[4]!;
+        await localBackend?.pauseContainer(sessionId);
+        return Response.json({ ok: true }, { headers: corsHeaders });
+      }),
+    },
+    "/api/admin/containers/:sessionId/resume": {
+      POST: withLogging(async (req: Request) => {
+        await requireAdmin(req);
+        const url = new URL(req.url);
+        const sessionId = url.pathname.split("/")[4]!;
+        await localBackend?.resumeContainer(sessionId);
+        return Response.json({ ok: true }, { headers: corsHeaders });
+      }),
+    },
+    "/api/admin/containers/:sessionId": {
+      DELETE: withLogging(async (req: Request) => {
+        await requireAdmin(req);
+        const url = new URL(req.url);
+        const sessionId = url.pathname.split("/")[4]!;
+        await localBackend?.destroyContainer(sessionId);
+        return Response.json({ ok: true }, { headers: corsHeaders });
+      }),
+    },
+    // Container status for a specific chat (authenticated)
+    "/api/projects/:projectId/chats/:chatId/container": {
+      GET: withLogging((req: Request) => {
+        const url = new URL(req.url);
+        const chatId = url.pathname.split("/").at(-2)!;
+        const status = localBackend?.getContainerStatus(chatId) ?? { status: "none" };
+        return Response.json(status, { headers: corsHeaders });
+      }),
+    },
+    // Latest browser screenshot for a chat's session
+    "/api/projects/:projectId/chats/:chatId/browser-screenshot": {
+      GET: withLogging((req: Request) => {
+        const url = new URL(req.url);
+        const chatId = url.pathname.split("/").at(-2)!;
+        const sessionId = `chat-${chatId}`;
+        const screenshot = localBackend?.getLatestScreenshot(sessionId);
+        if (!screenshot) {
+          return Response.json({ screenshot: null }, { headers: corsHeaders });
+        }
+        return Response.json({ screenshot }, { headers: corsHeaders });
+      }),
+    },
+
+    // Capabilities (server-side execution status)
+    "/api/capabilities": {
+      GET: withLogging((req: Request) => {
+        return Response.json({
+          serverDocker: backendRouter.hasLocalBackend(),
+          serverBrowser: backendRouter.hasLocalBackend(),
+          companionConnected: false, // per-project; use companion/status for project-specific
+        }, { headers: corsHeaders });
+      }),
+    },
+
     // S3 presigned file serving (must be before catch-all)
     "/api/s3/*": (req: Request) => presignHandler.handleRequest(req),
 
@@ -509,8 +594,17 @@ const server = Bun.serve<{ userId: string; projectId: string; authenticated: boo
       return new Response(null, { status: 204, headers: corsHeaders });
     }
 
-    // WebSocket upgrade for companion agent
     const url = new URL(request.url);
+
+    // WebSocket upgrade for noVNC proxy
+    if (url.pathname.startsWith("/ws/novnc/")) {
+      if (handleNoVncUpgrade(request, server, localBackend)) {
+        return undefined as unknown as Response;
+      }
+      return Response.json({ error: "Session not found" }, { status: 404, headers: corsHeaders });
+    }
+
+    // WebSocket upgrade for companion agent
     if (url.pathname === "/ws/companion") {
       // Rate limit by IP (skip in desktop mode — local connections only)
       if (!DESKTOP_MODE) {
@@ -525,6 +619,7 @@ const server = Bun.serve<{ userId: string; projectId: string; authenticated: boo
         data: { userId: "", projectId: "", authenticated: false },
       });
       if (!upgraded) {
+        httpLog.error("WebSocket upgrade failed", undefined, { path: url.pathname });
         return Response.json({ error: "WebSocket upgrade failed" }, { status: 500, headers: corsHeaders });
       }
       return undefined as unknown as Response;
@@ -617,6 +712,10 @@ const server = Bun.serve<{ userId: string; projectId: string; authenticated: boo
       }
     },
   },
+  error(error) {
+    httpLog.error("bun server error", error);
+    return Response.json({ error: "Internal server error" }, { status: 500, headers: corsHeaders });
+  },
   development: !IS_PROD && {
     hmr: true,
     console: true,
@@ -626,18 +725,40 @@ const server = Bun.serve<{ userId: string; projectId: string; authenticated: boo
 export { server };
 log.info("server started", { port: server.port, url: server.url.href, logLevel: process.env.LOG_LEVEL ?? "debug" });
 
+// ── Global error handlers ──
+process.on("uncaughtException", (err) => {
+  log.error("uncaught exception", err);
+});
+process.on("unhandledRejection", (reason) => {
+  log.error("unhandled rejection", reason instanceof Error ? reason : new Error(String(reason)));
+});
+
 // Recover any interrupted runs from a previous crash before starting scheduler
 recoverInterruptedRuns();
 
 startScheduler();
 
-import { startEventTriggers } from "@/lib/event-trigger.ts";
+import { startEventTriggers, stopAllEventTriggers } from "@/lib/event-trigger.ts";
 startEventTriggers();
 
 // Start Telegram polling for all configured bots (only when webhooks are not configured)
 if (!process.env.TELEGRAM_WEBHOOK_BASE_URL) {
   startAllPollers(processIncomingUpdate);
 }
+
+// ── Local Docker Backend (DinD) ──
+// Attempt to initialize if dockerd is running inside the server container
+(async () => {
+  const backend = new LocalBackend();
+  const ready = await backend.waitForDocker(10_000);
+  if (ready) {
+    localBackend = backend;
+    backendRouter.setLocalBackend(backend);
+    log.info("local execution backend ready (DinD)");
+  } else {
+    log.info("no local Docker daemon — companion-only mode");
+  }
+})();
 
 // ── Graceful Shutdown ──
 
@@ -646,7 +767,11 @@ async function handleShutdown(signal: string) {
   log.info("shutdown signal received", { signal });
   requestShutdown();
   stopScheduler();
-  await drainActiveRuns(30_000);
+  stopAllEventTriggers();
+  stopAllPollers();
+  clearInterval(wsRateCleanupTimer);
+  await drainActiveRuns(IS_PROD ? 30_000 : 2_000);
+  if (localBackend) await localBackend.destroyAll();
   s3.close();
   db.close();
   log.info("shutdown complete");

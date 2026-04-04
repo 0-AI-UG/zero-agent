@@ -79,7 +79,7 @@ export function createToolRegistry(
     ...createSchedulingTools(projectId),
     ...(options.chatId ? createProgressTools({ projectId, chatId: options.chatId, anchorRunId: options.anchorRunId }) : {}),
     ...createSkillTools(projectId, options.chatId),
-    ...(options.userId ? createBrowserTool(options.userId, projectId, options.browserSessionId, options.lazyBrowserSession) : {}),
+    ...(options.userId ? createBrowserTool(options.userId, projectId, options.browserSessionId, options.lazyBrowserSession, options.modelId) : {}),
     ...(options.userId && options.chatId && options.codeExecutionEnabled ? createCodeTools(options.userId, projectId, options.chatId) : {}),
     ...createCredentialTools(projectId, options.userId ?? undefined),
     ...createTelegramTools(projectId),

@@ -7,6 +7,7 @@ import { createAgentTool } from "@/tools/agent.ts";
 import { createCompactPrepareStep } from "@/lib/compact-conversation.ts";
 import { readFromS3 } from "@/lib/s3.ts";
 import { browserBridge } from "@/lib/browser/bridge.ts";
+import { backendRouter } from "@/lib/execution/router.ts";
 import { insertEvent } from "@/lib/durability/event-log.ts";
 import { log } from "@/lib/logger.ts";
 
@@ -257,7 +258,7 @@ export async function createAgent(project: ProjectForAgent, options: AgentOption
 
   // Use provided lazy session, or auto-create one for chat agents
   const lazyBrowserSession = options.lazyBrowserSession ??
-    (options.userId && browserBridge.isConnected(options.userId, project.id)
+    (options.userId && (browserBridge.isConnected(options.userId, project.id) || backendRouter.isAvailable(options.userId, project.id))
       ? { id: options.chatId ? `chat-${options.chatId}` : `agent-${Date.now()}`, created: false }
       : undefined);
 

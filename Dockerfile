@@ -1,5 +1,12 @@
 FROM oven/bun:1.3.5
 
+# Install Docker daemon + CLI + supervisor for DinD
+RUN apt-get update && apt-get install -y \
+    docker.io iptables supervisor \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY docker/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+
 WORKDIR /app
 
 # Install dependencies first (layer caching)
@@ -23,10 +30,13 @@ COPY skills-lock.json ./skills-lock.json
 COPY web/ ./web/
 RUN bun run build
 
-# Create data directory for SQLite
-RUN mkdir -p /app/data
+# Bundle the session container Dockerfile for building at runtime
+COPY docker/session/ /app/docker/session/
+
+# Create data directories
+RUN mkdir -p /app/data/workspaces /var/lib/docker
 
 EXPOSE 3000
 
 ENV NODE_ENV=production
-CMD ["bun", "server/index.ts"]
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]

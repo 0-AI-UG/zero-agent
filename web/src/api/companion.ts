@@ -65,6 +65,23 @@ export function useDeleteCompanionToken(projectId: string) {
   });
 }
 
+export interface ServerCapabilities {
+  serverDocker: boolean;
+  serverBrowser: boolean;
+  companionConnected: boolean;
+}
+
+export function useServerCapabilities() {
+  return useQuery({
+    queryKey: ["capabilities"],
+    queryFn: async () => {
+      const res = await apiFetch<ServerCapabilities>("/capabilities");
+      return res;
+    },
+    staleTime: 30_000,
+  });
+}
+
 export function useCompanionStatus(projectId: string) {
   return useQuery({
     queryKey: queryKeys.companion.status(projectId),

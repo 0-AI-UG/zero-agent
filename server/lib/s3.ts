@@ -9,6 +9,11 @@ export const s3 = new S3Client({
   path: process.env.S3_DB_PATH ?? "./data/storage.s3db",
 });
 
+// Ensure lock is released on crash/hot reload (covers cases where graceful shutdown doesn't run)
+process.on("exit", () => {
+  try { s3.close(); } catch {}
+});
+
 export const presignHandler = new PresignHandler(s3, {
   baseUrl: `${process.env.BASE_URL ?? ""}/api/s3`,
   corsHeaders,

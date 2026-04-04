@@ -1,12 +1,14 @@
 import { z } from "zod";
-import { tool } from "ai";
-import { browserBridge } from "@/lib/browser/bridge.ts";
+import { tool, generateText } from "ai";
+import { backendRouter } from "@/lib/execution/router.ts";
 import type { BrowserAction } from "@/lib/browser/protocol.ts";
+import { isModelMultimodal } from "@/config/models.ts";
+import { getVisionModel } from "@/lib/openrouter.ts";
 import { log } from "@/lib/logger.ts";
 
 const toolLog = log.child({ module: "tool:browser" });
 
-export function createBrowserTool(userId: string, projectId: string, initialSessionId?: string, lazySession?: { id: string; created: boolean; label?: string }) {
+export function createBrowserTool(userId: string, projectId: string, initialSessionId?: string, lazySession?: { id: string; created: boolean; label?: string }, modelId?: string) {
   let sessionId = initialSessionId;
   return {
     browser: tool({
@@ -48,6 +50,12 @@ export function createBrowserTool(userId: string, projectId: string, initialSess
       }),
       toModelOutput({ output }) {
         const result = output as Record<string, unknown>;
+        if (result?.type === "caption" && typeof result.caption === "string") {
+          return {
+            type: "text" as const,
+            value: `Screenshot of: ${result.title} (${result.url})\n\n[Browser screenshot description]\n${result.caption}`,
+          };
+        }
         if (result?.type === "screenshot" && typeof result.base64 === "string") {
           return {
             type: "content" as const,
@@ -68,54 +76,104 @@ export function createBrowserTool(userId: string, projectId: string, initialSess
         return { type: "json" as const, value: (output ?? null) as import("@ai-sdk/provider").JSONValue };
       },
       execute: async ({ action, stealth }) => {
-        toolLog.info("browser action", { userId, projectId, action: action.type });
+        const startTime = Date.now();
+        toolLog.info("browser action start", { userId, projectId, sessionId, action: action.type, stealth: !!stealth, modelId });
 
-        // Wait for companion with backoff: 1s, 2s, 4s (total ~7s)
-        if (!browserBridge.isConnected(userId, projectId)) {
-          for (const delay of [1000, 2000, 4000]) {
+        // Wait for backend with backoff: 500ms, 1s, 1.5s (total ~3s)
+        if (!backendRouter.isAvailable(userId, projectId)) {
+          toolLog.info("browser backend not available, waiting with backoff", { userId, projectId });
+          for (const delay of [500, 1000, 1500]) {
             await new Promise((r) => setTimeout(r, delay));
-            if (browserBridge.isConnected(userId, projectId)) break;
+            if (backendRouter.isAvailable(userId, projectId)) {
+              toolLog.info("browser backend became available", { userId, projectId, waitedMs: delay });
+              break;
+            }
           }
         }
-        if (!browserBridge.isConnected(userId, projectId)) {
+
+        const backend = backendRouter.getBackend(userId, projectId);
+        if (!backend) {
+          toolLog.warn("no browser backend available", { userId, projectId });
           return {
             error:
               "Browser companion is not connected. The user needs to start the companion agent on their machine and connect it with a token from Settings.",
           };
         }
+        toolLog.info("browser backend resolved", { userId, projectId, backendType: backend.constructor?.name });
 
         // Lazily create browser session on first use
         if (lazySession && !lazySession.created) {
+          toolLog.info("creating browser session lazily", { userId, projectId, sessionId: lazySession.id, label: lazySession.label });
           try {
-            await browserBridge.createSession(userId, projectId, lazySession.id, lazySession.label);
+            await backend.createSession(userId, projectId, lazySession.id, lazySession.label);
             lazySession.created = true;
             sessionId = lazySession.id;
+            toolLog.info("browser session created", { userId, projectId, sessionId, elapsedMs: Date.now() - startTime });
           } catch (err) {
-            toolLog.warn("failed to create browser session lazily", { error: String(err) });
+            toolLog.error("failed to create browser session", err, { userId, projectId, sessionId: lazySession.id, elapsedMs: Date.now() - startTime });
+            return { error: `Failed to create browser session: ${err instanceof Error ? err.message : String(err)}` };
           }
         }
 
         // Execute with retry on transient failures (timeout, connection lost)
         const MAX_RETRIES = 2;
         for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+          const attemptStart = Date.now();
           try {
-            const result = await browserBridge.execute(userId, projectId, action as BrowserAction, sessionId, stealth);
+            toolLog.info("browser action executing", { userId, projectId, sessionId, action: action.type, attempt });
+            const result = await backend.execute(userId, projectId, action as BrowserAction, sessionId, stealth);
+            toolLog.info("browser action completed", {
+              userId, projectId, sessionId, action: action.type,
+              resultType: result?.type, attempt,
+              elapsedMs: Date.now() - attemptStart,
+              totalMs: Date.now() - startTime,
+            });
+
+            // Caption screenshots for non-multimodal models
+            if (modelId && !isModelMultimodal(modelId) && result?.type === "screenshot" && typeof result.base64 === "string") {
+              try {
+                toolLog.info("browser screenshot captioning", { userId, projectId, modelId });
+                const { text: caption } = await generateText({
+                  model: getVisionModel(),
+                  messages: [{
+                    role: "user",
+                    content: [
+                      { type: "text", text: `Describe this browser screenshot in detail. Include all visible text, UI elements, layout, navigation state, and any errors or notable content. Page: ${result.title} (${result.url})` },
+                      { type: "image", image: result.base64, mediaType: "image/jpeg" },
+                    ],
+                  }],
+                });
+                toolLog.info("browser screenshot captioned", { userId, projectId, captionLength: caption.length, elapsedMs: Date.now() - startTime });
+                return { type: "caption" as const, url: result.url, title: result.title, caption };
+              } catch (err) {
+                toolLog.warn("browser screenshot captioning failed", { error: String(err), elapsedMs: Date.now() - startTime });
+                return { type: "caption" as const, url: result.url, title: result.title, caption: `[Screenshot of ${result.title} at ${result.url} — image captioning unavailable]` };
+              }
+            }
+
             return result;
           } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
             const isTransient = message.includes("timed out") || message.includes("not connected") || message.includes("closed");
 
+            toolLog.warn("browser action attempt failed", {
+              userId, projectId, sessionId, action: action.type,
+              attempt, isTransient, error: message,
+              elapsedMs: Date.now() - attemptStart,
+            });
+
             if (isTransient && attempt < MAX_RETRIES) {
-              toolLog.info("browser action transient failure, retrying", { userId, projectId, action: action.type, attempt: attempt + 1 });
-              await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)));
-              // Re-check connection after wait
-              if (!browserBridge.isConnected(userId, projectId)) {
+              const retryDelay = 2000 * (attempt + 1);
+              toolLog.info("browser action retrying", { userId, projectId, action: action.type, attempt: attempt + 1, retryDelayMs: retryDelay });
+              await new Promise((r) => setTimeout(r, retryDelay));
+              if (!backendRouter.isAvailable(userId, projectId)) {
+                toolLog.warn("browser backend disconnected during retry", { userId, projectId });
                 return { error: "Browser companion disconnected during retry. Please check the companion agent." };
               }
               continue;
             }
 
-            toolLog.error("browser action failed", err, { userId, projectId, action: action.type });
+            toolLog.error("browser action failed permanently", err, { userId, projectId, action: action.type, totalMs: Date.now() - startTime });
             return { error: message };
           }
         }

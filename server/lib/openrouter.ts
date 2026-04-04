@@ -30,6 +30,9 @@ function retryFetch(originalFetch: typeof fetch): typeof fetch {
           await new Promise((r) => setTimeout(r, delay));
           continue;
         }
+        if (response.status >= 400) {
+          orLog.error("LLM request failed", undefined, { status: response.status, attempts: attempt + 1 });
+        }
         return response;
       } catch (err) {
         lastError = err;
@@ -40,6 +43,7 @@ function retryFetch(originalFetch: typeof fetch): typeof fetch {
         }
       }
     }
+    orLog.error("LLM request exhausted retries", lastError instanceof Error ? lastError : new Error(String(lastError)));
     throw lastError;
   };
   return wrapper as typeof fetch;

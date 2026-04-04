@@ -1,0 +1,15 @@
+services:
+  server:
+    build: .
+    privileged: true
+    ports:
+      - "3000:3000"
+    volumes:
+      - data:/app/data
+      - docker-data:/var/lib/docker
+    environment:
+      - NODE_ENV=production
+
+volumes:
+  data:
+  docker-data:

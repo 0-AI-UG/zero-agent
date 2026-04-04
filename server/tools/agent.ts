@@ -3,6 +3,7 @@ import { tool, ToolLoopAgent, stepCountIs } from "ai";
 import { createDiscoverableToolset } from "@/tools/registry.ts";
 import { getChatModel, getEnrichModel } from "@/lib/openrouter.ts";
 import { browserBridge } from "@/lib/browser/bridge.ts";
+import { backendRouter } from "@/lib/execution/router.ts";
 import { getSkillSummaries } from "@/lib/skills/loader.ts";
 import { buildSkillsIndex } from "@/lib/skills/injector.ts";
 import { nanoid } from "nanoid";
@@ -54,7 +55,7 @@ export function createAgentTool(projectId: string, toolOptions: AgentToolOptions
 
       const promises = tasks.map(async (task, index) => {
         // Prepare a lazy browser session — only created when the browser tool is first used
-        const lazyBrowserSession = toolOptions.userId && toolOptions.projectId && browserBridge.isConnected(toolOptions.userId, toolOptions.projectId)
+        const lazyBrowserSession = toolOptions.userId && toolOptions.projectId && (browserBridge.isConnected(toolOptions.userId, toolOptions.projectId) || backendRouter.isAvailable(toolOptions.userId, toolOptions.projectId))
           ? { id: nanoid(), created: false }
           : undefined;
 
@@ -164,7 +165,8 @@ ${skillsIndex ? `\n## Skills\n${skillsIndex}\nCall \`loadSkill\` with a skill na
         } finally {
           // Clean up browser session only if it was actually created
           if (lazyBrowserSession?.created && toolOptions.userId && toolOptions.projectId) {
-            browserBridge.destroySession(toolOptions.userId, toolOptions.projectId, lazyBrowserSession.id).catch((err) => {
+            const backend = backendRouter.getBackend(toolOptions.userId, toolOptions.projectId);
+            (backend ?? browserBridge).destroySession(toolOptions.userId, toolOptions.projectId, lazyBrowserSession.id).catch((err: unknown) => {
               toolLog.warn("failed to destroy browser session", { index, error: String(err) });
             });
           }

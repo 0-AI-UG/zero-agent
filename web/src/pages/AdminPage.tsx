@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router";
 import { useAuthStore } from "@/stores/auth";
 import { Input } from "@/components/ui/input";
@@ -56,6 +57,8 @@ import {
   UsersIcon,
   KeyRoundIcon,
   CpuIcon,
+  PlayIcon,
+  PauseIcon,
   BarChart3Icon,
   CheckIcon,
   PencilIcon,
@@ -83,8 +86,15 @@ import {
   useUsageByModel,
   useUsageByUser,
 } from "@/api/usage";
+import {
+  useContainers,
+  usePauseContainer,
+  useResumeContainer,
+  useDestroyContainer,
+} from "@/api/containers";
 import type { ModelConfig } from "@/stores/model";
 import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { toast } from "sonner";
 
 const AVATAR_COLORS = [
@@ -160,12 +170,32 @@ export function AdminPage() {
       </header>
 
       <main className="flex-1 overflow-y-auto">
-        <div className="max-w-3xl mx-auto px-6 py-6 space-y-8">
-          <InstanceSettingsSection />
-          <SecuritySection />
-          <ModelManagementSection />
-          <UsageSection />
-          <UserManagementSection />
+        <div className="max-w-3xl mx-auto px-6 py-6">
+          <Tabs defaultValue="settings">
+            <TabsList className="w-full">
+              <TabsTrigger value="settings">Settings</TabsTrigger>
+              <TabsTrigger value="execution">Execution</TabsTrigger>
+              <TabsTrigger value="models">Models</TabsTrigger>
+              <TabsTrigger value="usage">Usage</TabsTrigger>
+              <TabsTrigger value="users">Users</TabsTrigger>
+            </TabsList>
+            <TabsContent value="settings" className="space-y-8 pt-4">
+              <InstanceSettingsSection />
+              <SecuritySection />
+            </TabsContent>
+            <TabsContent value="execution" className="space-y-8 pt-4">
+              <ServerExecutionSection />
+            </TabsContent>
+            <TabsContent value="models" className="pt-4">
+              <ModelManagementSection />
+            </TabsContent>
+            <TabsContent value="usage" className="pt-4">
+              <UsageSection />
+            </TabsContent>
+            <TabsContent value="users" className="pt-4">
+              <UserManagementSection />
+            </TabsContent>
+          </Tabs>
         </div>
       </main>
     </div>
@@ -260,6 +290,186 @@ function InstanceSettingsSection() {
           currentValue={settings?.BRAVE_SEARCH_API_KEY}
           settingKey="BRAVE_SEARCH_API_KEY"
         />
+      </div>
+    </section>
+  );
+}
+
+function ServerExecutionSection() {
+  const { data: settings } = useAdminSettings();
+  const updateSettings = useUpdateSettings();
+  const queryClient = useQueryClient();
+  const serverExecutionEnabled = settings?.SERVER_EXECUTION_ENABLED !== "false";
+
+  const { data: containers, isLoading: containersLoading } = useContainers();
+  const pauseContainer = usePauseContainer();
+  const resumeContainer = useResumeContainer();
+  const destroyContainer = useDestroyContainer();
+
+  const running = containers?.filter((c) => c.status === "running").length ?? 0;
+  const paused = containers?.filter((c) => c.status === "paused").length ?? 0;
+
+  function formatAge(lastUsedAt: number) {
+    const seconds = Math.round((Date.now() - lastUsedAt) / 1000);
+    if (seconds < 60) return `${seconds}s ago`;
+    const minutes = Math.round(seconds / 60);
+    if (minutes < 60) return `${minutes}m ago`;
+    return `${Math.round(minutes / 60)}h ago`;
+  }
+
+  return (
+    <section className="space-y-4">
+      <div className="flex items-center gap-2">
+        <CpuIcon className="size-4 text-cyan-500" />
+        <h3 className="text-sm font-semibold">Server Execution</h3>
+        <span className="text-xs text-muted-foreground ml-auto">
+          {running} running, {paused} paused
+        </span>
+      </div>
+      <div className="rounded-lg border p-4 space-y-4">
+        <div className="flex items-center justify-between gap-4">
+          <div className="space-y-1">
+            <p className="text-sm font-medium">Enabled</p>
+            <p className="text-xs text-muted-foreground">
+              Allow code execution and browser automation to run on the server via Docker.
+            </p>
+          </div>
+          <Switch
+            checked={serverExecutionEnabled}
+            onCheckedChange={(checked) => {
+              updateSettings.mutate(
+                { SERVER_EXECUTION_ENABLED: checked ? "true" : "false" },
+                {
+                  onSuccess: () => queryClient.invalidateQueries({ queryKey: ["capabilities"] }),
+                },
+              );
+            }}
+            disabled={updateSettings.isPending}
+            aria-label="Toggle server execution"
+          />
+        </div>
+        <div className="flex items-center justify-between gap-4">
+          <div className="space-y-1">
+            <p className="text-sm font-medium">Max running containers</p>
+            <p className="text-xs text-muted-foreground">Idle containers are paused when this limit is reached.</p>
+          </div>
+          <Input
+            type="number"
+            min={1}
+            max={20}
+            defaultValue={settings?.CONTAINER_MAX_RUNNING ?? "3"}
+            key={`max-running-${settings?.CONTAINER_MAX_RUNNING}`}
+            onBlur={(e) => {
+              const val = parseInt(e.target.value);
+              if (val >= 1 && val <= 20) updateSettings.mutate({ CONTAINER_MAX_RUNNING: String(val) });
+            }}
+            className="w-20 text-right"
+          />
+        </div>
+        <div className="flex items-center justify-between gap-4">
+          <div className="space-y-1">
+            <p className="text-sm font-medium">Idle pause timeout (seconds)</p>
+            <p className="text-xs text-muted-foreground">Seconds before an idle container is paused. Default: 180.</p>
+          </div>
+          <Input
+            type="number"
+            min={30}
+            defaultValue={settings?.CONTAINER_PAUSE_TIMEOUT_SECS ?? "180"}
+            key={`pause-timeout-${settings?.CONTAINER_PAUSE_TIMEOUT_SECS}`}
+            onBlur={(e) => {
+              const val = parseInt(e.target.value);
+              if (val >= 30) updateSettings.mutate({ CONTAINER_PAUSE_TIMEOUT_SECS: String(val) });
+            }}
+            className="w-20 text-right"
+          />
+        </div>
+        <div className="flex items-center justify-between gap-4">
+          <div className="space-y-1">
+            <p className="text-sm font-medium">Idle destroy timeout (seconds)</p>
+            <p className="text-xs text-muted-foreground">Seconds before an idle container is destroyed. Default: 600.</p>
+          </div>
+          <Input
+            type="number"
+            min={60}
+            defaultValue={settings?.CONTAINER_DESTROY_TIMEOUT_SECS ?? "600"}
+            key={`destroy-timeout-${settings?.CONTAINER_DESTROY_TIMEOUT_SECS}`}
+            onBlur={(e) => {
+              const val = parseInt(e.target.value);
+              if (val >= 60) updateSettings.mutate({ CONTAINER_DESTROY_TIMEOUT_SECS: String(val) });
+            }}
+            className="w-20 text-right"
+          />
+        </div>
+      </div>
+      <div className="rounded-lg border">
+        {containersLoading ? (
+          <div className="p-4 text-xs text-muted-foreground">Loading...</div>
+        ) : !containers?.length ? (
+          <div className="p-4 text-xs text-muted-foreground">No active containers</div>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="text-xs">Session</TableHead>
+                <TableHead className="text-xs">Status</TableHead>
+                <TableHead className="text-xs">Last used</TableHead>
+                <TableHead className="text-xs w-[100px]">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {containers.map((c) => (
+                <TableRow key={c.sessionId}>
+                  <TableCell className="text-xs font-mono truncate max-w-[200px]">
+                    {c.sessionId.replace("chat-", "")}
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={c.status === "running" ? "default" : "secondary"} className="text-[10px]">
+                      {c.status}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-xs text-muted-foreground">
+                    {formatAge(c.lastUsedAt)}
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-1">
+                      {c.status === "running" ? (
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          onClick={() => pauseContainer.mutate(c.sessionId)}
+                          disabled={pauseContainer.isPending}
+                          aria-label="Pause container"
+                        >
+                          <PauseIcon className="size-3" />
+                        </Button>
+                      ) : (
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          onClick={() => resumeContainer.mutate(c.sessionId)}
+                          disabled={resumeContainer.isPending}
+                          aria-label="Resume container"
+                        >
+                          <PlayIcon className="size-3" />
+                        </Button>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => destroyContainer.mutate(c.sessionId)}
+                        disabled={destroyContainer.isPending}
+                        aria-label="Destroy container"
+                        className="text-destructive hover:text-destructive"
+                      >
+                        <TrashIcon className="size-3" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
       </div>
     </section>
   );
