@@ -14,6 +14,10 @@
 
 ---
 
+<p align="center">
+  <img src="docs/screenshots/chat.png" width="800" alt="Zero Agent chat interface">
+</p>
+
 ## Overview
 
 Zero Agent gives you a personal AI assistant that can do more than chat. It browses the web, writes and runs code, manages files, creates documents, and runs tasks on a schedule — all on your own hardware. You control the data, the models, and the access.
