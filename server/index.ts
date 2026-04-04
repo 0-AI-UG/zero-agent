@@ -101,13 +101,8 @@ import { getCompanionTokenByToken, touchCompanionToken } from "@/db/queries/comp
 import { presignHandler, s3 } from "@/lib/s3.ts";
 import { backendRouter } from "@/lib/execution/router.ts";
 import { LocalBackend } from "@/lib/execution/local-backend.ts";
-import { handleNoVncUpgrade, createNoVncProxyConnection } from "@/lib/execution/novnc-proxy.ts";
-
 // Local execution backend (DinD) — initialized after server starts
 let localBackend: LocalBackend | null = null;
-
-// noVNC proxy connections (client ws → target ws)
-const noVncProxies = new Map<WebSocket, WebSocket>();
 
 // ── Rate limiter for WebSocket upgrade attempts ──
 const WS_RATE_WINDOW = 60_000; // 1 minute
@@ -595,14 +590,6 @@ const server = Bun.serve<{ userId: string; projectId: string; authenticated: boo
     }
 
     const url = new URL(request.url);
-
-    // WebSocket upgrade for noVNC proxy
-    if (url.pathname.startsWith("/ws/novnc/")) {
-      if (handleNoVncUpgrade(request, server, localBackend)) {
-        return undefined as unknown as Response;
-      }
-      return Response.json({ error: "Session not found" }, { status: 404, headers: corsHeaders });
-    }
 
     // WebSocket upgrade for companion agent
     if (url.pathname === "/ws/companion") {

@@ -17,7 +17,6 @@ const backendLog = log.child({ module: "local-backend" });
 const SESSION_IMAGE = "zero-session:latest";
 const NETWORK_NAME = "zero-agent-net";
 const CDP_PORT = 9223;
-const NOVNC_PORT = 6080;
 const MAX_OUTPUT = 1_048_576; // 1 MB
 
 // Resolve paths relative to the project root (works in both dev and prod)
@@ -660,13 +659,6 @@ export class LocalBackend implements ExecutionBackend {
       await new Promise((r) => setTimeout(r, 500));
     }
     throw new Error("Chrome CDP not ready within timeout");
-  }
-
-  /** Get the noVNC WebSocket URL for a session (container_ip:6080). */
-  getNoVncTarget(sessionId: string): { host: string; port: number } | null {
-    const session = this.sessions.get(sessionId);
-    if (!session) return null;
-    return { host: session.containerIp, port: NOVNC_PORT };
   }
 
   /** List all tracked containers with their status. */
