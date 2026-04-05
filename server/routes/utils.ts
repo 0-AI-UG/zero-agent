@@ -3,7 +3,6 @@ import {
   NotFoundError,
   ConflictError,
 } from "@/lib/errors.ts";
-import { DESKTOP_MODE } from "@/lib/auth.ts";
 import { getProjectById } from "@/db/queries/projects.ts";
 import { isProjectMember, getMemberRole, getMemberCount } from "@/db/queries/members.ts";
 import { getUserById } from "@/db/queries/users.ts";
@@ -13,14 +12,6 @@ import type {
 import { log } from "@/lib/logger.ts";
 
 const routeLog = log.child({ module: "routes" });
-
-/** Middleware: reject requests to web-only endpoints when running in desktop mode. */
-export function webOnly(handler: (request: Request) => Promise<Response>): (request: Request) => Promise<Response> {
-  if (!DESKTOP_MODE) return handler;
-  return () => Promise.resolve(
-    Response.json({ error: "Not available in desktop mode" }, { status: 404, headers: corsHeaders }),
-  );
-}
 
 export function handleError(error: unknown): Response {
   if (error instanceof Error) {
@@ -89,7 +80,6 @@ export function verifyProjectAccess(
 ): ProjectRow {
   const project = getProjectById(projectId);
   if (!project) throw new NotFoundError("Project not found");
-  if (DESKTOP_MODE) return project;
   const user = getUserById(userId);
   if (user?.is_admin === 1) return project;
   if (!isProjectMember(projectId, userId)) {
@@ -105,7 +95,6 @@ export function verifyProjectOwnership(
 ): ProjectRow {
   const project = getProjectById(projectId);
   if (!project) throw new NotFoundError("Project not found");
-  if (DESKTOP_MODE) return project;
   const user = getUserById(userId);
   if (user?.is_admin === 1) return project;
   const role = getMemberRole(projectId, userId);

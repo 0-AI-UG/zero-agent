@@ -17,7 +17,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { BotIcon, PlusIcon, TrashIcon, SendIcon, SearchIcon, XIcon, ChevronDownIcon, LoaderIcon } from "lucide-react";
 import { useMembers } from "@/api/members";
-import { useDesktopMode } from "@/hooks/use-desktop-mode";
 
 const SOURCE_COLORS: Record<string, string> = {
   telegram: "text-[#2AABEE]",
@@ -31,9 +30,8 @@ export function ChatSidebar({ projectId }: { projectId: string }) {
   const { data: chats } = useChats(projectId);
   const createChat = useCreateChat(projectId);
   const deleteChat = useDeleteChat(projectId);
-  const desktopMode = useDesktopMode();
   const { data: membersData } = useMembers(projectId);
-  const isMultiMember = !desktopMode && (membersData?.members.length ?? 0) > 1;
+  const isMultiMember = (membersData?.members.length ?? 0) > 1;
   const memberMap = new Map(membersData?.members.map((m) => [m.userId, m.email]) ?? []);
 
   const handleNewChat = async () => {

@@ -2,8 +2,8 @@
  * In-container filesystem operations — all file I/O goes through Docker exec
  * or the Docker archive API. No host filesystem access.
  */
-import { docker } from "@/lib/docker-client.ts";
-import { log } from "@/lib/logger.ts";
+import { docker } from "./docker-client.ts";
+import { log } from "./logger.ts";
 
 const fsLog = log.child({ module: "container-fs" });
 
@@ -18,52 +18,54 @@ const SYSTEM_SNAPSHOT_EXCLUDES = [
   "./etc/hostname", "./etc/hosts", "./etc/resolv.conf",
 ].map(d => `--exclude=${d}`).join(" ");
 
-// ── Marker-based change detection ──
+// -- Marker-based change detection --
 
 export async function touchMarker(containerName: string): Promise<void> {
   await docker.exec(containerName, ["bash", "-c", "touch /tmp/.snapshot-marker"], { workingDir: "/" });
 }
 
-export async function listWorkspaceFiles(containerName: string): Promise<Set<string>> {
+export async function listFiles(containerName: string, dir = "/workspace"): Promise<Set<string>> {
   const result = await docker.exec(containerName, [
     "bash", "-c",
-    `find /workspace \\( ${FIND_PRUNE_ARGS} \\) -o -type f -print`,
+    `find ${dir} \\( ${FIND_PRUNE_ARGS} \\) -o -type f -print`,
   ], { workingDir: "/" });
   const files = new Set<string>();
+  const prefix = dir.endsWith("/") ? dir : dir + "/";
   for (const line of result.stdout.split("\n")) {
     const trimmed = line.trim();
-    if (trimmed && trimmed.startsWith("/workspace/")) {
-      files.add(trimmed.slice("/workspace/".length));
+    if (trimmed && trimmed.startsWith(prefix)) {
+      files.add(trimmed.slice(prefix.length));
     }
   }
   return files;
 }
 
 export interface DetectedChanges {
-  changed: string[];   // relative paths under /workspace
-  deleted: string[];   // relative paths under /workspace
+  changed: string[];
+  deleted: string[];
 }
 
 export async function detectChanges(
   containerName: string,
   preFileList: Set<string>,
+  dir = "/workspace",
 ): Promise<DetectedChanges> {
-  // Find files newer than the marker (changed or new)
+  const prefix = dir.endsWith("/") ? dir : dir + "/";
+
   const findResult = await docker.exec(containerName, [
     "bash", "-c",
-    `find /workspace \\( ${FIND_PRUNE_ARGS} \\) -o -type f -newer /tmp/.snapshot-marker -print`,
+    `find ${dir} \\( ${FIND_PRUNE_ARGS} \\) -o -type f -newer /tmp/.snapshot-marker -print`,
   ], { workingDir: "/" });
 
   const changed: string[] = [];
   for (const line of findResult.stdout.split("\n")) {
     const trimmed = line.trim();
-    if (trimmed && trimmed.startsWith("/workspace/")) {
-      changed.push(trimmed.slice("/workspace/".length));
+    if (trimmed && trimmed.startsWith(prefix)) {
+      changed.push(trimmed.slice(prefix.length));
     }
   }
 
-  // Detect deletions by comparing current file list to pre-exec list
-  const postFileList = await listWorkspaceFiles(containerName);
+  const postFileList = await listFiles(containerName, dir);
   const deleted: string[] = [];
   for (const file of preFileList) {
     if (!postFileList.has(file)) {
@@ -74,7 +76,7 @@ export async function detectChanges(
   return { changed, deleted };
 }
 
-// ── Read files from container ──
+// -- Read files from container --
 
 export interface ReadFile {
   path: string;
@@ -82,20 +84,20 @@ export interface ReadFile {
   sizeBytes: number;
 }
 
-export async function readFiles(containerName: string, relativePaths: string[]): Promise<ReadFile[]> {
+export async function readFiles(containerName: string, relativePaths: string[], baseDir = "/workspace"): Promise<ReadFile[]> {
   if (relativePaths.length === 0) return [];
 
   const results: ReadFile[] = [];
   let totalBytes = 0;
 
-  // For each file: output a header line with path and size, then base64 content
-  const escaped = relativePaths.map(p => `'/workspace/${p}'`).join(" ");
+  const escaped = relativePaths.map(p => `'${baseDir}/${p}'`).join(" ");
+  const prefix = baseDir.endsWith("/") ? baseDir : baseDir + "/";
   const result = await docker.exec(containerName, [
     "bash", "-c",
     `for f in ${escaped}; do
       if [ -f "$f" ]; then
         sz=$(stat -c%s "$f" 2>/dev/null || echo 0)
-        rel="\${f#/workspace/}"
+        rel="\${f#${prefix}}"
         echo "::FILE::$rel::$sz"
         base64 "$f"
         echo "::ENDFILE::"
@@ -131,35 +133,33 @@ export async function readFiles(containerName: string, relativePaths: string[]):
   return results;
 }
 
-// ── Write files into container via putArchive ──
+// -- Write files into container via putArchive --
 
 export async function writeFiles(
   containerName: string,
-  files: Array<{ relativePath: string; data: Buffer }>,
+  files: Array<{ path: string; data: Buffer }>,
+  baseDir = "/workspace",
 ): Promise<void> {
   if (files.length === 0) return;
-
-  // Build a tar archive in memory and upload via Docker archive API
-  const tar = buildTar(files.map(f => ({ path: f.relativePath, data: f.data })));
-  await docker.putArchive(containerName, "/workspace", tar);
+  const tar = buildTar(files.map(f => ({ path: f.path, data: f.data })));
+  await docker.putArchive(containerName, baseDir, tar);
 }
 
-export async function deleteFiles(containerName: string, relativePaths: string[]): Promise<void> {
+export async function deleteFiles(containerName: string, relativePaths: string[], baseDir = "/workspace"): Promise<void> {
   if (relativePaths.length === 0) return;
-  const escaped = relativePaths.map(p => `'/workspace/${p}'`).join(" ");
+  const escaped = relativePaths.map(p => `'${baseDir}/${p}'`).join(" ");
   await docker.exec(containerName, [
     "bash", "-c", `rm -f ${escaped}`,
   ], { workingDir: "/" });
 }
 
-// ── System snapshot (everything outside /workspace) via Docker archive API ──
+// -- System snapshot (everything outside /workspace) --
 
 export async function saveSystemSnapshot(containerName: string): Promise<Buffer | null> {
   try {
-    // Create tar inside container, then extract via getArchive
     const result = await docker.exec(containerName, [
       "bash", "-c",
-      `tar czf /tmp/system-snapshot.tar.gz -C / ${SYSTEM_SNAPSHOT_EXCLUDES} . 2>/dev/null; echo done`,
+      `tar czf /tmp/system-snapshot.tar.gz -C / ${SYSTEM_SNAPSHOT_EXCLUDES} . 2>&1 || true`,
     ], { workingDir: "/", timeout: 120_000 });
 
     if (result.exitCode !== 0) {
@@ -167,14 +167,9 @@ export async function saveSystemSnapshot(containerName: string): Promise<Buffer 
       return null;
     }
 
-    // Use getArchive to pull the tarball out — this returns a tar containing the file
     const outerTar = await docker.getArchive(containerName, "/tmp/system-snapshot.tar.gz");
-
-    // Clean up
     docker.exec(containerName, ["rm", "-f", "/tmp/system-snapshot.tar.gz"], { workingDir: "/" }).catch(() => {});
 
-    // The Docker getArchive API wraps the file in a tar, so we need to extract
-    // the inner file from the outer tar
     const inner = extractSingleFileFromTar(outerTar);
     if (!inner) {
       fsLog.warn("failed to extract system snapshot from archive response");
@@ -191,11 +186,9 @@ export async function saveSystemSnapshot(containerName: string): Promise<Buffer 
 
 export async function restoreSystemSnapshot(containerName: string, buffer: Buffer): Promise<boolean> {
   try {
-    // Wrap the .tar.gz in a tar so putArchive can place it at /tmp/
     const wrappedTar = buildTar([{ path: "system-snapshot.tar.gz", data: buffer }]);
     await docker.putArchive(containerName, "/tmp", wrappedTar);
 
-    // Extract inside container
     const result = await docker.exec(containerName, [
       "bash", "-c",
       `tar xzf /tmp/system-snapshot.tar.gz -C / 2>/dev/null; rm -f /tmp/system-snapshot.tar.gz`,
@@ -214,17 +207,9 @@ export async function restoreSystemSnapshot(containerName: string, buffer: Buffe
   }
 }
 
-// ── Workspace snapshot (just /workspace, for project file sync on destroy) ──
+// -- Minimal tar builder/reader --
 
-export async function saveWorkspaceFiles(containerName: string): Promise<ReadFile[]> {
-  const fileList = await listWorkspaceFiles(containerName);
-  return readFiles(containerName, [...fileList]);
-}
-
-// ── Minimal tar builder/reader ──
-
-/** Build a POSIX tar archive (uncompressed) from a list of files. */
-function buildTar(files: Array<{ path: string; data: Buffer | Uint8Array }>): Buffer {
+export function buildTar(files: Array<{ path: string; data: Buffer | Uint8Array }>): Buffer {
   const blocks: Buffer[] = [];
 
   for (const file of files) {
@@ -232,33 +217,23 @@ function buildTar(files: Array<{ path: string; data: Buffer | Uint8Array }>): Bu
     const nameBytes = Buffer.from(file.path, "utf-8");
     nameBytes.copy(header, 0, 0, Math.min(nameBytes.length, 100));
 
-    // File mode: 0644
     writeOctal(header, 100, 8, 0o644);
-    // Owner/group ID: 0
     writeOctal(header, 108, 8, 0);
     writeOctal(header, 116, 8, 0);
-    // File size
     writeOctal(header, 124, 12, file.data.length);
-    // Mtime: now
     writeOctal(header, 136, 12, Math.floor(Date.now() / 1000));
-    // Type flag: regular file
     header[156] = 0x30; // '0'
-    // Magic
     Buffer.from("ustar\0", "ascii").copy(header, 257);
-    // Version
     Buffer.from("00", "ascii").copy(header, 263);
 
-    // Compute checksum
-    // First fill checksum field with spaces
     for (let i = 148; i < 156; i++) header[i] = 0x20;
     let checksum = 0;
     for (let i = 0; i < 512; i++) checksum += header[i]!;
     writeOctal(header, 148, 7, checksum);
-    header[155] = 0x20; // trailing space
+    header[155] = 0x20;
 
     blocks.push(header);
 
-    // File data, padded to 512-byte blocks
     const data = Buffer.from(file.data);
     blocks.push(data);
     const remainder = data.length % 512;
@@ -267,9 +242,7 @@ function buildTar(files: Array<{ path: string; data: Buffer | Uint8Array }>): Bu
     }
   }
 
-  // Two empty blocks as end-of-archive marker
   blocks.push(Buffer.alloc(1024));
-
   return Buffer.concat(blocks);
 }
 
@@ -278,15 +251,11 @@ function writeOctal(buf: Buffer, offset: number, length: number, value: number):
   Buffer.from(str + "\0", "ascii").copy(buf, offset);
 }
 
-/** Extract the first file's content from a tar archive (for Docker getArchive responses). */
 function extractSingleFileFromTar(tar: Buffer): Buffer | null {
   if (tar.length < 512) return null;
-
-  // Read size from header at offset 124, 12 bytes octal
   const sizeStr = tar.subarray(124, 136).toString("ascii").replace(/\0/g, "").trim();
   const size = parseInt(sizeStr, 8);
   if (isNaN(size) || size <= 0) return null;
-
   if (tar.length < 512 + size) return null;
   return Buffer.from(tar.subarray(512, 512 + size));
 }

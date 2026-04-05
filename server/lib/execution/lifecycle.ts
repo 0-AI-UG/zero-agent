@@ -1,23 +1,23 @@
 /**
  * Execution lifecycle manager — handles runtime enable/disable of
- * Docker execution. Port management is part of execution
- * (no separate toggle).
+ * execution via a remote runner service (RunnerClient).
  */
-import { LocalBackend } from "./local-backend.ts";
+import { RunnerClient } from "./runner-client.ts";
+import type { ExecutionBackend } from "./backend-interface.ts";
 import { PortManager } from "./app-manager.ts";
-import { setSetting } from "@/lib/settings.ts";
+import { getSetting, setSetting } from "@/lib/settings.ts";
 import { setBackendGetter } from "@/tools/apps.ts";
 import { setRoutePortManager } from "@/routes/apps.ts";
 import { log } from "@/lib/logger.ts";
 
 const lifecycleLog = log.child({ module: "execution-lifecycle" });
 
-let localBackend: LocalBackend | null = null;
+let backend: ExecutionBackend | null = null;
 let portManager: PortManager | null = null;
 let initializing = false;
 
-export function getLocalBackend(): LocalBackend | null {
-  return localBackend;
+export function getLocalBackend(): ExecutionBackend | null {
+  return backend;
 }
 
 export function getPortManager(): PortManager | null {
@@ -27,25 +27,32 @@ export function getPortManager(): PortManager | null {
 export const getAppProcessManager = getPortManager;
 
 /**
- * Enable server-side Docker execution.
- * Initializes LocalBackend and PortManager.
+ * Enable server-side execution via a remote runner service.
+ * Reads RUNNER_URL and RUNNER_API_KEY from settings DB (falls back to env vars).
  */
 export async function enableExecution(): Promise<{ success: boolean; error?: string }> {
-  if (localBackend) return { success: true };
+  if (backend) return { success: true };
   if (initializing) return { success: false, error: "Initialization already in progress" };
 
   initializing = true;
   try {
-    const backend = new LocalBackend();
-    const ready = await backend.waitForDocker(10_000);
-    if (!ready) {
-      return { success: false, error: "Docker daemon not available" };
+    const runnerUrl = getSetting("RUNNER_URL");
+    const runnerApiKey = getSetting("RUNNER_API_KEY") ?? "";
+
+    if (!runnerUrl) {
+      return { success: false, error: "Runner URL not configured. Set it in Admin > Execution settings." };
     }
 
-    localBackend = backend;
-    setBackendGetter(() => localBackend);
+    const client = new RunnerClient(runnerUrl, runnerApiKey);
+    const ready = await client.init();
+    if (!ready) {
+      return { success: false, error: `Runner service not available at ${runnerUrl}` };
+    }
+    backend = client;
+    lifecycleLog.info("connected to remote runner", { url: runnerUrl });
+
+    setBackendGetter(() => backend);
     setSetting("SERVER_EXECUTION_ENABLED", "true");
-    lifecycleLog.info("server execution enabled");
 
     await startPortManager();
 
@@ -59,7 +66,7 @@ export async function enableExecution(): Promise<{ success: boolean; error?: str
 }
 
 /**
- * Disable server-side Docker execution.
+ * Disable server-side execution.
  */
 export async function disableExecution(): Promise<void> {
   setSetting("SERVER_EXECUTION_ENABLED", "false");
@@ -72,18 +79,27 @@ export async function disableExecution(): Promise<void> {
 export async function teardownExecution(): Promise<void> {
   stopPortManager();
 
-  if (localBackend) {
+  if (backend) {
     setBackendGetter(null);
-    await localBackend.destroyAll();
-    localBackend = null;
+    await backend.destroyAll();
+    backend = null;
     lifecycleLog.info("execution torn down — all containers destroyed");
   }
+}
+
+/**
+ * Reconnect to the runner service with current settings.
+ * Used when admin changes runner URL/key at runtime.
+ */
+export async function reconnectExecution(): Promise<{ success: boolean; error?: string }> {
+  await teardownExecution();
+  return enableExecution();
 }
 
 async function startPortManager(): Promise<void> {
   if (portManager) return;
 
-  const manager = new PortManager(() => localBackend);
+  const manager = new PortManager(() => backend);
   await manager.init();
   portManager = manager;
   setRoutePortManager(manager);

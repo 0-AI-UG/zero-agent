@@ -1,18 +1,14 @@
 /**
- * Browser action executor — server-side port of companion/src/actions.ts.
- * All CDP-based browser actions for the local execution backend.
+ * Browser action executor — CDP-based browser automation.
  */
 import type { CdpClient } from "./cdp.ts";
-import type { BrowserAction, BrowserResult } from "@/lib/browser/protocol.ts";
-import { log } from "@/lib/logger.ts";
+import type { BrowserAction, BrowserResult } from "./types.ts";
+import { log } from "./logger.ts";
 
 const actionLog = log.child({ module: "browser-actions" });
 
 export type RefMap = Map<string, { role: string; name: string; backendNodeId: number }>;
-
-/** Per-session cursor position for natural stealth mouse movement. */
 export type CursorState = { x: number; y: number };
-
 
 function randomBetween(min: number, max: number): number {
   return min + Math.random() * (max - min);
@@ -22,13 +18,9 @@ function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-/**
- * Generate a cubic Bezier curve path from (x0,y0) to (x1,y1) with randomized control points.
- */
 function bezierPath(x0: number, y0: number, x1: number, y1: number, steps: number): Array<{ x: number; y: number }> {
   const dx = x1 - x0;
   const dy = y1 - y0;
-
   const cp1x = x0 + dx * randomBetween(0.2, 0.4) + randomBetween(-50, 50);
   const cp1y = y0 + dy * randomBetween(0.2, 0.4) + randomBetween(-50, 50);
   const cp2x = x0 + dx * randomBetween(0.6, 0.8) + randomBetween(-50, 50);
@@ -92,7 +84,6 @@ async function getPageInfo(cdp: CdpClient) {
 }
 
 async function waitForLoad(cdp: CdpClient, timeout = 10000) {
-  // Check if already loaded (avoid waiting for event that already fired)
   try {
     const result = await cdp.send("Runtime.evaluate", {
       expression: "document.readyState",
@@ -101,9 +92,6 @@ async function waitForLoad(cdp: CdpClient, timeout = 10000) {
     if (result.result.value === "complete" || result.result.value === "interactive") return;
   } catch {}
 
-  // Wait for Page.loadEventFired or timeout.
-  // Use cdp.once() to avoid leaking listeners — each waitForLoad() call
-  // would otherwise permanently add a listener to the CDP client.
   return new Promise<void>((resolve) => {
     const timer = setTimeout(() => {
       cdp.off("Page.loadEventFired", handler);
@@ -118,7 +106,6 @@ async function waitForLoad(cdp: CdpClient, timeout = 10000) {
   });
 }
 
-/** Wait until no network requests are in-flight for `idleMs`, up to `timeout`. */
 async function waitForNetworkIdle(cdp: CdpClient, idleMs = 500, timeout = 5000): Promise<void> {
   await cdp.send("Network.enable").catch(() => {});
 
@@ -150,7 +137,6 @@ async function waitForNetworkIdle(cdp: CdpClient, idleMs = 500, timeout = 5000):
     cdp.on("Network.loadingFinished", onDone);
     cdp.on("Network.loadingFailed", onDone);
 
-    // If already idle, start the timer immediately
     startIdle();
   });
 }
@@ -171,7 +157,6 @@ async function resolveNode(cdp: CdpClient, backendNodeId: number): Promise<strin
 
 async function getNodeCenter(cdp: CdpClient, backendNodeId: number) {
   const objectId = await resolveNode(cdp, backendNodeId);
-
   const result = await cdp.send("Runtime.callFunctionOn", {
     objectId,
     functionDeclaration: `function() {
@@ -180,7 +165,6 @@ async function getNodeCenter(cdp: CdpClient, backendNodeId: number) {
     }`,
     returnByValue: true,
   });
-
   await cdp.send("Runtime.releaseObject", { objectId });
   return JSON.parse(result.result.value);
 }
@@ -241,13 +225,38 @@ async function focusAndType(cdp: CdpClient, backendNodeId: number, text: string,
   }
 }
 
+/** Max lines for a full snapshot before truncation. Interactive-only snapshots are not limited. */
+const MAX_SNAPSHOT_LINES = 400;
+
 async function buildA11ySnapshot(
   cdp: CdpClient,
-  options?: { relaxed?: boolean },
-): Promise<{ content: string; refMap: Map<string, { role: string; name: string; backendNodeId: number }> }> {
+  options?: { relaxed?: boolean; interactiveOnly?: boolean; selector?: string },
+): Promise<{ content: string; truncated?: boolean; refMap: Map<string, { role: string; name: string; backendNodeId: number }> }> {
   const refMap = new Map<string, { role: string; name: string; backendNodeId: number }>();
   let refCounter = 0;
   const relaxed = options?.relaxed ?? false;
+  const interactiveOnly = options?.interactiveOnly ?? false;
+
+  // If selector is provided, scope the tree to that element's subtree
+  let rootBackendNodeId: number | undefined;
+  if (options?.selector) {
+    try {
+      const { object } = await cdp.send("Runtime.evaluate", {
+        expression: `JSON.stringify((() => { const el = document.querySelector(${JSON.stringify(options.selector)}); return el ? true : false })())`,
+        returnByValue: true,
+      });
+      if (JSON.parse(object.value)) {
+        const doc = await cdp.send("DOM.getDocument", { depth: 0 });
+        const { nodeId } = await cdp.send("DOM.querySelector", { nodeId: doc.root.nodeId, selector: options.selector });
+        if (nodeId) {
+          const { node } = await cdp.send("DOM.describeNode", { nodeId });
+          rootBackendNodeId = node.backendNodeId;
+        }
+      }
+    } catch {
+      // Fall through to full tree if selector fails
+    }
+  }
 
   const { nodes } = await cdp.send("Accessibility.getFullAXTree", { depth: 50 }, 30_000);
 
@@ -260,6 +269,17 @@ async function buildA11ySnapshot(
       const kids = children.get(node.parentId) ?? [];
       kids.push(node.nodeId);
       children.set(node.parentId, kids);
+    }
+  }
+
+  // If scoped to a selector, find the subtree root in the A11y tree
+  let scopeNodeId: string | undefined;
+  if (rootBackendNodeId) {
+    for (const node of nodes) {
+      if (node.backendDOMNodeId === rootBackendNodeId) {
+        scopeNodeId = node.nodeId;
+        break;
+      }
     }
   }
 
@@ -277,8 +297,11 @@ async function buildA11ySnapshot(
   ]);
 
   const lines: string[] = [];
+  const lineLimit = interactiveOnly ? Infinity : MAX_SNAPSHOT_LINES;
+  let truncated = false;
 
   function renderNode(nodeId: string, depth: number) {
+    if (truncated) return;
     const node = nodeMap.get(nodeId);
     if (!node) return;
 
@@ -287,7 +310,6 @@ async function buildA11ySnapshot(
     const backendNodeId = node.backendDOMNodeId;
 
     if (skipRoles.has(role)) {
-      // Keep "generic" nodes that have a name and backendNodeId (likely interactive divs/spans)
       const keepGeneric = role === "generic" && name && backendNodeId;
       if (!keepGeneric) {
         const kids = children.get(nodeId) ?? [];
@@ -296,18 +318,30 @@ async function buildA11ySnapshot(
       }
     }
 
-    const indent = "  ".repeat(depth);
+    const isInteractive = interactiveRoles.has(role);
+
+    // In interactive-only mode, skip non-interactive elements but still recurse into children
+    if (interactiveOnly && !isInteractive) {
+      const kids = children.get(nodeId) ?? [];
+      for (const kid of kids) renderNode(kid, depth);
+      return;
+    }
+
+    // Check line budget before adding
+    if (lines.length >= lineLimit) {
+      truncated = true;
+      return;
+    }
 
     let ref = "";
     if (relaxed) {
-      // In relaxed mode, give refs to any node with a backendNodeId
       if (backendNodeId) {
         refCounter++;
         const refId = `e${refCounter}`;
         ref = ` [ref=${refId}]`;
         refMap.set(refId, { role, name, backendNodeId });
       }
-    } else if (backendNodeId && (interactiveRoles.has(role) || name)) {
+    } else if (backendNodeId && (isInteractive || name)) {
       refCounter++;
       const refId = `e${refCounter}`;
       ref = ` [ref=${refId}]`;
@@ -315,28 +349,56 @@ async function buildA11ySnapshot(
     }
 
     const nameStr = name ? ` "${name}"` : "";
-    lines.push(`${indent}- ${role}${nameStr}${ref}`);
+    // In interactive-only mode, render as flat list (no indentation)
+    if (interactiveOnly) {
+      lines.push(`- ${role}${nameStr}${ref}`);
+    } else {
+      const indent = "  ".repeat(depth);
+      lines.push(`${indent}- ${role}${nameStr}${ref}`);
+    }
 
-    const kids = children.get(nodeId) ?? [];
-    for (const kid of kids) renderNode(kid, depth + 1);
+    if (!interactiveOnly) {
+      const kids = children.get(nodeId) ?? [];
+      for (const kid of kids) renderNode(kid, depth + 1);
+    }
   }
 
-  const rootNode = nodes.find((n: any) => !n.parentId || n.role?.value === "RootWebArea");
-  if (rootNode) {
-    const kids = children.get(rootNode.nodeId) ?? [];
-    for (const kid of kids) renderNode(kid, 0);
+  // Start from scoped node or root
+  const startNode = scopeNodeId
+    ? nodeMap.get(scopeNodeId)
+    : nodes.find((n: any) => !n.parentId || n.role?.value === "RootWebArea");
+
+  if (startNode) {
+    if (scopeNodeId) {
+      renderNode(scopeNodeId, 0);
+    } else {
+      const kids = children.get(startNode.nodeId) ?? [];
+      for (const kid of kids) renderNode(kid, 0);
+    }
   }
 
-  return { content: lines.join("\n"), refMap };
+  if (truncated) {
+    lines.push(`\n[...truncated at ${lineLimit} lines — use snapshot with a CSS selector to see specific sections, e.g. selector: "main", "article", "#content"]`);
+  }
+
+  return { content: lines.join("\n"), truncated, refMap };
 }
 
+/** Strip ref annotations from a snapshot line for content-identity comparison. */
+function stripRefs(line: string): string {
+  return line.replace(/ \[ref=e\d+\]/g, "");
+}
 
-/** Per-session state for smart snapshot caching. */
+/** Threshold: if more than this fraction of lines are unchanged, use incremental format. */
+const INCREMENTAL_THRESHOLD = 0.5;
+
 export interface SnapshotCache {
-  /** Set true by DOM.documentUpdated listener or after navigation. */
   dirty: boolean;
-  /** Last rendered snapshot content, reused when tree is clean. */
   lastContent: string;
+  /** Ref-stripped lines from previous snapshot, for incremental diffing. */
+  prevLines?: string[];
+  /** URL of the page when prevLines was captured. */
+  prevUrl?: string;
 }
 
 export async function executeAction(
@@ -353,53 +415,108 @@ export async function executeAction(
   const snapshotCache = options?.snapshotCache;
   actionLog.info("executeAction start", { action: action.type, cdpHost, stealth: !!stealth });
 
-  async function fullSnapshot(): Promise<string> {
+  async function takeSnapshot(opts?: { interactiveOnly?: boolean; selector?: string }): Promise<string> {
     const snapStart = Date.now();
-    let snap = await buildA11ySnapshot(cdp);
+    const interactiveOnly = opts?.interactiveOnly ?? false;
+    let snap = await buildA11ySnapshot(cdp, { interactiveOnly, selector: opts?.selector });
     refMap.clear();
     for (const [k, v] of snap.refMap) refMap.set(k, v);
 
-    // Fallback: if no refs found, retry with relaxed filtering
     if (refMap.size === 0) {
-      actionLog.info("fullSnapshot: zero refs, retrying with relaxed filtering");
-      snap = await buildA11ySnapshot(cdp, { relaxed: true });
+      actionLog.info("takeSnapshot: zero refs, retrying with relaxed filtering");
+      snap = await buildA11ySnapshot(cdp, { relaxed: true, interactiveOnly, selector: opts?.selector });
       refMap.clear();
       for (const [k, v] of snap.refMap) refMap.set(k, v);
     }
 
     let content = snap.content;
 
-    // If still empty, provide guidance instead of blank output
     if (!content && refMap.size === 0) {
       content = "[No interactive elements found in page accessibility tree. " +
-        "Try: screenshot to see the page visually, evaluate to inspect the DOM with JavaScript, " +
-        "or wait and snapshot again if the page is still loading.]";
+        "Try: snapshot with mode 'full' to see all content, screenshot to see the page visually, " +
+        "evaluate to inspect the DOM with JavaScript, or wait and snapshot again if the page is still loading.]";
     }
 
+    // Attempt incremental diff against previous snapshot
+    const currentLines = content.split("\n");
+    const currentStripped = currentLines.map(stripRefs);
+    const { url: currentUrl } = await getPageInfo(cdp);
+
+    if (
+      snapshotCache?.prevLines &&
+      snapshotCache.prevUrl === currentUrl &&
+      !opts?.selector // selectors change scope, always send full
+    ) {
+      const prevSet = new Set(snapshotCache.prevLines);
+      const currSet = new Set(currentStripped);
+
+      const added: string[] = [];
+      const removed: string[] = [];
+
+      // Lines in current but not in previous (use original lines with refs)
+      for (let i = 0; i < currentLines.length; i++) {
+        if (!prevSet.has(currentStripped[i]!)) {
+          added.push(currentLines[i]!);
+        }
+      }
+      // Lines in previous but not in current (ref-stripped, since old refs are stale)
+      for (const prevLine of snapshotCache.prevLines) {
+        if (!currSet.has(prevLine)) {
+          removed.push(prevLine);
+        }
+      }
+
+      const unchanged = currentLines.length - added.length;
+      const isIncremental = unchanged / Math.max(currentLines.length, 1) >= INCREMENTAL_THRESHOLD;
+
+      if (isIncremental && (added.length > 0 || removed.length > 0)) {
+        const parts: string[] = [];
+        parts.push(`[Incremental snapshot — ${unchanged} unchanged, ${added.length} added, ${removed.length} removed]`);
+
+        if (added.length > 0) {
+          parts.push("", "Added:", ...added);
+        }
+        if (removed.length > 0) {
+          parts.push("", "Removed:", ...removed);
+        }
+
+        // Always include interactive elements with current refs
+        const interactiveLines = currentLines.filter((_, i) => {
+          const line = currentStripped[i]!;
+          return /^-?\s*- (button|link|textbox|checkbox|radio|combobox|menuitem|tab|switch|slider|searchbox|spinbutton|option)/.test(line.trimStart());
+        });
+        if (interactiveLines.length > 0) {
+          parts.push("", "Interactive elements:", ...interactiveLines);
+        }
+
+        content = parts.join("\n");
+        actionLog.info("takeSnapshot incremental", {
+          unchanged, added: added.length, removed: removed.length,
+          interactiveElements: interactiveLines.length,
+          fullLength: currentLines.length, incrementalLength: content.length,
+          elapsedMs: Date.now() - snapStart,
+        });
+      }
+    }
+
+    // Update cache
     if (snapshotCache) {
       snapshotCache.lastContent = content;
+      snapshotCache.prevLines = currentStripped;
+      snapshotCache.prevUrl = currentUrl;
       snapshotCache.dirty = false;
     }
-    actionLog.info("fullSnapshot complete", { refs: refMap.size, contentLength: content.length, elapsedMs: Date.now() - snapStart });
+    actionLog.info("takeSnapshot complete", { interactiveOnly, refs: refMap.size, contentLength: content.length, elapsedMs: Date.now() - snapStart });
     return content;
   }
 
-  /** Smart snapshot: skip full a11y tree rebuild when DOM hasn't changed. */
-  async function autoSnapshot(urlBefore?: string): Promise<string> {
-    // Always do full rebuild if no cache, cache is dirty, or URL changed (navigation)
-    if (!snapshotCache || snapshotCache.dirty || !snapshotCache.lastContent) {
-      return fullSnapshot();
+  /** Take an interactive-only snapshot only if navigation occurred. Returns undefined if no nav. */
+  async function snapshotIfNavigated(urlBefore: string): Promise<string | undefined> {
+    const { url: urlAfter } = await getPageInfo(cdp);
+    if (urlAfter !== urlBefore) {
+      return takeSnapshot({ interactiveOnly: true });
     }
-    // Check if URL changed (indicates navigation)
-    if (urlBefore) {
-      const { url: urlAfter } = await getPageInfo(cdp);
-      if (urlAfter !== urlBefore) {
-        return fullSnapshot();
-      }
-    }
-    // Tree is clean — reuse cached snapshot
-    actionLog.info("autoSnapshot skipped (tree clean)", { cachedLength: snapshotCache.lastContent.length });
-    return snapshotCache.lastContent;
+    return undefined;
   }
 
   function isStaleNodeError(err: unknown): boolean {
@@ -411,31 +528,27 @@ export async function executeAction(
   }
 
   async function reResolveRef(ref: string): Promise<number> {
-    await autoSnapshot();
+    await takeSnapshot({ interactiveOnly: true });
     return resolveRef(refMap, ref);
   }
 
   switch (action.type) {
     case "navigate": {
-      actionLog.info("navigate", { url: action.url });
       await cdp.send("Page.navigate", { url: action.url }, 30_000);
       await waitForLoad(cdp);
       await waitForNetworkIdle(cdp);
       const info = await getPageInfo(cdp);
-      actionLog.info("navigate loaded", { url: info.url, title: info.title, elapsedMs: Date.now() - startTime });
-      const snapshot = await fullSnapshot(); // Always rebuild after navigation
+      const snapshot = await takeSnapshot({ interactiveOnly: true });
       return { type: "done", ...info, message: `Navigated to ${action.url}`, snapshot };
     }
 
     case "click": {
-      actionLog.info("click", { ref: action.ref });
       const urlBefore = (await getPageInfo(cdp)).url;
       let nodeId = resolveRef(refMap, action.ref);
       try {
         await clickNode(cdp, nodeId, stealth, cursor);
       } catch (err) {
         if (isStaleNodeError(err)) {
-          actionLog.info("click stale node, re-resolving", { ref: action.ref });
           try {
             nodeId = await reResolveRef(action.ref);
             await clickNode(cdp, nodeId, stealth, cursor);
@@ -446,20 +559,18 @@ export async function executeAction(
       }
       await waitForLoad(cdp, 5000).catch(() => {});
       const info = await getPageInfo(cdp);
-      const snapshot = await autoSnapshot(urlBefore);
-      actionLog.info("click done", { ref: action.ref, title: info.title, elapsedMs: Date.now() - startTime });
+      if (snapshotCache) snapshotCache.dirty = true;
+      const snapshot = await snapshotIfNavigated(urlBefore);
       return { type: "done", ...info, message: `Clicked [${action.ref}]`, snapshot };
     }
 
     case "type": {
-      actionLog.info("type", { ref: action.ref, textLength: action.text.length, submit: action.submit });
       const urlBefore = (await getPageInfo(cdp)).url;
       let nodeId = resolveRef(refMap, action.ref);
       try {
         await focusAndType(cdp, nodeId, action.text, stealth);
       } catch (err) {
         if (isStaleNodeError(err)) {
-          actionLog.info("type stale node, re-resolving", { ref: action.ref });
           try {
             nodeId = await reResolveRef(action.ref);
             await focusAndType(cdp, nodeId, action.text, stealth);
@@ -474,8 +585,8 @@ export async function executeAction(
         await waitForLoad(cdp, 5000).catch(() => {});
       }
       const info = await getPageInfo(cdp);
-      const snapshot = action.submit ? await autoSnapshot(urlBefore) : await autoSnapshot(urlBefore);
-      actionLog.info("type done", { ref: action.ref, title: info.title, elapsedMs: Date.now() - startTime });
+      if (snapshotCache) snapshotCache.dirty = true;
+      const snapshot = await snapshotIfNavigated(urlBefore);
       return { type: "done", ...info, message: `Typed into [${action.ref}]`, snapshot };
     }
 
@@ -513,7 +624,8 @@ export async function executeAction(
         } else throw err;
       }
       const info = await getPageInfo(cdp);
-      const snapshot = await autoSnapshot(urlBefore);
+      if (snapshotCache) snapshotCache.dirty = true;
+      const snapshot = await snapshotIfNavigated(urlBefore);
       return { type: "done", ...info, message: `Selected "${action.value}" in [${action.ref}]`, snapshot };
     }
 
@@ -542,9 +654,8 @@ export async function executeAction(
         } else throw err;
       }
       const info = await getPageInfo(cdp);
-      // Hover doesn't change DOM — reuse cached snapshot
-      const snapshot = await autoSnapshot(info.url);
-      return { type: "done", ...info, message: `Hovered [${action.ref}]`, snapshot };
+      if (snapshotCache) snapshotCache.dirty = true;
+      return { type: "done", ...info, message: `Hovered [${action.ref}]` };
     }
 
     case "scroll": {
@@ -557,9 +668,8 @@ export async function executeAction(
       }
       await cdp.send("Input.dispatchMouseEvent", { type: "mouseWheel", x: scrollX, y: scrollY, deltaX: 0, deltaY: delta });
       const info = await getPageInfo(cdp);
-      // Scroll doesn't change DOM — reuse cached snapshot
-      const snapshot = await autoSnapshot(info.url);
-      return { type: "done", ...info, message: `Scrolled ${action.direction} ${amount}px`, snapshot };
+      if (snapshotCache) snapshotCache.dirty = true;
+      return { type: "done", ...info, message: `Scrolled ${action.direction} ${amount}px` };
     }
 
     case "back": {
@@ -585,7 +695,7 @@ export async function executeAction(
       await waitForLoad(cdp);
       await waitForNetworkIdle(cdp);
       const info = await getPageInfo(cdp);
-      const snapshot = await fullSnapshot(); // Always rebuild after reload
+      const snapshot = await takeSnapshot({ interactiveOnly: true });
       return { type: "done", ...info, message: "Page reloaded", snapshot };
     }
 
@@ -596,23 +706,19 @@ export async function executeAction(
     }
 
     case "snapshot": {
-      actionLog.info("snapshot start");
-      const content = await fullSnapshot(); // Explicit snapshot always does full rebuild
+      const interactiveOnly = action.mode !== "full";
+      const content = await takeSnapshot({ interactiveOnly, selector: action.selector });
       const info = await getPageInfo(cdp);
-      actionLog.info("snapshot done", { refs: refMap.size, contentLength: content.length, title: info.title, elapsedMs: Date.now() - startTime });
       return { type: "snapshot", ...info, content };
     }
 
     case "screenshot": {
-      actionLog.info("screenshot start");
       const result = await cdp.send("Page.captureScreenshot", { format: "jpeg", quality: 75 }, 15_000);
       const info = await getPageInfo(cdp);
-      actionLog.info("screenshot done", { base64Length: result.data?.length, title: info.title, elapsedMs: Date.now() - startTime });
       return { type: "screenshot", ...info, base64: result.data };
     }
 
     case "evaluate": {
-      actionLog.info("evaluate", { scriptLength: action.script.length, scriptPreview: action.script.slice(0, 100) });
       const result = await cdp.send("Runtime.evaluate", {
         expression: action.script,
         returnByValue: true,
@@ -624,12 +730,7 @@ export async function executeAction(
       const res = await fetch(`http://${cdpHost}:${cdpPort}/json/list`);
       const targets = (await res.json()) as Array<{ id: string; type: string; url: string; title: string }>;
       const pages = targets.filter((t) => t.type === "page");
-      const tabs = pages.map((t, i) => ({
-        index: i,
-        url: t.url,
-        title: t.title,
-        active: false,
-      }));
+      const tabs = pages.map((t, i) => ({ index: i, url: t.url, title: t.title, active: false }));
       return { type: "tabs", tabs };
     }
 

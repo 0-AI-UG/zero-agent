@@ -2,16 +2,12 @@
   "name": "zero-agent",
   "private": true,
   "type": "module",
-  "workspaces": ["web"],
+  "workspaces": ["web", "runner"],
   "scripts": {
     "dev": "bun --env-file=.env --hot server/index.ts",
     "build": "bun run --cwd web build",
     "compile": "bun run build.ts",
-    "start": "NODE_ENV=production bun server/index.ts",
-    "desktop:dev": "ZERO_AGENT_DEV=1 ZERO_AGENT_ROOT=$PWD sh -c 'cd desktop && bunx electrobun dev --watch'",
-    "desktop:build": "cd desktop && bunx electrobun build",
-    "companion:dev": "cd companion && bunx electrobun dev --watch",
-    "companion:build": "cd companion && bunx electrobun build"
+    "start": "NODE_ENV=production bun server/index.ts"
   },
   "dependencies": {
     "@0-ai/s3lite": "^0.3.0",

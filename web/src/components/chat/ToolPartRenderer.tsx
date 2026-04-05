@@ -16,6 +16,8 @@ import {
   MonitorIcon,
   NetworkIcon,
   PencilIcon,
+  PlugIcon,
+  SendIcon,
   TerminalSquareIcon,
   SearchIcon,
   SparklesIcon,
@@ -95,7 +97,7 @@ const TOOL_CONFIG: Record<
   loadTools: {
     label: "Loaded tools",
     activeLabel: "Loading tools",
-    icon: SearchIcon,
+    icon: PlugIcon,
   },
   moveFile: {
     label: "Moved file",
@@ -166,6 +168,11 @@ const TOOL_CONFIG: Record<
     label: "Forwarded port",
     activeLabel: "Forwarding port",
     icon: NetworkIcon,
+  },
+  sendTelegramMessage: {
+    label: "Sent message",
+    activeLabel: "Sending message",
+    icon: SendIcon,
   },
 };
 
@@ -252,6 +259,12 @@ function getToolDetail(toolName: string, input: unknown): string | null {
       if (typeof label === "string") return `${label} (:${port})`;
       return typeof port === "number" ? `Port ${port}` : null;
     }
+    case "loadTools": {
+      const names = inp.names as string[] | undefined;
+      return names ? names.join(", ") : null;
+    }
+    case "sendTelegramMessage":
+      return typeof inp.chatId === "string" ? `to ${inp.chatId}` : null;
     default:
       return null;
   }
@@ -753,10 +766,7 @@ export const ToolCallPart = memo(function ToolCallPart({
   const toolName = getToolName(part);
 
   // Hide internal tools from chat
-  if (toolName === "loadTools") return null;
   if (toolName === "progressCreate" || toolName === "progressUpdate" || toolName === "progressList") return null;
-
-
 
   const isLoading =
     part.state === "input-streaming" || part.state === "input-available";

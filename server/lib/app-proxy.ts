@@ -6,15 +6,16 @@
 import { getPortBySlug } from "@/db/queries/apps.ts";
 import { verifyAppToken } from "@/lib/auth.ts";
 import { corsHeaders } from "@/lib/cors.ts";
+import { getSetting } from "@/lib/settings.ts";
 import { log } from "@/lib/logger.ts";
 
 const proxyLog = log.child({ module: "app-proxy" });
 
-// Simple in-memory cache for slug → { ip, port, pinned } lookups
-const slugCache = new Map<string, { ip: string; port: number; pinned: boolean; expiresAt: number }>();
+// Simple in-memory cache for slug → { ip, port, pinned, projectId } lookups
+const slugCache = new Map<string, { ip: string; port: number; pinned: boolean; projectId: string; expiresAt: number }>();
 const CACHE_TTL = 60_000;
 
-function getCached(slug: string): { ip: string; port: number; pinned: boolean } | null {
+function getCached(slug: string): { ip: string; port: number; pinned: boolean; projectId: string } | null {
   const cached = slugCache.get(slug);
   if (cached && Date.now() < cached.expiresAt) {
     return cached;
@@ -23,8 +24,8 @@ function getCached(slug: string): { ip: string; port: number; pinned: boolean } 
   return null;
 }
 
-function setCache(slug: string, ip: string, port: number, pinned: boolean): void {
-  slugCache.set(slug, { ip, port, pinned, expiresAt: Date.now() + CACHE_TTL });
+function setCache(slug: string, ip: string, port: number, pinned: boolean, projectId: string): void {
+  slugCache.set(slug, { ip, port, pinned, projectId, expiresAt: Date.now() + CACHE_TTL });
 }
 
 /** Invalidate cache for a slug (call after changes). */
@@ -49,8 +50,8 @@ export async function proxyAppRequest(slug: string, request: Request): Promise<R
       return new Response("Service is not active", { status: 503 });
     }
 
-    setCache(slug, row.container_ip, row.port, row.pinned === 1);
-    entry = { ip: row.container_ip, port: row.port, pinned: row.pinned === 1 };
+    setCache(slug, row.container_ip, row.port, row.pinned === 1, row.project_id);
+    entry = { ip: row.container_ip, port: row.port, pinned: row.pinned === 1, projectId: row.project_id };
   }
 
   // Auth via short-lived app token in query string
@@ -69,7 +70,15 @@ export async function proxyAppRequest(slug: string, request: Request): Promise<R
   const upstreamPath = url.pathname.slice(prefixLen) || "/";
   url.searchParams.delete("token");
   const upstreamSearch = url.searchParams.toString();
-  const upstreamUrl = `http://${entry.ip}:${entry.port}${upstreamPath}${upstreamSearch ? `?${upstreamSearch}` : ""}`;
+
+  const runnerUrl = getSetting("RUNNER_URL");
+  if (!runnerUrl) {
+    return new Response("Runner not configured", { status: 503 });
+  }
+
+  const containerName = `session-${entry.projectId}`;
+  const pathSuffix = upstreamPath.startsWith("/") ? upstreamPath.slice(1) : upstreamPath;
+  const upstreamUrl = `${runnerUrl}/proxy/${encodeURIComponent(containerName)}/${entry.port}/${pathSuffix}${upstreamSearch ? `?${upstreamSearch}` : ""}`;
 
   try {
     const headers = new Headers(request.headers);
@@ -77,6 +86,12 @@ export async function proxyAppRequest(slug: string, request: Request): Promise<R
     headers.set("X-Forwarded-Proto", url.protocol.replace(":", ""));
     headers.set("X-Forwarded-Host", url.host);
     headers.delete("host");
+
+    // Add runner auth when proxying through runner
+    const runnerApiKey = getSetting("RUNNER_API_KEY");
+    if (runnerApiKey) {
+      headers.set("Authorization", `Bearer ${runnerApiKey}`);
+    }
 
     const isIdempotent = request.method === "GET" || request.method === "HEAD" || request.method === "OPTIONS";
     if (!isIdempotent) {

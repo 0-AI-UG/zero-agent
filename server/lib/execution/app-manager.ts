@@ -3,6 +3,7 @@
  * Processes are started by the bash tool; this only manages restart for pinned services.
  */
 import { log } from "@/lib/logger.ts";
+import type { ExecutionBackend } from "./backend-interface.ts";
 import {
   getAllActivePorts,
   getActivePortsByProject,
@@ -10,15 +11,14 @@ import {
   updatePort,
 } from "@/db/queries/apps.ts";
 import { invalidateAppCache } from "@/lib/app-proxy.ts";
-import { docker } from "@/lib/docker-client.ts";
 
 const portLog = log.child({ module: "port-manager" });
 
 export class PortManager {
   private healthInterval: ReturnType<typeof setInterval> | null = null;
-  private getBackend: () => import("./local-backend.ts").LocalBackend | null;
+  private getBackend: () => ExecutionBackend | null;
 
-  constructor(getBackend: () => import("./local-backend.ts").LocalBackend | null) {
+  constructor(getBackend: () => ExecutionBackend | null) {
     this.getBackend = getBackend;
   }
 
@@ -39,10 +39,16 @@ export class PortManager {
    * Restart pinned ports for a project after session resume.
    * Runs each pinned port's start_command in the session container.
    */
-  async restartPinnedForProject(projectId: string, containerName: string, containerIp: string): Promise<void> {
+  async restartPinnedForProject(projectId: string): Promise<void> {
     const ports = getPinnedPortsByProject(projectId);
     const restartable = ports.filter(p => p.start_command);
     if (restartable.length === 0) return;
+
+    const backend = this.getBackend();
+    if (!backend) return;
+
+    const session = backend.getSessionForProject(projectId);
+    const containerName = session?.containerName ?? `session-${projectId}`;
 
     portLog.info("restarting pinned ports after session resume", { projectId, count: restartable.length });
 
@@ -59,13 +65,13 @@ export class PortManager {
           `cd ${workingDir} && ${envExports} && nohup bash -c '${port.start_command!.replace(/'/g, "'\\''")}' > /tmp/port-${port.port}.log 2>&1 & echo $!`,
         ];
 
-        const result = await docker.exec(containerName, cmd, { timeout: 15_000 });
+        const result = await backend.execInContainer(projectId, cmd, { timeout: 15_000 });
         const pid = result.stdout.trim();
 
         if (pid && result.exitCode === 0) {
-          const ready = await this.waitForPort(containerIp, port.port, 15_000);
+          const ready = await this.waitForPort(projectId, port.port, 15_000);
           if (ready) {
-            updatePort(port.id, { container_ip: containerIp, status: "active" });
+            updatePort(port.id, { container_ip: containerName, status: "active" });
             invalidateAppCache(port.slug);
             portLog.info("pinned port restarted", { portId: port.id, slug: port.slug, port: port.port, pid });
           } else {
@@ -114,7 +120,7 @@ export class PortManager {
         `cd ${workingDir} && ${envExports} && nohup bash -c '${port.start_command.replace(/'/g, "'\\''")}' > /tmp/port-${port.port}.log 2>&1 & echo $!`,
       ];
 
-      const result = await docker.exec(session.containerName, cmd, { timeout: 15_000 });
+      const result = await backend.execInContainer(projectId, cmd, { timeout: 15_000 });
       const pid = result.stdout.trim();
 
       if (!pid || result.exitCode !== 0) {
@@ -122,42 +128,47 @@ export class PortManager {
       }
 
       // Wait for the process to bind the port
-      const ready = await this.waitForPort(session.containerIp, port.port, 15_000);
+      const ready = await this.waitForPort(projectId, port.port, 15_000);
       if (!ready) {
         portLog.warn("cold-start process started but port not ready", { portId: port.id, port: port.port, pid });
         return { success: false, error: "Process started but port not listening within timeout" };
       }
     } else {
       // No start command — just ensure session is up, check if port is already listening
-      const ready = await this.waitForPort(session.containerIp, port.port, 5_000);
+      const ready = await this.waitForPort(projectId, port.port, 5_000);
       if (!ready) {
         return { success: false, error: "No start command saved and port is not listening. Start the server from chat." };
       }
     }
 
-    updatePort(port.id, { container_ip: session.containerIp, status: "active", error: null });
+    updatePort(port.id, { container_ip: session.containerName, status: "active", error: null });
     invalidateAppCache(port.slug);
     portLog.info("cold-start successful", { portId: port.id, slug: port.slug, port: port.port });
     return { success: true };
   }
 
   /**
-   * Poll until a TCP port is accepting connections.
+   * Poll until a port is accepting connections (checked via runner proxy).
    */
-  private async waitForPort(ip: string, port: number, maxWaitMs: number): Promise<boolean> {
+  private async waitForPort(projectId: string, port: number, maxWaitMs: number): Promise<boolean> {
+    const backend = this.getBackend();
+    if (!backend) return false;
+
     const start = Date.now();
     while (Date.now() - start < maxWaitMs) {
-      try {
-        const res = await fetch(`http://${ip}:${port}/`, { method: "HEAD", redirect: "manual" });
-        // Any response (even 4xx/5xx) means the server is listening
-        void res;
-        return true;
-      } catch {
-        // Connection refused — wait and retry
-      }
+      if (await backend.checkPort(projectId, port)) return true;
       await new Promise((r) => setTimeout(r, 500));
     }
     return false;
+  }
+
+  /**
+   * Check if a port is reachable (delegates to backend).
+   */
+  async checkPort(projectId: string, port: number): Promise<boolean> {
+    const backend = this.getBackend();
+    if (!backend) return false;
+    return backend.checkPort(projectId, port);
   }
 
   /**
@@ -183,9 +194,15 @@ export class PortManager {
 
     for (const port of activePorts) {
       const backend = this.getBackend();
-      const session = backend?.getSessionForProject(port.project_id);
+      if (!backend) {
+        updatePort(port.id, { status: "stopped", container_ip: null });
+        invalidateAppCache(port.slug);
+        reconciled++;
+        continue;
+      }
 
-      if (!session) {
+      const hasSession = await backend.hasContainer(port.project_id);
+      if (!hasSession) {
         updatePort(port.id, { status: "stopped", container_ip: null });
         invalidateAppCache(port.slug);
         reconciled++;
@@ -198,17 +215,29 @@ export class PortManager {
   }
 
   /**
-   * Periodic health check — verify active ports still have reachable sessions.
+   * Periodic health check — verify active ports still have reachable sessions
+   * and that the port is actually listening.
    */
   private async healthCheck(): Promise<void> {
     const ports = getAllActivePorts();
     for (const port of ports) {
       const backend = this.getBackend();
-      const session = backend?.getSessionForProject(port.project_id);
-      if (!session) {
+      if (!backend) continue;
+
+      const hasSession = await backend.hasContainer(port.project_id);
+      if (!hasSession) {
         updatePort(port.id, { status: "stopped", container_ip: null });
         invalidateAppCache(port.slug);
         portLog.warn("health check: session gone for active port", { portId: port.id, slug: port.slug });
+        continue;
+      }
+
+      // Verify the port is actually listening via runner proxy
+      const reachable = await backend.checkPort(port.project_id, port.port);
+      if (!reachable) {
+        updatePort(port.id, { status: "stopped" });
+        invalidateAppCache(port.slug);
+        portLog.warn("health check: port not listening", { portId: port.id, slug: port.slug, port: port.port });
       }
     }
   }

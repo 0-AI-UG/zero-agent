@@ -13,7 +13,7 @@ export function createBrowserTool(userId: string, projectId: string, modelId?: s
   return {
     browser: tool({
       description:
-        "Control the browser. Actions: navigate (go to URL), click/type/select/hover (interact with elements by ref like [e1]), scroll, back/forward/reload, wait, snapshot (get page accessibility tree), screenshot (capture visible page), evaluate (run JS), tabs/switchTab/closeTab (manage tabs). Always take a snapshot first to see the page, then use element refs [e1], [e2] etc. to interact. Mutating actions (click, type, select, hover, scroll, navigate) automatically return an updated snapshot.",
+        "Control the browser. Actions: navigate (go to URL), click/type/select/hover (interact with elements by ref like [e1]), scroll, back/forward/reload, wait, snapshot (get page state), screenshot (capture visible page), evaluate (run JS), tabs/switchTab/closeTab (manage tabs). Take a snapshot first to discover interactive elements, then use refs [e1], [e2] to interact. Snapshot modes: 'interactive' (default, flat list of buttons/links/inputs — cheap) or 'full' (complete accessibility tree with all text content — use when you need to read page text). You can also scope snapshots to a CSS selector. After click/type/select/hover/scroll, only a confirmation is returned — take a new snapshot if you need to see the updated page.",
       inputSchema: z.object({
         stealth: z.boolean().optional().describe("Enable human-like mouse movement and typing delays for bot detection avoidance. Default: false (fast mode)."),
         action: z.discriminatedUnion("type", [
@@ -40,7 +40,11 @@ export function createBrowserTool(userId: string, projectId: string, modelId?: s
           z.object({ type: z.literal("forward") }),
           z.object({ type: z.literal("reload") }),
           z.object({ type: z.literal("wait"), ms: z.number().max(10000).describe("Milliseconds to wait") }),
-          z.object({ type: z.literal("snapshot") }),
+          z.object({
+            type: z.literal("snapshot"),
+            mode: z.enum(["interactive", "full"]).optional().describe("'interactive' (default): flat list of buttons, links, inputs. 'full': complete accessibility tree with all text content."),
+            selector: z.string().optional().describe("CSS selector to scope the snapshot to (e.g. 'main', '#content', 'nav')"),
+          }),
           z.object({ type: z.literal("screenshot") }),
           z.object({ type: z.literal("evaluate"), script: z.string().describe("JavaScript to evaluate in page") }),
           z.object({ type: z.literal("tabs") }),
@@ -71,11 +75,12 @@ export function createBrowserTool(userId: string, projectId: string, modelId?: s
             value: `Page snapshot: ${result.title} (${result.url})\n\n${result.content}`,
           };
         }
-        if (result?.type === "done" && typeof result.snapshot === "string") {
-          return {
-            type: "text" as const,
-            value: `${result.message} — ${result.title} (${result.url})\n\n${result.snapshot}`,
-          };
+        if (result?.type === "done") {
+          const base = `${result.message} — ${result.title} (${result.url})`;
+          if (typeof result.snapshot === "string") {
+            return { type: "text" as const, value: `${base}\n\n${result.snapshot}` };
+          }
+          return { type: "text" as const, value: base };
         }
         return { type: "json" as const, value: (output ?? null) as import("@ai-sdk/provider").JSONValue };
       },
@@ -88,6 +93,8 @@ export function createBrowserTool(userId: string, projectId: string, modelId?: s
           toolLog.warn("no browser backend available", { userId, projectId });
           return { error: "Code execution is not available. Docker may not be running." };
         }
+
+        await backend.ensureContainer(userId, projectId);
 
         // Execute with retry on transient failures
         const MAX_RETRIES = 2;

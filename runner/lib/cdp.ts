@@ -1,10 +1,9 @@
 /**
  * Raw CDP (Chrome DevTools Protocol) client over WebSocket.
- * Server-side port of companion/src/cdp.ts — zero external dependencies.
  */
 import { enableDomainsStealthy } from "./stealth.ts";
-import { deferAsync } from "@/lib/deferred.ts";
-import { log } from "@/lib/logger.ts";
+import { deferAsync } from "./deferred.ts";
+import { log } from "./logger.ts";
 
 const cdpLog = log.child({ module: "cdp" });
 
@@ -24,7 +23,6 @@ export class CdpClient {
     this._ready = new Promise((r) => (this._resolveReady = r));
   }
 
-  /** Register a callback for when the CDP connection closes (Chrome crash/quit). */
   set onClose(cb: () => void) {
     this._onClose = cb;
   }
@@ -53,7 +51,6 @@ export class CdpClient {
       this.ws.onclose = () => {
         this._closed = true;
         cdpLog.info("connection closed", { url: this.wsUrl, pendingCommands: this.pending.size });
-        // Reject all pending
         for (const [, p] of this.pending) {
           p.reject(new Error("CDP connection closed"));
         }
@@ -64,7 +61,6 @@ export class CdpClient {
       this.ws.onmessage = (event) => {
         const data = JSON.parse(typeof event.data === "string" ? event.data : event.data.toString());
 
-        // Response to a command
         if (data.id !== undefined) {
           const p = this.pending.get(data.id);
           if (p) {
@@ -78,7 +74,6 @@ export class CdpClient {
           return;
         }
 
-        // Event
         if (data.method) {
           const listeners = this.eventListeners.get(data.method);
           if (listeners) {
@@ -130,14 +125,7 @@ export class CdpClient {
   }
 }
 
-/**
- * Connect to a Chrome page target via CDP.
- * 1. List targets via HTTP
- * 2. Find first "page" target
- * 3. Connect via WebSocket to that target's debugger URL
- */
 export async function connectToPage(cdpHost: string, cdpPort: number): Promise<{ cdp: CdpClient; targetId: string }> {
-  // Defer fetches to avoid Bun event loop stalls with concurrent AbortSignal (oven-sh/bun#6366)
   const res = await deferAsync(() => fetch(`http://${cdpHost}:${cdpPort}/json/list`));
   const targets = (await res.json()) as Array<{
     id: string;
@@ -147,7 +135,6 @@ export async function connectToPage(cdpHost: string, cdpPort: number): Promise<{
     webSocketDebuggerUrl: string;
   }>;
 
-  // Find a page target (prefer non-blank)
   let target = targets.find((t) => t.type === "page" && !t.url.startsWith("chrome://"));
   if (!target) target = targets.find((t) => t.type === "page");
 
@@ -156,7 +143,6 @@ export async function connectToPage(cdpHost: string, cdpPort: number): Promise<{
     target = (await newTab.json()) as (typeof targets)[0];
   }
 
-  // Replace localhost in the WebSocket URL with the actual host (for container networking)
   const wsUrl = target.webSocketDebuggerUrl.replace(/127\.0\.0\.1|localhost/, cdpHost);
 
   const cdp = new CdpClient(wsUrl);

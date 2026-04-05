@@ -6,8 +6,7 @@ import {
   insertPort,
   getPortByProjectAndPort,
 } from "@/db/queries/apps.ts";
-import type { LocalBackend } from "@/lib/execution/local-backend.ts";
-import { docker } from "@/lib/docker-client.ts";
+import type { ExecutionBackend } from "@/lib/execution/backend-interface.ts";
 
 const toolLog = log.child({ module: "tool:ports" });
 
@@ -20,9 +19,9 @@ function slugify(name: string): string {
     + "-" + nanoid(4).toLowerCase();
 }
 
-let _getBackend: (() => LocalBackend | null) | null = null;
+let _getBackend: (() => ExecutionBackend | null) | null = null;
 
-export function setBackendGetter(getter: (() => LocalBackend | null) | null): void {
+export function setBackendGetter(getter: (() => ExecutionBackend | null) | null): void {
   _getBackend = getter;
 }
 
@@ -30,38 +29,33 @@ export function setBackendGetter(getter: (() => LocalBackend | null) | null): vo
  * Auto-detect the start command for a process listening on a given port.
  * Runs ss + /proc inspection inside the container.
  */
-async function detectStartCommand(containerName: string, port: number): Promise<{ command: string; cwd: string } | null> {
+async function detectStartCommand(backend: ExecutionBackend, projectId: string, port: number): Promise<{ command: string; cwd: string } | null> {
   try {
-    // Find PID listening on the port using multiple strategies
     let pid: string | null = null;
 
-    // Strategy 1: netstat (available in most containers)
-    const netstatResult = await docker.exec(containerName, [
+    const netstatResult = await backend.execInContainer(projectId, [
       "bash", "-c",
       `netstat -tlnp 2>/dev/null | grep -E ':${port}\\b' | head -1 | sed 's|.* \\([0-9]*\\)/.*|\\1|'`,
     ], { timeout: 5_000 });
     pid = netstatResult.stdout.trim() || null;
 
-    // Strategy 2: ss (if installed)
     if (!pid) {
-      const ssResult = await docker.exec(containerName, [
+      const ssResult = await backend.execInContainer(projectId, [
         "bash", "-c",
         `ss -tlnp 2>/dev/null | grep -E ':${port}\\b' | head -1 | grep -oP 'pid=\\K[0-9]+'`,
       ], { timeout: 5_000 });
       pid = ssResult.stdout.trim() || null;
     }
 
-    // Strategy 3: /proc/net/tcp scan (no external tools needed)
     if (!pid) {
       const hexPort = port.toString(16).toUpperCase().padStart(4, "0");
-      const procResult = await docker.exec(containerName, [
+      const procResult = await backend.execInContainer(projectId, [
         "bash", "-c",
         `grep -i ':${hexPort} ' /proc/net/tcp /proc/net/tcp6 2>/dev/null | grep ' 0A ' | head -1 | awk '{print $10}'`,
       ], { timeout: 5_000 });
       const inode = procResult.stdout.trim();
       if (inode && inode !== "0") {
-        // Find which PID owns this socket inode
-        const pidResult = await docker.exec(containerName, [
+        const pidResult = await backend.execInContainer(projectId, [
           "bash", "-c",
           `for p in /proc/[0-9]*/fd/*; do readlink "$p" 2>/dev/null | grep -q "socket:\\[${inode}\\]" && echo "$p" | cut -d/ -f3 && break; done`,
         ], { timeout: 5_000 });
@@ -71,10 +65,9 @@ async function detectStartCommand(containerName: string, port: number): Promise<
 
     if (!pid) return null;
 
-    // Read command line and cwd from /proc
     const [cmdResult, cwdResult] = await Promise.all([
-      docker.exec(containerName, ["bash", "-c", `cat /proc/${pid}/cmdline 2>/dev/null | tr '\\0' ' '`], { timeout: 5_000 }),
-      docker.exec(containerName, ["bash", "-c", `readlink /proc/${pid}/cwd 2>/dev/null`], { timeout: 5_000 }),
+      backend.execInContainer(projectId, ["bash", "-c", `cat /proc/${pid}/cmdline 2>/dev/null | tr '\\0' ' '`], { timeout: 5_000 }),
+      backend.execInContainer(projectId, ["bash", "-c", `readlink /proc/${pid}/cwd 2>/dev/null`], { timeout: 5_000 }),
     ]);
 
     const command = cmdResult.stdout.trim();
@@ -106,9 +99,14 @@ export function createPortTools(userId: string, projectId: string) {
           return { error: "Execution backend is not available." };
         }
 
-        const session = backend.getSessionForProject(projectId);
+        let session = backend.getSessionForProject(projectId);
         if (!session) {
-          return { error: "No active session. Run a command first to start a session." };
+          // Cache may have expired — check if container is actually running
+          const exists = await backend.hasContainer(projectId);
+          if (!exists) {
+            return { error: "No active session. Run a command first to start a session." };
+          }
+          session = await backend.ensureSessionForProject(projectId, userId);
         }
 
         try {
@@ -125,7 +123,7 @@ export function createPortTools(userId: string, projectId: string) {
           }
 
           // Auto-detect start command from running process
-          const detected = await detectStartCommand(session.containerName, port);
+          const detected = await detectStartCommand(backend, projectId, port);
 
           const portLabel = label || `Port ${port}`;
           const slug = slugify(portLabel);

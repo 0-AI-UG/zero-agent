@@ -1,5 +1,5 @@
 import { corsHeaders } from "@/lib/cors.ts";
-import { authenticateRequest, createToken, createTempToken, DESKTOP_MODE } from "@/lib/auth.ts";
+import { authenticateRequest, createToken, createTempToken } from "@/lib/auth.ts";
 import { AuthError } from "@/lib/errors.ts";
 import { validateBody, loginSchema } from "@/lib/validation.ts";
 import { getUserByEmail, getUserById, updateUserCompanionSharing } from "@/db/queries/users.ts";
@@ -129,12 +129,6 @@ export async function handleUpdateMe(request: Request): Promise<Response> {
     }
 
     if (body.newPassword !== undefined) {
-      if (DESKTOP_MODE) {
-        return Response.json(
-          { error: "Not available in desktop mode" },
-          { status: 404, headers: corsHeaders },
-        );
-      }
       if (!body.currentPassword) {
         return Response.json(
           { error: "Current password is required" },

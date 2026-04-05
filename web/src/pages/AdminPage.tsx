@@ -62,6 +62,7 @@ import {
   StarIcon,
   ToggleLeftIcon,
   ToggleRightIcon,
+  RefreshCwIcon,
 } from "lucide-react";
 import {
   useAdminUsers,
@@ -71,6 +72,8 @@ import {
   useAdminSettings,
   useUpdateSettings,
   useToggleExecution,
+  useRunnerStatus,
+  useReconnectRunner,
   type AdminUser,
 } from "@/api/admin";
 import {
@@ -90,6 +93,7 @@ import {
 } from "@/api/containers";
 import type { ModelConfig } from "@/stores/model";
 import { Switch } from "@/components/ui/switch";
+import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { toast } from "sonner";
 
@@ -296,6 +300,23 @@ function ServerExecutionSection() {
   const updateSettings = useUpdateSettings();
   const toggleExecution = useToggleExecution();
   const serverExecutionEnabled = settings?.SERVER_EXECUTION_ENABLED === "true";
+  const { data: runnerStatus } = useRunnerStatus();
+  const reconnectRunner = useReconnectRunner();
+
+  const [runnerUrl, setRunnerUrl] = useState("");
+  const [runnerApiKey, setRunnerApiKey] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
+  const [connectError, setConnectError] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+
+  const settingsRunnerUrl = settings?.RUNNER_URL ?? "";
+  const settingsRunnerApiKey = settings?.RUNNER_API_KEY ?? "";
+  const hasConnection = !!settingsRunnerUrl;
+
+  // Sync form fields from settings when not editing
+  if (!editing && runnerUrl !== settingsRunnerUrl) setRunnerUrl(settingsRunnerUrl);
+  if (!editing && runnerApiKey !== settingsRunnerApiKey) setRunnerApiKey(settingsRunnerApiKey);
 
   const { data: containers, isLoading: containersLoading } = useContainers();
   const destroyContainer = useDestroyContainer();
@@ -310,6 +331,46 @@ function ServerExecutionSection() {
     return `${Math.round(minutes / 60)}h ago`;
   }
 
+  async function handleConnect() {
+    setSaving(true);
+    setConnectError(null);
+    try {
+      if (runnerUrl) await updateSettings.mutateAsync({ RUNNER_URL: runnerUrl });
+      if (runnerApiKey) await updateSettings.mutateAsync({ RUNNER_API_KEY: runnerApiKey });
+      const result = await reconnectRunner.mutateAsync();
+      if (result.success) {
+        toast.success("Connected to runner");
+        setEditing(false);
+      } else {
+        setConnectError(result.error ?? "Failed to connect");
+      }
+    } catch {
+      setConnectError("Failed to save settings or reconnect");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDisconnect() {
+    setDisconnecting(true);
+    try {
+      await toggleExecution.mutateAsync(false);
+      await updateSettings.mutateAsync({ RUNNER_URL: "" });
+      await updateSettings.mutateAsync({ RUNNER_API_KEY: "" });
+      setRunnerUrl("");
+      setRunnerApiKey("");
+      setEditing(false);
+      setConnectError(null);
+      toast.success("Runner disconnected");
+    } catch {
+      toast.error("Failed to disconnect");
+    } finally {
+      setDisconnecting(false);
+    }
+  }
+
+  const showForm = editing || !hasConnection;
+
   return (
     <section className="space-y-4">
       <div className="flex items-center gap-2">
@@ -319,6 +380,87 @@ function ServerExecutionSection() {
           {running} running
         </span>
       </div>
+
+      {/* Runner Connection */}
+      <div className="rounded-lg border p-4 space-y-4">
+        <div className="flex items-center justify-between">
+          <p className="text-sm font-medium">Runner Connection</p>
+          <Badge variant={runnerStatus?.connected ? "default" : "secondary"} className="text-[10px]">
+            {runnerStatus?.connected ? "Connected" : "Disconnected"}
+          </Badge>
+        </div>
+
+        {showForm ? (
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">Runner URL</label>
+              <Input
+                type="text"
+                placeholder="http://runner:3100"
+                value={runnerUrl}
+                onChange={(e) => { setRunnerUrl(e.target.value); setEditing(true); }}
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">Runner API Key</label>
+              <Input
+                type="password"
+                placeholder="Enter API key (optional)"
+                value={runnerApiKey}
+                onChange={(e) => { setRunnerApiKey(e.target.value); setEditing(true); }}
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                onClick={handleConnect}
+                disabled={saving || !runnerUrl}
+              >
+                {saving ? <Spinner className="size-3 mr-1.5" /> : <RefreshCwIcon className="size-3 mr-1.5" />}
+                {saving ? "Connecting..." : "Connect"}
+              </Button>
+              {hasConnection && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => { setEditing(false); setRunnerUrl(settingsRunnerUrl); setRunnerApiKey(settingsRunnerApiKey); setConnectError(null); }}
+                >
+                  Cancel
+                </Button>
+              )}
+            </div>
+            {connectError && (
+              <div className="rounded-md bg-destructive/10 border border-destructive/20 px-3 py-2">
+                <p className="text-xs text-destructive">{connectError}</p>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-muted-foreground font-mono">{settingsRunnerUrl}</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button size="sm" variant="outline" onClick={() => setEditing(true)}>
+                <PencilIcon className="size-3 mr-1.5" />
+                Edit
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-destructive hover:text-destructive"
+                onClick={handleDisconnect}
+                disabled={disconnecting}
+              >
+                {disconnecting ? <Spinner className="size-3 mr-1.5" /> : <TrashIcon className="size-3 mr-1.5" />}
+                {disconnecting ? "Disconnecting..." : "Disconnect"}
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Execution Settings */}
       <div className="rounded-lg border p-4 space-y-4">
         <div className="flex items-center justify-between gap-4">
           <div className="space-y-1">
@@ -372,6 +514,8 @@ function ServerExecutionSection() {
           />
         </div>
       </div>
+
+      {/* Active Containers */}
       <div className="rounded-lg border">
         {containersLoading ? (
           <div className="p-4 text-xs text-muted-foreground">Loading...</div>

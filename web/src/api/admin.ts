@@ -136,6 +136,31 @@ export function useToggleExecution() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin", "settings"] });
+      queryClient.invalidateQueries({ queryKey: ["admin", "runner-status"] });
+      queryClient.invalidateQueries({ queryKey: ["capabilities"] });
+    },
+  });
+}
+
+export function useRunnerStatus() {
+  return useQuery({
+    queryKey: ["admin", "runner-status"],
+    queryFn: async () => {
+      return apiFetch<{ connected: boolean; containers: number }>("/admin/runner/status");
+    },
+    refetchInterval: 10_000,
+  });
+}
+
+export function useReconnectRunner() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      return apiFetch<{ success: boolean; error?: string }>("/admin/execution/reconnect", { method: "POST" });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin", "runner-status"] });
+      queryClient.invalidateQueries({ queryKey: ["admin", "settings"] });
       queryClient.invalidateQueries({ queryKey: ["capabilities"] });
     },
   });

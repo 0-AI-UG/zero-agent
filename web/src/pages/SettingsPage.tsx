@@ -15,14 +15,12 @@ import {
 } from "lucide-react";
 import { MembersManager } from "@/components/settings/MembersManager";
 import { TelegramManager } from "@/components/settings/TelegramManager";
-import { useDesktopMode } from "@/hooks/use-desktop-mode";
 
 export function SettingsPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const { project } = useOutletContext<{ project: Project }>();
   const updateProject = useUpdateProject(projectId!);
   const reindex = useReindexProject(projectId!);
-  const desktopMode = useDesktopMode();
 
   return (
     <div className="h-full overflow-y-auto">
@@ -37,7 +35,7 @@ export function SettingsPage() {
         </div>
 
         {/* Members section */}
-        {!desktopMode && <MembersManager projectId={projectId!} project={project} />}
+        <MembersManager projectId={projectId!} project={project} />
 
         {/* Telegram section */}
         <TelegramManager projectId={projectId!} />

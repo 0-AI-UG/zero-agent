@@ -28,9 +28,6 @@ COPY skills-lock.json ./skills-lock.json
 COPY web/ ./web/
 RUN bun run build
 
-# Bundle the session container Dockerfile for building at runtime
-COPY docker/session/ /app/docker/session/
-
 # Create data directories
 RUN mkdir -p /app/data/workspaces
 

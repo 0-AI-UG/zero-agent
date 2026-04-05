@@ -11,7 +11,7 @@ export type BrowserAction =
   | { type: "forward" }
   | { type: "reload" }
   | { type: "wait"; ms: number }
-  | { type: "snapshot" }
+  | { type: "snapshot"; mode?: "interactive" | "full"; selector?: string }
   | { type: "screenshot" }
   | { type: "evaluate"; script: string }
   | { type: "tabs" }

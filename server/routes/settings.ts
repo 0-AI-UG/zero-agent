@@ -1,6 +1,6 @@
 import { corsHeaders } from "@/lib/cors.ts";
 import { requireAdmin } from "@/lib/auth.ts";
-import { getSetting, setSetting, getAllSettings } from "@/lib/settings.ts";
+import { getSetting, setSetting, getAllSettings, deleteSetting } from "@/lib/settings.ts";
 import { handleError } from "@/routes/utils.ts";
 
 export async function handleGetSettings(request: Request): Promise<Response> {
@@ -39,8 +39,9 @@ export async function handleUpdateSettings(request: Request): Promise<Response> 
     }
 
     for (const [key, value] of Object.entries(settings)) {
-      if (typeof value === "string" && value.length > 0) {
-        setSetting(key, value);
+      if (typeof value === "string") {
+        if (value.length > 0) setSetting(key, value);
+        else deleteSetting(key);
       }
     }
 

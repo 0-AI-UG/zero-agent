@@ -1,15 +1,14 @@
 /**
  * Docker Engine API client — communicates with Docker via Unix socket.
- * Replaces all Bun.spawn("docker", ...) calls with direct HTTP API calls.
  */
-import { log } from "@/lib/logger.ts";
-import { deferAsync } from "@/lib/deferred.ts";
+import { log } from "./logger.ts";
+import { deferAsync } from "./deferred.ts";
 
 const dockerLog = log.child({ module: "docker-client" });
 
 const API_VERSION = "v1.47";
 
-// ── Types ──
+// -- Types --
 
 export interface ContainerCreateOptions {
   name: string;
@@ -37,7 +36,7 @@ export interface ExecResult {
   exitCode: number;
 }
 
-// ── Docker Client ──
+// -- Docker Client --
 
 export class DockerClient {
   private socket: string;
@@ -55,7 +54,7 @@ export class DockerClient {
     } as any);
   }
 
-  // ── System ──
+  // -- System --
 
   async info(): Promise<boolean> {
     try {
@@ -66,7 +65,7 @@ export class DockerClient {
     }
   }
 
-  // ── Images ──
+  // -- Images --
 
   async imageExists(image: string): Promise<boolean> {
     const res = await this.fetch(`/images/${encodeURIComponent(image)}/json`);
@@ -78,7 +77,6 @@ export class DockerClient {
     contextDir: string,
     opts?: { cacheFrom?: string; timeout?: number },
   ): Promise<{ log: string }> {
-    // Create tar archive of build context using Bun.spawn (tar is available on all platforms)
     const tarProc = Bun.spawn(["tar", "-cf", "-", "-C", contextDir, "."], {
       stdout: "pipe",
       stderr: "pipe",
@@ -101,7 +99,6 @@ export class DockerClient {
     const timer = setTimeout(() => controller.abort(), timeout);
 
     try {
-      // Defer fetch to avoid Bun event loop stalls with AbortSignal (oven-sh/bun#6366)
       const res = await deferAsync(() => this.fetch(`/build?${queryParams}`, {
         method: "POST",
         headers: { "Content-Type": "application/x-tar" },
@@ -113,7 +110,6 @@ export class DockerClient {
         throw new Error(`Build request failed: ${res.status} ${res.statusText}`);
       }
 
-      // Build streams JSON lines — collect and check for errors
       const text = await res.text();
       const lines = text.split("\n").filter(Boolean);
       let buildLog = "";
@@ -150,7 +146,6 @@ export class DockerClient {
     if (!res.ok) {
       throw new Error(`Failed to pull image: ${res.status} ${res.statusText}`);
     }
-    // Consume the stream (pull progress is streamed as JSON lines)
     await res.text();
   }
 
@@ -171,7 +166,7 @@ export class DockerClient {
     await this.fetch(`/images/${encodeURIComponent(image)}?force=true`, { method: "DELETE" });
   }
 
-  // ── Containers ──
+  // -- Containers --
 
   async createAndStartContainer(opts: ContainerCreateOptions): Promise<string> {
     const body: any = {
@@ -257,14 +252,13 @@ export class DockerClient {
     }
   }
 
-  /** Upload a tar archive into the container at the given path. */
   async putArchive(containerName: string, containerPath: string, tarBuffer: Buffer | Uint8Array): Promise<void> {
     const res = await this.fetch(
       `/containers/${encodeURIComponent(containerName)}/archive?path=${encodeURIComponent(containerPath)}`,
       {
         method: "PUT",
         headers: { "Content-Type": "application/x-tar" },
-        body: tarBuffer,
+        body: tarBuffer as any,
       },
     );
     if (!res.ok) {
@@ -273,7 +267,6 @@ export class DockerClient {
     }
   }
 
-  /** Download a tar archive of a path from the container. */
   async getArchive(containerName: string, containerPath: string): Promise<Buffer> {
     const res = await this.fetch(
       `/containers/${encodeURIComponent(containerName)}/archive?path=${encodeURIComponent(containerPath)}`,
@@ -311,10 +304,9 @@ export class DockerClient {
     return parseDockerLogs(raw);
   }
 
-  // ── Exec ──
+  // -- Exec --
 
   async exec(containerName: string, cmd: string[], opts?: { timeout?: number; workingDir?: string }): Promise<ExecResult> {
-    // Create exec instance
     const createRes = await this.fetch(
       `/containers/${encodeURIComponent(containerName)}/exec`,
       {
@@ -336,13 +328,11 @@ export class DockerClient {
 
     const { Id: execId } = (await createRes.json()) as { Id: string };
 
-    // Start exec and get multiplexed stream
     const controller = new AbortController();
     const timeout = opts?.timeout ?? 120_000;
     const timer = setTimeout(() => controller.abort(), timeout);
 
     try {
-      // Defer fetch to avoid Bun event loop stalls with AbortSignal (oven-sh/bun#6366)
       const startRes = await deferAsync(() => this.fetch(`/exec/${execId}/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -358,7 +348,6 @@ export class DockerClient {
       const raw = new Uint8Array(await startRes.arrayBuffer());
       const { stdout, stderr } = demuxDockerStream(raw);
 
-      // Get exit code
       const inspectRes = await this.fetch(`/exec/${execId}/json`);
       const inspectData = (await inspectRes.json()) as { ExitCode: number };
 
@@ -368,7 +357,7 @@ export class DockerClient {
     }
   }
 
-  // ── List / Filter ──
+  // -- List / Filter --
 
   async listContainers(opts?: { all?: boolean; filters?: Record<string, string[]> }): Promise<Array<{ Id: string; Names: string[]; State: string }>> {
     const params = new URLSearchParams();
@@ -382,7 +371,7 @@ export class DockerClient {
     return res.json() as Promise<Array<{ Id: string; Names: string[]; State: string }>>;
   }
 
-  // ── Networks ──
+  // -- Networks --
 
   async networkExists(name: string): Promise<boolean> {
     const res = await this.fetch(`/networks/${encodeURIComponent(name)}`);
@@ -431,13 +420,8 @@ export class DockerClient {
   }
 }
 
-// ── Docker stream protocol helpers ──
+// -- Docker stream protocol helpers --
 
-/**
- * Demultiplex Docker's exec/attach stream format.
- * Each frame: [stream_type(1 byte), 0, 0, 0, size(4 bytes big-endian), payload(size bytes)]
- * stream_type: 0 = stdin, 1 = stdout, 2 = stderr
- */
 function demuxDockerStream(data: Uint8Array): { stdout: string; stderr: string } {
   const stdoutChunks: Uint8Array[] = [];
   const stderrChunks: Uint8Array[] = [];
@@ -470,9 +454,6 @@ function demuxDockerStream(data: Uint8Array): { stdout: string; stderr: string }
   };
 }
 
-/**
- * Parse Docker log output (same multiplexed format as exec).
- */
 function parseDockerLogs(data: Uint8Array): string {
   const { stdout, stderr } = demuxDockerStream(data);
   return stdout + (stderr ? "\n" + stderr : "");
@@ -490,7 +471,5 @@ function concatUint8Arrays(arrays: Uint8Array[]): Uint8Array {
   }
   return result;
 }
-
-// ── Singleton ──
 
 export const docker = new DockerClient();

@@ -114,7 +114,14 @@ export async function handleAppStatus(req: BunRequest): Promise<Response> {
     }
 
     if (port.status === "active" && port.container_ip) {
-      return Response.json({ status: "ready" }, { headers: corsHeaders });
+      // Verify the port is actually reachable via runner proxy before claiming ready
+      if (_portManager && await _portManager.checkPort(port.project_id, port.port)) {
+        return Response.json({ status: "ready" }, { headers: corsHeaders });
+      }
+      // Port not reachable — mark as stopped and fall through to cold-start if pinned
+      updatePort(port.id, { status: "stopped" });
+      const { invalidateAppCache } = await import("@/lib/app-proxy.ts");
+      invalidateAppCache(port.slug);
     }
 
     if (port.pinned !== 1) {

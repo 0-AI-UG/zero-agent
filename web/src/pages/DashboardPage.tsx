@@ -4,8 +4,6 @@ import { useProjects } from "@/api/projects";
 import { useAuthStore } from "@/stores/auth";
 import { useCurrentUser } from "@/api/admin";
 import { useInvitations, useAcceptInvitation, useDeclineInvitation } from "@/api/invitations";
-import { useDesktopMode } from "@/hooks/use-desktop-mode";
-import { DesktopSettingsDialog } from "@/components/settings/DesktopSettingsDialog";
 import { ProjectCard } from "@/components/projects/ProjectCard";
 import { CreateProjectDialog } from "@/components/projects/CreateProjectDialog";
 import { Button } from "@/components/ui/button";
@@ -21,7 +19,6 @@ export function DashboardPage() {
   const { data: invitations } = useInvitations();
   const acceptInvitation = useAcceptInvitation();
   const declineInvitation = useDeclineInvitation();
-  const desktopMode = useDesktopMode();
   const isAdmin = currentUser?.isAdmin;
   const canCreateProjects = currentUser?.canCreateProjects !== false;
   const [search, setSearch] = useState("");
@@ -44,36 +41,31 @@ export function DashboardPage() {
           <h1 className="text-sm font-semibold tracking-tight font-display">Projects</h1>
           <div className="flex items-center gap-2">
             {canCreateProjects && <CreateProjectDialog />}
-            {desktopMode && <DesktopSettingsDialog />}
             <Button variant="ghost" size="icon-sm" asChild aria-label="Help">
               <Link to="/help">
                 <CircleHelpIcon className="size-4" />
               </Link>
             </Button>
-            {isAdmin && !desktopMode && (
+            {isAdmin && (
               <Button variant="ghost" size="icon-sm" asChild aria-label="Admin settings">
                 <Link to="/admin">
                   <ShieldIcon className="size-4" />
                 </Link>
               </Button>
             )}
-            {!desktopMode && (
-              <Button variant="ghost" size="icon-sm" asChild aria-label="Account settings">
-                <Link to="/account">
-                  <UserIcon className="size-4" />
-                </Link>
-              </Button>
-            )}
-            {!desktopMode && (
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                onClick={logout}
-                aria-label="Sign out"
-              >
-                <LogOutIcon className="size-4" />
-              </Button>
-            )}
+            <Button variant="ghost" size="icon-sm" asChild aria-label="Account settings">
+              <Link to="/account">
+                <UserIcon className="size-4" />
+              </Link>
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={logout}
+              aria-label="Sign out"
+            >
+              <LogOutIcon className="size-4" />
+            </Button>
           </div>
         </div>
       </header>
@@ -81,7 +73,7 @@ export function DashboardPage() {
       <main className="flex-1 overflow-y-auto">
         <div className="max-w-5xl mx-auto px-6 py-8 space-y-6">
           {/* Pending Invitations */}
-          {!desktopMode && invitations && invitations.length > 0 && (
+          {invitations && invitations.length > 0 && (
             <div className="space-y-2">
               {invitations.map((inv) => (
                 <div

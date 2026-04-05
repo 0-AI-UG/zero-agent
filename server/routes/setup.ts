@@ -1,6 +1,6 @@
 import { corsHeaders } from "@/lib/cors.ts";
 import { db, generateId } from "@/db/index.ts";
-import { createTempToken, DESKTOP_MODE } from "@/lib/auth.ts";
+import { createTempToken } from "@/lib/auth.ts";
 import { setSetting } from "@/lib/settings.ts";
 import { handleError } from "@/routes/utils.ts";
 import { log } from "@/lib/logger.ts";
@@ -8,13 +8,6 @@ import { log } from "@/lib/logger.ts";
 const setupLog = log.child({ module: "setup" });
 
 export function isSetupComplete(): boolean {
-  if (DESKTOP_MODE) {
-    // In desktop mode, setup is complete when an API key is configured
-    const row = db.query<{ value: string }, [string]>(
-      "SELECT value FROM settings WHERE key = ?",
-    ).get("OPENROUTER_API_KEY");
-    return !!row?.value;
-  }
   const row = db.query<{ count: number }, []>(
     "SELECT COUNT(*) as count FROM users"
   ).get();
@@ -23,7 +16,7 @@ export function isSetupComplete(): boolean {
 
 export async function handleSetupStatus(_request: Request): Promise<Response> {
   return Response.json(
-    { setupComplete: isSetupComplete(), desktopMode: DESKTOP_MODE },
+    { setupComplete: isSetupComplete() },
     { headers: corsHeaders }
   );
 }
@@ -37,20 +30,6 @@ export async function handleSetupComplete(request: Request): Promise<Response> {
       return Response.json(
         { error: "OpenRouter API key is required" },
         { status: 400, headers: corsHeaders }
-      );
-    }
-
-    // In desktop mode, user already exists — just store settings
-    if (DESKTOP_MODE) {
-      setSetting("OPENROUTER_API_KEY", openrouterApiKey);
-      if (openrouterModel) setSetting("OPENROUTER_MODEL", openrouterModel);
-      if (braveSearchApiKey) setSetting("BRAVE_SEARCH_API_KEY", braveSearchApiKey);
-
-      setupLog.info("desktop setup completed");
-
-      return Response.json(
-        { token: "desktop-mode", user: { id: "desktop-user", email: "desktop@local" } },
-        { status: 201, headers: corsHeaders }
       );
     }
 

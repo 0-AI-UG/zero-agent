@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
-import { Link, Navigate } from "react-router";
+import { Link } from "react-router";
 import { useCurrentUser } from "@/api/admin";
-import { useDesktopMode } from "@/hooks/use-desktop-mode";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ArrowLeftIcon, KeyRoundIcon, ShieldCheckIcon, CheckIcon, EyeIcon, EyeOffIcon, CopyIcon, ClipboardCheckIcon } from "lucide-react";
@@ -10,9 +9,6 @@ import { totpSetup, totpConfirm, totpDisable, totpStatus } from "@/api/totp";
 
 export function AccountPage() {
   const { data: user } = useCurrentUser();
-  const desktopMode = useDesktopMode();
-
-  if (desktopMode) return <Navigate to="/" replace />;
   if (!user) return null;
 
   return (

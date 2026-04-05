@@ -29,18 +29,19 @@ Each project is an isolated workspace where one or more users interact with an A
 ### Agent capabilities
 
 - **Chat** — streaming responses with tool use, sub-agent spawning, and chain-of-thought display
-- **Web browsing** — automated browsing and scraping via headless Chrome (local Docker or companion app)
-- **Code execution** — run Python, JavaScript, and Bash in sandboxed Docker containers with per-chat isolation
+- **Web browsing** — automated browsing and scraping via headless Chromium in isolated containers
+- **Code execution** — run Python, JavaScript, and Bash in sandboxed Docker containers with per-project isolation
 - **File management** — upload, organize, full-text search, and semantic search with S3-compatible storage
 - **Web search** — search the web via Brave Search API with automatic page content extraction
 - **Image generation** — generate images through OpenRouter-supported models
 - **Credential storage** — securely store and retrieve usernames, passwords, TOTP secrets, and passkeys
+- **App deployment** — deploy and expose containerized apps with automatic port detection and HTTP proxying
 - **Telegram integration** — bidirectional chat sync between Telegram groups and project chats
 
 ### Automation
 
 - **Scheduled tasks** — cron-based autonomous agents that run on a schedule
-- **Event triggers** — react to file changes, new messages, companion connections, and other system events with configurable cooldowns and filter patterns
+- **Event triggers** — react to file changes, new messages, and other system events with configurable cooldowns and filter patterns
 - **Crash recovery** — agent checkpoints and event logs ensure interrupted runs resume from where they left off
 
 ### Skills system
@@ -62,12 +63,11 @@ Skills can be installed from a registry, from GitHub, or created by the agent it
 - **Agent memory** — persistent `soul.md` (identity/personality), `memory.md` (facts and preferences), and `heartbeat.md` (periodic autonomous checks), all editable by users
 - **Semantic search (RAG)** — files and memories are embedded into vectors for context-aware retrieval
 - **Conversation compaction** — older messages are automatically summarized to stay within the model's context window
-- **Admin panel** — user management, model configuration, usage tracking, and global settings
-- **Desktop apps** — native companion and main app via [Electrobun](https://electrobun.dev)
+- **Admin panel** — user management, model configuration, usage tracking, and execution settings
 
 ## Quick start
 
-**Prerequisites:** [Bun](https://bun.sh) v1.3+, [Docker](https://docs.docker.com/get-docker/) (optional, for code execution and browser automation)
+**Prerequisites:** [Bun](https://bun.sh) v1.3+, [Docker](https://docs.docker.com/get-docker/) (for code execution and browser automation)
 
 ```bash
 # Clone and install
@@ -94,37 +94,106 @@ Copy `.env.example` to `.env` and set the required values:
 | `OPENROUTER_API_KEY` | Yes | [OpenRouter](https://openrouter.ai) API key — gives access to 100+ models |
 | `BRAVE_SEARCH_API_KEY` | No | [Brave Search](https://brave.com/search/api/) API key for the web search tool |
 
-Additional settings (models, image generation, API keys) are configured at runtime through the admin panel.
+Additional settings (models, image generation, API keys, execution backend) are configured at runtime through the admin panel.
 
 ## Docker
 
 ```bash
-docker build -t zero-agent .
-docker run -p 3000:3000 --privileged --env-file .env zero-agent
+docker compose up
 ```
 
-The Docker image includes Docker-in-Docker (DinD) for sandboxed code execution and browser automation without needing the companion app.
+This starts two services:
+
+| Service | Port | Description |
+|---|---|---|
+| **server** | 3000 | API server and web UI |
+| **runner** | 3100 | Execution backend — manages Docker containers for code execution and browser automation |
+
+The runner communicates with the Docker Engine via the mounted socket and creates isolated session containers (Chromium + Python/Node) for each project.
+
+To build and run individually:
+
+```bash
+# Server only
+docker build -t zero-agent .
+docker run -p 3000:3000 --env-file .env zero-agent
+
+# Runner only
+docker build -t zero-runner runner/
+docker run -p 3100:3100 -v /var/run/docker.sock:/var/run/docker.sock zero-runner
+```
+
+## Architecture
+
+Zero Agent uses a two-service architecture:
+
+```
+┌──────────────────────────────────────┐
+│   Web Frontend (React 19)            │  Port 3000
+│   Chat, Files, Tasks, Skills, Admin  │
+└──────────────┬───────────────────────┘
+               │
+┌──────────────▼───────────────────────┐
+│   Server (Bun)                       │  Port 3000
+│   API, agent orchestration, auth,    │
+│   scheduling, skills, durability     │
+└──────────────┬───────────────────────┘
+               │  HTTP (REST)
+┌──────────────▼───────────────────────┐
+│   Runner (Bun)                       │  Port 3100
+│   Container lifecycle, bash exec,    │
+│   browser automation (CDP), file I/O │
+└──────────────┬───────────────────────┘
+               │
+        Docker Engine
+        └── Per-project session containers
+            └── Chromium + Python + Node
+```
+
+### Server
+
+The server is a single Bun process serving both the API and the frontend. It uses SQLite in WAL mode for the database and S3-compatible storage for files.
+
+**Agent system:** Each chat creates an isolated `ToolLoopAgent` (AI SDK) with dynamically loaded tools. Agents build their system prompt from the project's soul, memory, heartbeat, installed skills, and RAG context. Sub-agents can be spawned with restricted toolsets for parallel task execution. Runs are capped at 100 steps.
+
+**Durability:** After each agent step, a checkpoint is saved. On startup, any interrupted runs are detected and resumed from their last checkpoint. A circuit breaker prevents cascading failures from flaky model providers.
+
+**LLM access:** All model calls go through [OpenRouter](https://openrouter.ai) with retry logic, exponential backoff, and provider routing for fallback.
+
+### Runner
+
+A standalone Bun HTTP service that manages Docker containers. It provides:
+
+- **Container lifecycle** — create, destroy, and idle-timeout session containers
+- **Bash execution** — run commands with file change detection
+- **Browser automation** — Chromium control via Chrome DevTools Protocol (CDP)
+- **File I/O** — read and write files in containers, detect changes, snapshot to S3
+- **HTTP proxying** — forward requests to ports inside containers for deployed apps
+
+### Frontend
+
+React 19 with Tailwind CSS v4, shadcn/ui components, TanStack Query for server state, and Zustand for client state. Client-side routing via React Router v7.
 
 ## Project structure
 
 ```
 server/           Backend API server (Bun + SQLite)
-  ├── routes/     25 API endpoint handlers (auth, projects, chats, files, tasks, admin, etc.)
-  ├── tools/      15 AI tool implementations (browser, code, files, search, scheduling, etc.)
+  ├── routes/     API endpoint handlers (auth, projects, chats, files, tasks, admin, etc.)
+  ├── tools/      AI tool implementations (browser, code, files, search, scheduling, etc.)
   ├── lib/        Core modules (agent, execution, durability, vectors, scheduler, skills, etc.)
   ├── db/         SQLite schema, queries, and types
   └── config/     Model configuration
+runner/           Execution backend service (Bun + Docker)
+  ├── lib/        Container management, browser automation, file operations
+  └── docker/     Session container Dockerfile
 web/              Frontend (React 19 + Tailwind v4 + shadcn/ui)
   └── src/
-      ├── pages/      13 page components
-      ├── components/  Reusable UI components
+      ├── pages/      Page components (chat, files, tasks, skills, admin, etc.)
+      ├── components/ Reusable UI components
       ├── api/        React Query hooks
       └── stores/     Zustand state management
-companion/        Desktop companion app (Electrobun) — browser automation + code execution
-desktop/          Main desktop app (Electrobun)
 skills/           Extensible skill modules
 data/             Runtime data (SQLite database, file storage)
-docker/           Docker compose and DinD configuration
 ```
 
 ## Development
@@ -132,32 +201,8 @@ docker/           Docker compose and DinD configuration
 ```bash
 bun run dev              # Start dev server with hot reload (port 3000)
 bun run build            # Build frontend to web/dist/
-bun run compile          # Full build — server binary + desktop apps
-bun run desktop:dev      # Desktop app dev mode
-bun run companion:dev    # Companion app dev mode
+bun run compile          # Full build — server binary + frontend assets
 ```
-
-## Architecture
-
-### Backend
-
-The server is a single Bun process serving both the API and the frontend. It uses SQLite in WAL mode for the database and S3-compatible storage for files.
-
-**Agent system:** Each chat creates an isolated `ToolLoopAgent` (AI SDK) with dynamically loaded tools. Agents build their system prompt from the project's soul, memory, heartbeat, installed skills, and RAG context. Sub-agents can be spawned with restricted toolsets for parallel task execution. Runs are capped at 100 steps.
-
-**Execution backends:** Tool calls that need a browser or code execution are routed to either a local Docker container (DinD) or a remote companion app. Each chat session gets its own isolated container with Chrome and a Python/Node environment.
-
-**Durability:** After each agent step, a checkpoint is saved. On startup, any interrupted runs are detected and resumed from their last checkpoint. A circuit breaker prevents cascading failures from flaky model providers.
-
-**LLM access:** All model calls go through [OpenRouter](https://openrouter.ai) with retry logic, exponential backoff, and provider routing for fallback.
-
-### Frontend
-
-React 19 with Tailwind CSS v4, shadcn/ui components, TanStack Query for server state, and Zustand for client state. Client-side routing via React Router v7.
-
-### Companion app
-
-A native desktop app (Electrobun) that provides browser automation and code execution capabilities for the server. Connects via WebSocket with token-based authentication. Useful when you don't want to run Docker on your server.
 
 ## Tech stack
 
@@ -168,8 +213,7 @@ A native desktop app (Electrobun) that provides browser automation and code exec
 | Frontend | React 19, Tailwind CSS v4, shadcn/ui, Zustand, TanStack Query |
 | Database | SQLite (WAL mode) |
 | Storage | S3-compatible (via @0-ai/s3lite) |
-| Desktop | [Electrobun](https://electrobun.dev) |
-| Containerization | Docker (DinD for sandboxed execution) |
+| Execution | Docker containers via Runner service |
 
 ## Star History
 

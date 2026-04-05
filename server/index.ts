@@ -102,6 +102,7 @@ import {
   enableExecution,
   disableExecution,
   teardownExecution,
+  reconnectExecution,
   getLocalBackend,
 } from "@/lib/execution/lifecycle.ts";
 import { proxyAppRequest } from "@/lib/app-proxy.ts";
@@ -133,11 +134,8 @@ import { handleUsageSummary, handleUsageByModel, handleUsageByUser } from "@/rou
 import { startAllPollers, stopAllPollers } from "@/lib/telegram-polling.ts";
 import { processIncomingUpdate } from "@/routes/telegram.ts";
 
-import { initDesktopUser } from "@/lib/desktop-init.ts";
-import { DESKTOP_MODE, requireAdmin, authenticateRequest } from "@/lib/auth.ts";
-import { webOnly } from "@/routes/utils.ts";
+import { requireAdmin, authenticateRequest } from "@/lib/auth.ts";
 import { db } from "@/db/index.ts";
-await initDesktopUser();
 
 const httpLog = log.child({ module: "http" });
 const PORT = parseInt(process.env.PORT ?? "3000");
@@ -227,32 +225,32 @@ const server = Bun.serve({
       GET: withLogging(handleHealth),
     },
     "/api/auth/login": {
-      POST: withLogging(webOnly(handleLogin)),
+      POST: withLogging(handleLogin),
     },
     "/api/me": {
       GET: withLogging(handleMe),
       PUT: withLogging(handleUpdateMe),
     },
     "/api/auth/totp/setup": {
-      POST: withLogging(webOnly(handleTotpSetup)),
+      POST: withLogging(handleTotpSetup),
     },
     "/api/auth/totp/confirm": {
-      POST: withLogging(webOnly(handleTotpConfirm)),
+      POST: withLogging(handleTotpConfirm),
     },
     "/api/auth/totp/login": {
-      POST: withLogging(webOnly(handleTotpLogin)),
+      POST: withLogging(handleTotpLogin),
     },
     "/api/auth/totp/disable": {
-      POST: withLogging(webOnly(handleTotpDisable)),
+      POST: withLogging(handleTotpDisable),
     },
     "/api/auth/totp/status": {
-      GET: withLogging(webOnly(handleTotpStatus)),
+      GET: withLogging(handleTotpStatus),
     },
     "/api/auth/totp/setup-from-login": {
-      POST: withLogging(webOnly(handleTotpSetupFromLogin)),
+      POST: withLogging(handleTotpSetupFromLogin),
     },
     "/api/auth/totp/confirm-from-login": {
-      POST: withLogging(webOnly(handleTotpConfirmFromLogin)),
+      POST: withLogging(handleTotpConfirmFromLogin),
     },
     "/api/projects": {
       GET: withLogging(handleListProjects),
@@ -493,7 +491,8 @@ const server = Bun.serve({
     "/api/admin/containers": {
       GET: withLogging(async (req: Request) => {
         await requireAdmin(req);
-        const containers = getLocalBackend()?.listContainers() ?? [];
+        const backend = getLocalBackend();
+        const containers = backend ? await backend.listContainersAsync() : [];
         return Response.json({ containers }, { headers: corsHeaders });
       }),
     },
@@ -508,19 +507,24 @@ const server = Bun.serve({
     },
     // Container status for a project (authenticated)
     "/api/projects/:projectId/chats/:chatId/container": {
-      GET: withLogging((req: Request) => {
+      GET: withLogging(async (req: Request) => {
         const url = new URL(req.url);
         const projectId = url.pathname.split("/")[3]!;
-        const session = getLocalBackend()?.getSessionForProject(projectId);
-        return Response.json({ status: session ? "running" : "none" }, { headers: corsHeaders });
+        const backend = getLocalBackend();
+        const session = backend?.getSessionForProject(projectId);
+        if (session) {
+          return Response.json({ status: "running" }, { headers: corsHeaders });
+        }
+        const running = await backend?.hasContainer(projectId) ?? false;
+        return Response.json({ status: running ? "running" : "none" }, { headers: corsHeaders });
       }),
     },
     // Latest browser screenshot for a project's session
     "/api/projects/:projectId/chats/:chatId/browser-screenshot": {
-      GET: withLogging((req: Request) => {
+      GET: withLogging(async (req: Request) => {
         const url = new URL(req.url);
         const projectId = url.pathname.split("/")[3]!;
-        const screenshot = getLocalBackend()?.getLatestScreenshot(projectId);
+        const screenshot = await getLocalBackend()?.getLatestScreenshot(projectId) ?? null;
         if (!screenshot) {
           return Response.json({ screenshot: null }, { headers: corsHeaders });
         }
@@ -544,6 +548,31 @@ const server = Bun.serve({
         await requireAdmin(req);
         await disableExecution();
         return Response.json({ success: true }, { headers: corsHeaders });
+      }),
+    },
+    "/api/admin/execution/reconnect": {
+      POST: withLogging(async (req: Request) => {
+        await requireAdmin(req);
+        const result = await reconnectExecution();
+        return Response.json(result, {
+          status: result.success ? 200 : 500,
+          headers: corsHeaders,
+        });
+      }),
+    },
+    "/api/admin/runner/status": {
+      GET: withLogging(async (req: Request) => {
+        await requireAdmin(req);
+        const backend = getLocalBackend();
+        if (!backend) {
+          return Response.json({ connected: false, containers: 0 }, { headers: corsHeaders });
+        }
+        try {
+          const containers = await backend.listContainersAsync();
+          return Response.json({ connected: true, containers: containers.length }, { headers: corsHeaders });
+        } catch {
+          return Response.json({ connected: false, containers: 0 }, { headers: corsHeaders });
+        }
       }),
     },
     // Capabilities (server-side execution status)
