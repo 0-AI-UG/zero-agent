@@ -96,7 +96,6 @@ export interface CurrentUser {
   email: string;
   isAdmin: boolean;
   canCreateProjects: boolean;
-  companionSharing: boolean;
   totpEnabled: boolean;
   totpRequired: boolean;
 }
@@ -115,7 +114,7 @@ export function useCurrentUser() {
 export function useUpdateMe() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (data: { companionSharing?: boolean }) => {
+    mutationFn: async (data: Record<string, unknown>) => {
       const res = await apiFetch<{ user: CurrentUser }>("/me", {
         method: "PUT",
         body: JSON.stringify(data),
@@ -124,6 +123,20 @@ export function useUpdateMe() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["me"] });
+    },
+  });
+}
+
+export function useToggleExecution() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (enabled: boolean) => {
+      const endpoint = enabled ? "/admin/execution/enable" : "/admin/execution/disable";
+      return apiFetch<{ success: boolean }>(endpoint, { method: "POST" });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin", "settings"] });
+      queryClient.invalidateQueries({ queryKey: ["capabilities"] });
     },
   });
 }

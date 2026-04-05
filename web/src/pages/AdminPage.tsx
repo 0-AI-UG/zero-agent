@@ -1,5 +1,4 @@
 import { useState, useMemo } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router";
 import { useAuthStore } from "@/stores/auth";
 import { Input } from "@/components/ui/input";
@@ -57,8 +56,6 @@ import {
   UsersIcon,
   KeyRoundIcon,
   CpuIcon,
-  PlayIcon,
-  PauseIcon,
   BarChart3Icon,
   CheckIcon,
   PencilIcon,
@@ -73,6 +70,7 @@ import {
   useUpdateUser,
   useAdminSettings,
   useUpdateSettings,
+  useToggleExecution,
   type AdminUser,
 } from "@/api/admin";
 import {
@@ -88,8 +86,6 @@ import {
 } from "@/api/usage";
 import {
   useContainers,
-  usePauseContainer,
-  useResumeContainer,
   useDestroyContainer,
 } from "@/api/containers";
 import type { ModelConfig } from "@/stores/model";
@@ -298,16 +294,13 @@ function InstanceSettingsSection() {
 function ServerExecutionSection() {
   const { data: settings } = useAdminSettings();
   const updateSettings = useUpdateSettings();
-  const queryClient = useQueryClient();
-  const serverExecutionEnabled = settings?.SERVER_EXECUTION_ENABLED !== "false";
+  const toggleExecution = useToggleExecution();
+  const serverExecutionEnabled = settings?.SERVER_EXECUTION_ENABLED === "true";
 
   const { data: containers, isLoading: containersLoading } = useContainers();
-  const pauseContainer = usePauseContainer();
-  const resumeContainer = useResumeContainer();
   const destroyContainer = useDestroyContainer();
 
-  const running = containers?.filter((c) => c.status === "running").length ?? 0;
-  const paused = containers?.filter((c) => c.status === "paused").length ?? 0;
+  const running = containers?.length ?? 0;
 
   function formatAge(lastUsedAt: number) {
     const seconds = Math.round((Date.now() - lastUsedAt) / 1000);
@@ -323,7 +316,7 @@ function ServerExecutionSection() {
         <CpuIcon className="size-4 text-cyan-500" />
         <h3 className="text-sm font-semibold">Server Execution</h3>
         <span className="text-xs text-muted-foreground ml-auto">
-          {running} running, {paused} paused
+          {running} running
         </span>
       </div>
       <div className="rounded-lg border p-4 space-y-4">
@@ -331,27 +324,22 @@ function ServerExecutionSection() {
           <div className="space-y-1">
             <p className="text-sm font-medium">Enabled</p>
             <p className="text-xs text-muted-foreground">
-              Allow code execution and browser automation to run on the server via Docker.
+              Toggles code execution, browser sessions, and port forwarding/services.
             </p>
           </div>
           <Switch
             checked={serverExecutionEnabled}
             onCheckedChange={(checked) => {
-              updateSettings.mutate(
-                { SERVER_EXECUTION_ENABLED: checked ? "true" : "false" },
-                {
-                  onSuccess: () => queryClient.invalidateQueries({ queryKey: ["capabilities"] }),
-                },
-              );
+              toggleExecution.mutate(checked);
             }}
-            disabled={updateSettings.isPending}
+            disabled={toggleExecution.isPending}
             aria-label="Toggle server execution"
           />
         </div>
         <div className="flex items-center justify-between gap-4">
           <div className="space-y-1">
             <p className="text-sm font-medium">Max running containers</p>
-            <p className="text-xs text-muted-foreground">Idle containers are paused when this limit is reached.</p>
+            <p className="text-xs text-muted-foreground">New containers are rejected when this limit is reached.</p>
           </div>
           <Input
             type="number"
@@ -362,23 +350,6 @@ function ServerExecutionSection() {
             onBlur={(e) => {
               const val = parseInt(e.target.value);
               if (val >= 1 && val <= 20) updateSettings.mutate({ CONTAINER_MAX_RUNNING: String(val) });
-            }}
-            className="w-20 text-right"
-          />
-        </div>
-        <div className="flex items-center justify-between gap-4">
-          <div className="space-y-1">
-            <p className="text-sm font-medium">Idle pause timeout (seconds)</p>
-            <p className="text-xs text-muted-foreground">Seconds before an idle container is paused. Default: 180.</p>
-          </div>
-          <Input
-            type="number"
-            min={30}
-            defaultValue={settings?.CONTAINER_PAUSE_TIMEOUT_SECS ?? "180"}
-            key={`pause-timeout-${settings?.CONTAINER_PAUSE_TIMEOUT_SECS}`}
-            onBlur={(e) => {
-              const val = parseInt(e.target.value);
-              if (val >= 30) updateSettings.mutate({ CONTAINER_PAUSE_TIMEOUT_SECS: String(val) });
             }}
             className="w-20 text-right"
           />
@@ -432,27 +403,6 @@ function ServerExecutionSection() {
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-1">
-                      {c.status === "running" ? (
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          onClick={() => pauseContainer.mutate(c.sessionId)}
-                          disabled={pauseContainer.isPending}
-                          aria-label="Pause container"
-                        >
-                          <PauseIcon className="size-3" />
-                        </Button>
-                      ) : (
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          onClick={() => resumeContainer.mutate(c.sessionId)}
-                          disabled={resumeContainer.isPending}
-                          aria-label="Resume container"
-                        >
-                          <PlayIcon className="size-3" />
-                        </Button>
-                      )}
                       <Button
                         variant="ghost"
                         size="icon-sm"

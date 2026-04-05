@@ -74,7 +74,6 @@ export const EVENT_PRESETS = [
   { label: "Message received", value: "message.received" },
   { label: "Chat created", value: "chat.created" },
   { label: "Skill installed", value: "skill.installed" },
-  { label: "Companion connected", value: "companion.connected" },
 ];
 
 export const COOLDOWN_PRESETS = [
@@ -122,9 +121,6 @@ const EVENT_FILTER_FIELDS: Record<string, { key: string; label: string; placehol
   "skill.installed": [
     { key: "skillName", label: "Skill name", placeholder: "e.g. presentation" },
     { key: "source", label: "Source", placeholder: "e.g. builtin" },
-  ],
-  "companion.connected": [
-    { key: "userId", label: "User ID", placeholder: "Specific user ID" },
   ],
 };
 

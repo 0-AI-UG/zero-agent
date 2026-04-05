@@ -64,6 +64,20 @@ export async function verifyTempToken(token: string): Promise<string> {
   }
 }
 
+export async function createAppToken(userId: string, email: string): Promise<string> {
+  return new SignJWT({ userId, email, purpose: "app" } as unknown as Record<string, unknown>)
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt()
+    .setExpirationTime("10m")
+    .sign(JWT_SECRET);
+}
+
+export async function verifyAppToken(token: string): Promise<TokenPayload> {
+  const { payload } = await jwtVerify(token, JWT_SECRET);
+  if ((payload as any).purpose !== "app") throw new AuthError("Invalid token");
+  return { userId: (payload as any).userId, email: (payload as any).email };
+}
+
 export async function requireAdmin(request: Request): Promise<TokenPayload> {
   if (DESKTOP_MODE) return DESKTOP_USER;
   const payload = await authenticateRequest(request);

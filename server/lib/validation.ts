@@ -74,11 +74,6 @@ export const uploadRequestSchema = z.object({
     .max(50 * 1024 * 1024, "File too large (max 50 MB)"),
 });
 
-// Companion tokens
-export const createCompanionTokenSchema = z.object({
-  name: z.string().min(1, "Name is required").max(100),
-});
-
 // Skills
 export const installSkillSchema = z.union([
   z.object({ content: z.string().min(1, "Skill content is required") }),

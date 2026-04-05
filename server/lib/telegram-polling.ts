@@ -36,7 +36,7 @@ export async function startPollingForProject(
 
     while (poller.running) {
       try {
-        const updates = await getTelegramUpdates(botToken, offset, 25);
+        const updates = await getTelegramUpdates(botToken, offset, 25, abortController.signal);
 
         for (const update of updates) {
           offset = update.update_id + 1;

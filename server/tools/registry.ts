@@ -13,6 +13,7 @@ import { createCodeTools } from "@/tools/code.ts";
 import { createCredentialTools } from "@/tools/credentials.ts";
 import { createTelegramTools } from "@/tools/telegram.ts";
 import { createChatHistoryTools } from "@/tools/chat-history.ts";
+import { createPortTools } from "@/tools/apps.ts";
 
 export type ToolRegistry = Record<string, Tool<any, any>>;
 
@@ -61,8 +62,6 @@ export function createToolRegistry(
     chatId?: string;
     userId?: string;
     modelId?: string;
-    browserSessionId?: string;
-    lazyBrowserSession?: { id: string; created: boolean; label?: string };
     context?: ExecutionContext;
     onlyTools?: string[];
     onlySkills?: string[];
@@ -79,11 +78,12 @@ export function createToolRegistry(
     ...createSchedulingTools(projectId),
     ...(options.chatId ? createProgressTools({ projectId, chatId: options.chatId, anchorRunId: options.anchorRunId }) : {}),
     ...createSkillTools(projectId, options.chatId),
-    ...(options.userId ? createBrowserTool(options.userId, projectId, options.browserSessionId, options.lazyBrowserSession, options.modelId) : {}),
-    ...(options.userId && options.chatId && options.codeExecutionEnabled ? createCodeTools(options.userId, projectId, options.chatId) : {}),
+    ...(options.userId ? createBrowserTool(options.userId, projectId, options.modelId) : {}),
+    ...(options.userId && options.codeExecutionEnabled ? createCodeTools(options.userId, projectId) : {}),
     ...createCredentialTools(projectId, options.userId ?? undefined),
     ...createTelegramTools(projectId),
     ...createChatHistoryTools(projectId),
+    ...(options.userId && options.codeExecutionEnabled ? createPortTools(options.userId, projectId) : {}),
   };
 
   // 1. Scope filtering — remove tools not available in this context
@@ -142,8 +142,6 @@ export function createDiscoverableToolset(
     chatId?: string;
     userId?: string;
     modelId?: string;
-    browserSessionId?: string;
-    lazyBrowserSession?: { id: string; created: boolean; label?: string };
     excludeTools?: string[];
     context?: ExecutionContext;
     onlyTools?: string[];

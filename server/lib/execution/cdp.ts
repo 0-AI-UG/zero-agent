@@ -3,6 +3,7 @@
  * Server-side port of companion/src/cdp.ts — zero external dependencies.
  */
 import { enableDomainsStealthy } from "./stealth.ts";
+import { deferAsync } from "@/lib/deferred.ts";
 import { log } from "@/lib/logger.ts";
 
 const cdpLog = log.child({ module: "cdp" });
@@ -117,6 +118,13 @@ export class CdpClient {
     this.eventListeners.set(event, list);
   }
 
+  off(event: string, callback: CdpCallback) {
+    const list = this.eventListeners.get(event);
+    if (!list) return;
+    const idx = list.indexOf(callback);
+    if (idx !== -1) list.splice(idx, 1);
+  }
+
   close() {
     this.ws?.close();
   }
@@ -129,7 +137,8 @@ export class CdpClient {
  * 3. Connect via WebSocket to that target's debugger URL
  */
 export async function connectToPage(cdpHost: string, cdpPort: number): Promise<{ cdp: CdpClient; targetId: string }> {
-  const res = await fetch(`http://${cdpHost}:${cdpPort}/json/list`);
+  // Defer fetches to avoid Bun event loop stalls with concurrent AbortSignal (oven-sh/bun#6366)
+  const res = await deferAsync(() => fetch(`http://${cdpHost}:${cdpPort}/json/list`));
   const targets = (await res.json()) as Array<{
     id: string;
     type: string;
@@ -143,7 +152,7 @@ export async function connectToPage(cdpHost: string, cdpPort: number): Promise<{
   if (!target) target = targets.find((t) => t.type === "page");
 
   if (!target) {
-    const newTab = await fetch(`http://${cdpHost}:${cdpPort}/json/new?about:blank`, { method: "PUT" });
+    const newTab = await deferAsync(() => fetch(`http://${cdpHost}:${cdpPort}/json/new?about:blank`, { method: "PUT" }));
     target = (await newTab.json()) as (typeof targets)[0];
   }
 

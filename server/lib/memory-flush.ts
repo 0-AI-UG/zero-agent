@@ -4,6 +4,7 @@ import { getEnrichModel } from "@/lib/openrouter.ts";
 import { readFromS3, writeToS3 } from "@/lib/s3.ts";
 import { extractConversationText } from "@/lib/message-utils.ts";
 import { embedEntries } from "@/lib/vectors.ts";
+import { deferAsync } from "@/lib/deferred.ts";
 import { log } from "@/lib/logger.ts";
 
 const memLog = log.child({ module: "memory-flush" });
@@ -192,7 +193,7 @@ export async function flushConversationMemory(
 
   // Ask LLM to extract new memories (with retry for transient API errors)
   const callLLM = () =>
-    generateText({
+    deferAsync(() => generateText({
       model: getEnrichModel(),
       system: `You extract important information from conversations. Output new memory entries, one per line, in the format:
 section: content
@@ -216,7 +217,7 @@ ${existingBullets || "(empty)"}
 
 ## Recent Conversation
 ${conversationText}`,
-    });
+    }));
 
   let result: Awaited<ReturnType<typeof callLLM>> | undefined;
   for (let attempt = 0; attempt < 3; attempt++) {

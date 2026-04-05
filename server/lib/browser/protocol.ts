@@ -43,18 +43,6 @@ export interface BrowserResponse {
   error?: string;
 }
 
-// ── Companion Status ──
-
-export interface CompanionStatus {
-  connected: boolean;
-  lastConnectedAt?: string;
-  browserUrl?: string;
-  browserTitle?: string;
-  dockerInstalled?: boolean;
-  dockerRunning?: boolean;
-  chromeAvailable?: boolean;
-}
-
 // ── WebAuthn Sub-Commands ──
 
 export type WebAuthnSubCommand =

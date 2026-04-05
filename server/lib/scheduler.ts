@@ -3,7 +3,6 @@ import { insertTaskRun, updateTaskRun } from "@/db/queries/task-runs.ts";
 import { getProjectById } from "@/db/queries/projects.ts";
 import { getProjectMembers } from "@/db/queries/members.ts";
 import { runAutonomousTask } from "@/lib/autonomous-agent.ts";
-import { browserBridge } from "@/lib/browser/bridge.ts";
 import { formatDateForSQLite } from "@/lib/schedule-parser.ts";
 import { events } from "@/lib/events.ts";
 import { isShuttingDown } from "@/lib/durability/shutdown.ts";
@@ -94,9 +93,8 @@ async function tick() {
       const run = insertTaskRun(task.id, task.project_id);
       const members = getProjectMembers(task.project_id);
 
-      // Find a project member with a connected companion for browser access
       const memberIds = members.map((m) => m.user_id);
-      const companionUserId = browserBridge.findConnectedMember(task.project_id, memberIds);
+      const userId = memberIds[0];
 
       try {
         schedLog.info("executing task", { taskId: task.id, taskName: task.name, projectId: task.project_id });
@@ -108,7 +106,7 @@ async function tick() {
           { id: project.id, name: project.name },
           task.name,
           task.prompt,
-          { onlyTools, userId: companionUserId, decompose: task.decompose === 1 },
+          { onlyTools, userId, decompose: task.decompose === 1 },
         );
 
         updateTaskRun(run.id, {

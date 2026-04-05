@@ -4,7 +4,6 @@ import { insertTaskRun, updateTaskRun } from "@/db/queries/task-runs.ts";
 import { getProjectById } from "@/db/queries/projects.ts";
 import { getProjectMembers } from "@/db/queries/members.ts";
 import { runAutonomousTask } from "@/lib/autonomous-agent.ts";
-import { browserBridge } from "@/lib/browser/bridge.ts";
 import { formatDateForSQLite } from "@/lib/schedule-parser.ts";
 import { log } from "@/lib/logger.ts";
 import type { ScheduledTaskRow } from "@/db/types.ts";
@@ -173,13 +172,13 @@ async function flushTask(taskId: string) {
 
     const members = getProjectMembers(task.project_id);
     const memberIds = members.map((m) => m.user_id);
-    const companionUserId = browserBridge.findConnectedMember(task.project_id, memberIds);
+    const userId = memberIds[0];
 
     const result = await runAutonomousTask(
       { id: project.id, name: project.name },
       task.name,
       prompt,
-      { onlyTools, userId: companionUserId },
+      { onlyTools, userId },
     );
 
     updateTaskRun(run.id, {

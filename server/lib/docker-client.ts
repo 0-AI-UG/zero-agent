@@ -1,0 +1,496 @@
+/**
+ * Docker Engine API client — communicates with Docker via Unix socket.
+ * Replaces all Bun.spawn("docker", ...) calls with direct HTTP API calls.
+ */
+import { log } from "@/lib/logger.ts";
+import { deferAsync } from "@/lib/deferred.ts";
+
+const dockerLog = log.child({ module: "docker-client" });
+
+const API_VERSION = "v1.47";
+
+// ── Types ──
+
+export interface ContainerCreateOptions {
+  name: string;
+  image: string;
+  network?: string;
+  binds?: string[]; // host:container volume mounts
+  env?: string[];
+  memory?: number; // bytes
+  cpus?: number;
+  pidsLimit?: number;
+  restartPolicy?: "no" | "always" | "unless-stopped" | "on-failure";
+}
+
+export interface ContainerInspectResult {
+  Id: string;
+  State: { Running: boolean; Status: string };
+  NetworkSettings: {
+    Networks: Record<string, { IPAddress: string }>;
+  };
+}
+
+export interface ExecResult {
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+}
+
+// ── Docker Client ──
+
+export class DockerClient {
+  private socket: string;
+  private baseUrl: string;
+
+  constructor(socket?: string) {
+    this.socket = socket ?? process.env.DOCKER_HOST ?? "/var/run/docker.sock";
+    this.baseUrl = `http://localhost/${API_VERSION}`;
+  }
+
+  private async fetch(path: string, init?: RequestInit & { unix?: string }): Promise<Response> {
+    return fetch(`${this.baseUrl}${path}`, {
+      ...init,
+      unix: this.socket,
+    } as any);
+  }
+
+  // ── System ──
+
+  async info(): Promise<boolean> {
+    try {
+      const res = await this.fetch("/info");
+      return res.ok;
+    } catch {
+      return false;
+    }
+  }
+
+  // ── Images ──
+
+  async imageExists(image: string): Promise<boolean> {
+    const res = await this.fetch(`/images/${encodeURIComponent(image)}/json`);
+    return res.ok;
+  }
+
+  async buildImage(
+    tag: string,
+    contextDir: string,
+    opts?: { cacheFrom?: string; timeout?: number },
+  ): Promise<{ log: string }> {
+    // Create tar archive of build context using Bun.spawn (tar is available on all platforms)
+    const tarProc = Bun.spawn(["tar", "-cf", "-", "-C", contextDir, "."], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    const tarData = await new Response(tarProc.stdout).arrayBuffer();
+    const tarExit = await tarProc.exited;
+    if (tarExit !== 0) {
+      const stderr = await new Response(tarProc.stderr).text();
+      throw new Error(`Failed to create build context tar: ${stderr}`);
+    }
+
+    let queryParams = `t=${encodeURIComponent(tag)}`;
+    if (opts?.cacheFrom) {
+      queryParams += `&cachefrom=${encodeURIComponent(JSON.stringify([opts.cacheFrom]))}`;
+    }
+
+    const controller = new AbortController();
+    const timeout = opts?.timeout ?? 5 * 60_000;
+    const timer = setTimeout(() => controller.abort(), timeout);
+
+    try {
+      // Defer fetch to avoid Bun event loop stalls with AbortSignal (oven-sh/bun#6366)
+      const res = await deferAsync(() => this.fetch(`/build?${queryParams}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-tar" },
+        body: tarData,
+        signal: controller.signal,
+      }));
+
+      if (!res.ok && !res.body) {
+        throw new Error(`Build request failed: ${res.status} ${res.statusText}`);
+      }
+
+      // Build streams JSON lines — collect and check for errors
+      const text = await res.text();
+      const lines = text.split("\n").filter(Boolean);
+      let buildLog = "";
+      let errorMsg = "";
+
+      for (const line of lines) {
+        try {
+          const obj = JSON.parse(line);
+          if (obj.stream) buildLog += obj.stream;
+          if (obj.error) errorMsg = obj.error;
+        } catch {
+          buildLog += line + "\n";
+        }
+      }
+
+      if (errorMsg) {
+        throw new Error(`Build failed: ${errorMsg}\n${buildLog.slice(-500)}`);
+      }
+
+      return { log: buildLog };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  async pullImage(image: string): Promise<void> {
+    const parts = image.split(":");
+    const fromImage = parts[0]!;
+    const tag = parts[1] || "latest";
+    const res = await this.fetch(
+      `/images/create?fromImage=${encodeURIComponent(fromImage)}&tag=${encodeURIComponent(tag)}`,
+      { method: "POST" },
+    );
+    if (!res.ok) {
+      throw new Error(`Failed to pull image: ${res.status} ${res.statusText}`);
+    }
+    // Consume the stream (pull progress is streamed as JSON lines)
+    await res.text();
+  }
+
+  async tagImage(source: string, target: string): Promise<void> {
+    const parts = target.split(":");
+    const repo = parts[0]!;
+    const tag = parts[1] || "latest";
+    const res = await this.fetch(
+      `/images/${encodeURIComponent(source)}/tag?repo=${encodeURIComponent(repo)}&tag=${encodeURIComponent(tag)}`,
+      { method: "POST" },
+    );
+    if (!res.ok) {
+      throw new Error(`Failed to tag image: ${res.status} ${res.statusText}`);
+    }
+  }
+
+  async removeImage(image: string): Promise<void> {
+    await this.fetch(`/images/${encodeURIComponent(image)}?force=true`, { method: "DELETE" });
+  }
+
+  // ── Containers ──
+
+  async createAndStartContainer(opts: ContainerCreateOptions): Promise<string> {
+    const body: any = {
+      Image: opts.image,
+      Env: opts.env,
+      HostConfig: {
+        Binds: opts.binds,
+        NetworkMode: opts.network,
+        Memory: opts.memory,
+        NanoCpus: opts.cpus ? opts.cpus * 1e9 : undefined,
+        PidsLimit: opts.pidsLimit,
+        RestartPolicy: opts.restartPolicy
+          ? { Name: opts.restartPolicy }
+          : undefined,
+      },
+    };
+
+    const createRes = await this.fetch(
+      `/containers/create?name=${encodeURIComponent(opts.name)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      },
+    );
+
+    if (!createRes.ok) {
+      const err = await createRes.text();
+      throw new Error(`Failed to create container: ${err}`);
+    }
+
+    const { Id } = (await createRes.json()) as { Id: string };
+
+    const startRes = await this.fetch(`/containers/${Id}/start`, { method: "POST" });
+    if (!startRes.ok && startRes.status !== 304) {
+      const err = await startRes.text();
+      throw new Error(`Failed to start container: ${err}`);
+    }
+
+    return Id;
+  }
+
+  async inspectContainer(name: string): Promise<ContainerInspectResult> {
+    const res = await this.fetch(`/containers/${encodeURIComponent(name)}/json`);
+    if (!res.ok) {
+      throw new Error(`Failed to inspect container ${name}: ${res.status}`);
+    }
+    return res.json() as Promise<ContainerInspectResult>;
+  }
+
+  async getContainerIp(name: string): Promise<string> {
+    const info = await this.inspectContainer(name);
+    const networks = info.NetworkSettings.Networks;
+    const firstNetwork = Object.values(networks)[0];
+    return firstNetwork?.IPAddress ?? "";
+  }
+
+  async isContainerRunning(name: string): Promise<boolean> {
+    try {
+      const info = await this.inspectContainer(name);
+      return info.State.Running;
+    } catch {
+      return false;
+    }
+  }
+
+  async pauseContainer(name: string): Promise<void> {
+    await this.fetch(`/containers/${encodeURIComponent(name)}/pause`, { method: "POST" });
+  }
+
+  async unpauseContainer(name: string): Promise<void> {
+    await this.fetch(`/containers/${encodeURIComponent(name)}/unpause`, { method: "POST" });
+  }
+
+  async stopContainer(name: string): Promise<void> {
+    await this.fetch(`/containers/${encodeURIComponent(name)}/stop`, { method: "POST" });
+  }
+
+  async startContainer(name: string): Promise<void> {
+    const res = await this.fetch(`/containers/${encodeURIComponent(name)}/start`, { method: "POST" });
+    if (!res.ok && res.status !== 304) {
+      throw new Error(`Failed to start container ${name}: ${res.status}`);
+    }
+  }
+
+  /** Upload a tar archive into the container at the given path. */
+  async putArchive(containerName: string, containerPath: string, tarBuffer: Buffer | Uint8Array): Promise<void> {
+    const res = await this.fetch(
+      `/containers/${encodeURIComponent(containerName)}/archive?path=${encodeURIComponent(containerPath)}`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/x-tar" },
+        body: tarBuffer,
+      },
+    );
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(`putArchive failed: ${err}`);
+    }
+  }
+
+  /** Download a tar archive of a path from the container. */
+  async getArchive(containerName: string, containerPath: string): Promise<Buffer> {
+    const res = await this.fetch(
+      `/containers/${encodeURIComponent(containerName)}/archive?path=${encodeURIComponent(containerPath)}`,
+    );
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(`getArchive failed: ${err}`);
+    }
+    return Buffer.from(await res.arrayBuffer());
+  }
+
+  async removeContainer(name: string, force = true): Promise<void> {
+    await this.fetch(
+      `/containers/${encodeURIComponent(name)}?force=${force}`,
+      { method: "DELETE" },
+    );
+  }
+
+  async renameContainer(name: string, newName: string): Promise<void> {
+    const res = await this.fetch(
+      `/containers/${encodeURIComponent(name)}/rename?name=${encodeURIComponent(newName)}`,
+      { method: "POST" },
+    );
+    if (!res.ok) {
+      throw new Error(`Failed to rename container: ${res.status}`);
+    }
+  }
+
+  async getContainerLogs(name: string, tail: number = 100): Promise<string> {
+    const res = await this.fetch(
+      `/containers/${encodeURIComponent(name)}/logs?stdout=true&stderr=true&tail=${tail}`,
+    );
+    if (!res.ok) return "";
+    const raw = new Uint8Array(await res.arrayBuffer());
+    return parseDockerLogs(raw);
+  }
+
+  // ── Exec ──
+
+  async exec(containerName: string, cmd: string[], opts?: { timeout?: number; workingDir?: string }): Promise<ExecResult> {
+    // Create exec instance
+    const createRes = await this.fetch(
+      `/containers/${encodeURIComponent(containerName)}/exec`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          Cmd: cmd,
+          AttachStdout: true,
+          AttachStderr: true,
+          WorkingDir: opts?.workingDir ?? "/workspace",
+        }),
+      },
+    );
+
+    if (!createRes.ok) {
+      const err = await createRes.text();
+      throw new Error(`Failed to create exec: ${err}`);
+    }
+
+    const { Id: execId } = (await createRes.json()) as { Id: string };
+
+    // Start exec and get multiplexed stream
+    const controller = new AbortController();
+    const timeout = opts?.timeout ?? 120_000;
+    const timer = setTimeout(() => controller.abort(), timeout);
+
+    try {
+      // Defer fetch to avoid Bun event loop stalls with AbortSignal (oven-sh/bun#6366)
+      const startRes = await deferAsync(() => this.fetch(`/exec/${execId}/start`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ Detach: false }),
+        signal: controller.signal,
+      }));
+
+      if (!startRes.ok) {
+        const err = await startRes.text();
+        throw new Error(`Failed to start exec: ${err}`);
+      }
+
+      const raw = new Uint8Array(await startRes.arrayBuffer());
+      const { stdout, stderr } = demuxDockerStream(raw);
+
+      // Get exit code
+      const inspectRes = await this.fetch(`/exec/${execId}/json`);
+      const inspectData = (await inspectRes.json()) as { ExitCode: number };
+
+      return { stdout, stderr, exitCode: inspectData.ExitCode };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  // ── List / Filter ──
+
+  async listContainers(opts?: { all?: boolean; filters?: Record<string, string[]> }): Promise<Array<{ Id: string; Names: string[]; State: string }>> {
+    const params = new URLSearchParams();
+    if (opts?.all) params.set("all", "true");
+    if (opts?.filters) params.set("filters", JSON.stringify(opts.filters));
+    const res = await this.fetch(`/containers/json?${params}`);
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(`Failed to list containers: ${err}`);
+    }
+    return res.json() as Promise<Array<{ Id: string; Names: string[]; State: string }>>;
+  }
+
+  // ── Networks ──
+
+  async networkExists(name: string): Promise<boolean> {
+    const res = await this.fetch(`/networks/${encodeURIComponent(name)}`);
+    return res.ok;
+  }
+
+  async createNetwork(name: string): Promise<void> {
+    const res = await this.fetch("/networks/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ Name: name, Driver: "bridge" }),
+    });
+    if (!res.ok) {
+      const err = await res.text();
+      dockerLog.warn("failed to create network", { name, error: err });
+    }
+  }
+
+  async removeNetwork(name: string): Promise<void> {
+    await this.fetch(`/networks/${encodeURIComponent(name)}`, { method: "DELETE" });
+  }
+
+  async connectNetwork(networkName: string, containerName: string): Promise<void> {
+    const res = await this.fetch(`/networks/${encodeURIComponent(networkName)}/connect`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ Container: containerName }),
+    });
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(`Failed to connect container to network: ${err}`);
+    }
+  }
+
+  async disconnectNetwork(networkName: string, containerName: string): Promise<void> {
+    await this.fetch(`/networks/${encodeURIComponent(networkName)}/disconnect`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ Container: containerName }),
+    });
+  }
+
+  async ensureNetwork(name: string): Promise<void> {
+    if (await this.networkExists(name)) return;
+    await this.createNetwork(name);
+  }
+}
+
+// ── Docker stream protocol helpers ──
+
+/**
+ * Demultiplex Docker's exec/attach stream format.
+ * Each frame: [stream_type(1 byte), 0, 0, 0, size(4 bytes big-endian), payload(size bytes)]
+ * stream_type: 0 = stdin, 1 = stdout, 2 = stderr
+ */
+function demuxDockerStream(data: Uint8Array): { stdout: string; stderr: string } {
+  const stdoutChunks: Uint8Array[] = [];
+  const stderrChunks: Uint8Array[] = [];
+  let offset = 0;
+
+  while (offset + 8 <= data.length) {
+    const streamType = data[offset]!;
+    const size =
+      (data[offset + 4]! << 24) |
+      (data[offset + 5]! << 16) |
+      (data[offset + 6]! << 8) |
+      data[offset + 7]!;
+    offset += 8;
+
+    if (offset + size > data.length) break;
+
+    const payload = data.subarray(offset, offset + size);
+    if (streamType === 1) {
+      stdoutChunks.push(payload);
+    } else if (streamType === 2) {
+      stderrChunks.push(payload);
+    }
+    offset += size;
+  }
+
+  const decoder = new TextDecoder();
+  return {
+    stdout: decoder.decode(concatUint8Arrays(stdoutChunks)),
+    stderr: decoder.decode(concatUint8Arrays(stderrChunks)),
+  };
+}
+
+/**
+ * Parse Docker log output (same multiplexed format as exec).
+ */
+function parseDockerLogs(data: Uint8Array): string {
+  const { stdout, stderr } = demuxDockerStream(data);
+  return stdout + (stderr ? "\n" + stderr : "");
+}
+
+function concatUint8Arrays(arrays: Uint8Array[]): Uint8Array {
+  if (arrays.length === 0) return new Uint8Array(0);
+  if (arrays.length === 1) return arrays[0]!;
+  const totalLength = arrays.reduce((acc, arr) => acc + arr.length, 0);
+  const result = new Uint8Array(totalLength);
+  let offset = 0;
+  for (const arr of arrays) {
+    result.set(arr, offset);
+    offset += arr.length;
+  }
+  return result;
+}
+
+// ── Singleton ──
+
+export const docker = new DockerClient();

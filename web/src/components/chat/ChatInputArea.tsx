@@ -25,8 +25,6 @@ import { ImageUploadButton, type ImageAttachment } from "@/components/chat/Scree
 import { ToolSelector } from "@/components/chat/ToolSelector";
 import { FilePickerButton } from "@/components/chat/FilePickerButton";
 import { TodoProgress } from "@/components/chat/TodoProgress";
-import { ContextPreview } from "@/components/chat/ContextPreview";
-import type { ContextPreviewItem } from "@/api/context";
 import { apiFetch } from "@/api/client";
 import { getSelectedModel } from "@/stores/model";
 import {
@@ -37,15 +35,10 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useModelStore, getModelsCache } from "@/stores/model";
 import type { ChatMessage } from "@/components/chat/ChatMessageItem";
-import type { ServerCapabilities } from "@/api/companion";
+import type { ServerCapabilities } from "@/api/capabilities";
 import { useChatContainerStatus } from "@/api/containers";
-import { BrowserPreview } from "@/components/chat/BrowserPreview";
 
-export interface PinnedContextItem {
-  key: string;
-  content: string;
-  type: "memory" | "file";
-}
+import { BrowserPreview } from "@/components/chat/BrowserPreview";
 
 interface ChatInputAreaProps {
   projectId: string;
@@ -55,9 +48,7 @@ interface ChatInputAreaProps {
   status: string;
   sendMessage: (opts: { text: string; files?: Array<{ type: "file"; mediaType: string; url: string }> }) => void;
   stop: () => void;
-  companionStatus: { connected: boolean; browserTitle?: string } | undefined;
   capabilities: ServerCapabilities | undefined;
-  onContextChange?: (pinned: PinnedContextItem[], dismissed: string[]) => void;
 }
 
 export function ChatInputArea({
@@ -68,35 +59,10 @@ export function ChatInputArea({
   status,
   sendMessage,
   stop,
-  companionStatus,
   capabilities,
-  onContextChange,
 }: ChatInputAreaProps) {
   const { data: containerStatus } = useChatContainerStatus(projectId, chatId);
   const [input, setInput] = useState("");
-  const [debouncedInput, setDebouncedInput] = useState("");
-  const [pinnedItems, setPinnedItems] = useState<Map<string, PinnedContextItem>>(new Map());
-  const [dismissedKeys, setDismissedKeys] = useState<Set<string>>(new Set());
-
-  // Debounce input for context preview
-  useEffect(() => {
-    const timer = setTimeout(() => setDebouncedInput(input.trim()), 500);
-    return () => clearTimeout(timer);
-  }, [input]);
-
-  // Reset dismissed keys when the debounced query changes
-  const prevQueryRef = useRef(debouncedInput);
-  useEffect(() => {
-    if (prevQueryRef.current !== debouncedInput) {
-      setDismissedKeys(new Set());
-      prevQueryRef.current = debouncedInput;
-    }
-  }, [debouncedInput]);
-
-  // Notify parent of context changes
-  useEffect(() => {
-    onContextChange?.(Array.from(pinnedItems.values()), Array.from(dismissedKeys));
-  }, [pinnedItems, dismissedKeys, onContextChange]);
   const [imageAttachment, setImageAttachment] = useState<ImageAttachment | null>(null);
   const richTextareaRef = useRef<RichTextareaHandle>(null);
   const selectedModelId = useModelStore((s) => s.selectedModelId);
@@ -156,42 +122,12 @@ export function ChatInputArea({
       sendMessage({ text: input || "Describe this image.", files });
       setInput("");
       setImageAttachment(null);
-      setPinnedItems(new Map());
-      setDismissedKeys(new Set());
     }
   }, [input, imageAttachment, isStreaming, sendMessage]);
 
   return (
     <div className="px-3 py-4 sm:px-6 md:px-10 space-y-2">
       <TodoProgress messages={messages} />
-      <ContextPreview
-        projectId={projectId}
-        query={debouncedInput}
-        pinnedKeys={new Set(pinnedItems.keys())}
-        dismissedKeys={dismissedKeys}
-        onPin={(item, type) => {
-          setPinnedItems((prev) => {
-            const next = new Map(prev);
-            next.set(item.key, { key: item.key, content: item.snippet ?? item.content, type });
-            return next;
-          });
-        }}
-        onUnpin={(key) => {
-          setPinnedItems((prev) => {
-            const next = new Map(prev);
-            next.delete(key);
-            return next;
-          });
-        }}
-        onDismiss={(key) => {
-          setDismissedKeys((prev) => new Set(prev).add(key));
-          setPinnedItems((prev) => {
-            const next = new Map(prev);
-            next.delete(key);
-            return next;
-          });
-        }}
-      />
       {imageAttachment && (
         <div className="flex items-center gap-2 pb-2">
           <div className="relative rounded border bg-muted overflow-hidden">
@@ -247,7 +183,7 @@ export function ChatInputArea({
                         ? "bg-emerald-500"
                         : containerStatus?.status === "paused"
                           ? "bg-amber-500"
-                          : capabilities?.serverDocker || companionStatus?.connected
+                          : capabilities?.serverDocker
                             ? "bg-emerald-500/50"
                             : "bg-muted-foreground/40"
                     }`}
@@ -259,9 +195,7 @@ export function ChatInputArea({
                         ? "Container paused"
                         : capabilities?.serverDocker
                           ? "Server execution"
-                          : companionStatus?.connected
-                            ? "Companion connected"
-                            : "Execution unavailable"}
+                          : "Execution unavailable"}
                   </span>
                 </div>
               </TooltipTrigger>
@@ -272,9 +206,7 @@ export function ChatInputArea({
                     ? "Container is paused — will resume automatically on next action"
                     : capabilities?.serverDocker
                       ? "No container yet — one will be created on first action"
-                      : companionStatus?.connected
-                        ? `Connected${companionStatus.browserTitle ? `: ${companionStatus.browserTitle}` : ""}`
-                        : "Connect a companion or enable server execution"}
+                      : "Server execution not available"}
               </TooltipContent>
             </Tooltip>
             {(totalUsage.totalTokens ?? 0) > 0 && (

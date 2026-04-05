@@ -437,13 +437,8 @@ function MockupSkills() {
 
       {/* Annotation */}
       <text x={260} y={210} textAnchor="middle" className="t-xs t-muted">
-        Skills add platform-specific tools · Some require the companion agent
+        Skills add platform-specific tools and capabilities
       </text>
-
-      {/* Companion note */}
-      <rect x={120} y={222} width={280} height={24} rx={6} fill={C.muted} opacity={0.5} />
-      <circle cx={140} cy={234} r={4} fill="oklch(0.65 0.18 140)" />
-      <text x={150} y={238} className="t-xs t-muted">Companion connected — browser automation ready</text>
     </MockupFrame>
   );
 }
@@ -545,77 +540,6 @@ function MockupGettingStarted() {
   );
 }
 
-/* ────────────────────────────────────────────────────────
-   MOCKUP: Companion / Browser Automation
-   ──────────────────────────────────────────────────────── */
-function MockupCompanion() {
-  return (
-    <MockupFrame width={480} height={240}>
-      {/* Left: desktop app mockup */}
-      <rect x={16} y={16} width={200} height={140} rx={8} fill={C.card} stroke={C.border} strokeWidth={1} />
-      {/* Title bar */}
-      <rect x={16} y={16} width={200} height={24} rx={8} fill={C.muted} />
-      <rect x={16} y={32} width={200} height={8} fill={C.muted} />
-      <circle cx={30} cy={28} r={4} fill="oklch(0.65 0.18 25)" />
-      <circle cx={42} cy={28} r={4} fill="oklch(0.75 0.15 90)" />
-      <circle cx={54} cy={28} r={4} fill="oklch(0.65 0.15 140)" />
-      <text x={116} y={32} textAnchor="middle" className="t-xs t-muted">Companion Agent</text>
-      {/* Browser viewport */}
-      <rect x={24} y={48} width={184} height={100} rx={4} fill={C.bg} />
-      <rect x={30} y={54} width={172} height={16} rx={4} fill={C.muted} />
-      <text x={40} y={66} className="t-xs t-muted">linkedin.com/in/...</text>
-      {/* Content placeholders */}
-      <rect x={30} y={78} width={80} height={8} rx={2} fill={C.muted} />
-      <rect x={30} y={92} width={140} height={6} rx={2} fill={C.muted} opacity={0.5} />
-      <rect x={30} y={102} width={120} height={6} rx={2} fill={C.muted} opacity={0.5} />
-      <rect x={30} y={112} width={100} height={6} rx={2} fill={C.muted} opacity={0.5} />
-      {/* Cursor */}
-      <text x={150} y={100} style={{ fontSize: 14 }}>🖱️</text>
-
-      {/* Arrow connecting */}
-      <line x1={224} y1={86} x2={256} y2={86} stroke={C.primary} strokeWidth={1.5} strokeDasharray="4 3" />
-      <text x={240} y={80} textAnchor="middle" className="t-xs t-primary" transform="rotate(-90, 240, 80)">WebSocket</text>
-
-      {/* Right: agent actions list */}
-      <rect x={264} y={16} width={200} height={140} rx={8} fill={C.card} stroke={C.border} strokeWidth={1} />
-      <text x={280} y={38} className="t-base t-fg">Browser Actions</text>
-      {[
-        "Navigate to URLs",
-        "Click, type, scroll",
-        "Take screenshots",
-        "Manage tabs",
-        "Run JavaScript",
-        "Extract page data",
-      ].map((action, i) => (
-        <g key={i}>
-          <circle cx={280} cy={56 + i * 16} r={2} fill={C.primary} />
-          <text x={290} y={60 + i * 16} className="t-xs t-fg">{action}</text>
-        </g>
-      ))}
-
-      {/* Bottom flow explanation */}
-      <g transform="translate(16, 170)">
-        <rect x={0} y={0} width={448} height={50} rx={8} fill={C.muted} opacity={0.4} />
-        {/* Flow: You chat → Agent decides → Companion acts → Result returned */}
-        {[
-          { x: 20, label: "You chat", icon: "💬" },
-          { x: 140, label: "Agent decides", icon: "🤖" },
-          { x: 260, label: "Browser acts", icon: "🌐" },
-          { x: 370, label: "Result returned", icon: "✅" },
-        ].map((step, i) => (
-          <g key={i}>
-            <text x={step.x} y={20} style={{ fontSize: 14 }}>{step.icon}</text>
-            <text x={step.x + 20} y={20} className="t-xs t-fg">{step.label}</text>
-            {i < 3 && <text x={step.x + 108} y={20} className="t-xs t-muted">→</text>}
-          </g>
-        ))}
-        <text x={224} y={42} textAnchor="middle" className="t-xs t-muted">
-          Download the companion app to enable browser automation
-        </text>
-      </g>
-    </MockupFrame>
-  );
-}
 
 /* ────────────────────────────────────────────────────────
    MOCKUP: Make It Yours (open source / Claude Code)
@@ -699,7 +623,6 @@ function MockupProjectStructure() {
         {[
           { indent: 1, name: "api/", desc: "Backend — Bun server, SQLite, routes", color: "oklch(0.65 0.18 250)" },
           { indent: 1, name: "web/", desc: "Frontend — React, Tailwind, shadcn/ui", color: "oklch(0.65 0.18 140)" },
-          { indent: 1, name: "companion/", desc: "Desktop app — browser automation", color: "oklch(0.65 0.18 30)" },
           { indent: 1, name: "skills/", desc: "Extensions — add your own here", color: "oklch(0.65 0.18 300)" },
           { indent: 1, name: ".env", desc: "Your API keys (from .env.example)", color: "oklch(0.5 0 0)" },
           { indent: 1, name: "CLAUDE.md", desc: "Instructions for Claude Code", color: "oklch(0.5 0 0)" },
@@ -758,8 +681,6 @@ The project structure:
 - api/ — Backend server (Bun, SQLite, S3-compatible file storage, all API routes and AI tool definitions)
 - web/ — Frontend (React 19, Tailwind, shadcn/ui components, React Router)
 - skills/ — Installable extensions that add platform-specific capabilities (each skill is a self-contained module)
-- companion/ — Desktop app that gives the agent browser automation via Playwright
-
 Once setup is complete, read through the CLAUDE.md files in the root, api/, and web/ directories to understand the project conventions (Bun over Node, no Express, HTML imports, etc.).
 
 Then ask me what I'd like to customize, add, or change about the agent. Wait for my response before making any changes.`;
@@ -915,14 +836,6 @@ export function HelpPage() {
             subtitle="Add platform-specific capabilities via installable extensions"
           >
             <MockupSkills />
-          </Section>
-
-          {/* Companion */}
-          <Section
-            title="Browser Automation"
-            subtitle="The companion desktop app gives the agent control over a real browser"
-          >
-            <MockupCompanion />
           </Section>
 
           {/* Divider */}

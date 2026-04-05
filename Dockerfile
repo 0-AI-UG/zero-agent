@@ -1,11 +1,9 @@
 FROM oven/bun:1.3.5
 
-# Install Docker daemon + CLI + supervisor for DinD
+# Install Docker CLI (for debugging) and tar (for build contexts)
 RUN apt-get update && apt-get install -y \
-    docker.io iptables supervisor \
+    docker.io \
     && rm -rf /var/lib/apt/lists/*
-
-COPY docker/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
 WORKDIR /app
 
@@ -34,9 +32,9 @@ RUN bun run build
 COPY docker/session/ /app/docker/session/
 
 # Create data directories
-RUN mkdir -p /app/data/workspaces /var/lib/docker
+RUN mkdir -p /app/data/workspaces
 
 EXPOSE 3000
 
 ENV NODE_ENV=production
-CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
+CMD ["bun", "server/index.ts"]

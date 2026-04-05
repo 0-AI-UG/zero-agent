@@ -9,6 +9,7 @@ import { verifyChatOwnership } from "@/routes/chats.ts";
 import { createAgent } from "@/lib/agent.ts";
 import { getModelContextWindow } from "@/config/models.ts";
 import { saveChatMessages } from "@/db/queries/messages.ts";
+import { getFileById } from "@/db/queries/files.ts";
 import { touchChat, updateChat } from "@/db/queries/chats.ts";
 import { flushConversationMemory } from "@/lib/memory-flush.ts";
 import { detectExploreItems } from "@/lib/heartbeat-explore.ts";
@@ -50,13 +51,11 @@ export async function handleChat(request: BunRequest): Promise<Response> {
       throw new ConflictError("Another member is already sending a message in this chat");
     }
 
-    const { messages, model, language, disabledTools, pinnedContext, dismissedContext } = await validateBody(request, chatRequestSchema) as {
+    const { messages, model, language, disabledTools } = await validateBody(request, chatRequestSchema) as {
       messages: UIMessage[];
       model?: string;
       language?: "en" | "zh";
       disabledTools?: string[];
-      pinnedContext?: { key: string; content: string; type: "memory" | "file" }[];
-      dismissedContext?: string[];
     };
     chatLog.info("starting agent stream", { projectId, chatId, messageCount: messages.length, language });
 
@@ -78,44 +77,24 @@ export async function handleChat(request: BunRequest): Promise<Response> {
 
     // Retrieve relevant context via semantic search
     let relevantMemories: { content: string; score: number }[] | undefined;
-    let relevantFiles: { content: string; score: number; filename: string; fileId: string }[] | undefined;
+    let relevantFiles: { path: string }[] | undefined;
     const latestUserMsg = [...messages].reverse().find((m) => m.role === "user");
     const latestUserText = (latestUserMsg?.parts?.find((p: { type: string }) => p.type === "text") as { type: "text"; text: string } | undefined)?.text;
     if (latestUserText) {
-      const dismissedKeys = new Set(dismissedContext ?? []);
-
       const chatEmbedding = await embedValue(latestUserText).catch(() => null);
       const [memoryResults, fileResults] = await Promise.all([
         semanticSearch(projectId, "memory", latestUserText, 10, 0.7, chatEmbedding ?? undefined).catch(() => []),
         semanticSearch(projectId, "file", latestUserText, 10, 0.7, chatEmbedding ?? undefined).catch(() => []),
       ]);
 
-      const searchMemories = memoryResults
-        .filter((r) => !dismissedKeys.has(r.key))
-        .map((r) => ({ content: r.content, score: r.score }));
+      relevantMemories = memoryResults.map((r) => ({ content: r.content, score: r.score }));
 
-      // Add pinned memory items
-      const pinnedMemories = (pinnedContext ?? [])
-        .filter((p) => p.type !== "file")
-        .map((p) => ({ content: p.content, score: 1.0 }));
-
-      relevantMemories = [...pinnedMemories, ...searchMemories];
-
-      // File context from search + pinned files
-      const searchFiles = fileResults
-        .filter((r) => !dismissedKeys.has(r.key))
-        .map((r) => ({
-          content: r.content,
-          score: r.score,
-          filename: (r.metadata.filename as string) ?? "unknown",
-          fileId: (r.metadata.sourceId as string) ?? "",
-        }));
-
-      const pinnedFiles = (pinnedContext ?? [])
-        .filter((p) => p.type === "file")
-        .map((p) => ({ content: p.content, score: 1.0, filename: p.key, fileId: "" }));
-
-      relevantFiles = [...pinnedFiles, ...searchFiles];
+      relevantFiles = fileResults.map((r) => {
+        const sourceId = (r.metadata.sourceId as string) ?? "";
+        const file = sourceId ? getFileById(sourceId) : null;
+        const path = file ? `${file.folder_path}${file.filename}` : (r.metadata.filename as string) ?? "unknown";
+        return { path };
+      });
       if (relevantFiles.length === 0) relevantFiles = undefined;
     }
 
@@ -393,42 +372,6 @@ export async function handleChat(request: BunRequest): Promise<Response> {
   }
 }
 
-export async function handleContextPreview(request: BunRequest): Promise<Response> {
-  try {
-    const { userId } = await authenticateRequest(request);
-    const { projectId } = request.params as { projectId: string };
-    verifyProjectAccess(projectId, userId);
-
-    const url = new URL(request.url);
-    const query = url.searchParams.get("q")?.trim();
-    if (!query) {
-      return Response.json({ memories: [], files: [] }, { headers: corsHeaders });
-    }
-
-    const embedding = await embedValue(query);
-    const [memories, files] = await Promise.all([
-      semanticSearch(projectId, "memory", query, 10, 0.7, embedding).catch(() => []),
-      semanticSearch(projectId, "file", query, 10, 0.7, embedding).catch(() => []),
-    ]);
-
-    return Response.json({
-      memories: memories.map((r) => ({
-        key: r.key,
-        content: r.content,
-        score: r.score,
-      })),
-      files: files.map((r) => ({
-        key: r.key,
-        fileId: r.metadata.sourceId as string,
-        filename: r.metadata.filename as string,
-        snippet: r.content.slice(0, 200),
-        score: r.score,
-      })),
-    }, { headers: corsHeaders });
-  } catch (error) {
-    return handleError(error);
-  }
-}
 
 export async function handleAbortChat(request: BunRequest): Promise<Response> {
   try {

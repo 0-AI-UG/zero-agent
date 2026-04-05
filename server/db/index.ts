@@ -358,6 +358,47 @@ db.run(`
 `);
 db.run(`CREATE INDEX IF NOT EXISTS idx_totp_backup_user ON totp_backup_codes(user_id, used)`);
 
+// ── Forwarded Ports ──
+
+db.run(`
+  CREATE TABLE IF NOT EXISTS forwarded_ports (
+    id            TEXT PRIMARY KEY,
+    project_id    TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    user_id       TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    slug          TEXT UNIQUE NOT NULL,
+    label         TEXT NOT NULL DEFAULT '',
+    port          INTEGER NOT NULL,
+    container_ip  TEXT,
+    status        TEXT NOT NULL DEFAULT 'active'
+      CHECK (status IN ('active', 'stopped')),
+    pinned        INTEGER NOT NULL DEFAULT 0,
+    start_command TEXT,
+    working_dir   TEXT DEFAULT '/workspace',
+    env_vars      TEXT DEFAULT '{}',
+    error         TEXT,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+  )
+`);
+
+// Migrate from deployed_apps if it exists
+try {
+  const hasOld = db.query<{ name: string }, []>("SELECT name FROM sqlite_master WHERE type='table' AND name='deployed_apps'").get();
+  if (hasOld) {
+    db.run(`
+      INSERT OR IGNORE INTO forwarded_ports (id, project_id, user_id, slug, label, port, container_ip, status, pinned, start_command, working_dir, env_vars, error, created_at, updated_at)
+      SELECT id, project_id, user_id, slug, name, internal_port, container_ip,
+        CASE WHEN status = 'running' THEN 'active' ELSE 'stopped' END,
+        published, start_command, working_dir, env_vars, error, created_at, updated_at
+      FROM deployed_apps
+    `);
+    db.run("DROP TABLE IF EXISTS app_deploy_logs");
+    db.run("DROP TABLE IF EXISTS deployed_apps");
+  }
+} catch {
+  // Migration already done or table doesn't exist
+}
+
 // ── Indexes ──
 
 db.run(`CREATE INDEX IF NOT EXISTS idx_projects_user_id ON projects(user_id)`);
@@ -388,6 +429,8 @@ db.run(`CREATE INDEX IF NOT EXISTS idx_usage_logs_project ON usage_logs(project_
 db.run(`CREATE INDEX IF NOT EXISTS idx_usage_logs_created ON usage_logs(created_at)`);
 db.run(`CREATE INDEX IF NOT EXISTS idx_credentials_project ON credentials(project_id)`);
 db.run(`CREATE INDEX IF NOT EXISTS idx_credentials_domain ON credentials(project_id, domain)`);
+db.run(`CREATE INDEX IF NOT EXISTS idx_forwarded_ports_project ON forwarded_ports(project_id)`);
+db.run(`CREATE INDEX IF NOT EXISTS idx_forwarded_ports_slug ON forwarded_ports(slug)`);
 
 // ── Seed models from JSON if table is empty ──
 

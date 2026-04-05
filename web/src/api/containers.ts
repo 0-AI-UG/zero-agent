@@ -6,12 +6,12 @@ export interface ContainerEntry {
   sessionId: string;
   userId: string;
   projectId: string;
-  status: "running" | "paused";
+  status: "running";
   lastUsedAt: number;
 }
 
 export interface ContainerStatus {
-  status: "running" | "paused" | "none";
+  status: "running" | "none";
 }
 
 export function useContainers() {
@@ -41,27 +41,6 @@ export function useChatContainerStatus(projectId: string, chatId: string) {
   });
 }
 
-export function usePauseContainer() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (sessionId: string) =>
-      apiFetch<{ ok: true }>(`/admin/containers/${sessionId}/pause`, { method: "POST" }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.containers.all });
-    },
-  });
-}
-
-export function useResumeContainer() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (sessionId: string) =>
-      apiFetch<{ ok: true }>(`/admin/containers/${sessionId}/resume`, { method: "POST" }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.containers.all });
-    },
-  });
-}
 
 export interface BrowserScreenshot {
   base64: string;

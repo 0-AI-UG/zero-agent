@@ -2,7 +2,6 @@ import { z } from "zod";
 import { tool } from "ai";
 import type { Tool } from "ai";
 import { log } from "@/lib/logger.ts";
-import { browserBridge } from "@/lib/browser/bridge.ts";
 import { encrypt, decrypt } from "@/lib/crypto.ts";
 import {
   insertCredential,
@@ -109,55 +108,8 @@ export function createCredentialTools(projectId: string, userId?: string): Recor
         return { saved: true };
       }
 
-      // Passkey type
-      if (!userId) {
-        return { saved: false, error: "Browser companion is not connected. Passkey operations require the companion." };
-      }
-
-      const authenticatorId = await browserBridge.ensureAuthenticator(userId, projectId);
-      const result = await browserBridge.sendWebAuthnCommand(userId, projectId, {
-        type: "getCredentials",
-        commandId: nanoid(),
-        authenticatorId,
-      }) as { credentials: Array<{ credentialId: string; rpId: string; privateKey: string; userHandle: string; signCount: number }> };
-
-      if (!result.credentials || result.credentials.length === 0) {
-        return { saved: false, error: "No credentials found on the virtual authenticator. Make sure you completed the passkey registration on the website." };
-      }
-
-      const cred = result.credentials[0]!;
-      const privateKeyEnc = await encrypt(cred.privateKey);
-
-      // Upsert: update if same domain + passkey exists
-      const existing = getCredentialByDomainAndType(projectId, domain, "passkey");
-      if (existing) {
-        updateCredential(existing.id, {
-          label: input.label,
-          siteUrl: input.siteUrl,
-          credentialId: cred.credentialId,
-          privateKeyEnc,
-          rpId: cred.rpId,
-          userHandle: cred.userHandle,
-          signCount: cred.signCount,
-        });
-        credLog.info("passkey credential updated", { projectId, domain });
-        return { saved: true, updated: true };
-      }
-
-      insertCredential(projectId, {
-        credType: "passkey",
-        label: input.label,
-        siteUrl: input.siteUrl,
-        domain,
-        credentialId: cred.credentialId,
-        privateKeyEnc,
-        rpId: cred.rpId,
-        userHandle: cred.userHandle,
-        signCount: cred.signCount,
-      });
-
-      credLog.info("passkey credential saved", { projectId, domain });
-      return { saved: true };
+      // Passkey type — requires WebAuthn which is not supported in server-only mode
+      return { saved: false, error: "Passkey operations are not supported in server-only mode." };
     },
   });
 
@@ -214,59 +166,13 @@ export function createCredentialTools(projectId: string, userId?: string): Recor
             hasBackupCodes: !!row.backup_codes_enc,
           });
         } else {
-          // Passkey — load into authenticator if companion is connected
-          if (!userId) {
-            const entry = {
-              type: "passkey" as const,
-              label: row.label,
-              siteUrl: row.site_url,
-              loaded: false,
-              error: "Browser companion is not connected. Passkey operations require the companion.",
-            };
-            redacted.push(entry);
-            full.push(entry);
-            continue;
-          }
-
-          if (!row.private_key_enc || !row.credential_id || !row.rp_id) {
-            const entry = {
-              type: "passkey" as const,
-              label: row.label,
-              siteUrl: row.site_url,
-              loaded: false,
-              error: "Passkey data is incomplete.",
-            };
-            redacted.push(entry);
-            full.push(entry);
-            continue;
-          }
-
-          const privateKey = await decrypt(row.private_key_enc);
-          const authenticatorId = await browserBridge.ensureAuthenticator(userId, projectId);
-
-          await browserBridge.sendWebAuthnCommand(userId, projectId, {
-            type: "addCredential",
-            commandId: nanoid(),
-            authenticatorId,
-            credential: {
-              credentialId: row.credential_id,
-              rpId: row.rp_id,
-              privateKey,
-              userHandle: row.user_handle ?? "",
-              signCount: row.sign_count ?? 0,
-            },
-          });
-
-          // Increment sign count
-          const newCount = (row.sign_count ?? 0) + 1;
-          updateSignCount(row.id, newCount);
-
-          credLog.info("passkey loaded", { projectId, siteUrl: row.site_url });
+          // Passkey loading not supported in server-only mode
           const entry = {
             type: "passkey" as const,
             label: row.label,
             siteUrl: row.site_url,
-            loaded: true,
+            loaded: false,
+            error: "Passkey operations are not supported in server-only mode.",
           };
           redacted.push(entry);
           full.push(entry);

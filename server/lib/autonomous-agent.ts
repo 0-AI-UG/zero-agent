@@ -3,10 +3,10 @@ import { createAgent } from "@/lib/agent.ts";
 import { createAutonomousChat } from "@/db/queries/chats.ts";
 import { touchChat } from "@/db/queries/chats.ts";
 import { db } from "@/db/index.ts";
+import { getFileById } from "@/db/queries/files.ts";
 import { generateId as dbGenerateId } from "@/db/index.ts";
 import { readFromS3 } from "@/lib/s3.ts";
-import { browserBridge } from "@/lib/browser/bridge.ts";
-import { backendRouter } from "@/lib/execution/router.ts";
+import { getLocalBackend } from "@/lib/execution/lifecycle.ts";
 import { semanticSearch, isEmbeddingConfigured, embedValue } from "@/lib/vectors.ts";
 import { saveCheckpoint, deleteCheckpoint, loadCheckpoint } from "@/lib/durability/checkpoint.ts";
 import { isShuttingDown, registerRun, deregisterRun } from "@/lib/durability/shutdown.ts";
@@ -91,9 +91,12 @@ export async function runAutonomousTask(
 
         const parts: string[] = [];
         if (relevantFiles.length > 0) {
-          parts.push("### Related Files\n" + relevantFiles.map((r) =>
-            `- [${r.metadata.filename ?? "file"}] ${r.content.slice(0, 200)}`
-          ).join("\n"));
+          parts.push("### Related Files\n" + relevantFiles.map((r) => {
+            const sourceId = r.metadata.sourceId as string | undefined;
+            const file = sourceId ? getFileById(sourceId) : null;
+            const path = file ? `${file.folder_path}${file.filename}` : (r.metadata.filename ?? "file");
+            return `- ${path}`;
+          }).join("\n"));
         }
         if (relevantMemories.length > 0) {
           parts.push("### Related Memories\n" + relevantMemories.map((r) =>
@@ -123,10 +126,6 @@ export async function runAutonomousTask(
     } else {
       autoLog.info("no heartbeat checklist found", { projectId: project.id });
     }
-
-    const lazyBrowserSession = options?.userId && (browserBridge.isConnected(options.userId, project.id) || backendRouter.isAvailable(options.userId, project.id))
-      ? { id: `auto-${chat.id}`, created: false }
-      : undefined;
 
     const runId = dbGenerateId();
     // Reuse anchor run ID across continuations so the anchor accumulates
@@ -170,7 +169,6 @@ export async function runAutonomousTask(
       onlyTools: options?.onlyTools,
       onlySkills: options?.onlySkills,
       userId: options?.userId,
-      lazyBrowserSession,
       runId,
       chatId: chat.id,
       maxSteps: AUTONOMOUS_MAX_STEPS,
@@ -319,12 +317,6 @@ export async function runAutonomousTask(
         deleteAnchor(project.id, anchorRunId).catch(() => {});
       }
       deregisterRun(runId);
-      if (lazyBrowserSession?.created && options?.userId) {
-        const backend = backendRouter.getBackend(options.userId, project.id);
-        (backend ?? browserBridge).destroySession(options.userId, project.id, lazyBrowserSession.id).catch((err: unknown) => {
-          autoLog.warn("failed to destroy browser session", { error: String(err) });
-        });
-      }
     }
 
     // If suspended, return early with partial summary

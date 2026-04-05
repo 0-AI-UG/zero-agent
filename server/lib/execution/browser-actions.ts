@@ -101,13 +101,57 @@ async function waitForLoad(cdp: CdpClient, timeout = 10000) {
     if (result.result.value === "complete" || result.result.value === "interactive") return;
   } catch {}
 
-  // Wait for Page.loadEventFired or timeout
+  // Wait for Page.loadEventFired or timeout.
+  // Use cdp.once() to avoid leaking listeners — each waitForLoad() call
+  // would otherwise permanently add a listener to the CDP client.
   return new Promise<void>((resolve) => {
-    const timer = setTimeout(resolve, timeout);
-    cdp.on("Page.loadEventFired", () => {
-      clearTimeout(timer);
+    const timer = setTimeout(() => {
+      cdp.off("Page.loadEventFired", handler);
       resolve();
-    });
+    }, timeout);
+    const handler = () => {
+      clearTimeout(timer);
+      cdp.off("Page.loadEventFired", handler);
+      resolve();
+    };
+    cdp.on("Page.loadEventFired", handler);
+  });
+}
+
+/** Wait until no network requests are in-flight for `idleMs`, up to `timeout`. */
+async function waitForNetworkIdle(cdp: CdpClient, idleMs = 500, timeout = 5000): Promise<void> {
+  await cdp.send("Network.enable").catch(() => {});
+
+  let inflight = 0;
+  let idleTimer: ReturnType<typeof setTimeout> | null = null;
+
+  return new Promise<void>((resolve) => {
+    const deadline = setTimeout(() => { cleanup(); resolve(); }, timeout);
+
+    const onRequest = () => { inflight++; resetIdle(); };
+    const onDone = () => { inflight = Math.max(0, inflight - 1); if (inflight === 0) startIdle(); };
+
+    function startIdle() {
+      idleTimer = setTimeout(() => { cleanup(); resolve(); }, idleMs);
+    }
+    function resetIdle() {
+      if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
+    }
+    function cleanup() {
+      clearTimeout(deadline);
+      if (idleTimer) clearTimeout(idleTimer);
+      cdp.off("Network.requestWillBeSent", onRequest);
+      cdp.off("Network.loadingFinished", onDone);
+      cdp.off("Network.loadingFailed", onDone);
+      cdp.send("Network.disable").catch(() => {});
+    }
+
+    cdp.on("Network.requestWillBeSent", onRequest);
+    cdp.on("Network.loadingFinished", onDone);
+    cdp.on("Network.loadingFailed", onDone);
+
+    // If already idle, start the timer immediately
+    startIdle();
   });
 }
 
@@ -197,9 +241,13 @@ async function focusAndType(cdp: CdpClient, backendNodeId: number, text: string,
   }
 }
 
-async function buildA11ySnapshot(cdp: CdpClient): Promise<{ content: string; refMap: Map<string, { role: string; name: string; backendNodeId: number }> }> {
+async function buildA11ySnapshot(
+  cdp: CdpClient,
+  options?: { relaxed?: boolean },
+): Promise<{ content: string; refMap: Map<string, { role: string; name: string; backendNodeId: number }> }> {
   const refMap = new Map<string, { role: string; name: string; backendNodeId: number }>();
   let refCounter = 0;
+  const relaxed = options?.relaxed ?? false;
 
   const { nodes } = await cdp.send("Accessibility.getFullAXTree", { depth: 50 }, 30_000);
 
@@ -216,8 +264,9 @@ async function buildA11ySnapshot(cdp: CdpClient): Promise<{ content: string; ref
   }
 
   const skipRoles = new Set([
-    "none", "generic", "InlineTextBox", "LineBreak",
+    "none", "InlineTextBox", "LineBreak",
     "StaticText", "RootWebArea", "ignored",
+    ...(relaxed ? [] : ["generic"]),
   ]);
 
   const interactiveRoles = new Set([
@@ -234,18 +283,31 @@ async function buildA11ySnapshot(cdp: CdpClient): Promise<{ content: string; ref
     if (!node) return;
 
     const role = node.role?.value ?? "";
-    if (skipRoles.has(role)) {
-      const kids = children.get(nodeId) ?? [];
-      for (const kid of kids) renderNode(kid, depth);
-      return;
-    }
-
     const name = node.name?.value ?? "";
-    const indent = "  ".repeat(depth);
     const backendNodeId = node.backendDOMNodeId;
 
+    if (skipRoles.has(role)) {
+      // Keep "generic" nodes that have a name and backendNodeId (likely interactive divs/spans)
+      const keepGeneric = role === "generic" && name && backendNodeId;
+      if (!keepGeneric) {
+        const kids = children.get(nodeId) ?? [];
+        for (const kid of kids) renderNode(kid, depth);
+        return;
+      }
+    }
+
+    const indent = "  ".repeat(depth);
+
     let ref = "";
-    if (backendNodeId && (interactiveRoles.has(role) || name)) {
+    if (relaxed) {
+      // In relaxed mode, give refs to any node with a backendNodeId
+      if (backendNodeId) {
+        refCounter++;
+        const refId = `e${refCounter}`;
+        ref = ` [ref=${refId}]`;
+        refMap.set(refId, { role, name, backendNodeId });
+      }
+    } else if (backendNodeId && (interactiveRoles.has(role) || name)) {
       refCounter++;
       const refId = `e${refCounter}`;
       ref = ` [ref=${refId}]`;
@@ -293,15 +355,33 @@ export async function executeAction(
 
   async function fullSnapshot(): Promise<string> {
     const snapStart = Date.now();
-    const snap = await buildA11ySnapshot(cdp);
+    let snap = await buildA11ySnapshot(cdp);
     refMap.clear();
     for (const [k, v] of snap.refMap) refMap.set(k, v);
+
+    // Fallback: if no refs found, retry with relaxed filtering
+    if (refMap.size === 0) {
+      actionLog.info("fullSnapshot: zero refs, retrying with relaxed filtering");
+      snap = await buildA11ySnapshot(cdp, { relaxed: true });
+      refMap.clear();
+      for (const [k, v] of snap.refMap) refMap.set(k, v);
+    }
+
+    let content = snap.content;
+
+    // If still empty, provide guidance instead of blank output
+    if (!content && refMap.size === 0) {
+      content = "[No interactive elements found in page accessibility tree. " +
+        "Try: screenshot to see the page visually, evaluate to inspect the DOM with JavaScript, " +
+        "or wait and snapshot again if the page is still loading.]";
+    }
+
     if (snapshotCache) {
-      snapshotCache.lastContent = snap.content;
+      snapshotCache.lastContent = content;
       snapshotCache.dirty = false;
     }
-    actionLog.info("fullSnapshot complete", { refs: refMap.size, contentLength: snap.content.length, elapsedMs: Date.now() - snapStart });
-    return snap.content;
+    actionLog.info("fullSnapshot complete", { refs: refMap.size, contentLength: content.length, elapsedMs: Date.now() - snapStart });
+    return content;
   }
 
   /** Smart snapshot: skip full a11y tree rebuild when DOM hasn't changed. */
@@ -340,6 +420,7 @@ export async function executeAction(
       actionLog.info("navigate", { url: action.url });
       await cdp.send("Page.navigate", { url: action.url }, 30_000);
       await waitForLoad(cdp);
+      await waitForNetworkIdle(cdp);
       const info = await getPageInfo(cdp);
       actionLog.info("navigate loaded", { url: info.url, title: info.title, elapsedMs: Date.now() - startTime });
       const snapshot = await fullSnapshot(); // Always rebuild after navigation
@@ -502,6 +583,7 @@ export async function executeAction(
     case "reload": {
       await cdp.send("Page.reload");
       await waitForLoad(cdp);
+      await waitForNetworkIdle(cdp);
       const info = await getPageInfo(cdp);
       const snapshot = await fullSnapshot(); // Always rebuild after reload
       return { type: "done", ...info, message: "Page reloaded", snapshot };

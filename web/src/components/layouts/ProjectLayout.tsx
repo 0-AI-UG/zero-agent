@@ -20,6 +20,7 @@ import {
   LogOutIcon,
   MessageSquareIcon,
   PuzzleIcon,
+  NetworkIcon,
   SettingsIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -183,6 +184,7 @@ export function ProjectLayout() {
   const isOnSubpage =
     location.pathname.includes("/files") ||
     location.pathname.includes("/tasks") ||
+    location.pathname.includes("/services") ||
     location.pathname.includes("/skills") ||
     location.pathname.includes("/settings");
   const isChatTab = !isOnSubpage;
@@ -204,6 +206,11 @@ export function ProjectLayout() {
       to: `${basePath}/tasks`,
       icon: ClockIcon,
       label: "Tasks",
+    },
+    {
+      to: `${basePath}/services`,
+      icon: NetworkIcon,
+      label: "Services",
     },
     {
       to: `${basePath}/skills`,

@@ -13,6 +13,7 @@ export async function callTelegramApi(
   botToken: string,
   method: string,
   body?: Record<string, unknown>,
+  signal?: AbortSignal,
 ): Promise<TelegramApiResult> {
   const url = `https://api.telegram.org/bot${botToken}/${method}`;
   tgLog.debug("api call", { method });
@@ -21,6 +22,7 @@ export async function callTelegramApi(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: body ? JSON.stringify(body) : undefined,
+    signal,
   });
 
   const data = (await res.json()) as TelegramApiResult;
@@ -294,6 +296,7 @@ export async function getTelegramUpdates(
   botToken: string,
   offset?: number,
   timeout = 25,
+  signal?: AbortSignal,
 ): Promise<TelegramUpdate[]> {
   const body: Record<string, unknown> = {
     allowed_updates: ["message"],
@@ -301,7 +304,7 @@ export async function getTelegramUpdates(
   };
   if (offset !== undefined) body.offset = offset;
 
-  const result = await callTelegramApi(botToken, "getUpdates", body);
+  const result = await callTelegramApi(botToken, "getUpdates", body, signal);
   if (!result.ok || !Array.isArray(result.result)) return [];
   return result.result as TelegramUpdate[];
 }

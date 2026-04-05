@@ -6,13 +6,10 @@ Xvfb :99 -screen 0 1920x1080x24 &
 export DISPLAY=:99
 
 # Wait for Xvfb to be ready
-sleep 1
+while [ ! -e /tmp/.X11-unix/X99 ]; do sleep 0.1; done
 
 # Start VNC server
 x11vnc -display :99 -nopw -forever -shared -rfbport 5900 &
-
-# Start noVNC websocket proxy
-websockify --web /usr/share/novnc 6080 localhost:5900 &
 
 # Start Chromium with remote debugging (binds to 127.0.0.1 only)
 chromium \
@@ -23,6 +20,7 @@ chromium \
   --disable-infobars \
   --disable-component-extensions-with-background-pages \
   --disable-default-apps \
+  --disable-dev-shm-usage \
   --user-data-dir=/tmp/chrome-profile \
   about:blank &
 

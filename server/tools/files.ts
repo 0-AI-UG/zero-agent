@@ -9,6 +9,7 @@ import { sanitizePath } from "@/lib/sanitize.ts";
 import { truncateText } from "@/lib/truncate-result.ts";
 import { indexFileContent, searchFileContent, removeFileIndex } from "@/db/queries/search.ts";
 import { embedAndStore, semanticSearch, deleteVectorsBySource } from "@/lib/vectors.ts";
+import { deferAsync } from "@/lib/deferred.ts";
 import { log } from "@/lib/logger.ts";
 import { isModelMultimodal } from "@/config/models.ts";
 import { getVisionModel } from "@/lib/openrouter.ts";
@@ -177,7 +178,7 @@ export function createFileTools(projectId: string, options?: { modelId?: string;
             if (modelId && !isModelMultimodal(modelId)) {
               toolLog.info("readFile image captioning", { projectId, path, modelId });
               const base64 = resized.toString("base64");
-              const { text: caption } = await generateText({
+              const { text: caption } = await deferAsync(() => generateText({
                 model: getVisionModel(),
                 messages: [{
                   role: "user",
@@ -186,7 +187,7 @@ export function createFileTools(projectId: string, options?: { modelId?: string;
                     { type: "image", image: base64, mediaType },
                   ],
                 }],
-              });
+              }));
               toolLog.info("readFile image captioned", { projectId, path, captionLength: caption.length });
               return { path, type: "caption" as const, caption };
             }

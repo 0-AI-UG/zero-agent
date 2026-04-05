@@ -4,10 +4,18 @@ import { log } from "@/lib/logger.ts";
 
 const s3Log = log.child({ module: "s3" });
 
+// Close previous client on hot reload (same PID still holds the lock file)
+const prev = (globalThis as any).__s3Client as S3Client | undefined;
+if (prev) {
+  try { prev.close(); } catch {}
+}
+
 export const s3 = new S3Client({
   bucket: process.env.S3_BUCKET ?? "zero-agent",
   path: process.env.S3_DB_PATH ?? "./data/storage.s3db",
 });
+
+(globalThis as any).__s3Client = s3;
 
 // Ensure lock is released on crash/hot reload (covers cases where graceful shutdown doesn't run)
 process.on("exit", () => {

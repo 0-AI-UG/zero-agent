@@ -1,217 +1,99 @@
 /**
- * Local execution backend — runs combined session containers (workspace + browser)
- * inside the server's own Docker daemon (DinD).
+ * Local execution backend — runs one combined session container (workspace + browser)
+ * per project using the Docker Engine API via Unix socket.
+ *
+ * Architecture:
+ * - One container per project (no pooling, no pause/resume)
+ * - No host filesystem bind mounts — all file I/O goes through Docker exec / archive API + S3
+ * - Two persistence layers on container destroy:
+ *   1. /workspace → individual project files in S3 (user-visible)
+ *   2. Everything else → opaque system snapshot in S3 (packages, configs, etc.)
+ * - Idle reaper destroys containers after configurable inactivity
+ * - Browser actions serialized per-project via lock
  */
 import * as path from "node:path";
-import * as fs from "node:fs/promises";
-import type { ExecutionBackend, BashResult } from "./types.ts";
-import type { BrowserAction, BrowserResult, CompanionStatus } from "@/lib/browser/protocol.ts";
+import type { BrowserAction, BrowserResult } from "@/lib/browser/protocol.ts";
 import { CdpClient, connectToPage } from "./cdp.ts";
 import { executeAction, type RefMap, type CursorState, type SnapshotCache } from "./browser-actions.ts";
-import { ResourceManager } from "./resource-manager.ts";
-import { readBinaryFromS3 } from "@/lib/s3.ts";
+import { readBinaryFromS3, writeToS3 } from "@/lib/s3.ts";
 import { log } from "@/lib/logger.ts";
+import { getSetting } from "@/lib/settings.ts";
+import { docker } from "@/lib/docker-client.ts";
+import { fetchWithTimeout } from "@/lib/deferred.ts";
+import {
+  touchMarker, listWorkspaceFiles, detectChanges, readFiles,
+  writeFiles, deleteFiles, saveSystemSnapshot, restoreSystemSnapshot,
+} from "./container-fs.ts";
 
 const backendLog = log.child({ module: "local-backend" });
 
 const SESSION_IMAGE = "zero-session:latest";
-const NETWORK_NAME = "zero-agent-net";
 const CDP_PORT = 9223;
+
+const DESTROY_TIMEOUT_MS = Number(process.env.CONTAINER_DESTROY_TIMEOUT_SECS ?? 600) * 1000;
+const REAPER_INTERVAL_MS = 30_000;
+const BACKUP_INTERVAL_MS = 5 * 60_000;
+
+function networkForProject(projectId: string): string {
+  return `zero-net-${projectId}`;
+}
+
 const MAX_OUTPUT = 1_048_576; // 1 MB
 
-// Resolve paths relative to the project root (works in both dev and prod)
 const IS_PROD = process.env.NODE_ENV === "production";
 const PROJECT_ROOT = IS_PROD ? "/app" : path.resolve(import.meta.dir, "../../..");
 const SESSION_DOCKERFILE_DIR = path.join(PROJECT_ROOT, "docker/session");
-const WORKSPACE_ROOT = path.join(PROJECT_ROOT, "data/workspaces");
-
-/** Directories that should never be included in snapshots or synced back. */
-const IGNORED_DIRS = new Set([".venv", "node_modules", ".tmp", "__pycache__", ".git"]);
-
-// ── Snapshot utilities (ported from companion/src/workspace-utils.ts) ──
-
-interface FileEntry {
-  path: string;
-  mtimeMs: number;
-  size: number;
-}
-
-type Snapshot = Map<string, { mtimeMs: number; size: number }>;
-
-async function walkDir(dir: string, base: string = dir): Promise<FileEntry[]> {
-  const results: FileEntry[] = [];
-  try {
-    const entries = await fs.readdir(dir, { withFileTypes: true });
-    for (const entry of entries) {
-      const fullPath = path.join(dir, entry.name);
-      const stat = await fs.lstat(fullPath);
-      if (stat.isSymbolicLink()) continue;
-      if (stat.isDirectory()) {
-        if (IGNORED_DIRS.has(entry.name)) continue;
-        results.push(...await walkDir(fullPath, base));
-      } else if (stat.isFile()) {
-        results.push({ path: path.relative(base, fullPath), mtimeMs: stat.mtimeMs, size: stat.size });
-      }
-    }
-  } catch {
-    // Directory doesn't exist yet
-  }
-  return results;
-}
-
-function buildSnapshot(files: FileEntry[]): Snapshot {
-  const snapshot: Snapshot = new Map();
-  for (const file of files) {
-    snapshot.set(file.path, { mtimeMs: file.mtimeMs, size: file.size });
-  }
-  return snapshot;
-}
-
-const MAX_FILE_BYTES = 10 * 1024 * 1024;
-const MAX_TOTAL_BYTES = 50 * 1024 * 1024;
-
-async function snapshotDiff(
-  workspaceDir: string,
-  pre: Snapshot,
-  post: Snapshot,
-): Promise<{ changedFiles: Array<{ path: string; data: string; sizeBytes: number }>; deletedFiles: string[] }> {
-  const resolvedBase = path.resolve(workspaceDir) + path.sep;
-  const changedFiles: Array<{ path: string; data: string; sizeBytes: number }> = [];
-  let totalBytes = 0;
-
-  for (const [filePath, postEntry] of post) {
-    const preEntry = pre.get(filePath);
-    if (!preEntry || preEntry.mtimeMs !== postEntry.mtimeMs || preEntry.size !== postEntry.size) {
-      if (postEntry.size > MAX_FILE_BYTES) continue;
-      if (totalBytes + postEntry.size > MAX_TOTAL_BYTES) continue;
-      const fullPath = path.resolve(workspaceDir, filePath);
-      if (!fullPath.startsWith(resolvedBase)) continue;
-      const file = Bun.file(fullPath);
-      const buffer = Buffer.from(await file.arrayBuffer());
-      totalBytes += postEntry.size;
-      changedFiles.push({ path: filePath, data: buffer.toString("base64"), sizeBytes: postEntry.size });
-    }
-  }
-
-  const deletedFiles: string[] = [];
-  for (const filePath of pre.keys()) {
-    if (!post.has(filePath)) deletedFiles.push(filePath);
-  }
-
-  return { changedFiles, deletedFiles };
-}
-
-async function readCapped(stream: ReadableStream<Uint8Array> | null, maxBytes: number): Promise<string> {
-  if (!stream) return "";
-  const reader = stream.getReader();
-  const chunks: Uint8Array[] = [];
-  let totalBytes = 0;
-  let truncated = false;
-
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      if (totalBytes + value.byteLength > maxBytes) {
-        const remaining = maxBytes - totalBytes;
-        if (remaining > 0) chunks.push(value.subarray(0, remaining));
-        totalBytes = maxBytes;
-        truncated = true;
-        break;
-      }
-      chunks.push(value);
-      totalBytes += value.byteLength;
-    }
-  } finally {
-    if (truncated) await reader.cancel();
-    reader.releaseLock();
-  }
-
-  const merged = new Uint8Array(totalBytes);
-  let offset = 0;
-  for (const chunk of chunks) {
-    merged.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  const text = new TextDecoder().decode(merged);
-  return truncated ? text + "\n[output truncated at 1MB]" : text;
-}
 
 // ── Session state ──
 
 interface SessionState {
+  projectId: string;
+  userId: string;
   containerId: string;
   containerIp: string;
   cdp: CdpClient | null;
   refMap: RefMap;
   cursor: CursorState;
   snapshotCache: SnapshotCache;
-  snapshot: Snapshot;
+  lastFileList: Set<string>;              // workspace file list for change detection
   lastManifest: Record<string, string>;
-  workspaceDir: string;
   lock: Promise<void>;
   cdpReconnectAttempts: number;
+  lastUsedAt: number;
+  busyCount: number;
+}
+
+export interface BashResult {
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+  changedFiles?: Array<{ path: string; data: string; sizeBytes: number }>;
+  deletedFiles?: string[];
 }
 
 const DOWNLOAD_CONCURRENCY = 10;
 
-export class LocalBackend implements ExecutionBackend {
+export class LocalBackend {
   private sessions = new Map<string, SessionState>();
-  private resourceManager = new ResourceManager();
+  private destroying = new Set<string>();
+  private creationLocks = new Map<string, Promise<void>>();
   private imageReady = false;
   private imageBuilding: Promise<void> | null = null;
-  private networkReady = false;
+  private readyNetworks = new Set<string>();
   private _dockerReady = false;
+  private reaperInterval: ReturnType<typeof setInterval> | null = null;
+  private lastBackup = new Map<string, number>();
 
-  constructor() {
-    // Wire up resource manager callbacks for pause/resume/destroy
-    this.resourceManager.onPause = async (sessionId) => {
-      const session = this.sessions.get(sessionId);
-      if (!session) return;
-      session.cdp?.close();
-      session.cdp = null;
-      Bun.spawnSync(["docker", "pause", `session-${sessionId}`], { stdout: "ignore", stderr: "ignore" });
-      backendLog.info("session paused", { sessionId });
-    };
-
-    this.resourceManager.onResume = async (sessionId) => {
-      const session = this.sessions.get(sessionId);
-      if (!session) return;
-      Bun.spawnSync(["docker", "unpause", `session-${sessionId}`], { stdout: "ignore", stderr: "ignore" });
-      // Reconnect CDP after unpause
-      await this.waitForCdp(session.containerIp, CDP_PORT);
-      const { cdp } = await connectToPage(session.containerIp, CDP_PORT);
-      session.cdp = cdp;
-      cdp.onClose = () => { session.cdp = null; };
-      session.cdpReconnectAttempts = 0;
-      session.snapshotCache.dirty = true; // Force rebuild after resume
-      this.registerDomListener(cdp, session.snapshotCache);
-      backendLog.info("session resumed", { sessionId });
-    };
-
-    this.resourceManager.onDestroy = async (sessionId) => {
-      const session = this.sessions.get(sessionId);
-      if (!session) return;
-      session.cdp?.close();
-      Bun.spawnSync(["docker", "rm", "-f", `session-${sessionId}`], { stdout: "ignore", stderr: "ignore" });
-      await fs.rm(session.workspaceDir, { recursive: true, force: true }).catch(() => {});
-      this.sessions.delete(sessionId);
-      backendLog.info("session destroyed by reaper", { sessionId });
-    };
-  }
-
-  /** Wait for the internal Docker daemon to be ready. */
+  /** Wait for the Docker daemon to be ready, build the image, start reaper. */
   async waitForDocker(maxWaitMs = 30_000): Promise<boolean> {
     const start = Date.now();
     while (Date.now() - start < maxWaitMs) {
-      const proc = Bun.spawnSync(["docker", "info"], { stdout: "pipe", stderr: "pipe" });
-      if (proc.exitCode === 0) {
+      if (await docker.info()) {
         this._dockerReady = true;
         backendLog.info("Docker daemon is ready");
-        await fs.mkdir(WORKSPACE_ROOT, { recursive: true });
-        await this.ensureNetwork();
-        // Pre-build session image so first user doesn't pay build cost
-        this.ensureImage().catch((err) => backendLog.error("failed to pre-build session image", err));
+        await this.cleanupOrphanedContainers();
+        await this.ensureImage();
+        this.startReaper();
         return true;
       }
       await new Promise((r) => setTimeout(r, 1000));
@@ -220,48 +102,380 @@ export class LocalBackend implements ExecutionBackend {
     return false;
   }
 
-  private async ensureNetwork(): Promise<void> {
-    if (this.networkReady) return;
-    const check = Bun.spawnSync(["docker", "network", "inspect", NETWORK_NAME], { stdout: "pipe", stderr: "pipe" });
-    if (check.exitCode !== 0) {
-      const create = Bun.spawnSync(["docker", "network", "create", NETWORK_NAME], { stdout: "pipe", stderr: "pipe" });
-      if (create.exitCode !== 0) {
-        backendLog.warn("failed to create Docker network", { network: NETWORK_NAME });
-        return;
-      }
-      backendLog.info("created Docker network", { network: NETWORK_NAME });
+  isReady(): boolean {
+    return this._dockerReady;
+  }
+
+  // ── Container lifecycle ──
+
+  /**
+   * Ensure a running container exists for this project.
+   * Creates one if needed (restoring from S3), reuses existing.
+   */
+  async ensureContainer(userId: string, projectId: string): Promise<void> {
+    const existing = this.sessions.get(projectId);
+    if (existing) {
+      existing.lastUsedAt = Date.now();
+      return;
     }
-    this.networkReady = true;
+
+    // Enforce max running containers limit
+    const maxRunning = parseInt(getSetting("CONTAINER_MAX_RUNNING") ?? "3", 10);
+    if (this.sessions.size >= maxRunning) {
+      throw new Error("Container limit reached. Destroy an idle container or wait for one to be cleaned up.");
+    }
+
+    // Deduplicate concurrent creation for same project
+    const inflight = this.creationLocks.get(projectId);
+    if (inflight) {
+      await inflight;
+      return;
+    }
+
+    let resolve: () => void;
+    const lock = new Promise<void>((r) => { resolve = r; });
+    this.creationLocks.set(projectId, lock);
+
+    try {
+      await this.createContainer(userId, projectId);
+    } finally {
+      this.creationLocks.delete(projectId);
+      resolve!();
+    }
   }
 
-  private async ensureImage(): Promise<void> {
-    if (this.imageReady) return;
-    if (this.imageBuilding) return this.imageBuilding;
+  private async createContainer(userId: string, projectId: string): Promise<void> {
+    const startTime = Date.now();
+    backendLog.info("createContainer start", { userId, projectId });
 
-    this.imageBuilding = (async () => {
-      const check = Bun.spawnSync(["docker", "image", "inspect", SESSION_IMAGE], { stdout: "pipe", stderr: "pipe" });
-      if (check.exitCode === 0) {
-        this.imageReady = true;
-        return;
-      }
+    await this.ensureImage();
+    const network = networkForProject(projectId);
+    await this.ensureNetwork(network);
 
-      backendLog.info("building session image", { dir: SESSION_DOCKERFILE_DIR });
-      const sessionDir = SESSION_DOCKERFILE_DIR;
-      const proc = Bun.spawn(["docker", "build", "-t", SESSION_IMAGE, sessionDir], { stdout: "pipe", stderr: "pipe" });
-      const exitCode = await proc.exited;
-      if (exitCode !== 0) {
-        const stderr = await new Response(proc.stderr).text();
-        throw new Error(`Failed to build session image: ${stderr}`);
-      }
-      this.imageReady = true;
-      backendLog.info("session image built");
-    })();
+    const containerName = `session-${projectId}`;
 
-    return this.imageBuilding;
+    try {
+      // Remove stale container if exists
+      await docker.removeContainer(containerName).catch(() => {});
+
+      backendLog.info("createContainer starting", { projectId, containerName });
+      const containerId = await docker.createAndStartContainer({
+        name: containerName,
+        image: SESSION_IMAGE,
+        network,
+        // No bind mounts — files synced via Docker API + S3
+        memory: 1024 * 1024 * 1024,
+        cpus: 2,
+        pidsLimit: 512,
+      });
+
+      const containerIp = await docker.getContainerIp(containerName);
+      if (!containerIp) throw new Error("Could not determine container IP");
+
+      // Restore system snapshot (installed packages, configs) if available
+      await this.restoreSystemState(projectId, containerName);
+
+      backendLog.info("createContainer waiting for CDP", { projectId, containerIp });
+      await this.waitForCdp(containerIp, CDP_PORT);
+
+      const { cdp } = await connectToPage(containerIp, CDP_PORT);
+      const snapshotCache: SnapshotCache = { dirty: true, lastContent: "" };
+
+      const session: SessionState = {
+        projectId,
+        userId,
+        containerId,
+        containerIp,
+        cdp,
+        refMap: new Map(),
+        cursor: { x: 0, y: 0 },
+        snapshotCache,
+        lastFileList: new Set(),
+        lastManifest: {},
+        lock: Promise.resolve(),
+        cdpReconnectAttempts: 0,
+        lastUsedAt: Date.now(),
+        busyCount: 0,
+      };
+
+      this.registerDomListener(cdp, snapshotCache);
+      cdp.onClose = () => { session.cdp = null; };
+      this.sessions.set(projectId, session);
+
+      backendLog.info("createContainer complete", { projectId, containerId: containerId.slice(0, 12), containerIp, totalMs: Date.now() - startTime });
+
+      // Restart pinned ports for this project
+      this.restartPinnedPorts(projectId, containerName, containerIp);
+    } catch (err) {
+      backendLog.error("createContainer failed, cleaning up", { projectId, error: String(err) });
+      await docker.removeContainer(containerName).catch(() => {});
+      throw err;
+    }
   }
 
-  private async withLock<T>(sessionId: string, fn: () => Promise<T>): Promise<T> {
-    const session = this.sessions.get(sessionId);
+  private async restoreSystemState(projectId: string, containerName: string): Promise<void> {
+    const s3Key = `containers/${projectId}/system.tar.gz`;
+    try {
+      const buffer = await readBinaryFromS3(s3Key);
+      if (buffer && buffer.byteLength > 0) {
+        await restoreSystemSnapshot(containerName, buffer);
+        backendLog.info("system state restored from S3", { projectId, sizeBytes: buffer.byteLength });
+      }
+    } catch {
+      // No system snapshot available — fresh container
+    }
+  }
+
+  private restartPinnedPorts(projectId: string, containerName: string, containerIp: string): void {
+    import("./lifecycle.ts").then(({ getPortManager }) => {
+      const pm = getPortManager();
+      if (pm) {
+        pm.restartPinnedForProject(projectId, containerName, containerIp).catch((err) =>
+          backendLog.warn("failed to restart pinned ports", { projectId, error: String(err) })
+        );
+      }
+    }).catch(() => {});
+  }
+
+  /** Sync project files from S3 into the container workspace. */
+  async syncProjectFiles(projectId: string, manifest: Record<string, string>): Promise<void> {
+    const session = this.sessions.get(projectId);
+    if (!session) return;
+
+    const containerName = `session-${projectId}`;
+
+    // Only download files that are new or changed since last sync
+    const changedEntries = Object.entries(manifest).filter(
+      ([relativePath, url]) => session.lastManifest[relativePath] !== url,
+    );
+
+    // Delete files removed from manifest
+    const removedPaths = Object.keys(session.lastManifest).filter((p) => !(p in manifest));
+    if (removedPaths.length > 0) {
+      await deleteFiles(containerName, removedPaths);
+    }
+
+    // Download changed files from S3 and write into container
+    if (changedEntries.length > 0) {
+      const filesToWrite: Array<{ relativePath: string; data: Buffer }> = [];
+
+      for (let i = 0; i < changedEntries.length; i += DOWNLOAD_CONCURRENCY) {
+        const batch = changedEntries.slice(i, i + DOWNLOAD_CONCURRENCY);
+        const results = await Promise.all(batch.map(async ([relativePath]) => {
+          const s3Key = `projects/${projectId}/${relativePath}`;
+          const buffer = await readBinaryFromS3(s3Key);
+          return { relativePath, data: buffer };
+        }));
+        filesToWrite.push(...results);
+      }
+
+      await writeFiles(containerName, filesToWrite);
+    }
+
+    // Update file list for change detection and store manifest
+    session.lastFileList = await listWorkspaceFiles(containerName);
+    session.lastManifest = { ...manifest };
+
+    backendLog.info("project files synced", { projectId, changed: changedEntries.length, removed: removedPaths.length, total: Object.keys(manifest).length });
+  }
+
+  /**
+   * Destroy a project's container.
+   * Saves workspace files to project S3 and system snapshot separately.
+   */
+  async destroyContainer(projectId: string): Promise<void> {
+    if (this.destroying.has(projectId)) return;
+    this.destroying.add(projectId);
+
+    try {
+      const session = this.sessions.get(projectId);
+      this.sessions.delete(projectId);
+      this.latestScreenshots.delete(projectId);
+      this.lastBackup.delete(projectId);
+
+      // Mark ports as stopped
+      try {
+        const { getPortManager } = await import("./lifecycle.ts");
+        const pm = getPortManager();
+        if (pm) pm.markProjectPortsStopped(projectId);
+      } catch {}
+
+      if (!session) return;
+
+      const containerName = `session-${projectId}`;
+
+      // Save system snapshot (everything outside /workspace) to S3
+      const systemBuffer = await saveSystemSnapshot(containerName).catch(() => null);
+      if (systemBuffer) {
+        await writeToS3(`containers/${projectId}/system.tar.gz`, systemBuffer).catch((err) => {
+          backendLog.warn("failed to save system snapshot to S3", { projectId, error: String(err) });
+        });
+      }
+
+      try { session.cdp?.close(); } catch {}
+      try { await docker.removeContainer(containerName); } catch (err) {
+        backendLog.warn("failed to remove container", { projectId, error: String(err) });
+      }
+
+      backendLog.info("container destroyed", { projectId });
+    } finally {
+      this.destroying.delete(projectId);
+    }
+  }
+
+  touchActivity(projectId: string): void {
+    const session = this.sessions.get(projectId);
+    if (session) session.lastUsedAt = Date.now();
+  }
+
+  // ── Browser execution ──
+
+  private latestScreenshots = new Map<string, { base64: string; title: string; url: string; timestamp: number }>();
+
+  async execute(userId: string, projectId: string, action: BrowserAction, stealth?: boolean): Promise<BrowserResult> {
+    const startTime = Date.now();
+    await this.ensureContainer(userId, projectId);
+
+    const session = this.sessions.get(projectId);
+    if (!session) throw new Error("No browser session found");
+
+    session.busyCount++;
+    session.lastUsedAt = Date.now();
+
+    try {
+      return await this.withLock(projectId, async () => {
+        // Auto-reconnect CDP if disconnected
+        if (!session.cdp || !session.cdp.connected) {
+          if (session.cdpReconnectAttempts >= 3) {
+            throw new Error("Browser crashed and could not be reconnected.");
+          }
+          session.cdpReconnectAttempts++;
+          backendLog.info("CDP disconnected, reconnecting", { projectId, attempt: session.cdpReconnectAttempts });
+          await this.waitForCdp(session.containerIp, CDP_PORT, 5000);
+          const { cdp: newCdp } = await connectToPage(session.containerIp, CDP_PORT);
+          session.cdp = newCdp;
+          newCdp.onClose = () => { session.cdp = null; };
+          session.cdpReconnectAttempts = 0;
+          session.snapshotCache.dirty = true;
+          this.registerDomListener(newCdp, session.snapshotCache);
+        }
+
+        const result = await executeAction(session.cdp, action, session.containerIp, CDP_PORT, session.refMap, {
+          stealth, cursor: session.cursor, snapshotCache: session.snapshotCache,
+        });
+
+        // Auto-capture screenshot for live preview (fire-and-forget)
+        if (action.type !== "screenshot" && session.cdp) {
+          session.cdp.send("Page.captureScreenshot", { format: "jpeg", quality: 50 }).then((capture) => {
+            const info = result.type === "done" || result.type === "snapshot" || result.type === "screenshot"
+              ? { title: (result as any).title ?? "", url: (result as any).url ?? "" }
+              : { title: "", url: "" };
+            this.latestScreenshots.set(projectId, { base64: capture.data, title: info.title, url: info.url, timestamp: Date.now() });
+          }).catch(() => {});
+        } else if (action.type === "screenshot" && result.type === "screenshot") {
+          this.latestScreenshots.set(projectId, { base64: result.base64, title: result.title, url: result.url, timestamp: Date.now() });
+        }
+
+        return result;
+      });
+    } finally {
+      session.busyCount--;
+    }
+  }
+
+  getLatestScreenshot(projectId: string): { base64: string; title: string; url: string; timestamp: number } | null {
+    return this.latestScreenshots.get(projectId) ?? null;
+  }
+
+  // ── Code execution ──
+
+  async runBash(userId: string, projectId: string, command: string, timeout?: number, background?: boolean): Promise<BashResult> {
+    await this.ensureContainer(userId, projectId);
+
+    const session = this.sessions.get(projectId);
+    if (!session) throw new Error("Execution environment not found");
+
+    session.busyCount++;
+    session.lastUsedAt = Date.now();
+    const containerName = `session-${projectId}`;
+
+    try {
+      // Background mode: run with nohup and return immediately
+      if (background) {
+        const bgCommand = `nohup bash -c '${command.replace(/'/g, "'\\''")}' > /dev/null 2>&1 & echo $!`;
+        const execResult = await docker.exec(containerName, ["bash", "-c", bgCommand], { timeout: 15_000 });
+        const pid = execResult.stdout.trim();
+        return {
+          stdout: pid ? `Process started in background (PID: ${pid})` : execResult.stdout,
+          stderr: execResult.stderr,
+          exitCode: execResult.exitCode,
+        };
+      }
+
+      // Touch marker before execution for change detection
+      await touchMarker(containerName);
+
+      const effectiveTimeout = timeout ?? 120_000;
+
+      let execResult: Awaited<ReturnType<typeof docker.exec>>;
+      try {
+        execResult = await docker.exec(containerName, ["bash", "-c", command], { timeout: effectiveTimeout });
+      } catch (err) {
+        const errMsg = String(err);
+        if (errMsg.includes("OCI runtime") || errMsg.includes("container breakout")) {
+          backendLog.error("exec OCI error, destroying broken session", { projectId, error: errMsg });
+          this.sessions.delete(projectId);
+          await docker.removeContainer(containerName).catch(() => {});
+        }
+        throw err;
+      }
+
+      const stdout = execResult.stdout.length > MAX_OUTPUT
+        ? execResult.stdout.slice(0, MAX_OUTPUT) + "\n[output truncated at 1MB]"
+        : execResult.stdout;
+      const stderr = execResult.stderr.length > MAX_OUTPUT
+        ? execResult.stderr.slice(0, MAX_OUTPUT) + "\n[output truncated at 1MB]"
+        : execResult.stderr;
+
+      // Strip workspace paths from output
+      const cleanStdout = stdout.replaceAll("/workspace/", "").replaceAll("/workspace", ".");
+      const cleanStderr = stderr.replaceAll("/workspace/", "").replaceAll("/workspace", ".");
+
+      // Detect changes inside container
+      const { changed, deleted } = await detectChanges(containerName, session.lastFileList);
+
+      // Read changed file contents from container
+      const changedFiles = changed.length > 0
+        ? await readFiles(containerName, changed)
+        : [];
+
+      // Update file list for next detection
+      session.lastFileList = await listWorkspaceFiles(containerName);
+
+      return {
+        stdout: cleanStdout,
+        stderr: cleanStderr,
+        exitCode: execResult.exitCode,
+        ...(changedFiles.length > 0 ? { changedFiles } : {}),
+        ...(deleted.length > 0 ? { deletedFiles: deleted } : {}),
+      };
+    } finally {
+      session.busyCount--;
+    }
+  }
+
+  // ── Helpers ──
+
+  private registerDomListener(cdp: CdpClient, cache: SnapshotCache): void {
+    cdp.send("DOM.enable").catch(() => {});
+    cdp.on("DOM.documentUpdated", () => { cache.dirty = true; });
+    cdp.on("DOM.childNodeInserted", () => { cache.dirty = true; });
+    cdp.on("DOM.childNodeRemoved", () => { cache.dirty = true; });
+    cdp.on("DOM.attributeModified", () => { cache.dirty = true; });
+  }
+
+  private async withLock<T>(projectId: string, fn: () => Promise<T>): Promise<T> {
+    const session = this.sessions.get(projectId);
     if (!session) throw new Error("Session not found");
     const prev = session.lock;
     let resolve: () => void;
@@ -271,389 +485,103 @@ export class LocalBackend implements ExecutionBackend {
     finally { resolve!(); }
   }
 
-  // ── ExecutionBackend interface ──
-
-  isAvailable(_userId: string, _projectId: string): boolean {
-    return this._dockerReady;
-  }
-
-  getStatus(_userId: string, _projectId: string): CompanionStatus {
+  /** Find session info for a project. Used by PortManager. */
+  getSessionForProject(projectId: string): { sessionId: string; containerIp: string; containerName: string } | null {
+    const session = this.sessions.get(projectId);
+    if (!session) return null;
     return {
-      connected: this._dockerReady,
-      dockerInstalled: true,
-      dockerRunning: this._dockerReady,
-      chromeAvailable: true,
+      sessionId: projectId,
+      containerIp: session.containerIp,
+      containerName: `session-${projectId}`,
     };
   }
 
-  async createSession(userId: string, projectId: string, sessionId: string, _label?: string): Promise<void> {
-    const startTime = Date.now();
-    backendLog.info("createSession start", { userId, projectId, sessionId, label: _label });
-
-    if (this.sessions.has(sessionId)) {
-      backendLog.info("createSession reusing existing session", { sessionId });
-      await this.resourceManager.ensureRunning(sessionId);
-      return;
-    }
-
-    const check = this.resourceManager.canCreate();
-    if (!check.allowed) {
-      backendLog.warn("createSession denied by resource manager", { sessionId, reason: check.reason });
-      throw new Error(check.reason!);
-    }
-
-    // Pause an existing container if we're at the running limit
-    backendLog.info("createSession ensuring slot", { sessionId });
-    await this.resourceManager.ensureSlot();
-
-    backendLog.info("createSession ensuring image", { sessionId });
-    await this.ensureImage();
-    await this.ensureNetwork();
-
-    const workspaceDir = path.join(WORKSPACE_ROOT, sessionId);
-    await fs.mkdir(workspaceDir, { recursive: true });
-
-    const containerName = `session-${sessionId}`;
-
-    // Remove stale container if exists
-    Bun.spawnSync(["docker", "rm", "-f", containerName], { stdout: "ignore", stderr: "ignore" });
-
-    // Start combined container
-    backendLog.info("createSession starting container", { sessionId, containerName, image: SESSION_IMAGE });
-    const proc = Bun.spawn([
-      "docker", "run", "-d",
-      "--name", containerName,
-      "--network", NETWORK_NAME,
-      "-v", `${workspaceDir}:/workspace`,
-      "--memory=1g", "--cpus=2", "--pids-limit=512",
-      SESSION_IMAGE,
-    ], { stdout: "pipe", stderr: "pipe" });
-
-    const containerId = (await new Response(proc.stdout).text()).trim();
-    const exitCode = await proc.exited;
-    if (exitCode !== 0) {
-      const stderr = await new Response(proc.stderr).text();
-      backendLog.error("createSession container start failed", { sessionId, exitCode, stderr, elapsedMs: Date.now() - startTime });
-      throw new Error(`Failed to start session container: ${stderr}`);
-    }
-    backendLog.info("createSession container started", { sessionId, containerId: containerId.slice(0, 12), elapsedMs: Date.now() - startTime });
-
-    // Get container IP
-    const inspectProc = Bun.spawnSync([
-      "docker", "inspect", "-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", containerName,
-    ], { stdout: "pipe", stderr: "pipe" });
-    const containerIp = new TextDecoder().decode(inspectProc.stdout).trim();
-
-    if (!containerIp) {
-      backendLog.error("createSession could not determine container IP", { sessionId, containerName });
-      Bun.spawn(["docker", "rm", "-f", containerName], { stdout: "ignore", stderr: "ignore" });
-      throw new Error("Could not determine container IP");
-    }
-    backendLog.info("createSession container IP resolved", { sessionId, containerIp, elapsedMs: Date.now() - startTime });
-
-    // Wait for CDP to be ready
-    backendLog.info("createSession waiting for CDP", { sessionId, containerIp, port: CDP_PORT });
-    await this.waitForCdp(containerIp, CDP_PORT);
-    backendLog.info("createSession CDP ready", { sessionId, elapsedMs: Date.now() - startTime });
-
-    // Connect to Chrome via CDP
-    backendLog.info("createSession connecting to Chrome page", { sessionId, containerIp });
-    const { cdp } = await connectToPage(containerIp, CDP_PORT);
-    backendLog.info("createSession CDP connected", { sessionId, elapsedMs: Date.now() - startTime });
-
-    const snapshotCache: SnapshotCache = { dirty: true, lastContent: "" };
-
-    const session: SessionState = {
-      containerId,
-      containerIp,
-      cdp,
-      refMap: new Map(),
-      cursor: { x: 0, y: 0 },
-      snapshotCache,
-      snapshot: new Map(),
-      lastManifest: {},
-      workspaceDir,
-      lock: Promise.resolve(),
-      cdpReconnectAttempts: 0,
+  /** Ensure a running session exists for a project (used by PortManager cold-start). */
+  async ensureSessionForProject(projectId: string, userId: string): Promise<{ sessionId: string; containerIp: string; containerName: string }> {
+    await this.ensureContainer(userId, projectId);
+    const session = this.sessions.get(projectId);
+    if (!session) throw new Error("Failed to create session");
+    return {
+      sessionId: projectId,
+      containerIp: session.containerIp,
+      containerName: `session-${projectId}`,
     };
-
-    // Mark snapshot cache dirty when DOM structure changes
-    this.registerDomListener(cdp, snapshotCache);
-
-    // Auto-null CDP on disconnect so execute() can detect and reconnect
-    cdp.onClose = () => { session.cdp = null; };
-
-    this.sessions.set(sessionId, session);
-    this.resourceManager.register({
-      sessionId,
-      userId,
-      projectId,
-      containerId,
-      containerIp,
-      lastUsedAt: Date.now(),
-    });
-
-    backendLog.info("createSession complete", { sessionId, containerId: containerId.slice(0, 12), containerIp, totalMs: Date.now() - startTime });
   }
 
-  /** Latest screenshot per session — captured after every action for live preview. */
-  private latestScreenshots = new Map<string, { base64: string; title: string; url: string; timestamp: number }>();
+  /** List all tracked containers. */
+  listContainers(): Array<{ sessionId: string; userId: string; projectId: string; status: string; lastUsedAt: number }> {
+    return [...this.sessions.values()].map((s) => ({
+      sessionId: s.projectId,
+      userId: s.userId,
+      projectId: s.projectId,
+      status: "running" as string,
+      lastUsedAt: s.lastUsedAt,
+    }));
+  }
 
-  async execute(userId: string, projectId: string, action: BrowserAction, sessionId?: string, stealth?: boolean): Promise<BrowserResult> {
-    const startTime = Date.now();
-    const sid = sessionId ?? this.findSession(userId, projectId);
-    backendLog.info("execute start", { userId, projectId, sessionId: sid, action: action.type, stealth: !!stealth });
-
-    if (!sid) {
-      backendLog.error("execute no session found", { userId, projectId, sessionId });
-      throw new Error("No browser session found. Create a session first.");
-    }
-
-    backendLog.info("execute ensuring container running", { sessionId: sid });
-    await this.resourceManager.ensureRunning(sid);
-
-    const session = this.sessions.get(sid);
-    if (!session) {
-      backendLog.error("execute session not in map after ensureRunning", { sessionId: sid });
-      throw new Error("Session not found");
-    }
-
-    this.resourceManager.markBusy(sid);
+  private async cleanupOrphanedContainers(): Promise<void> {
     try {
-      // Auto-reconnect CDP if disconnected
-      if (!session.cdp || !session.cdp.connected) {
-        if (session.cdpReconnectAttempts >= 3) {
-          backendLog.error("execute CDP reconnect attempts exhausted", { sessionId: sid });
-          throw new Error("Browser crashed and could not be reconnected. Please create a new session.");
-        }
-        session.cdpReconnectAttempts++;
-        backendLog.info("execute CDP disconnected, attempting reconnect", { sessionId: sid, attempt: session.cdpReconnectAttempts });
-        try {
-          await this.waitForCdp(session.containerIp, CDP_PORT, 5000);
-          const { cdp: newCdp } = await connectToPage(session.containerIp, CDP_PORT);
-          session.cdp = newCdp;
-          newCdp.onClose = () => { session.cdp = null; };
-          session.cdpReconnectAttempts = 0;
-          session.snapshotCache.dirty = true;
-          this.registerDomListener(newCdp, session.snapshotCache);
-          backendLog.info("execute CDP reconnected", { sessionId: sid });
-        } catch (err) {
-          backendLog.error("execute CDP reconnect failed", { sessionId: sid, error: String(err) });
-          throw new Error("Browser crashed and could not be reconnected. Please create a new session.");
-        }
-      }
-
-      this.resourceManager.get(sid); // touch last-used
-      backendLog.info("execute calling executeAction", { sessionId: sid, action: action.type, containerIp: session.containerIp });
-      const result = await executeAction(session.cdp, action, session.containerIp, CDP_PORT, session.refMap, { stealth, cursor: session.cursor, snapshotCache: session.snapshotCache });
-      backendLog.info("execute action complete", { sessionId: sid, action: action.type, resultType: result?.type, elapsedMs: Date.now() - startTime });
-
-      // Auto-capture screenshot after every action for live preview (fire-and-forget)
-      if (action.type !== "screenshot" && session.cdp) {
-        session.cdp.send("Page.captureScreenshot", { format: "jpeg", quality: 50 }).then((capture) => {
-          const info = result.type === "done" || result.type === "snapshot" || result.type === "screenshot"
-            ? { title: (result as any).title ?? "", url: (result as any).url ?? "" }
-            : { title: "", url: "" };
-          this.latestScreenshots.set(sid, { base64: capture.data, title: info.title, url: info.url, timestamp: Date.now() });
-          backendLog.info("execute auto-screenshot captured", { sessionId: sid });
-        }).catch((err) => {
-          backendLog.warn("execute auto-screenshot failed", { sessionId: sid, error: String(err) });
-        });
-      } else if (action.type === "screenshot" && result.type === "screenshot") {
-        this.latestScreenshots.set(sid, { base64: result.base64, title: result.title, url: result.url, timestamp: Date.now() });
-      }
-
-      return result;
-    } finally {
-      this.resourceManager.markIdle(sid);
-    }
-  }
-
-  /** Get the latest auto-captured screenshot for a session. */
-  getLatestScreenshot(sessionId: string): { base64: string; title: string; url: string; timestamp: number } | null {
-    return this.latestScreenshots.get(sessionId) ?? null;
-  }
-
-  async destroySession(_userId: string, _projectId: string, sessionId: string): Promise<void> {
-    const session = this.sessions.get(sessionId);
-
-    // Always clean up state maps, even if container cleanup fails
-    this.sessions.delete(sessionId);
-    this.latestScreenshots.delete(sessionId);
-    this.resourceManager.remove(sessionId);
-
-    if (!session) return;
-
-    try { session.cdp?.close(); } catch (err) {
-      backendLog.warn("failed to close CDP during destroy", { sessionId, error: String(err) });
-    }
-    try { Bun.spawn(["docker", "rm", "-f", `session-${sessionId}`], { stdout: "ignore", stderr: "ignore" }); } catch (err) {
-      backendLog.warn("failed to remove container during destroy", { sessionId, error: String(err) });
-    }
-    await fs.rm(session.workspaceDir, { recursive: true, force: true }).catch((err) => {
-      backendLog.warn("failed to remove workspace during destroy", { sessionId, error: String(err) });
-    });
-
-    backendLog.info("session destroyed", { sessionId });
-  }
-
-  async createWorkspace(userId: string, projectId: string, workspaceId: string, manifest: Record<string, string>): Promise<void> {
-    // Ensure a session container exists and is running
-    if (!this.sessions.has(workspaceId)) {
-      await this.createSession(userId, projectId, workspaceId);
-    } else {
-      await this.resourceManager.ensureRunning(workspaceId);
-    }
-
-    const session = this.sessions.get(workspaceId)!;
-    const dir = session.workspaceDir;
-    const resolvedBase = path.resolve(dir) + path.sep;
-
-    // Copy files from S3 directly (no HTTP — local S3 storage)
-    const entries = Object.entries(manifest);
-    for (let i = 0; i < entries.length; i += DOWNLOAD_CONCURRENCY) {
-      const batch = entries.slice(i, i + DOWNLOAD_CONCURRENCY);
-      await Promise.all(batch.map(async ([relativePath]) => {
-        const filePath = path.join(dir, relativePath);
-        if (!path.resolve(filePath).startsWith(resolvedBase)) return;
-        await fs.mkdir(path.dirname(filePath), { recursive: true });
-        const s3Key = `projects/${projectId}/${relativePath}`;
-        const buffer = await readBinaryFromS3(s3Key);
-        await Bun.write(filePath, buffer);
-      }));
-    }
-
-    // Take initial snapshot and store manifest for incremental sync
-    const files = await walkDir(dir);
-    session.snapshot = buildSnapshot(files);
-    session.lastManifest = { ...manifest };
-
-    backendLog.info("workspace created", { workspaceId, fileCount: entries.length });
-  }
-
-  async syncWorkspace(userId: string, projectId: string, workspaceId: string, manifest: Record<string, string>): Promise<void> {
-    const session = this.sessions.get(workspaceId);
-    if (!session) throw new Error("Execution environment not found — it may have been cleaned up. Please retry.");
-
-    const dir = session.workspaceDir;
-    const resolvedBase = path.resolve(dir) + path.sep;
-
-    // Only download files that are new or changed since last sync
-    const changedEntries = Object.entries(manifest).filter(
-      ([relativePath, url]) => session.lastManifest[relativePath] !== url,
-    );
-
-    // Delete files removed from manifest
-    const removedPaths = Object.keys(session.lastManifest).filter((p) => !(p in manifest));
-    for (const relativePath of removedPaths) {
-      const filePath = path.join(dir, relativePath);
-      if (path.resolve(filePath).startsWith(resolvedBase)) {
-        await fs.rm(filePath, { force: true }).catch(() => {});
-      }
-    }
-
-    if (changedEntries.length > 0) {
-      for (let i = 0; i < changedEntries.length; i += DOWNLOAD_CONCURRENCY) {
-        const batch = changedEntries.slice(i, i + DOWNLOAD_CONCURRENCY);
-        await Promise.all(batch.map(async ([relativePath]) => {
-          const filePath = path.join(dir, relativePath);
-          if (!path.resolve(filePath).startsWith(resolvedBase)) return;
-          await fs.mkdir(path.dirname(filePath), { recursive: true });
-          const s3Key = `projects/${projectId}/${relativePath}`;
-          const buffer = await readBinaryFromS3(s3Key);
-          await Bun.write(filePath, buffer);
-        }));
-      }
-
-      // Only re-scan filesystem if files actually changed
-      const files = await walkDir(dir);
-      session.snapshot = buildSnapshot(files);
-    }
-
-    session.lastManifest = { ...manifest };
-    backendLog.info("workspace synced", { workspaceId, changed: changedEntries.length, removed: removedPaths.length, total: Object.keys(manifest).length });
-  }
-
-  async runBash(_userId: string, _projectId: string, workspaceId: string, command: string, timeout?: number): Promise<BashResult> {
-    await this.resourceManager.ensureRunning(workspaceId);
-
-    this.resourceManager.markBusy(workspaceId);
-    try {
-      return this.withLock(workspaceId, async () => {
-      const session = this.sessions.get(workspaceId);
-      if (!session) throw new Error("Execution environment not found — it may have been cleaned up. Please retry.");
-
-      this.resourceManager.get(workspaceId); // touch last-used
-
-      const effectiveTimeout = timeout ?? 120_000;
-      const containerName = `session-${workspaceId}`;
-
-      const proc = Bun.spawn(
-        ["docker", "exec", containerName, "bash", "-c", command],
-        { stdout: "pipe", stderr: "pipe" },
+      const containers = await docker.listContainers({ all: true });
+      const orphaned = containers.filter((c) =>
+        c.Names.some((n) => /^\/(session-)/.test(n)),
       );
+      if (orphaned.length === 0) return;
 
-      const timer = setTimeout(() => proc.kill(), effectiveTimeout);
-      const [stdout, stderr] = await Promise.all([
-        readCapped(proc.stdout, MAX_OUTPUT),
-        readCapped(proc.stderr, MAX_OUTPUT),
-      ]);
-      clearTimeout(timer);
-      const exitCode = await proc.exited;
-
-      // Strip workspace paths
-      const wsPrefix = session.workspaceDir.endsWith("/") ? session.workspaceDir : session.workspaceDir + "/";
-      const cleanStdout = stdout.replaceAll(wsPrefix, "").replaceAll(session.workspaceDir, ".");
-      const cleanStderr = stderr.replaceAll(wsPrefix, "").replaceAll(session.workspaceDir, ".");
-
-      // Diff filesystem
-      const postFiles = await walkDir(session.workspaceDir);
-      const postSnapshot = buildSnapshot(postFiles);
-      const { changedFiles, deletedFiles } = await snapshotDiff(session.workspaceDir, session.snapshot, postSnapshot);
-      session.snapshot = postSnapshot;
-
-      return {
-        stdout: cleanStdout,
-        stderr: cleanStderr,
-        exitCode,
-        ...(changedFiles.length > 0 ? { changedFiles } : {}),
-        ...(deletedFiles.length > 0 ? { deletedFiles } : {}),
-      };
-    });
-    } finally {
-      this.resourceManager.markIdle(workspaceId);
+      backendLog.info("cleaning up orphaned containers", { count: orphaned.length });
+      await Promise.allSettled(
+        orphaned.map(async (c) => {
+          const name = c.Names[0]?.replace(/^\//, "") ?? c.Id;
+          await docker.removeContainer(name).catch(() => {});
+        }),
+      );
+    } catch (err) {
+      backendLog.warn("failed to cleanup orphaned containers", { error: String(err) });
     }
   }
 
-  async destroyWorkspace(userId: string, projectId: string, workspaceId: string): Promise<void> {
-    return this.destroySession(userId, projectId, workspaceId);
+  private async ensureNetwork(name: string): Promise<void> {
+    if (this.readyNetworks.has(name)) return;
+    await docker.ensureNetwork(name);
+    this.readyNetworks.add(name);
   }
 
-  // ── Helpers ──
+  private async ensureImage(): Promise<void> {
+    if (this.imageReady) return;
+    if (this.imageBuilding) return this.imageBuilding;
 
-  /** Register CDP event listener to mark snapshot cache dirty on DOM changes. */
-  private registerDomListener(cdp: CdpClient, cache: SnapshotCache): void {
-    cdp.send("DOM.enable").catch(() => {});
-    cdp.on("DOM.documentUpdated", () => { cache.dirty = true; });
-    cdp.on("DOM.childNodeInserted", () => { cache.dirty = true; });
-    cdp.on("DOM.childNodeRemoved", () => { cache.dirty = true; });
-    cdp.on("DOM.attributeModified", () => { cache.dirty = true; });
-  }
-
-  private findSession(userId: string, projectId: string): string | undefined {
-    for (const entry of this.resourceManager.getAll()) {
-      if (entry.userId === userId && entry.projectId === projectId) {
-        return entry.sessionId;
+    this.imageBuilding = (async () => {
+      if (await docker.imageExists(SESSION_IMAGE)) {
+        this.imageReady = true;
+        return;
       }
-    }
-    return undefined;
+
+      const registryImage = process.env.SESSION_REGISTRY_IMAGE;
+      if (registryImage) {
+        try {
+          backendLog.info("pulling session image from registry", { image: registryImage });
+          await docker.pullImage(registryImage);
+          await docker.tagImage(registryImage, SESSION_IMAGE);
+          this.imageReady = true;
+          return;
+        } catch (err) {
+          backendLog.warn("failed to pull session image, building locally", { error: String(err) });
+        }
+      }
+
+      backendLog.info("building session image", { dir: SESSION_DOCKERFILE_DIR });
+      await docker.buildImage(SESSION_IMAGE, SESSION_DOCKERFILE_DIR);
+      this.imageReady = true;
+      backendLog.info("session image built");
+    })();
+
+    return this.imageBuilding;
   }
 
   private async waitForCdp(host: string, port: number, maxWaitMs = 15_000): Promise<void> {
     const start = Date.now();
     while (Date.now() - start < maxWaitMs) {
       try {
-        const res = await fetch(`http://${host}:${port}/json/version`);
+        const res = await fetchWithTimeout(`http://${host}:${port}/json/version`, { timeout: 2000 });
         if (res.ok) return;
       } catch {}
       await new Promise((r) => setTimeout(r, 500));
@@ -661,55 +589,50 @@ export class LocalBackend implements ExecutionBackend {
     throw new Error("Chrome CDP not ready within timeout");
   }
 
-  /** List all tracked containers with their status. */
-  listContainers(): Array<{
-    sessionId: string;
-    userId: string;
-    projectId: string;
-    status: string;
-    lastUsedAt: number;
-  }> {
-    return this.resourceManager.getAll().map((e) => ({
-      sessionId: e.sessionId,
-      userId: e.userId,
-      projectId: e.projectId,
-      status: e.status,
-      lastUsedAt: e.lastUsedAt,
-    }));
+  // ── Idle reaper ──
+
+  private startReaper(): void {
+    this.reaperInterval = setInterval(() => this.reap(), REAPER_INTERVAL_MS);
   }
 
-  /** Get container status for a specific chat. */
-  getContainerStatus(chatId: string): { status: "running" | "paused" | "none" } {
-    const workspaceId = `chat-${chatId}`;
-    const entry = this.resourceManager.getAll().find((e) => e.sessionId === workspaceId);
-    if (!entry) return { status: "none" };
-    return { status: entry.status };
+  private async reap(): Promise<void> {
+    const now = Date.now();
+    for (const [projectId, session] of this.sessions) {
+      if (session.busyCount > 0) continue;
+      if (now - session.lastUsedAt > DESTROY_TIMEOUT_MS) {
+        backendLog.info("reaper destroying idle container", { projectId, idleMs: now - session.lastUsedAt });
+        await this.destroyContainer(projectId).catch((err) =>
+          backendLog.warn("reaper destroy failed", { projectId, error: String(err) })
+        );
+        continue;
+      }
+
+      // Periodic backup of active containers
+      const lastBackupAt = this.lastBackup.get(projectId) ?? 0;
+      if (now - lastBackupAt > BACKUP_INTERVAL_MS) {
+        this.lastBackup.set(projectId, now);
+        this.backupContainer(projectId, session.containerName).catch((err) =>
+          backendLog.warn("periodic backup failed", { projectId, error: String(err) })
+        );
+      }
+    }
   }
 
-  /** Pause a container by session ID. */
-  async pauseContainer(sessionId: string): Promise<void> {
-    const entry = this.resourceManager.get(sessionId);
-    if (!entry || entry.status !== "running") return;
-    await this.resourceManager.onPause?.(sessionId);
-    entry.status = "paused";
+  private async backupContainer(projectId: string, containerName: string): Promise<void> {
+    const systemBuffer = await saveSystemSnapshot(containerName).catch(() => null);
+    if (systemBuffer) {
+      await writeToS3(`containers/${projectId}/system.tar.gz`, systemBuffer);
+      backendLog.info("periodic backup saved", { projectId });
+    }
   }
 
-  /** Resume a paused container by session ID. */
-  async resumeContainer(sessionId: string): Promise<void> {
-    await this.resourceManager.ensureRunning(sessionId);
-  }
-
-  /** Destroy a container by session ID. */
-  async destroyContainer(sessionId: string): Promise<void> {
-    const entry = this.resourceManager.getAll().find((e) => e.sessionId === sessionId);
-    if (!entry) return;
-    await this.destroySession(entry.userId, entry.projectId, sessionId);
-  }
-
-  /** Clean up all sessions on shutdown. */
+  /** Clean up all sessions on shutdown. Save snapshots first. */
   async destroyAll(): Promise<void> {
+    if (this.reaperInterval) {
+      clearInterval(this.reaperInterval);
+      this.reaperInterval = null;
+    }
     const ids = [...this.sessions.keys()];
-    await Promise.all(ids.map((id) => this.destroySession("", "", id)));
-    this.resourceManager.stop();
+    await Promise.allSettled(ids.map((id) => this.destroyContainer(id)));
   }
 }

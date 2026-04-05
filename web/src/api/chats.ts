@@ -68,10 +68,6 @@ export function useCreateChat(projectId: string) {
       queryClient.invalidateQueries({
         queryKey: queryKeys.chats.byProject(projectId),
       });
-      // Force companion status refresh so new chat picks up connected companion
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.companion.status(projectId),
-      });
     },
   });
 }

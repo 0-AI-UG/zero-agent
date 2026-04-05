@@ -26,7 +26,7 @@ export function createSchedulingTools(projectId: string) {
         prompt: z.string().describe("The full prompt the autonomous agent will execute each run. Be specific and self-contained — the agent has no conversation history."),
         triggerType: z.enum(["schedule", "event"]).default("schedule").describe("'schedule' for time-based, 'event' for event-driven."),
         schedule: z.string().optional().describe("Schedule expression (required for triggerType 'schedule'): 'every 30m', 'every 2h', 'every 1d', or cron syntax like '0 9 * * *'. Minimum interval is 15 minutes."),
-        triggerEvent: z.string().optional().describe("Event name (required for triggerType 'event'). Valid events: file.created, file.updated, file.deleted, file.moved, folder.created, folder.deleted, message.received, chat.created, skill.installed, companion.connected."),
+        triggerEvent: z.string().optional().describe("Event name (required for triggerType 'event'). Valid events: file.created, file.updated, file.deleted, file.moved, folder.created, folder.deleted, message.received, chat.created, skill.installed."),
         triggerFilter: z.record(z.string(), z.string()).optional().describe("Optional filter on event payload. Keys match event fields, values support wildcards (e.g., {\"mimeType\": \"image/*\", \"path\": \"/uploads\"})."),
         cooldownSeconds: z.number().optional().describe("Minimum seconds between event-triggered runs (default 30). Events during cooldown are batched into one run."),
       }),

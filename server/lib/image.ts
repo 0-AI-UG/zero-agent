@@ -1,5 +1,6 @@
 import { generateImage } from "ai";
 import { getImageModel } from "@/lib/openrouter.ts";
+import { deferAsync } from "@/lib/deferred.ts";
 import { log } from "@/lib/logger.ts";
 
 const imgLog = log.child({ module: "image" });
@@ -11,7 +12,7 @@ export async function generateImageViaOpenRouter(
   const start = Date.now();
 
   try {
-    const result = await generateImage({
+    const result = await deferAsync(() => generateImage({
       model: getImageModel(),
       prompt,
       n: 1,
@@ -24,7 +25,7 @@ export async function generateImageViaOpenRouter(
           modalities: ["image"],
         },
       },
-    });
+    }));
 
     const durationMs = Date.now() - start;
     const sizeBytes = result.image.uint8Array.length;

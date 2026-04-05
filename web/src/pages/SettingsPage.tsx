@@ -14,7 +14,6 @@ import {
   AlertCircleIcon,
 } from "lucide-react";
 import { MembersManager } from "@/components/settings/MembersManager";
-import { CompanionManager } from "@/components/settings/CompanionManager";
 import { TelegramManager } from "@/components/settings/TelegramManager";
 import { useDesktopMode } from "@/hooks/use-desktop-mode";
 
@@ -39,9 +38,6 @@ export function SettingsPage() {
 
         {/* Members section */}
         {!desktopMode && <MembersManager projectId={projectId!} project={project} />}
-
-        {/* Browser Companion section */}
-        <CompanionManager projectId={projectId!} project={project} updateProject={updateProject} />
 
         {/* Telegram section */}
         <TelegramManager projectId={projectId!} />

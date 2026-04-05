@@ -7,11 +7,11 @@ import {
   ConversationScrollButton,
 } from "@/components/ai/conversation";
 import { ChatMessageList } from "@/components/chat/ChatMessageList";
-import { ChatInputArea, type PinnedContextItem } from "@/components/chat/ChatInputArea";
+import { ChatInputArea } from "@/components/chat/ChatInputArea";
 import { getQuickActionIcon } from "@/components/chat/QuickActionsManager";
 import { useQuickActions } from "@/api/quick-actions";
 import { useProject } from "@/api/projects";
-import { useCompanionStatus, useServerCapabilities } from "@/api/companion";
+import { useServerCapabilities } from "@/api/capabilities";
 import { useMembers } from "@/api/members";
 import { useAuthStore } from "@/stores/auth";
 import { useModelStore } from "@/stores/model";
@@ -46,7 +46,6 @@ interface ChatPanelProps {
 
 export function ChatPanel({ projectId, chatId, initialMessages, isAutonomous }: ChatPanelProps) {
   const queryClient = useQueryClient();
-  const { data: companionStatus } = useCompanionStatus(projectId);
   const { data: capabilities } = useServerCapabilities();
   const { data: project } = useProject(projectId);
   const { data: quickActions } = useQuickActions(projectId);
@@ -57,12 +56,6 @@ export function ChatPanel({ projectId, chatId, initialMessages, isAutonomous }: 
     [membersData],
   );
 
-  // Context hints from the ContextPreview component (passed via ref for stable transport)
-  const contextRef = useRef<{ pinned: PinnedContextItem[]; dismissed: string[] }>({ pinned: [], dismissed: [] });
-  const handleContextChange = useCallback((pinned: PinnedContextItem[], dismissed: string[]) => {
-    contextRef.current = { pinned, dismissed };
-  }, []);
-
   const transport = useMemo(
     () =>
       new DefaultChatTransport({
@@ -72,16 +65,11 @@ export function ChatPanel({ projectId, chatId, initialMessages, isAutonomous }: 
           if (token) return { Authorization: `Bearer ${token}` };
           return {} as Record<string, string>;
         },
-        body: () => {
-          const { pinned, dismissed } = contextRef.current;
-          return {
-            model: useModelStore.getState().selectedModelId,
-            language: useModelStore.getState().language,
-            disabledTools: useToolsStore.getState().getDisabledToolsList(),
-            ...(pinned.length > 0 ? { pinnedContext: pinned } : {}),
-            ...(dismissed.length > 0 ? { dismissedContext: dismissed } : {}),
-          };
-        },
+        body: () => ({
+          model: useModelStore.getState().selectedModelId,
+          language: useModelStore.getState().language,
+          disabledTools: useToolsStore.getState().getDisabledToolsList(),
+        }),
         prepareReconnectToStreamRequest: ({ headers, credentials }) => ({
           api: `/api/projects/${projectId}/chats/${chatId}/stream`,
           headers,
@@ -184,9 +172,7 @@ export function ChatPanel({ projectId, chatId, initialMessages, isAutonomous }: 
           status={status}
           sendMessage={sendMessage}
           stop={stop}
-          companionStatus={companionStatus}
           capabilities={capabilities}
-          onContextChange={handleContextChange}
         />
       )}
     </div>

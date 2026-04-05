@@ -6,8 +6,7 @@ import { buildSkillsIndex } from "@/lib/skills/injector.ts";
 import { createAgentTool } from "@/tools/agent.ts";
 import { createCompactPrepareStep } from "@/lib/compact-conversation.ts";
 import { readFromS3 } from "@/lib/s3.ts";
-import { browserBridge } from "@/lib/browser/bridge.ts";
-import { backendRouter } from "@/lib/execution/router.ts";
+import { getLocalBackend } from "@/lib/execution/lifecycle.ts";
 import { insertEvent } from "@/lib/durability/event-log.ts";
 import { log } from "@/lib/logger.ts";
 
@@ -43,14 +42,12 @@ export interface AgentOptions {
   };
   /** Prompt mode — controls which sections are included. Auto-derived from context if not set. */
   mode?: "chat" | "automation";
-  /** Pre-created lazy browser session — if provided, skips auto-creation in createAgent(). */
-  lazyBrowserSession?: { id: string; created: boolean; label?: string };
   /** File paths already read/written in prior turns — seeds the read guard so the agent doesn't need to re-read. */
   initialReadPaths?: string[];
   /** Semantically relevant memory entries retrieved via RAG for this conversation. */
   relevantMemories?: { content: string; score: number }[];
-  /** Semantically relevant file snippets retrieved via RAG for this conversation. */
-  relevantFiles?: { content: string; score: number; filename: string; fileId: string }[];
+  /** Semantically relevant files retrieved via RAG for this conversation (paths only). */
+  relevantFiles?: { path: string }[];
   /** Unique ID for this agent run — used for event logging and checkpointing. */
   runId?: string;
   /** Callback fired after each step with the current step number and response messages — used for checkpointing. */
@@ -146,8 +143,8 @@ You help users accomplish tasks by browsing the web, managing files, running cod
 
   // ── Relevant Files (RAG-retrieved, both modes) ──
   if (options.relevantFiles?.length) {
-    const fileLines = options.relevantFiles.map((f) => `- **${f.filename}**: ${f.content}`).join("\n");
-    sections.push(`### Relevant Files (auto-retrieved for this conversation)\n\n${fileLines}`);
+    const fileLines = options.relevantFiles.map((f) => `- ${f.path}`).join("\n");
+    sections.push(`### Relevant Files (auto-retrieved for this conversation)\n\nThese files may be relevant — read them if needed:\n${fileLines}`);
   }
 
   // ── Heartbeat context (automation only — pre-loaded) ──
@@ -256,20 +253,15 @@ export async function createAgent(project: ProjectForAgent, options: AgentOption
 
   const context = options.context ?? (options.chatId ? "chat" : "automation");
 
-  // Use provided lazy session, or auto-create one for chat agents
-  const lazyBrowserSession = options.lazyBrowserSession ??
-    (options.userId && (browserBridge.isConnected(options.userId, project.id) || backendRouter.isAvailable(options.userId, project.id))
-      ? { id: options.chatId ? `chat-${options.chatId}` : `agent-${Date.now()}`, created: false }
-      : undefined);
+  const codeExecutionEnabled = project.code_execution_enabled === 1 && !!getLocalBackend()?.isReady();
 
   const { activeTools, fullRegistry, toolIndex } = createDiscoverableToolset(project.id, {
     chatId: options.chatId,
     userId: options.userId,
-    lazyBrowserSession,
     context,
     onlyTools: options.onlyTools,
     onlySkills: options.onlySkills,
-    codeExecutionEnabled: project.code_execution_enabled === 1,
+    codeExecutionEnabled,
     modelId: options.model,
     initialReadPaths: options.initialReadPaths,
     anchorRunId: options.anchorRunId,

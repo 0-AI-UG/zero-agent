@@ -14,6 +14,7 @@ import {
   InboxIcon,
   KeyRoundIcon,
   MonitorIcon,
+  NetworkIcon,
   PencilIcon,
   TerminalSquareIcon,
   SearchIcon,
@@ -161,6 +162,11 @@ const TOOL_CONFIG: Record<
     activeLabel: "Loading account",
     icon: KeyRoundIcon,
   },
+  forwardPort: {
+    label: "Forwarded port",
+    activeLabel: "Forwarding port",
+    icon: NetworkIcon,
+  },
 };
 
 function getConfig(toolName: string) {
@@ -240,6 +246,12 @@ function getToolDetail(toolName: string, input: unknown): string | null {
         : typeof inp.label === "string"
           ? inp.label
           : null;
+    case "forwardPort": {
+      const port = inp.port;
+      const label = inp.label;
+      if (typeof label === "string") return `${label} (:${port})`;
+      return typeof port === "number" ? `Port ${port}` : null;
+    }
     default:
       return null;
   }
@@ -597,6 +609,46 @@ function StreamingContentCard({ title, content, language }: { title: string; con
   );
 }
 
+function ForwardPortCard({ output, input }: { output: any; input: any }) {
+  const port = input?.port ?? output?.port;
+  const label = input?.label ?? `Port ${port}`;
+  const url = output?.url;
+  const error = output?.error;
+
+  if (error) {
+    return (
+      <div className="rounded-lg border border-destructive/50 bg-card p-3 max-w-md">
+        <div className="flex items-center gap-1.5 text-xs text-destructive mb-1">
+          <NetworkIcon className="size-3" />
+          <span>Failed to forward port {port}</span>
+        </div>
+        <p className="text-xs text-muted-foreground">{error}</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-lg border bg-card p-3 max-w-md">
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1">
+        <NetworkIcon className="size-3" />
+        <span>Port forwarded</span>
+      </div>
+      <p className="text-sm font-medium">{label}</p>
+      {url && (
+        <a
+          href={url}
+          target="_blank"
+          rel="noopener"
+          className="text-xs text-primary hover:underline inline-flex items-center gap-1 mt-1"
+        >
+          {url}
+          <ExternalLinkIcon className="size-3 opacity-50 shrink-0" />
+        </a>
+      )}
+    </div>
+  );
+}
+
 function RepliesCheckCard({ output }: { output: any }) {
   const { totalSent = 0, totalReplied = 0, repliedMessages = [] } = output;
 
@@ -814,6 +866,9 @@ export const ToolCallPart = memo(function ToolCallPart({
       if (Array.isArray(output)) return <ListFilesCard output={output} input={part.input} />;
     }
     // Other tools
+    if (toolName === "forwardPort") {
+      return <ForwardPortCard output={part.output} input={part.input} />;
+    }
     if (toolName === "fetchUrl") {
       const output = part.output as any;
       if (output?.url) return <FetchUrlCard output={output} />;

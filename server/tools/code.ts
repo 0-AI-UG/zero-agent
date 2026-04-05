@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { tool } from "ai";
-import { backendRouter } from "@/lib/execution/router.ts";
+import { getLocalBackend } from "@/lib/execution/lifecycle.ts";
 import { writeToS3 } from "@/lib/s3.ts";
 import { generateDownloadUrl } from "@/lib/s3.ts";
 import { insertFile, getFileByS3Key } from "@/db/queries/files.ts";
@@ -23,7 +23,6 @@ function sanitizePath(p: string): string {
   if (normalized.startsWith("..") || path.isAbsolute(normalized)) {
     throw new Error(`Invalid file path: ${p}`);
   }
-  // Reject files inside ignored directories
   const firstSegment = normalized.split(path.sep)[0]!;
   if (IGNORED_DIRS.has(firstSegment)) {
     throw new Error(`File inside ignored directory: ${firstSegment}`);
@@ -71,63 +70,54 @@ function ensureFoldersExist(projectId: string, folderPath: string) {
 }
 
 /** Build a { relativePath: presignedUrl } manifest for all project files. */
-function buildFileManifest(projectId: string): Record<string, string> {
+export function buildFileManifest(projectId: string): Record<string, string> {
   const files = getFilesByFolderPath(projectId, "/");
   const manifest: Record<string, string> = {};
   for (const file of files) {
     const relativePath = file.folder_path === "/"
       ? file.filename
-      : file.folder_path.slice(1) + file.filename; // strip leading /
+      : file.folder_path.slice(1) + file.filename;
     manifest[relativePath] = generateDownloadUrl(file.s3_key, file.filename);
   }
   return manifest;
 }
 
-/** Track which workspaces have been created across agent instances (persists within the process). */
-const readyWorkspaces = new Set<string>();
+/** Track which projects have had their files synced (persists within the process). */
+const syncedProjects = new Set<string>();
 
-/** Clear all tracked workspaces (e.g. when companion disconnects). */
+/** Clear sync tracking (e.g. when backend restarts). */
 export function clearReadyWorkspaces(): void {
-  readyWorkspaces.clear();
+  syncedProjects.clear();
 }
 
-export function createCodeTools(userId: string, projectId: string, chatId: string) {
-  const workspaceId = `chat-${chatId}`;
-
-  async function waitForBackend(): Promise<void> {
-    if (!backendRouter.isAvailable(userId, projectId)) {
-      for (const delay of [500, 1000, 1500]) {
-        await new Promise((r) => setTimeout(r, delay));
-        if (backendRouter.isAvailable(userId, projectId)) break;
-      }
+export function createCodeTools(userId: string, projectId: string) {
+  function getBackend() {
+    const backend = getLocalBackend();
+    if (!backend?.isReady()) {
+      throw new Error("Code execution is not available. Docker may not be running.");
     }
-    if (!backendRouter.isAvailable(userId, projectId)) {
-      throw new Error(
-        "Browser companion is not connected. The user needs to start the companion agent on their machine and connect it with a token from Settings.",
-      );
-    }
+    return backend;
   }
 
-  async function ensureWorkspace(): Promise<string> {
-    const backend = backendRouter.getBackend(userId, projectId);
-    if (!backend) throw new Error("No execution backend available");
+  async function ensureWorkspace(): Promise<void> {
+    const backend = getBackend();
+    await backend.ensureContainer(userId, projectId);
 
     const manifest = buildFileManifest(projectId);
 
-    if (readyWorkspaces.has(workspaceId)) {
+    if (syncedProjects.has(projectId)) {
       try {
-        await backend.syncWorkspace(userId, projectId, workspaceId, manifest);
-        return workspaceId;
+        await backend.syncProjectFiles(projectId, manifest);
+        return;
       } catch {
-        toolLog.info("workspace sync failed, recreating", { userId, projectId, workspaceId });
-        readyWorkspaces.delete(workspaceId);
+        toolLog.info("workspace sync failed, recreating", { userId, projectId });
+        syncedProjects.delete(projectId);
       }
     }
 
-    await backend.createWorkspace(userId, projectId, workspaceId, manifest);
-    readyWorkspaces.add(workspaceId);
-    toolLog.info("workspace created", { userId, projectId, workspaceId, fileCount: Object.keys(manifest).length });
-    return workspaceId;
+    await backend.syncProjectFiles(projectId, manifest);
+    syncedProjects.add(projectId);
+    toolLog.info("workspace synced", { userId, projectId, fileCount: Object.keys(manifest).length });
   }
 
   return {
@@ -147,23 +137,31 @@ export function createCodeTools(userId: string, projectId: string, chatId: strin
       inputSchema: z.object({
         command: z.string().describe("The bash command to execute"),
         timeout: z.number().optional().describe("Timeout in ms (default 120000, max 300000)"),
+        background: z.boolean().optional().describe("Run the command as a background process. Returns immediately with the PID. Use for long-running servers and processes that should keep running."),
       }),
-      execute: async ({ command, timeout }) => {
-        toolLog.info("bash", { userId, projectId, command });
+      execute: async ({ command, timeout, background }) => {
+        toolLog.info("bash", { userId, projectId, command, background });
 
         try {
-          await waitForBackend();
-          const wsId = await ensureWorkspace();
-          const backend = backendRouter.getBackend(userId, projectId);
-          if (!backend) throw new Error("No execution backend available");
+          await ensureWorkspace();
+          const backend = getBackend();
 
           const result = await backend.runBash(
             userId,
             projectId,
-            wsId,
             command,
             timeout,
+            background,
           );
+
+          // Background processes skip file sync
+          if (background) {
+            return {
+              stdout: truncateText(result.stdout, MAX_OUTPUT_CHARS),
+              stderr: truncateText(result.stderr, MAX_OUTPUT_CHARS),
+              exitCode: result.exitCode,
+            };
+          }
 
           // Process changed files: upload to S3 + register in DB
           const savedFiles: Array<{ path: string }> = [];
@@ -188,7 +186,7 @@ export function createCodeTools(userId: string, projectId: string, chatId: strin
                 insertFile(projectId, s3Key, filename, mimeType, file.sizeBytes, folderPath);
 
                 savedFiles.push({ path: file.path });
-                toolLog.info("file saved", { userId, workspaceId: wsId, path: file.path });
+                toolLog.info("file saved", { userId, projectId, path: file.path });
               } catch (err) {
                 const message = err instanceof Error ? err.message : String(err);
                 saveErrors.push({ path: file.path, error: message });
@@ -197,9 +195,6 @@ export function createCodeTools(userId: string, projectId: string, chatId: strin
             }
           }
 
-          // Collect deleted files — don't auto-delete from S3/DB.
-          // Return them as pendingDeletions so the agent uses the delete tool
-          // (which requires user confirmation) to actually remove them.
           const pendingDeletions: string[] = [];
 
           if (result.deletedFiles) {
@@ -210,7 +205,7 @@ export function createCodeTools(userId: string, projectId: string, chatId: strin
                 const existing = getFileByS3Key(projectId, s3Key);
                 if (existing) {
                   pendingDeletions.push(filePath);
-                  toolLog.info("file deletion pending confirmation", { userId, workspaceId: wsId, path: filePath });
+                  toolLog.info("file deletion pending confirmation", { userId, projectId, path: filePath });
                 }
               } catch (err) {
                 const message = err instanceof Error ? err.message : String(err);

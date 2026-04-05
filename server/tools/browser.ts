@@ -1,19 +1,19 @@
 import { z } from "zod";
 import { tool, generateText } from "ai";
-import { backendRouter } from "@/lib/execution/router.ts";
+import { getLocalBackend } from "@/lib/execution/lifecycle.ts";
 import type { BrowserAction } from "@/lib/browser/protocol.ts";
 import { isModelMultimodal } from "@/config/models.ts";
 import { getVisionModel } from "@/lib/openrouter.ts";
+import { deferAsync } from "@/lib/deferred.ts";
 import { log } from "@/lib/logger.ts";
 
 const toolLog = log.child({ module: "tool:browser" });
 
-export function createBrowserTool(userId: string, projectId: string, initialSessionId?: string, lazySession?: { id: string; created: boolean; label?: string }, modelId?: string) {
-  let sessionId = initialSessionId;
+export function createBrowserTool(userId: string, projectId: string, modelId?: string) {
   return {
     browser: tool({
       description:
-        "Control the user's browser via the companion agent. Actions: navigate (go to URL), click/type/select/hover (interact with elements by ref like [e1]), scroll, back/forward/reload, wait, snapshot (get page accessibility tree), screenshot (capture visible page), evaluate (run JS), tabs/switchTab/closeTab (manage tabs). Always take a snapshot first to see the page, then use element refs [e1], [e2] etc. to interact. Mutating actions (click, type, select, hover, scroll, navigate) automatically return an updated snapshot.",
+        "Control the browser. Actions: navigate (go to URL), click/type/select/hover (interact with elements by ref like [e1]), scroll, back/forward/reload, wait, snapshot (get page accessibility tree), screenshot (capture visible page), evaluate (run JS), tabs/switchTab/closeTab (manage tabs). Always take a snapshot first to see the page, then use element refs [e1], [e2] etc. to interact. Mutating actions (click, type, select, hover, scroll, navigate) automatically return an updated snapshot.",
       inputSchema: z.object({
         stealth: z.boolean().optional().describe("Enable human-like mouse movement and typing delays for bot detection avoidance. Default: false (fast mode)."),
         action: z.discriminatedUnion("type", [
@@ -65,75 +65,46 @@ export function createBrowserTool(userId: string, projectId: string, initialSess
             ],
           };
         }
-        // Done results with auto-snapshot: render as text for readability
+        if (result?.type === "snapshot" && typeof result.content === "string") {
+          return {
+            type: "text" as const,
+            value: `Page snapshot: ${result.title} (${result.url})\n\n${result.content}`,
+          };
+        }
         if (result?.type === "done" && typeof result.snapshot === "string") {
           return {
             type: "text" as const,
             value: `${result.message} — ${result.title} (${result.url})\n\n${result.snapshot}`,
           };
         }
-        // Other results (snapshot, done without snapshot, evaluate, tabs, error) → default JSON
         return { type: "json" as const, value: (output ?? null) as import("@ai-sdk/provider").JSONValue };
       },
       execute: async ({ action, stealth }) => {
         const startTime = Date.now();
-        toolLog.info("browser action start", { userId, projectId, sessionId, action: action.type, stealth: !!stealth, modelId });
+        toolLog.info("browser action start", { userId, projectId, action: action.type, stealth: !!stealth, modelId });
 
-        // Wait for backend with backoff: 500ms, 1s, 1.5s (total ~3s)
-        if (!backendRouter.isAvailable(userId, projectId)) {
-          toolLog.info("browser backend not available, waiting with backoff", { userId, projectId });
-          for (const delay of [500, 1000, 1500]) {
-            await new Promise((r) => setTimeout(r, delay));
-            if (backendRouter.isAvailable(userId, projectId)) {
-              toolLog.info("browser backend became available", { userId, projectId, waitedMs: delay });
-              break;
-            }
-          }
-        }
-
-        const backend = backendRouter.getBackend(userId, projectId);
-        if (!backend) {
+        const backend = getLocalBackend();
+        if (!backend?.isReady()) {
           toolLog.warn("no browser backend available", { userId, projectId });
-          return {
-            error:
-              "Browser companion is not connected. The user needs to start the companion agent on their machine and connect it with a token from Settings.",
-          };
-        }
-        toolLog.info("browser backend resolved", { userId, projectId, backendType: backend.constructor?.name });
-
-        // Lazily create browser session on first use
-        if (lazySession && !lazySession.created) {
-          toolLog.info("creating browser session lazily", { userId, projectId, sessionId: lazySession.id, label: lazySession.label });
-          try {
-            await backend.createSession(userId, projectId, lazySession.id, lazySession.label);
-            lazySession.created = true;
-            sessionId = lazySession.id;
-            toolLog.info("browser session created", { userId, projectId, sessionId, elapsedMs: Date.now() - startTime });
-          } catch (err) {
-            toolLog.error("failed to create browser session", err, { userId, projectId, sessionId: lazySession.id, elapsedMs: Date.now() - startTime });
-            return { error: `Failed to create browser session: ${err instanceof Error ? err.message : String(err)}` };
-          }
+          return { error: "Code execution is not available. Docker may not be running." };
         }
 
-        // Execute with retry on transient failures (timeout, connection lost)
+        // Execute with retry on transient failures
         const MAX_RETRIES = 2;
         for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
           const attemptStart = Date.now();
           try {
-            toolLog.info("browser action executing", { userId, projectId, sessionId, action: action.type, attempt });
-            const result = await backend.execute(userId, projectId, action as BrowserAction, sessionId, stealth);
+            const result = await backend.execute(userId, projectId, action as BrowserAction, stealth);
             toolLog.info("browser action completed", {
-              userId, projectId, sessionId, action: action.type,
+              userId, projectId, action: action.type,
               resultType: result?.type, attempt,
               elapsedMs: Date.now() - attemptStart,
-              totalMs: Date.now() - startTime,
             });
 
             // Caption screenshots for non-multimodal models
             if (modelId && !isModelMultimodal(modelId) && result?.type === "screenshot" && typeof result.base64 === "string") {
               try {
-                toolLog.info("browser screenshot captioning", { userId, projectId, modelId });
-                const { text: caption } = await generateText({
+                const { text: caption } = await deferAsync(() => generateText({
                   model: getVisionModel(),
                   messages: [{
                     role: "user",
@@ -142,11 +113,10 @@ export function createBrowserTool(userId: string, projectId: string, initialSess
                       { type: "image", image: result.base64, mediaType: "image/jpeg" },
                     ],
                   }],
-                });
-                toolLog.info("browser screenshot captioned", { userId, projectId, captionLength: caption.length, elapsedMs: Date.now() - startTime });
+                }));
                 return { type: "caption" as const, url: result.url, title: result.title, caption };
               } catch (err) {
-                toolLog.warn("browser screenshot captioning failed", { error: String(err), elapsedMs: Date.now() - startTime });
+                toolLog.warn("screenshot captioning failed", { error: String(err) });
                 return { type: "caption" as const, url: result.url, title: result.title, caption: `[Screenshot of ${result.title} at ${result.url} — image captioning unavailable]` };
               }
             }
@@ -156,20 +126,11 @@ export function createBrowserTool(userId: string, projectId: string, initialSess
             const message = err instanceof Error ? err.message : String(err);
             const isTransient = message.includes("timed out") || message.includes("not connected") || message.includes("closed");
 
-            toolLog.warn("browser action attempt failed", {
-              userId, projectId, sessionId, action: action.type,
-              attempt, isTransient, error: message,
-              elapsedMs: Date.now() - attemptStart,
-            });
+            toolLog.warn("browser action attempt failed", { userId, projectId, action: action.type, attempt, isTransient, error: message });
 
             if (isTransient && attempt < MAX_RETRIES) {
               const retryDelay = 2000 * (attempt + 1);
-              toolLog.info("browser action retrying", { userId, projectId, action: action.type, attempt: attempt + 1, retryDelayMs: retryDelay });
               await new Promise((r) => setTimeout(r, retryDelay));
-              if (!backendRouter.isAvailable(userId, projectId)) {
-                toolLog.warn("browser backend disconnected during retry", { userId, projectId });
-                return { error: "Browser companion disconnected during retry. Please check the companion agent." };
-              }
               continue;
             }
 

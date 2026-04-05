@@ -51,9 +51,8 @@ export const queryKeys = {
   credentials: {
     byProject: (projectId: string) => ["credentials", projectId] as const,
   },
-  companion: {
-    tokens: (projectId: string) => ["companion", "tokens", projectId] as const,
-    status: (projectId: string) => ["companion", "status", projectId] as const,
+  services: {
+    byProject: (projectId: string) => ["services", projectId] as const,
   },
   containers: {
     all: ["containers"] as const,

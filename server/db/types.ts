@@ -153,17 +153,6 @@ export interface SkillRow {
   updated_at: string;
 }
 
-export interface CompanionTokenRow {
-  id: string;
-  user_id: string;
-  project_id: string;
-  token: string;
-  name: string;
-  last_connected_at: string | null;
-  expires_at: string;
-  created_at: string;
-}
-
 export interface QuickActionRow {
   id: string;
   project_id: string;
@@ -226,6 +215,24 @@ export interface CredentialRow {
   rp_id: string | null;
   user_handle: string | null;
   sign_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ForwardedPortRow {
+  id: string;
+  project_id: string;
+  user_id: string;
+  slug: string;
+  label: string;
+  port: number;
+  container_ip: string | null;
+  status: "active" | "stopped";
+  pinned: number;
+  start_command: string | null;
+  working_dir: string;
+  env_vars: string;
+  error: string | null;
   created_at: string;
   updated_at: string;
 }

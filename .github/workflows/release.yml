@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  packages: write
 
 env:
   BUN_VERSION: "1.3.5"
@@ -95,8 +96,25 @@ jobs:
           name: ${{ matrix.artifact }}
           path: companion/artifacts/*
 
+  build-session-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: docker/session
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/session:latest
+            ghcr.io/${{ github.repository }}/session:${{ github.ref_name }}
+
   release:
-    needs: [build-server, build-companion]
+    needs: [build-server, build-companion, build-session-image]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4

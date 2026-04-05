@@ -28,7 +28,7 @@ import {
   handleDeleteChat,
   handleSearchChats,
 } from "@/routes/chats.ts";
-import { handleChat, handleAbortChat, handleContextPreview } from "@/routes/chat.ts";
+import { handleChat, handleAbortChat } from "@/routes/chat.ts";
 import { handleResumeStream } from "@/routes/stream.ts";
 import { handleGetMessages } from "@/routes/messages.ts";
 import {
@@ -77,12 +77,6 @@ import {
   handleDeleteQuickAction,
 } from "@/routes/quick-actions.ts";
 import {
-  handleListCompanionTokens,
-  handleCreateCompanionToken,
-  handleDeleteCompanionToken,
-  handleCompanionStatus,
-} from "@/routes/companion.ts";
-import {
   handleListCredentials,
   handleCreateCredential,
   handleUpdateCredential,
@@ -96,37 +90,23 @@ import {
   handleUpdateTelegramAllowlist,
   handleListTelegramBindings,
 } from "@/routes/telegram.ts";
-import { browserBridge } from "@/lib/browser/bridge.ts";
-import { getCompanionTokenByToken, touchCompanionToken } from "@/db/queries/companion-tokens.ts";
+import {
+  handleListServices,
+  handleDeleteService,
+  handlePinService,
+  handleUnpinService,
+  handleAppStatus,
+} from "@/routes/apps.ts";
 import { presignHandler, s3 } from "@/lib/s3.ts";
-import { backendRouter } from "@/lib/execution/router.ts";
-import { LocalBackend } from "@/lib/execution/local-backend.ts";
-// Local execution backend (DinD) — initialized after server starts
-let localBackend: LocalBackend | null = null;
+import {
+  enableExecution,
+  disableExecution,
+  teardownExecution,
+  getLocalBackend,
+} from "@/lib/execution/lifecycle.ts";
+import { proxyAppRequest } from "@/lib/app-proxy.ts";
+import { getSetting } from "@/lib/settings.ts";
 
-// ── Rate limiter for WebSocket upgrade attempts ──
-const WS_RATE_WINDOW = 60_000; // 1 minute
-const WS_RATE_MAX = 10; // max attempts per IP per window
-const wsRateMap = new Map<string, { count: number; resetAt: number }>();
-
-// Clean up stale entries every 5 minutes
-const wsRateCleanupTimer = setInterval(() => {
-  const now = Date.now();
-  for (const [ip, entry] of wsRateMap) {
-    if (now > entry.resetAt) wsRateMap.delete(ip);
-  }
-}, 5 * 60_000);
-
-function isWsRateLimited(ip: string): boolean {
-  const now = Date.now();
-  const entry = wsRateMap.get(ip);
-  if (!entry || now > entry.resetAt) {
-    wsRateMap.set(ip, { count: 1, resetAt: now + WS_RATE_WINDOW });
-    return false;
-  }
-  entry.count++;
-  return entry.count > WS_RATE_MAX;
-}
 import {
   handleListSkills,
   handleInstallSkill,
@@ -154,7 +134,7 @@ import { startAllPollers, stopAllPollers } from "@/lib/telegram-polling.ts";
 import { processIncomingUpdate } from "@/routes/telegram.ts";
 
 import { initDesktopUser } from "@/lib/desktop-init.ts";
-import { DESKTOP_MODE, requireAdmin } from "@/lib/auth.ts";
+import { DESKTOP_MODE, requireAdmin, authenticateRequest } from "@/lib/auth.ts";
 import { webOnly } from "@/routes/utils.ts";
 import { db } from "@/db/index.ts";
 await initDesktopUser();
@@ -239,9 +219,7 @@ function withLogging(handler: (req: any, ...args: any[]) => Response | Promise<R
   };
 }
 
-const AUTH_TIMEOUT = 5_000; // 5 seconds to send auth message after connecting
-
-const server = Bun.serve<{ userId: string; projectId: string; authenticated: boolean }>({
+const server = Bun.serve({
   port: PORT,
   hostname: "0.0.0.0",
   routes: {
@@ -320,9 +298,6 @@ const server = Bun.serve<{ userId: string; projectId: string; authenticated: boo
     },
     "/api/projects/:projectId/files/search": {
       GET: withLogging(handleSearchFiles),
-    },
-    "/api/projects/:projectId/context-preview": {
-      GET: withLogging(handleContextPreview),
     },
     "/api/projects/:projectId/reindex": {
       POST: withLogging(handleReindex, { noTimeout: true }),
@@ -426,17 +401,6 @@ const server = Bun.serve<{ userId: string; projectId: string; authenticated: boo
       GET: withLogging(handleGetSkill),
       DELETE: withLogging(handleDeleteSkill),
     },
-    // Companion tokens (project-scoped)
-    "/api/projects/:projectId/companion/tokens": {
-      GET: withLogging(handleListCompanionTokens),
-      POST: withLogging(handleCreateCompanionToken),
-    },
-    "/api/projects/:projectId/companion/tokens/:id": {
-      DELETE: withLogging(handleDeleteCompanionToken),
-    },
-    "/api/projects/:projectId/companion/status": {
-      GET: withLogging(handleCompanionStatus),
-    },
     // Telegram webhook (unauthenticated — secret token verified)
     "/api/telegram/webhook/:projectId": {
       POST: withLogging(handleTelegramWebhook),
@@ -508,30 +472,29 @@ const server = Bun.serve<{ userId: string; projectId: string; authenticated: boo
       DELETE: withLogging(handleDeleteCredential),
     },
 
+    // Services (forwarded ports)
+    "/api/projects/:projectId/services": {
+      GET: withLogging(handleListServices),
+    },
+    "/api/projects/:projectId/services/:serviceId": {
+      DELETE: withLogging(handleDeleteService),
+    },
+    "/api/projects/:projectId/services/:serviceId/pin": {
+      POST: withLogging(handlePinService),
+    },
+    "/api/projects/:projectId/services/:serviceId/unpin": {
+      POST: withLogging(handleUnpinService),
+    },
+    "/api/apps/:slug/status": {
+      GET: withLogging(handleAppStatus),
+    },
+
     // Containers (admin — list, pause, resume, destroy)
     "/api/admin/containers": {
       GET: withLogging(async (req: Request) => {
         await requireAdmin(req);
-        const containers = localBackend?.listContainers() ?? [];
+        const containers = getLocalBackend()?.listContainers() ?? [];
         return Response.json({ containers }, { headers: corsHeaders });
-      }),
-    },
-    "/api/admin/containers/:sessionId/pause": {
-      POST: withLogging(async (req: Request) => {
-        await requireAdmin(req);
-        const url = new URL(req.url);
-        const sessionId = url.pathname.split("/")[4]!;
-        await localBackend?.pauseContainer(sessionId);
-        return Response.json({ ok: true }, { headers: corsHeaders });
-      }),
-    },
-    "/api/admin/containers/:sessionId/resume": {
-      POST: withLogging(async (req: Request) => {
-        await requireAdmin(req);
-        const url = new URL(req.url);
-        const sessionId = url.pathname.split("/")[4]!;
-        await localBackend?.resumeContainer(sessionId);
-        return Response.json({ ok: true }, { headers: corsHeaders });
       }),
     },
     "/api/admin/containers/:sessionId": {
@@ -539,26 +502,25 @@ const server = Bun.serve<{ userId: string; projectId: string; authenticated: boo
         await requireAdmin(req);
         const url = new URL(req.url);
         const sessionId = url.pathname.split("/")[4]!;
-        await localBackend?.destroyContainer(sessionId);
+        await getLocalBackend()?.destroyContainer(sessionId);
         return Response.json({ ok: true }, { headers: corsHeaders });
       }),
     },
-    // Container status for a specific chat (authenticated)
+    // Container status for a project (authenticated)
     "/api/projects/:projectId/chats/:chatId/container": {
       GET: withLogging((req: Request) => {
         const url = new URL(req.url);
-        const chatId = url.pathname.split("/").at(-2)!;
-        const status = localBackend?.getContainerStatus(chatId) ?? { status: "none" };
-        return Response.json(status, { headers: corsHeaders });
+        const projectId = url.pathname.split("/")[3]!;
+        const session = getLocalBackend()?.getSessionForProject(projectId);
+        return Response.json({ status: session ? "running" : "none" }, { headers: corsHeaders });
       }),
     },
-    // Latest browser screenshot for a chat's session
+    // Latest browser screenshot for a project's session
     "/api/projects/:projectId/chats/:chatId/browser-screenshot": {
       GET: withLogging((req: Request) => {
         const url = new URL(req.url);
-        const chatId = url.pathname.split("/").at(-2)!;
-        const sessionId = `chat-${chatId}`;
-        const screenshot = localBackend?.getLatestScreenshot(sessionId);
+        const projectId = url.pathname.split("/")[3]!;
+        const screenshot = getLocalBackend()?.getLatestScreenshot(projectId);
         if (!screenshot) {
           return Response.json({ screenshot: null }, { headers: corsHeaders });
         }
@@ -566,19 +528,56 @@ const server = Bun.serve<{ userId: string; projectId: string; authenticated: boo
       }),
     },
 
+    // Execution lifecycle (admin — enable/disable Docker execution & app deployments)
+    "/api/admin/execution/enable": {
+      POST: withLogging(async (req: Request) => {
+        await requireAdmin(req);
+        const result = await enableExecution();
+        return Response.json(result, {
+          status: result.success ? 200 : 500,
+          headers: corsHeaders,
+        });
+      }),
+    },
+    "/api/admin/execution/disable": {
+      POST: withLogging(async (req: Request) => {
+        await requireAdmin(req);
+        await disableExecution();
+        return Response.json({ success: true }, { headers: corsHeaders });
+      }),
+    },
     // Capabilities (server-side execution status)
     "/api/capabilities": {
       GET: withLogging((req: Request) => {
+        const backend = getLocalBackend();
+        const hasDocker = !!backend?.isReady();
         return Response.json({
-          serverDocker: backendRouter.hasLocalBackend(),
-          serverBrowser: backendRouter.hasLocalBackend(),
-          companionConnected: false, // per-project; use companion/status for project-specific
+          serverDocker: hasDocker,
+          serverBrowser: hasDocker,
+          appDeployments: hasDocker,
         }, { headers: corsHeaders });
+      }),
+    },
+
+    // Short-lived token for /_apps/* browser navigation
+    "/api/app-token": {
+      POST: withLogging(async (req: Request) => {
+        const { userId, email } = await authenticateRequest(req);
+        const { createAppToken } = await import("@/lib/auth.ts");
+        const appToken = await createAppToken(userId, email);
+        return Response.json({ token: appToken }, { headers: corsHeaders });
       }),
     },
 
     // S3 presigned file serving (must be before catch-all)
     "/api/s3/*": (req: Request) => presignHandler.handleRequest(req),
+
+    // Reverse proxy for forwarded ports (must be before frontend catch-all)
+    "/_apps/*": (req: Request) => {
+      const slug = new URL(req.url).pathname.split("/")[2];
+      if (slug) return proxyAppRequest(slug, req);
+      return new Response("Not found", { status: 404 });
+    },
 
     // Frontend catch-all (dev mode only — prod uses fetch fallback)
     ...(!IS_PROD && devIndex ? { "/*": devIndex } : {}) as Record<string, never>,
@@ -591,29 +590,16 @@ const server = Bun.serve<{ userId: string; projectId: string; authenticated: boo
 
     const url = new URL(request.url);
 
-    // WebSocket upgrade for companion agent
-    if (url.pathname === "/ws/companion") {
-      // Rate limit by IP (skip in desktop mode — local connections only)
-      if (!DESKTOP_MODE) {
-        const ip = server.requestIP(request)?.address ?? "unknown";
-        if (isWsRateLimited(ip)) {
-          return Response.json({ error: "Too many connection attempts" }, { status: 429, headers: corsHeaders });
-        }
-      }
-
-      // Upgrade without auth — token is sent as the first message
-      const upgraded = server.upgrade(request, {
-        data: { userId: "", projectId: "", authenticated: false },
-      });
-      if (!upgraded) {
-        httpLog.error("WebSocket upgrade failed", undefined, { path: url.pathname });
-        return Response.json({ error: "WebSocket upgrade failed" }, { status: 500, headers: corsHeaders });
-      }
-      return undefined as unknown as Response;
-    }
-
     if (url.pathname.startsWith("/api/s3/")) {
       return presignHandler.handleRequest(request);
+    }
+
+    // Reverse proxy for deployed apps
+    if (url.pathname.startsWith("/_apps/")) {
+      const slug = url.pathname.split("/")[2];
+      if (slug) {
+        return proxyAppRequest(slug, request);
+      }
     }
 
     // API routes that weren't matched
@@ -640,64 +626,6 @@ const server = Bun.serve<{ userId: string; projectId: string; authenticated: boo
 
     // Dev: return undefined to let Bun's internal dev server handle /_bun/* etc.
     return undefined as unknown as Response;
-  },
-  websocket: {
-    idleTimeout: 30, // seconds — Bun closes WS if no data received within this window
-    open(ws) {
-      // Start auth timeout — companion must send { type: "auth", token: "..." } within 5s
-      setTimeout(() => {
-        if (!ws.data.authenticated) {
-          httpLog.warn("companion auth timeout, closing", {});
-          ws.close(4001, "Authentication timeout");
-        }
-      }, AUTH_TIMEOUT);
-    },
-    message(ws, message) {
-      // Handle auth as the first message for unauthenticated connections
-      if (!ws.data.authenticated) {
-        try {
-          const data = JSON.parse(typeof message === "string" ? message : (message as Buffer).toString());
-          if (data.type !== "auth" || !data.token) {
-            ws.send(JSON.stringify({ type: "error", error: "First message must be auth" }));
-            ws.close(4002, "Invalid auth message");
-            return;
-          }
-
-          if (DESKTOP_MODE) {
-            const firstProject = db.query<{ id: string }, []>("SELECT id FROM projects LIMIT 1").get();
-            ws.data.userId = "desktop-user";
-            ws.data.projectId = data.projectId ?? firstProject?.id ?? "";
-            ws.data.authenticated = true;
-            ws.send(JSON.stringify({ type: "auth_ok" }));
-            browserBridge.handleOpen(ws as any);
-            return;
-          }
-
-          const tokenRow = getCompanionTokenByToken(data.token);
-          if (!tokenRow) {
-            ws.send(JSON.stringify({ type: "error", error: "Invalid or expired token" }));
-            ws.close(4003, "Invalid token");
-            return;
-          }
-          // Authenticated — set connection data and proceed
-          ws.data.userId = tokenRow.user_id;
-          ws.data.projectId = tokenRow.project_id;
-          ws.data.authenticated = true;
-          touchCompanionToken(data.token);
-          ws.send(JSON.stringify({ type: "auth_ok" }));
-          browserBridge.handleOpen(ws as any);
-        } catch {
-          ws.close(4002, "Invalid auth message");
-        }
-        return;
-      }
-      browserBridge.handleMessage(ws as any, message as string);
-    },
-    close(ws) {
-      if (ws.data.authenticated) {
-        browserBridge.handleClose(ws as any);
-      }
-    },
   },
   error(error) {
     httpLog.error("bun server error", error);
@@ -733,17 +661,17 @@ if (!process.env.TELEGRAM_WEBHOOK_BASE_URL) {
   startAllPollers(processIncomingUpdate);
 }
 
-// ── Local Docker Backend (DinD) ──
-// Attempt to initialize if dockerd is running inside the server container
+// ── Local Docker Backend ──
+// Only initialize Docker if admin has explicitly enabled server execution
 (async () => {
-  const backend = new LocalBackend();
-  const ready = await backend.waitForDocker(10_000);
-  if (ready) {
-    localBackend = backend;
-    backendRouter.setLocalBackend(backend);
-    log.info("local execution backend ready (DinD)");
-  } else {
-    log.info("no local Docker daemon — companion-only mode");
+  if (getSetting("SERVER_EXECUTION_ENABLED") !== "true") {
+    log.info("server execution not enabled — skipping Docker initialization");
+    return;
+  }
+
+  const result = await enableExecution();
+  if (!result.success) {
+    log.info("Docker execution not available", { error: result.error });
   }
 })();
 
@@ -756,9 +684,8 @@ async function handleShutdown(signal: string) {
   stopScheduler();
   stopAllEventTriggers();
   stopAllPollers();
-  clearInterval(wsRateCleanupTimer);
   await drainActiveRuns(IS_PROD ? 30_000 : 2_000);
-  if (localBackend) await localBackend.destroyAll();
+  await teardownExecution();
   s3.close();
   db.close();
   log.info("shutdown complete");

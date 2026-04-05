@@ -25,7 +25,6 @@ const VALID_TRIGGER_EVENTS: EventName[] = [
   "chat.created", "chat.deleted",
   "message.received", "message.sent",
   "task.started", "task.completed", "task.failed",
-  "companion.connected", "companion.disconnected",
   "skill.loaded", "skill.installed", "skill.uninstalled",
 ];
 

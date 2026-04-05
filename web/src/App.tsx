@@ -11,9 +11,11 @@ import { FilesPage } from "@/pages/FilesPage";
 import { TasksPage } from "@/pages/TasksPage";
 import { SettingsPage } from "@/pages/SettingsPage";
 import { SkillsPage } from "@/pages/SkillsPage";
+import { AppsPage } from "@/pages/AppsPage";
 import { HelpPage } from "@/pages/HelpPage";
 import { AccountPage } from "@/pages/AccountPage";
 import { AdminPage } from "@/pages/AdminPage";
+import { AppGatePage } from "@/pages/AppGatePage";
 import { SetupPage } from "@/pages/SetupPage";
 import { DesktopSetupPage } from "@/pages/DesktopSetupPage";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -34,6 +36,7 @@ export function App() {
 
           {/* Protected routes */}
           <Route element={<ProtectedRoute />}>
+            <Route path="/app/:slug/*" element={<AppGatePage />} />
             <Route path="/" element={<DashboardPage />} />
             <Route path="/account" element={<AccountPage />} />
             <Route path="/help" element={<HelpPage />} />
@@ -43,6 +46,7 @@ export function App() {
               <Route path="c/:chatId" element={<ProjectPage />} />
               <Route path="files" element={<FilesPage />} />
               <Route path="tasks" element={<TasksPage />} />
+              <Route path="services" element={<AppsPage />} />
               <Route path="skills" element={<SkillsPage />} />
               <Route path="settings" element={<SettingsPage />} />
             </Route>

@@ -1,17 +1,15 @@
 import { useState, useEffect } from "react";
 import { Link, Navigate } from "react-router";
-import { useCurrentUser, useUpdateMe } from "@/api/admin";
+import { useCurrentUser } from "@/api/admin";
 import { useDesktopMode } from "@/hooks/use-desktop-mode";
-import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { ArrowLeftIcon, MonitorIcon, KeyRoundIcon, ShieldCheckIcon, CheckIcon, EyeIcon, EyeOffIcon, CopyIcon, ClipboardCheckIcon } from "lucide-react";
+import { ArrowLeftIcon, KeyRoundIcon, ShieldCheckIcon, CheckIcon, EyeIcon, EyeOffIcon, CopyIcon, ClipboardCheckIcon } from "lucide-react";
 import { apiFetch } from "@/api/client";
 import { totpSetup, totpConfirm, totpDisable, totpStatus } from "@/api/totp";
 
 export function AccountPage() {
   const { data: user } = useCurrentUser();
-  const updateMe = useUpdateMe();
   const desktopMode = useDesktopMode();
 
   if (desktopMode) return <Navigate to="/" replace />;
@@ -39,32 +37,6 @@ export function AccountPage() {
           <ChangePasswordSection />
 
           <TwoFactorSection />
-
-          <section className="space-y-4">
-            <div className="flex items-center gap-2">
-              <MonitorIcon className="size-4 text-cyan-500" />
-              <h3 className="text-sm font-semibold">Companion</h3>
-            </div>
-
-            <div className="rounded-lg border p-4">
-              <div className="flex items-center justify-between gap-4">
-                <div className="space-y-1">
-                  <p className="text-sm font-medium">Allow others to use your companion</p>
-                  <p className="text-xs text-muted-foreground">
-                    When enabled, other project members can use your connected companion for browser and code actions.
-                  </p>
-                </div>
-                <Switch
-                  checked={user.companionSharing}
-                  onCheckedChange={(checked) =>
-                    updateMe.mutate({ companionSharing: checked })
-                  }
-                  disabled={updateMe.isPending}
-                  aria-label="Toggle companion sharing"
-                />
-              </div>
-            </div>
-          </section>
         </div>
       </main>
     </div>

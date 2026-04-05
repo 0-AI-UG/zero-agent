@@ -2,6 +2,7 @@ import type { ModelMessage } from "@ai-sdk/provider-utils";
 import { generateText } from "ai";
 import { getEnrichModel } from "@/lib/openrouter.ts";
 import { readFromS3, writeToS3, deleteFromS3 } from "@/lib/s3.ts";
+import { deferAsync } from "@/lib/deferred.ts";
 import { log } from "@/lib/logger.ts";
 
 const anchorLog = log.child({ module: "session-anchor" });
@@ -118,12 +119,12 @@ export async function extractAnchor(
   }
 
   try {
-    const result = await generateText({
+    const result = await deferAsync(() => generateText({
       model: getEnrichModel(),
       system: EXTRACTION_PROMPT,
       prompt: `${contextPrefix}Conversation segment to extract from:\n\n${text}`,
       maxOutputTokens: 1024,
-    });
+    }));
 
     const parsed = JSON.parse(result.text) as ExtractionResult;
 

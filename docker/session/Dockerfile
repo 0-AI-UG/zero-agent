@@ -2,9 +2,9 @@ FROM debian:bookworm-slim
 
 # Google Chrome + display server + VNC
 RUN apt-get update && apt-get install -y \
-    chromium xvfb x11vnc novnc websockify socat \
+    chromium xvfb x11vnc socat \
     fonts-liberation fonts-noto-color-emoji libnss3 libatk-bridge2.0-0 \
-    curl git jq zip unzip imagemagick ca-certificates \
+    curl git jq zip unzip ca-certificates net-tools \
     --no-install-recommends && rm -rf /var/lib/apt/lists/*
 
 # Bun
@@ -20,6 +20,6 @@ COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 WORKDIR /workspace
-EXPOSE 5900 6080 9222 9223
+EXPOSE 5900 9222 9223
 
 ENTRYPOINT ["/entrypoint.sh"]

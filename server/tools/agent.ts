@@ -2,8 +2,7 @@ import { z } from "zod";
 import { tool, ToolLoopAgent, stepCountIs } from "ai";
 import { createDiscoverableToolset } from "@/tools/registry.ts";
 import { getChatModel, getEnrichModel } from "@/lib/openrouter.ts";
-import { browserBridge } from "@/lib/browser/bridge.ts";
-import { backendRouter } from "@/lib/execution/router.ts";
+import { getLocalBackend } from "@/lib/execution/lifecycle.ts";
 import { getSkillSummaries } from "@/lib/skills/loader.ts";
 import { buildSkillsIndex } from "@/lib/skills/injector.ts";
 import { nanoid } from "nanoid";
@@ -54,19 +53,15 @@ export function createAgentTool(projectId: string, toolOptions: AgentToolOptions
       let resolveUpdate: (() => void) | null = null;
 
       const promises = tasks.map(async (task, index) => {
-        // Prepare a lazy browser session — only created when the browser tool is first used
-        const lazyBrowserSession = toolOptions.userId && toolOptions.projectId && (browserBridge.isConnected(toolOptions.userId, toolOptions.projectId) || backendRouter.isAvailable(toolOptions.userId, toolOptions.projectId))
-          ? { id: nanoid(), created: false }
-          : undefined;
-
         // Each subagent gets its own discoverable toolset
+        const codeExecutionEnabled = !!getLocalBackend()?.isReady();
         const { activeTools, toolIndex } = createDiscoverableToolset(projectId, {
           userId: toolOptions.userId,
-          lazyBrowserSession,
           excludeTools: AGENT_EXCLUDED_TOOLS,
           context: "subagent",
           onlyTools: toolOptions.onlyTools,
           modelId: toolOptions.modelId,
+          codeExecutionEnabled,
         });
 
         const selectedModel = task.model === "default" ? getChatModel() : getEnrichModel();
@@ -74,8 +69,6 @@ export function createAgentTool(projectId: string, toolOptions: AgentToolOptions
 
         toolLog.info("subagent setup", {
           index,
-          lazyBrowserSession: lazyBrowserSession?.id,
-          companionConnected: toolOptions.userId && toolOptions.projectId ? browserBridge.isConnected(toolOptions.userId, toolOptions.projectId) : false,
           registryTools: Object.keys(activeTools),
           model: task.model,
         });
@@ -162,14 +155,6 @@ ${skillsIndex ? `\n## Skills\n${skillsIndex}\nCall \`loadSkill\` with a skill na
           completedResults.push(r);
           if (resolveUpdate) resolveUpdate();
           return r;
-        } finally {
-          // Clean up browser session only if it was actually created
-          if (lazyBrowserSession?.created && toolOptions.userId && toolOptions.projectId) {
-            const backend = backendRouter.getBackend(toolOptions.userId, toolOptions.projectId);
-            (backend ?? browserBridge).destroySession(toolOptions.userId, toolOptions.projectId, lazyBrowserSession.id).catch((err: unknown) => {
-              toolLog.warn("failed to destroy browser session", { index, error: String(err) });
-            });
-          }
         }
       });
 

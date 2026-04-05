@@ -1,6 +1,7 @@
 import { generateText } from "ai";
 import { getEnrichModel } from "@/lib/openrouter.ts";
 import type { SubtaskItem } from "@/lib/session-anchor.ts";
+import { deferAsync } from "@/lib/deferred.ts";
 import { log } from "@/lib/logger.ts";
 
 const decompLog = log.child({ module: "task-decomposition" });
@@ -33,12 +34,12 @@ export async function decomposeTask(
     : prompt;
 
   try {
-    const result = await generateText({
+    const result = await deferAsync(() => generateText({
       model: getEnrichModel(),
       system: DECOMPOSITION_PROMPT,
       prompt: input,
       maxOutputTokens: 1024,
-    });
+    }));
 
     const parsed = JSON.parse(result.text) as Array<{ id: string; title: string }>;
 

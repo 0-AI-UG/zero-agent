@@ -28,10 +28,6 @@ export type AgentEvents = {
   "tool.called": { toolName: string; chatId: string; projectId: string; params: unknown };
   "tool.result": { toolName: string; chatId: string; projectId: string; result: unknown };
 
-  // Companion / browser
-  "companion.connected": { projectId: string; userId: string };
-  "companion.disconnected": { projectId: string; userId: string };
-
   // Skills
   "skill.loaded": { projectId: string; skillName: string; chatId: string };
   "skill.installed": { projectId: string; skillName: string; source: string };
@@ -51,6 +47,8 @@ type Handler<T> = (event: T & EventMeta) => void | Promise<void>;
 
 // ── Event bus ──
 
+const MAX_LISTENERS_PER_EVENT = 50;
+
 class EventBus {
   private handlers = new Map<string, Set<Handler<any>>>();
 
@@ -58,7 +56,11 @@ class EventBus {
     if (!this.handlers.has(event)) {
       this.handlers.set(event, new Set());
     }
-    this.handlers.get(event)!.add(handler);
+    const set = this.handlers.get(event)!;
+    if (set.size >= MAX_LISTENERS_PER_EVENT) {
+      eventLog.warn("possible listener leak — too many handlers", { event, count: set.size });
+    }
+    set.add(handler);
 
     // Return unsubscribe function
     return () => {
