@@ -84,9 +84,9 @@ export async function runAutonomousTask(
       try {
         const agentEmbedding = await embedValue(prompt);
         const [relevantFiles, relevantMemories, relevantHistory] = await Promise.all([
-          semanticSearch(project.id, "file", prompt, 3, 0.7, agentEmbedding),
-          semanticSearch(project.id, "memory", prompt, 5, 0.7, agentEmbedding),
-          semanticSearch(project.id, "message", prompt, 3, 0.7, agentEmbedding),
+          semanticSearch(project.id, "file", prompt, 3, agentEmbedding),
+          semanticSearch(project.id, "memory", prompt, 5, agentEmbedding),
+          semanticSearch(project.id, "message", prompt, 3, agentEmbedding),
         ]);
 
         const parts: string[] = [];

@@ -83,8 +83,8 @@ export async function handleChat(request: BunRequest): Promise<Response> {
     if (latestUserText) {
       const chatEmbedding = await embedValue(latestUserText).catch(() => null);
       const [memoryResults, fileResults] = await Promise.all([
-        semanticSearch(projectId, "memory", latestUserText, 10, 0.7, chatEmbedding ?? undefined).catch(() => []),
-        semanticSearch(projectId, "file", latestUserText, 10, 0.7, chatEmbedding ?? undefined).catch(() => []),
+        semanticSearch(projectId, "memory", latestUserText, 10, chatEmbedding ?? undefined).catch(() => []),
+        semanticSearch(projectId, "file", latestUserText, 10, chatEmbedding ?? undefined).catch(() => []),
       ]);
 
       relevantMemories = memoryResults.map((r) => ({ content: r.content, score: r.score }));

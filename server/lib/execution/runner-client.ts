@@ -256,7 +256,7 @@ export class RunnerClient implements ExecutionBackend {
     try {
       const res = await this.request(`/containers/${encodeURIComponent(name)}/browser/screenshot`);
       if (!res.ok) return null;
-      return await res.json();
+      return await res.json() as { base64: string; title: string; url: string; timestamp: number };
     } catch {
       return null;
     }
