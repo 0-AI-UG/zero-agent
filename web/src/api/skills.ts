@@ -18,12 +18,6 @@ export interface Skill {
   metadata: SkillMetadata | null;
 }
 
-export interface AvailableSkill {
-  name: string;
-  description: string;
-  metadata: SkillMetadata | null;
-}
-
 export interface DiscoveredSkill {
   name: string;
   description: string;
@@ -45,34 +39,18 @@ export function useSkills(projectId: string) {
   });
 }
 
-export function useAvailableSkills(projectId: string) {
-  return useQuery({
-    queryKey: queryKeys.skills.available(projectId),
-    queryFn: async () => {
-      const res = await apiFetch<{ available: AvailableSkill[] }>(
-        `/projects/${projectId}/skills/available`,
-      );
-      return res.available;
-    },
-    enabled: !!projectId,
-    staleTime: 60_000,
-  });
-}
-
 export function useInstallSkill(projectId: string) {
   const queryClient = useQueryClient();
   const skillsKey = queryKeys.skills.byProject(projectId);
-  const availableKey = queryKeys.skills.available(projectId);
 
   return useMutation({
-    mutationFn: (payload: { content: string } | { builtIn: string }) =>
+    mutationFn: (payload: { content: string }) =>
       apiFetch<{ skill: Skill }>(`/projects/${projectId}/skills/install`, {
         method: "POST",
         body: JSON.stringify(payload),
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: skillsKey });
-      queryClient.invalidateQueries({ queryKey: availableKey });
     },
   });
 }
@@ -80,7 +58,6 @@ export function useInstallSkill(projectId: string) {
 export function useUninstallSkill(projectId: string) {
   const queryClient = useQueryClient();
   const skillsKey = queryKeys.skills.byProject(projectId);
-  const availableKey = queryKeys.skills.available(projectId);
 
   return useMutation({
     mutationFn: (name: string) =>
@@ -89,7 +66,6 @@ export function useUninstallSkill(projectId: string) {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: skillsKey });
-      queryClient.invalidateQueries({ queryKey: availableKey });
     },
   });
 }
@@ -121,9 +97,6 @@ export function useInstallFromGithub(projectId: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: queryKeys.skills.byProject(projectId),
-      });
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.skills.available(projectId),
       });
     },
   });

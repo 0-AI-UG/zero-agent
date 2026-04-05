@@ -1,11 +1,11 @@
 /**
  * Execution lifecycle manager — handles runtime enable/disable of
- * execution via a remote runner service (RunnerClient).
+ * execution via a pool of remote runner services.
  */
-import { RunnerClient } from "./runner-client.ts";
+import { RunnerPool } from "./runner-pool.ts";
 import type { ExecutionBackend } from "./backend-interface.ts";
 import { PortManager } from "./app-manager.ts";
-import { getSetting, setSetting } from "@/lib/settings.ts";
+import { setSetting } from "@/lib/settings.ts";
 import { setBackendGetter } from "@/tools/apps.ts";
 import { setRoutePortManager } from "@/routes/apps.ts";
 import { log } from "@/lib/logger.ts";
@@ -27,8 +27,8 @@ export function getPortManager(): PortManager | null {
 export const getAppProcessManager = getPortManager;
 
 /**
- * Enable server-side execution via a remote runner service.
- * Reads RUNNER_URL and RUNNER_API_KEY from settings DB (falls back to env vars).
+ * Enable server-side execution via the runner pool.
+ * Reads runners from the runners table (falls back to legacy RUNNER_URL setting).
  */
 export async function enableExecution(): Promise<{ success: boolean; error?: string }> {
   if (backend) return { success: true };
@@ -36,20 +36,13 @@ export async function enableExecution(): Promise<{ success: boolean; error?: str
 
   initializing = true;
   try {
-    const runnerUrl = getSetting("RUNNER_URL");
-    const runnerApiKey = getSetting("RUNNER_API_KEY") ?? "";
-
-    if (!runnerUrl) {
-      return { success: false, error: "Runner URL not configured. Set it in Admin > Execution settings." };
-    }
-
-    const client = new RunnerClient(runnerUrl, runnerApiKey);
-    const ready = await client.init();
+    const pool = new RunnerPool();
+    const ready = await pool.init();
     if (!ready) {
-      return { success: false, error: `Runner service not available at ${runnerUrl}` };
+      return { success: false, error: "No healthy runners available. Add runners in Admin > Execution settings." };
     }
-    backend = client;
-    lifecycleLog.info("connected to remote runner", { url: runnerUrl });
+    backend = pool;
+    lifecycleLog.info("runner pool enabled");
 
     setBackendGetter(() => backend);
     setSetting("SERVER_EXECUTION_ENABLED", "true");
@@ -94,6 +87,19 @@ export async function teardownExecution(): Promise<void> {
 export async function reconnectExecution(): Promise<{ success: boolean; error?: string }> {
   await teardownExecution();
   return enableExecution();
+}
+
+/**
+ * Hot-reload runners from DB without tearing down existing connections.
+ * Called when admin adds/removes/updates runners.
+ */
+export async function reloadRunners(): Promise<{ success: boolean; error?: string }> {
+  if (backend && backend instanceof RunnerPool) {
+    await backend.reload();
+    return { success: true };
+  }
+  // If not a pool yet (shouldn't happen), fall back to full reconnect
+  return reconnectExecution();
 }
 
 async function startPortManager(): Promise<void> {

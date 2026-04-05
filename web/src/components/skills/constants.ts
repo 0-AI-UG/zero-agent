@@ -1,9 +1,7 @@
 export const PLATFORM_CONFIG: Record<
   string,
   { color: string; label: string }
-> = {
-  visualizer: { color: "bg-violet-500", label: "Visualizer" },
-};
+> = {};
 
 export const DEFAULT_PLATFORM_CONFIG = {
   color: "bg-muted-foreground",
@@ -27,7 +25,6 @@ export const CAPABILITY_LABELS: Record<string, string> = {
 };
 
 export const SOURCE_LABELS: Record<string, string> = {
-  "built-in": "built-in",
   user: "custom",
   github: "github",
 };

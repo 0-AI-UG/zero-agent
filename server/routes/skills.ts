@@ -9,7 +9,7 @@ import {
 import { handleError, verifyProjectAccess } from "@/routes/utils.ts";
 import { parseSkillMd } from "@/lib/skills/parser.ts";
 import { loadFullSkill, getSkillSummaries } from "@/lib/skills/loader.ts";
-import { installSkillFiles, uninstallSkill, loadBuiltInSkill } from "@/lib/skills/installer.ts";
+import { installSkillFiles, uninstallSkill } from "@/lib/skills/installer.ts";
 import { parseGitHubUrl, discoverSkills, fetchSkillFiles } from "@/lib/skills/github.ts";
 import { getSkillFileByName } from "@/db/queries/files.ts";
 import { NotFoundError } from "@/lib/errors.ts";
@@ -46,52 +46,6 @@ export async function handleListSkills(request: Request): Promise<Response> {
   }
 }
 
-export async function handleListAvailableSkills(request: Request): Promise<Response> {
-  try {
-    const { userId } = await authenticateRequest(request);
-    const { projectId } = (request as SkillsRequest).params;
-    verifyProjectAccess(projectId, userId);
-
-    const { readdirSync } = await import("node:fs");
-    const { resolve } = await import("node:path");
-    const skillsDir = resolve(import.meta.dir, "../../skills");
-
-    const summaries = await getSkillSummaries(projectId);
-    const installedNames = new Set(summaries.map((s) => s.name));
-
-    const available: { name: string; description: string; metadata: Record<string, unknown> }[] = [];
-
-    try {
-      const entries = readdirSync(skillsDir, { withFileTypes: true });
-      for (const entry of entries) {
-        if (!entry.isDirectory()) continue;
-        if (installedNames.has(entry.name)) continue;
-
-        try {
-          const skillMdPath = `${skillsDir}/${entry.name}/SKILL.md`;
-          const file = Bun.file(skillMdPath);
-          const content = await file.text();
-          const { frontmatter } = parseSkillMd(content);
-
-          available.push({
-            name: frontmatter.name,
-            description: frontmatter.description,
-            metadata: frontmatter.metadata as unknown as Record<string, unknown>,
-          });
-        } catch {
-          // Skip directories without valid SKILL.md
-        }
-      }
-    } catch {
-      // skills directory doesn't exist
-    }
-
-    return Response.json({ available }, { headers: corsHeaders });
-  } catch (error) {
-    return handleError(error);
-  }
-}
-
 export async function handleInstallSkill(request: Request): Promise<Response> {
   try {
     const { userId } = await authenticateRequest(request);
@@ -100,16 +54,9 @@ export async function handleInstallSkill(request: Request): Promise<Response> {
 
     const body = await validateBody(request, installSkillSchema);
 
-    let result: InstallResult;
-
-    if ("builtIn" in body) {
-      const files = await loadBuiltInSkill(body.builtIn);
-      result = await installSkillFiles(projectId, body.builtIn, files);
-    } else {
-      const { frontmatter } = parseSkillMd(body.content);
-      const files = [{ path: "SKILL.md", content: body.content }];
-      result = await installSkillFiles(projectId, frontmatter.name, files);
-    }
+    const { frontmatter } = parseSkillMd(body.content);
+    const files = [{ path: "SKILL.md", content: body.content }];
+    const result = await installSkillFiles(projectId, frontmatter.name, files);
 
     skillLog.info("skill installed", { projectId, name: result.name });
 

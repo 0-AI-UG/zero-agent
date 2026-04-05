@@ -11,13 +11,16 @@ import {
   toolbarPlugin,
   markdownShortcutPlugin,
   codeBlockPlugin,
+  codeMirrorPlugin,
   frontmatterPlugin,
+  diffSourcePlugin,
   BoldItalicUnderlineToggles,
   ListsToggle,
   BlockTypeSelect,
   CreateLink,
   InsertTable,
   UndoRedo,
+  DiffSourceToggleWrapper,
   type MDXEditorMethods,
 } from "@mdxeditor/editor";
 import "@mdxeditor/editor/style.css";
@@ -98,19 +101,41 @@ export function MarkdownPreview({ file, content, projectId }: MarkdownPreviewPro
           linkPlugin(),
           linkDialogPlugin(),
           tablePlugin(),
-          codeBlockPlugin(),
+          codeBlockPlugin({ defaultCodeBlockLanguage: "text" }),
+          codeMirrorPlugin({
+            codeBlockLanguages: {
+              text: "Text",
+              js: "JavaScript",
+              ts: "TypeScript",
+              tsx: "TSX",
+              jsx: "JSX",
+              css: "CSS",
+              html: "HTML",
+              json: "JSON",
+              python: "Python",
+              bash: "Bash",
+              sh: "Shell",
+              sql: "SQL",
+              yaml: "YAML",
+              xml: "XML",
+              markdown: "Markdown",
+              md: "Markdown",
+              "": "Text",
+            },
+          }),
           frontmatterPlugin(),
+          diffSourcePlugin({ viewMode: "rich-text" }),
           markdownShortcutPlugin(),
           toolbarPlugin({
             toolbarContents: () => (
-              <>
+              <DiffSourceToggleWrapper options={["rich-text", "source"]}>
                 <UndoRedo />
                 <BlockTypeSelect />
                 <BoldItalicUnderlineToggles />
                 <ListsToggle />
                 <CreateLink />
                 <InsertTable />
-              </>
+              </DiffSourceToggleWrapper>
             ),
           }),
         ]}

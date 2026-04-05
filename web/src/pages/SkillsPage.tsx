@@ -2,11 +2,9 @@ import { useMemo, useState } from "react";
 import { useParams } from "react-router";
 import {
   useSkills,
-  useAvailableSkills,
-  useInstallSkill,
   useUninstallSkill,
 } from "@/api/skills";
-import type { Skill, AvailableSkill } from "@/api/skills";
+import type { Skill } from "@/api/skills";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -21,7 +19,7 @@ import { SkillCard, type UnifiedSkill } from "@/components/skills/SkillCard";
 import { SkillDetail } from "@/components/skills/SkillDetail";
 import { ImportDialog } from "@/components/skills/ImportDialog";
 import { Input } from "@/components/ui/input";
-import { GithubIcon, SearchIcon, PlusIcon, PuzzleIcon, DownloadIcon } from "lucide-react";
+import { GithubIcon, SearchIcon, PuzzleIcon } from "lucide-react";
 import { toast } from "sonner";
 
 export function SkillsPage() {
@@ -29,8 +27,6 @@ export function SkillsPage() {
   const pid = projectId!;
 
   const { data: skills, isLoading } = useSkills(pid);
-  const { data: available } = useAvailableSkills(pid);
-  const installSkill = useInstallSkill(pid);
   const uninstallSkill = useUninstallSkill(pid);
 
   const [search, setSearch] = useState("");
@@ -38,31 +34,16 @@ export function SkillsPage() {
   const [detailSkill, setDetailSkill] = useState<UnifiedSkill | null>(null);
   const [confirmUninstall, setConfirmUninstall] = useState<string | null>(null);
   const [uninstallingName, setUninstallingName] = useState<string | null>(null);
-  const [installingName, setInstallingName] = useState<string | null>(null);
 
-  // Merge installed + available into a unified list
-  const unified = useMemo(() => {
-    const installed: UnifiedSkill[] = (skills ?? []).map((s) => ({
+  const unified: UnifiedSkill[] = useMemo(() => {
+    return (skills ?? []).map((s) => ({
       name: s.name,
       description: s.description,
       metadata: s.metadata,
       installed: true,
     }));
+  }, [skills]);
 
-    const installedNames = new Set(installed.map((s) => s.name));
-    const notInstalled: UnifiedSkill[] = (available ?? [])
-      .filter((s) => !installedNames.has(s.name))
-      .map((s) => ({
-        name: s.name,
-        description: s.description,
-        metadata: s.metadata,
-        installed: false,
-      }));
-
-    return [...installed, ...notInstalled];
-  }, [skills, available]);
-
-  // Filter
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
     if (!q) return unified;
@@ -73,27 +54,9 @@ export function SkillsPage() {
     );
   }, [unified, search]);
 
-  const installedCount = filtered.filter((s) => s.installed).length;
-  const availableCount = filtered.filter((s) => !s.installed).length;
-
   const activeDetailSkill = detailSkill
     ? unified.find((s) => s.name === detailSkill.name) ?? detailSkill
     : null;
-
-  const handleInstall = (name: string) => {
-    setInstallingName(name);
-    installSkill.mutate(
-      { builtIn: name },
-      {
-        onError: (err) => {
-          toast.error(`Failed to install "${name}"`, {
-            description: err instanceof Error ? err.message : "Unknown error",
-          });
-        },
-        onSettled: () => setInstallingName(null),
-      },
-    );
-  };
 
   return (
     <div className="h-full overflow-y-auto">
@@ -135,45 +98,16 @@ export function SkillsPage() {
         )}
 
         {/* Installed skills */}
-        {installedCount > 0 && (
-          <div className="space-y-3">
-            <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-              Installed ({installedCount})
-            </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {filtered
-                .filter((s) => s.installed)
-                .map((skill) => (
-                  <SkillCard
-                    key={skill.name}
-                    skill={skill}
-                    onClick={() => setDetailSkill(skill)}
-                    onUninstall={() => setConfirmUninstall(skill.name)}
-                  />
-                ))}
-            </div>
-          </div>
-        )}
-
-        {/* Available to install */}
-        {availableCount > 0 && (
-          <div className="space-y-3">
-            <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-              Available ({availableCount})
-            </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {filtered
-                .filter((s) => !s.installed)
-                .map((skill) => (
-                  <SkillCard
-                    key={skill.name}
-                    skill={skill}
-                    onClick={() => setDetailSkill(skill)}
-                    onInstall={() => handleInstall(skill.name)}
-                    isInstalling={installingName === skill.name}
-                  />
-                ))}
-            </div>
+        {filtered.length > 0 && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {filtered.map((skill) => (
+              <SkillCard
+                key={skill.name}
+                skill={skill}
+                onClick={() => setDetailSkill(skill)}
+                onUninstall={() => setConfirmUninstall(skill.name)}
+              />
+            ))}
           </div>
         )}
 
@@ -199,17 +133,11 @@ export function SkillsPage() {
         onOpenChange={(open) => {
           if (!open) setDetailSkill(null);
         }}
-        onInstall={
-          activeDetailSkill && !activeDetailSkill.installed
-            ? () => handleInstall(activeDetailSkill.name)
-            : undefined
-        }
         onUninstall={
           activeDetailSkill?.installed
             ? () => setConfirmUninstall(activeDetailSkill.name)
             : undefined
         }
-        isInstalling={installingName === activeDetailSkill?.name}
       />
 
       {/* Import dialog */}

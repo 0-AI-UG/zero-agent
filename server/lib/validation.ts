@@ -75,10 +75,9 @@ export const uploadRequestSchema = z.object({
 });
 
 // Skills
-export const installSkillSchema = z.union([
-  z.object({ content: z.string().min(1, "Skill content is required") }),
-  z.object({ builtIn: z.string().min(1, "Built-in skill name is required") }),
-]);
+export const installSkillSchema = z.object({
+  content: z.string().min(1, "Skill content is required"),
+});
 
 export const discoverSkillsSchema = z.object({
   url: z.string().min(1, "GitHub URL is required"),

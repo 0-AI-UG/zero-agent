@@ -1,3 +1,4 @@
+import { requestAbort } from "@/lib/resumable-stream.ts";
 import { log } from "@/lib/logger.ts";
 
 const shutdownLog = log.child({ module: "shutdown" });
@@ -19,7 +20,6 @@ interface ActiveRun {
   runId: string;
   chatId?: string;
   projectId: string;
-  abortController?: AbortController;
   startedAt: number;
 }
 
@@ -65,7 +65,7 @@ export async function drainActiveRuns(gracePeriodMs: number = 30_000): Promise<v
   if (activeRuns.size > 0) {
     shutdownLog.warn("grace period exceeded, aborting remaining runs", { count: activeRuns.size });
     for (const run of activeRuns.values()) {
-      run.abortController?.abort();
+      if (run.chatId) requestAbort(run.chatId);
     }
     // Give abort handlers a moment to clean up
     await new Promise((resolve) => setTimeout(resolve, 2000));

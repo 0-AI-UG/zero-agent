@@ -166,6 +166,89 @@ export function useReconnectRunner() {
   });
 }
 
+// ── Runners ──
+
+export interface Runner {
+  id: string;
+  name: string;
+  url: string;
+  api_key: string;
+  enabled: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export function useRunners() {
+  return useQuery({
+    queryKey: ["admin", "runners"],
+    queryFn: async () => {
+      const res = await apiFetch<{ runners: Runner[] }>("/admin/runners");
+      return res.runners;
+    },
+    staleTime: 10_000,
+  });
+}
+
+export function useCreateRunner() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: { name: string; url: string; apiKey?: string }) => {
+      return apiFetch<{ runner: Runner }>("/admin/runners", {
+        method: "POST",
+        body: JSON.stringify(data),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin", "runners"] });
+      queryClient.invalidateQueries({ queryKey: ["admin", "runner-status"] });
+      queryClient.invalidateQueries({ queryKey: ["capabilities"] });
+    },
+  });
+}
+
+export function useUpdateRunner() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, ...data }: { id: string; name?: string; url?: string; api_key?: string; enabled?: number }) => {
+      return apiFetch<{ runner: Runner }>(`/admin/runners/${id}`, {
+        method: "PUT",
+        body: JSON.stringify(data),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin", "runners"] });
+      queryClient.invalidateQueries({ queryKey: ["admin", "runner-status"] });
+      queryClient.invalidateQueries({ queryKey: ["capabilities"] });
+    },
+  });
+}
+
+export function useDeleteRunner() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      return apiFetch<{ ok: boolean }>(`/admin/runners/${id}`, {
+        method: "DELETE",
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin", "runners"] });
+      queryClient.invalidateQueries({ queryKey: ["admin", "runner-status"] });
+      queryClient.invalidateQueries({ queryKey: ["capabilities"] });
+    },
+  });
+}
+
+export function useTestRunner() {
+  return useMutation({
+    mutationFn: async (id: string) => {
+      return apiFetch<{ healthy: boolean; url: string }>(`/admin/runners/${id}/test`, {
+        method: "POST",
+      });
+    },
+  });
+}
+
 export function useIsAdmin() {
   return useQuery({
     queryKey: ["admin", "check"],

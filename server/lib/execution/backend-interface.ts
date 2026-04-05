@@ -30,6 +30,7 @@ export interface ContainerListEntry {
   projectId: string;
   status: string;
   lastUsedAt: number;
+  runnerName?: string;
 }
 
 export interface ExecutionBackend {
@@ -49,6 +50,9 @@ export interface ExecutionBackend {
 
   /** Check if a port inside a container is accepting connections. */
   checkPort(projectId: string, port: number): Promise<boolean>;
+
+  /** Get proxy URL and auth for routing to the correct runner. */
+  getProxyInfo(projectId: string, port: number, path: string): { url: string; apiKey: string };
 
   getSessionForProject(projectId: string): SessionInfo | null;
   hasContainer(projectId: string): Promise<boolean>;

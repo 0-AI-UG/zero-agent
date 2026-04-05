@@ -8,6 +8,7 @@ export interface ContainerEntry {
   projectId: string;
   status: "running";
   lastUsedAt: number;
+  runnerName?: string;
 }
 
 export interface ContainerStatus {

@@ -36,7 +36,6 @@ export const queryKeys = {
   },
   skills: {
     byProject: (projectId: string) => ["skills", projectId] as const,
-    available: (projectId: string) => ["skills", "available", projectId] as const,
   },
   templates: {
     community: (search?: string, category?: string) =>

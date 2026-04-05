@@ -8,24 +8,20 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { getPlatformConfig, CAPABILITY_LABELS } from "./constants";
 import type { UnifiedSkill } from "./SkillCard";
-import { DownloadIcon, TrashIcon, KeyIcon, TerminalIcon } from "lucide-react";
+import { TrashIcon, KeyIcon, TerminalIcon } from "lucide-react";
 
 interface SkillDetailProps {
   skill: UnifiedSkill | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onInstall?: () => void;
   onUninstall?: () => void;
-  isInstalling?: boolean;
 }
 
 export function SkillDetail({
   skill,
   open,
   onOpenChange,
-  onInstall,
   onUninstall,
-  isInstalling,
 }: SkillDetailProps) {
   if (!skill) return null;
 
@@ -146,24 +142,13 @@ export function SkillDetail({
 
           {/* Actions */}
           <div className="flex items-center gap-2 pt-3 border-t">
-            {skill.installed ? (
-              <button
-                onClick={onUninstall}
-                className="flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/10 ml-auto"
-              >
-                <TrashIcon className="size-3.5" />
-                Uninstall
-              </button>
-            ) : (
-              <button
-                onClick={onInstall}
-                disabled={isInstalling}
-                className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-              >
-                <DownloadIcon className="size-3" />
-                {isInstalling ? "Installing..." : "Install skill"}
-              </button>
-            )}
+            <button
+              onClick={onUninstall}
+              className="flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/10 ml-auto"
+            >
+              <TrashIcon className="size-3.5" />
+              Uninstall
+            </button>
           </div>
         </div>
       </DialogContent>

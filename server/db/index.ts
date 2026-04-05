@@ -358,6 +358,20 @@ db.run(`
 `);
 db.run(`CREATE INDEX IF NOT EXISTS idx_totp_backup_user ON totp_backup_codes(user_id, used)`);
 
+// ── Runners ──
+
+db.run(`
+  CREATE TABLE IF NOT EXISTS runners (
+    id         TEXT PRIMARY KEY,
+    name       TEXT NOT NULL,
+    url        TEXT NOT NULL,
+    api_key    TEXT NOT NULL DEFAULT '',
+    enabled    INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )
+`);
+
 // ── Forwarded Ports ──
 
 db.run(`

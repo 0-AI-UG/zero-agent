@@ -73,7 +73,7 @@ export function createToolRegistry(
   const registry: ToolRegistry = {
     searchWeb: createSearchWebTool(),
     fetchUrl: fetchUrlTool,
-    ...createFileTools(projectId, { modelId: options.modelId, initialReadPaths: options.initialReadPaths }),
+    ...createFileTools(projectId, { chatId: options.chatId, modelId: options.modelId, initialReadPaths: options.initialReadPaths }),
     ...createGenerateImageTool(projectId),
     ...createSchedulingTools(projectId),
     ...(options.chatId ? createProgressTools({ projectId, chatId: options.chatId, anchorRunId: options.anchorRunId }) : {}),

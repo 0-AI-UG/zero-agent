@@ -226,11 +226,11 @@ export function ProjectLayout() {
     <SidebarProvider className="min-h-0 h-full">
       <ChatSidebar projectId={projectId!} />
       <SidebarInset>
-        <div className="flex flex-col h-full">
+        <div className="flex min-w-0 flex-col h-full">
           <div className="flex items-center h-10 px-2 shrink-0 border-b md:border-b-0">
             <SidebarTrigger />
           </div>
-          <div className="flex flex-col flex-1 overflow-hidden min-h-0">
+          <div className="flex min-w-0 flex-col flex-1 overflow-hidden min-h-0">
             <Outlet context={{ project }} />
           </div>
         </div>

@@ -5,7 +5,11 @@
 <h1 align="center">Zero Agent</h1>
 
 <p align="center">
-  Self-hosted AI agent platform with web browsing, code execution, file management, scheduled automation, and an extensible skills system.
+  <strong>Self-hosted AI agent platform. Like ChatGPT or Claude — but you own it.</strong>
+</p>
+
+<p align="center">
+  Bring your own models. Pay per use. Keep your data.
 </p>
 
 <p align="center">
@@ -17,6 +21,26 @@
 <p align="center">
   <img src="docs/screenshots/chat.png" width="800" alt="Zero Agent chat interface">
 </p>
+
+## Why Zero Agent?
+
+Platforms like ChatGPT, Claude, and Gemini charge $20–200/month for fixed subscriptions — then throttle you with usage caps, rate limits during peak hours, and model downgrades when you hit the ceiling. You pay the same whether you send 5 messages or 500, your data lives on their servers, and you're locked into whichever models they choose to offer.
+
+Zero Agent is the self-hosted alternative. You bring your own API keys (via [OpenRouter](https://openrouter.ai)), pick from 100+ models across every major provider, and pay only for what you use. A typical moderate user spends $5–20/month on API calls — often less than a single subscription. There are no artificial caps, no peak-hour throttling, and no vendor lock-in. Your conversations, files, and data never leave your infrastructure.
+
+| | ChatGPT | Claude | Gemini | **Zero Agent** |
+|---|---|---|---|---|
+| **Cost** | $20–200/mo fixed | $20–200/mo fixed | $8–250/mo fixed | **Pay per use (~$5–20/mo typical)** |
+| **Usage caps** | 150 msgs/3h (Plus) | ~45 msgs/5h (Pro) | Undisclosed "fair use" | **None — your API limits only** |
+| **Peak-hour throttling** | Downgrades to weaker model | Caps tighten dynamically | Caps may drop silently | **No throttling** |
+| **Model choice** | OpenAI models only | Anthropic models only | Google models only | **100+ models, any provider** |
+| **Data privacy** | Processed by OpenAI | Processed by Anthropic | Processed by Google | **Stays on your hardware\*** |
+| **Self-hostable** | No | No | No | **Yes** |
+| **Code execution** | Sandboxed interpreter | Limited | Limited | **Full Docker containers** |
+| **Automation** | Limited GPTs | No | No | **Cron schedules + event triggers** |
+| **Open source** | No | No | No | **MIT license** |
+
+<sub>* Prompts are sent to your chosen model provider's API. For full data sovereignty, self-host your own inference (e.g. vLLM, Ollama) and point Zero Agent at it.</sub>
 
 ## Overview
 

@@ -128,38 +128,3 @@ export async function uninstallSkill(projectId: string, skillName: string): Prom
   events.emit("skill.uninstalled", { projectId, skillName });
 }
 
-export async function loadBuiltInSkill(name: string): Promise<SkillFile[]> {
-  const skillDir = `${import.meta.dir}/../../skills/${name}`;
-  const files: SkillFile[] = [];
-
-  try {
-    const { readdirSync } = await import("node:fs");
-
-    const readDir = (dir: string, prefix: string) => {
-      const entries = readdirSync(dir, { withFileTypes: true });
-      for (const entry of entries) {
-        const relativePath = prefix ? `${prefix}/${entry.name}` : entry.name;
-        if (entry.isFile()) {
-          const file = Bun.file(`${dir}/${entry.name}`);
-          files.push({ path: relativePath, content: "" });
-          // Store index for async read
-          pendingReads.push({ index: files.length - 1, file });
-        } else if (entry.isDirectory()) {
-          readDir(`${dir}/${entry.name}`, relativePath);
-        }
-      }
-    };
-
-    const pendingReads: { index: number; file: ReturnType<typeof Bun.file> }[] = [];
-    readDir(skillDir, "");
-
-    for (const { index, file } of pendingReads) {
-      files[index]!.content = await file.text();
-    }
-  } catch (err) {
-    installLog.error("failed to load built-in skill", err, { name });
-    throw new Error(`Built-in skill "${name}" not found`);
-  }
-
-  return files;
-}

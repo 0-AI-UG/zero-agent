@@ -219,6 +219,16 @@ export interface CredentialRow {
   updated_at: string;
 }
 
+export interface RunnerRow {
+  id: string;
+  name: string;
+  url: string;
+  api_key: string;
+  enabled: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ForwardedPortRow {
   id: string;
   project_id: string;

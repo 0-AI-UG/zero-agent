@@ -63,6 +63,9 @@ import {
   ToggleLeftIcon,
   ToggleRightIcon,
   RefreshCwIcon,
+  ServerIcon,
+  PowerIcon,
+  PowerOffIcon,
 } from "lucide-react";
 import {
   useAdminUsers,
@@ -73,8 +76,13 @@ import {
   useUpdateSettings,
   useToggleExecution,
   useRunnerStatus,
-  useReconnectRunner,
+  useRunners,
+  useCreateRunner,
+  useUpdateRunner,
+  useDeleteRunner,
+  useTestRunner,
   type AdminUser,
+  type Runner,
 } from "@/api/admin";
 import {
   useAdminModels,
@@ -301,22 +309,16 @@ function ServerExecutionSection() {
   const toggleExecution = useToggleExecution();
   const serverExecutionEnabled = settings?.SERVER_EXECUTION_ENABLED === "true";
   const { data: runnerStatus } = useRunnerStatus();
-  const reconnectRunner = useReconnectRunner();
 
-  const [runnerUrl, setRunnerUrl] = useState("");
-  const [runnerApiKey, setRunnerApiKey] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [disconnecting, setDisconnecting] = useState(false);
-  const [connectError, setConnectError] = useState<string | null>(null);
-  const [editing, setEditing] = useState(false);
+  const { data: runners } = useRunners();
+  const createRunner = useCreateRunner();
+  const updateRunnerMut = useUpdateRunner();
+  const deleteRunnerMut = useDeleteRunner();
+  const testRunner = useTestRunner();
 
-  const settingsRunnerUrl = settings?.RUNNER_URL ?? "";
-  const settingsRunnerApiKey = settings?.RUNNER_API_KEY ?? "";
-  const hasConnection = !!settingsRunnerUrl;
-
-  // Sync form fields from settings when not editing
-  if (!editing && runnerUrl !== settingsRunnerUrl) setRunnerUrl(settingsRunnerUrl);
-  if (!editing && runnerApiKey !== settingsRunnerApiKey) setRunnerApiKey(settingsRunnerApiKey);
+  const [addOpen, setAddOpen] = useState(false);
+  const [editRunner, setEditRunner] = useState<Runner | null>(null);
+  const [testResults, setTestResults] = useState<Record<string, boolean | "loading">>({});
 
   const { data: containers, isLoading: containersLoading } = useContainers();
   const destroyContainer = useDestroyContainer();
@@ -331,45 +333,15 @@ function ServerExecutionSection() {
     return `${Math.round(minutes / 60)}h ago`;
   }
 
-  async function handleConnect() {
-    setSaving(true);
-    setConnectError(null);
+  async function handleTestRunner(id: string) {
+    setTestResults(prev => ({ ...prev, [id]: "loading" }));
     try {
-      if (runnerUrl) await updateSettings.mutateAsync({ RUNNER_URL: runnerUrl });
-      if (runnerApiKey) await updateSettings.mutateAsync({ RUNNER_API_KEY: runnerApiKey });
-      const result = await reconnectRunner.mutateAsync();
-      if (result.success) {
-        toast.success("Connected to runner");
-        setEditing(false);
-      } else {
-        setConnectError(result.error ?? "Failed to connect");
-      }
+      const result = await testRunner.mutateAsync(id);
+      setTestResults(prev => ({ ...prev, [id]: result.healthy }));
     } catch {
-      setConnectError("Failed to save settings or reconnect");
-    } finally {
-      setSaving(false);
+      setTestResults(prev => ({ ...prev, [id]: false }));
     }
   }
-
-  async function handleDisconnect() {
-    setDisconnecting(true);
-    try {
-      await toggleExecution.mutateAsync(false);
-      await updateSettings.mutateAsync({ RUNNER_URL: "" });
-      await updateSettings.mutateAsync({ RUNNER_API_KEY: "" });
-      setRunnerUrl("");
-      setRunnerApiKey("");
-      setEditing(false);
-      setConnectError(null);
-      toast.success("Runner disconnected");
-    } catch {
-      toast.error("Failed to disconnect");
-    } finally {
-      setDisconnecting(false);
-    }
-  }
-
-  const showForm = editing || !hasConnection;
 
   return (
     <section className="space-y-4">
@@ -381,84 +353,140 @@ function ServerExecutionSection() {
         </span>
       </div>
 
-      {/* Runner Connection */}
-      <div className="rounded-lg border p-4 space-y-4">
-        <div className="flex items-center justify-between">
-          <p className="text-sm font-medium">Runner Connection</p>
-          <Badge variant={runnerStatus?.connected ? "default" : "secondary"} className="text-[10px]">
-            {runnerStatus?.connected ? "Connected" : "Disconnected"}
-          </Badge>
+      {/* Runners */}
+      <div className="rounded-lg border">
+        <div className="flex items-center justify-between p-4 pb-0">
+          <div className="flex items-center gap-2">
+            <ServerIcon className="size-4 text-muted-foreground" />
+            <p className="text-sm font-medium">Runners</p>
+          </div>
+          <Dialog open={addOpen} onOpenChange={setAddOpen}>
+            <DialogTrigger asChild>
+              <Button size="sm" variant="outline">
+                <PlusIcon className="size-3 mr-1.5" />
+                Add Runner
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle className="font-display">Add Runner</DialogTitle>
+                <DialogDescription>Connect a new runner instance for code execution.</DialogDescription>
+              </DialogHeader>
+              <RunnerForm
+                onSubmit={async (data) => {
+                  await createRunner.mutateAsync(data);
+                  setAddOpen(false);
+                  toast.success("Runner added");
+                }}
+                submitting={createRunner.isPending}
+              />
+            </DialogContent>
+          </Dialog>
         </div>
 
-        {showForm ? (
-          <div className="space-y-3">
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-muted-foreground">Runner URL</label>
-              <Input
-                type="text"
-                placeholder="http://runner:3100"
-                value={runnerUrl}
-                onChange={(e) => { setRunnerUrl(e.target.value); setEditing(true); }}
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-muted-foreground">Runner API Key</label>
-              <Input
-                type="password"
-                placeholder="Enter API key (optional)"
-                value={runnerApiKey}
-                onChange={(e) => { setRunnerApiKey(e.target.value); setEditing(true); }}
-              />
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                size="sm"
-                onClick={handleConnect}
-                disabled={saving || !runnerUrl}
-              >
-                {saving ? <Spinner className="size-3 mr-1.5" /> : <RefreshCwIcon className="size-3 mr-1.5" />}
-                {saving ? "Connecting..." : "Connect"}
-              </Button>
-              {hasConnection && (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => { setEditing(false); setRunnerUrl(settingsRunnerUrl); setRunnerApiKey(settingsRunnerApiKey); setConnectError(null); }}
-                >
-                  Cancel
-                </Button>
-              )}
-            </div>
-            {connectError && (
-              <div className="rounded-md bg-destructive/10 border border-destructive/20 px-3 py-2">
-                <p className="text-xs text-destructive">{connectError}</p>
-              </div>
-            )}
-          </div>
+        {!runners?.length ? (
+          <div className="p-4 text-xs text-muted-foreground">No runners configured. Add a runner to enable code execution.</div>
         ) : (
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <p className="text-xs text-muted-foreground font-mono">{settingsRunnerUrl}</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button size="sm" variant="outline" onClick={() => setEditing(true)}>
-                <PencilIcon className="size-3 mr-1.5" />
-                Edit
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                className="text-destructive hover:text-destructive"
-                onClick={handleDisconnect}
-                disabled={disconnecting}
-              >
-                {disconnecting ? <Spinner className="size-3 mr-1.5" /> : <TrashIcon className="size-3 mr-1.5" />}
-                {disconnecting ? "Disconnecting..." : "Disconnect"}
-              </Button>
-            </div>
-          </div>
+          <Table>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="text-xs">Name</TableHead>
+                <TableHead className="text-xs">URL</TableHead>
+                <TableHead className="text-xs">Status</TableHead>
+                <TableHead className="text-xs w-[80px]"></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {runners.map((r) => (
+                <TableRow key={r.id} className="group">
+                  <TableCell className="text-xs font-medium">
+                    {r.name}
+                  </TableCell>
+                  <TableCell className="text-xs font-mono text-muted-foreground truncate max-w-[200px]">
+                    {r.url}
+                  </TableCell>
+                  <TableCell>
+                    {testResults[r.id] === "loading" ? (
+                      <Spinner className="size-3" />
+                    ) : testResults[r.id] === true ? (
+                      <Badge variant="default" className="text-[10px]">Healthy</Badge>
+                    ) : testResults[r.id] === false ? (
+                      <Badge variant="destructive" className="text-[10px]">Unhealthy</Badge>
+                    ) : r.enabled ? (
+                      <Badge variant="secondary" className="text-[10px]">Enabled</Badge>
+                    ) : (
+                      <Badge variant="outline" className="text-[10px]">Disabled</Badge>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon-sm" className="opacity-0 group-hover:opacity-100">
+                          <MoreHorizontalIcon className="size-3" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => handleTestRunner(r.id)}>
+                          <RefreshCwIcon className="size-3 mr-2" />
+                          Test Connection
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => setEditRunner(r)}>
+                          <PencilIcon className="size-3 mr-2" />
+                          Edit
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => {
+                            updateRunnerMut.mutate({ id: r.id, enabled: r.enabled ? 0 : 1 });
+                            toast.success(r.enabled ? "Runner disabled" : "Runner enabled");
+                          }}
+                        >
+                          {r.enabled ? (
+                            <><PowerOffIcon className="size-3 mr-2" />Disable</>
+                          ) : (
+                            <><PowerIcon className="size-3 mr-2" />Enable</>
+                          )}
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          className="text-destructive focus:text-destructive"
+                          onClick={() => {
+                            deleteRunnerMut.mutate(r.id);
+                            toast.success("Runner removed");
+                          }}
+                        >
+                          <TrashIcon className="size-3 mr-2" />
+                          Remove
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         )}
       </div>
+
+      {/* Edit Runner Dialog */}
+      <Dialog open={!!editRunner} onOpenChange={(open) => { if (!open) setEditRunner(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-display">Edit Runner</DialogTitle>
+            <DialogDescription>Update runner connection settings.</DialogDescription>
+          </DialogHeader>
+          {editRunner && (
+            <RunnerForm
+              initial={editRunner}
+              onSubmit={async (data) => {
+                await updateRunnerMut.mutateAsync({ id: editRunner.id, name: data.name, url: data.url, api_key: data.apiKey });
+                setEditRunner(null);
+                toast.success("Runner updated");
+              }}
+              submitting={updateRunnerMut.isPending}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Execution Settings */}
       <div className="rounded-lg border p-4 space-y-4">
@@ -526,6 +554,7 @@ function ServerExecutionSection() {
             <TableHeader>
               <TableRow>
                 <TableHead className="text-xs">Session</TableHead>
+                <TableHead className="text-xs">Runner</TableHead>
                 <TableHead className="text-xs">Status</TableHead>
                 <TableHead className="text-xs">Last used</TableHead>
                 <TableHead className="text-xs w-[100px]">Actions</TableHead>
@@ -536,6 +565,9 @@ function ServerExecutionSection() {
                 <TableRow key={c.sessionId}>
                   <TableCell className="text-xs font-mono truncate max-w-[200px]">
                     {c.sessionId.replace("chat-", "")}
+                  </TableCell>
+                  <TableCell className="text-xs text-muted-foreground">
+                    {c.runnerName ?? "—"}
                   </TableCell>
                   <TableCell>
                     <Badge variant={c.status === "running" ? "default" : "secondary"} className="text-[10px]">
@@ -566,6 +598,61 @@ function ServerExecutionSection() {
         )}
       </div>
     </section>
+  );
+}
+
+function RunnerForm({ initial, onSubmit, submitting }: {
+  initial?: Runner;
+  onSubmit: (data: { name: string; url: string; apiKey?: string }) => Promise<void>;
+  submitting: boolean;
+}) {
+  const [name, setName] = useState(initial?.name ?? "");
+  const [url, setUrl] = useState(initial?.url ?? "");
+  const [apiKey, setApiKey] = useState("");
+
+  return (
+    <form
+      onSubmit={async (e) => {
+        e.preventDefault();
+        await onSubmit({ name, url, apiKey: apiKey || undefined });
+      }}
+      className="space-y-4"
+    >
+      <div className="space-y-1">
+        <label className="text-xs font-medium text-muted-foreground">Name</label>
+        <Input
+          placeholder="e.g. Runner 1"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          required
+        />
+      </div>
+      <div className="space-y-1">
+        <label className="text-xs font-medium text-muted-foreground">URL</label>
+        <Input
+          type="text"
+          placeholder="http://runner:3100"
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          required
+        />
+      </div>
+      <div className="space-y-1">
+        <label className="text-xs font-medium text-muted-foreground">API Key</label>
+        <Input
+          type="password"
+          placeholder={initial ? "Leave blank to keep current" : "Enter API key (optional)"}
+          value={apiKey}
+          onChange={(e) => setApiKey(e.target.value)}
+        />
+      </div>
+      <DialogFooter>
+        <Button type="submit" disabled={submitting || !name || !url}>
+          {submitting ? <Spinner className="size-3 mr-1.5" /> : null}
+          {initial ? "Save" : "Add Runner"}
+        </Button>
+      </DialogFooter>
+    </form>
   );
 }
 
