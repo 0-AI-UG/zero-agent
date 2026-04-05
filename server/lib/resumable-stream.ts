@@ -95,23 +95,21 @@ export function clearActiveStreamId(chatId: string) {
   activeStreams.delete(chatId);
 }
 
-// Track AbortControllers per chat so streams can be cancelled server-side
-const abortControllers = new Map<string, AbortController>();
+// Track abort flags per chat so streams can be cancelled at step boundaries.
+const abortedChats = new Set<string>();
 
-export function setAbortController(chatId: string, controller: AbortController) {
-  abortControllers.set(chatId, controller);
-}
-
-export function abortStream(chatId: string): boolean {
-  const controller = abortControllers.get(chatId);
-  if (controller) {
-    controller.abort();
-    abortControllers.delete(chatId);
+export function requestAbort(chatId: string): boolean {
+  if (activeStreams.has(chatId)) {
+    abortedChats.add(chatId);
     return true;
   }
   return false;
 }
 
-export function clearAbortController(chatId: string) {
-  abortControllers.delete(chatId);
+export function isAbortRequested(chatId: string): boolean {
+  return abortedChats.has(chatId);
+}
+
+export function clearAbortFlag(chatId: string) {
+  abortedChats.delete(chatId);
 }

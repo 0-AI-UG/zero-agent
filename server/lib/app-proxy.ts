@@ -6,7 +6,6 @@
 import { getPortBySlug } from "@/db/queries/apps.ts";
 import { verifyAppToken } from "@/lib/auth.ts";
 import { corsHeaders } from "@/lib/cors.ts";
-import { getSetting } from "@/lib/settings.ts";
 import { log } from "@/lib/logger.ts";
 
 const proxyLog = log.child({ module: "app-proxy" });
@@ -71,14 +70,15 @@ export async function proxyAppRequest(slug: string, request: Request): Promise<R
   url.searchParams.delete("token");
   const upstreamSearch = url.searchParams.toString();
 
-  const runnerUrl = getSetting("RUNNER_URL");
-  if (!runnerUrl) {
-    return new Response("Runner not configured", { status: 503 });
+  const { getLocalBackend } = await import("@/lib/execution/lifecycle.ts");
+  const backend = getLocalBackend();
+  if (!backend) {
+    return new Response("Execution not available", { status: 503 });
   }
 
-  const containerName = `session-${entry.projectId}`;
   const pathSuffix = upstreamPath.startsWith("/") ? upstreamPath.slice(1) : upstreamPath;
-  const upstreamUrl = `${runnerUrl}/proxy/${encodeURIComponent(containerName)}/${entry.port}/${pathSuffix}${upstreamSearch ? `?${upstreamSearch}` : ""}`;
+  const proxyPath = `${pathSuffix}${upstreamSearch ? `?${upstreamSearch}` : ""}`;
+  const { url: upstreamUrl, apiKey } = backend.getProxyInfo(entry.projectId, entry.port, proxyPath);
 
   try {
     const headers = new Headers(request.headers);
@@ -88,9 +88,8 @@ export async function proxyAppRequest(slug: string, request: Request): Promise<R
     headers.delete("host");
 
     // Add runner auth when proxying through runner
-    const runnerApiKey = getSetting("RUNNER_API_KEY");
-    if (runnerApiKey) {
-      headers.set("Authorization", `Bearer ${runnerApiKey}`);
+    if (apiKey) {
+      headers.set("Authorization", `Bearer ${apiKey}`);
     }
 
     const isIdempotent = request.method === "GET" || request.method === "HEAD" || request.method === "OPTIONS";
@@ -102,7 +101,6 @@ export async function proxyAppRequest(slug: string, request: Request): Promise<R
       method: request.method,
       headers,
       body: request.body,
-      redirect: "manual",
     });
 
     const responseHeaders = new Headers(upstream.headers);

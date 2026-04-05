@@ -2,7 +2,6 @@
  * Docker Engine API client — communicates with Docker via Unix socket.
  */
 import { log } from "./logger.ts";
-import { deferAsync } from "./deferred.ts";
 
 const dockerLog = log.child({ module: "docker-client" });
 
@@ -99,12 +98,12 @@ export class DockerClient {
     const timer = setTimeout(() => controller.abort(), timeout);
 
     try {
-      const res = await deferAsync(() => this.fetch(`/build?${queryParams}`, {
+      const res = await this.fetch(`/build?${queryParams}`, {
         method: "POST",
         headers: { "Content-Type": "application/x-tar" },
         body: tarData,
         signal: controller.signal,
-      }));
+      });
 
       if (!res.ok && !res.body) {
         throw new Error(`Build request failed: ${res.status} ${res.statusText}`);
@@ -333,12 +332,12 @@ export class DockerClient {
     const timer = setTimeout(() => controller.abort(), timeout);
 
     try {
-      const startRes = await deferAsync(() => this.fetch(`/exec/${execId}/start`, {
+      const startRes = await this.fetch(`/exec/${execId}/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ Detach: false }),
         signal: controller.signal,
-      }));
+      });
 
       if (!startRes.ok) {
         const err = await startRes.text();

@@ -17,9 +17,7 @@ export async function handleReindex(request: BunRequest): Promise<Response> {
       );
     }
 
-    // Detach from request context via setTimeout — Bun's fetch hangs when called
-    // from a fire-and-forget promise chain started within a request handler.
-    setTimeout(() => reindexProject(projectId).catch(() => {}), 0);
+    reindexProject(projectId).catch(() => {});
 
     return Response.json({ started: true }, { headers: corsHeaders });
   } catch (error) {

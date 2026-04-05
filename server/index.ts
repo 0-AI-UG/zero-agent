@@ -131,6 +131,13 @@ import {
   handleDeleteModel,
 } from "@/routes/models.ts";
 import { handleUsageSummary, handleUsageByModel, handleUsageByUser } from "@/routes/usage.ts";
+import {
+  handleListRunners,
+  handleCreateRunner,
+  handleUpdateRunner,
+  handleDeleteRunner,
+  handleTestRunner,
+} from "@/routes/runners.ts";
 import { startAllPollers, stopAllPollers } from "@/lib/telegram-polling.ts";
 import { processIncomingUpdate } from "@/routes/telegram.ts";
 
@@ -433,6 +440,18 @@ const server = Bun.serve({
       PUT: withLogging(handleUpdateUser),
       DELETE: withLogging(handleDeleteUser),
     },
+    // Runners (admin)
+    "/api/admin/runners": {
+      GET: withLogging(handleListRunners),
+      POST: withLogging(handleCreateRunner),
+    },
+    "/api/admin/runners/:runnerId": {
+      PUT: withLogging(handleUpdateRunner),
+      DELETE: withLogging(handleDeleteRunner),
+    },
+    "/api/admin/runners/:runnerId/test": {
+      POST: withLogging(handleTestRunner),
+    },
     // Models
     "/api/models": {
       GET: withLogging(handleListEnabledModels),
@@ -565,7 +584,7 @@ const server = Bun.serve({
         await requireAdmin(req);
         const backend = getLocalBackend();
         if (!backend) {
-          return Response.json({ connected: false, containers: 0 }, { headers: corsHeaders });
+          return Response.json({ connected: false, containers: 0, runners: [] }, { headers: corsHeaders });
         }
         try {
           const containers = await backend.listContainersAsync();

@@ -1,5 +1,6 @@
-import { ToolLoopAgent, stepCountIs } from "ai";
+import { ToolLoopAgent, stepCountIs, type StopCondition } from "ai";
 import { getChatModel, createChatModel } from "@/lib/openrouter.ts";
+import { isAbortRequested } from "@/lib/resumable-stream.ts";
 import { createDiscoverableToolset, type ExecutionContext } from "@/tools/registry.ts";
 import { getSkillSummaries } from "@/lib/skills/loader.ts";
 import { buildSkillsIndex } from "@/lib/skills/injector.ts";
@@ -297,9 +298,17 @@ export async function createAgent(project: ProjectForAgent, options: AgentOption
 
   const model = options.model ? createChatModel(options.model) : getChatModel();
 
+  const stopConditions: StopCondition<any>[] = [
+    stepCountIs(options.maxSteps ?? 100),
+  ];
+  if (options.chatId) {
+    const chatId = options.chatId;
+    stopConditions.push(() => isAbortRequested(chatId));
+  }
+
   return new ToolLoopAgent({
     model,
-    stopWhen: stepCountIs(options.maxSteps ?? 100),
+    stopWhen: stopConditions,
     instructions: {
       role: "system",
       content: await buildSystemPrompt({

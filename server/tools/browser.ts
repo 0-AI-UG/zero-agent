@@ -1,10 +1,10 @@
 import { z } from "zod";
 import { tool, generateText } from "ai";
 import { getLocalBackend } from "@/lib/execution/lifecycle.ts";
+import { buildFileManifest } from "@/tools/code.ts";
 import type { BrowserAction } from "@/lib/browser/protocol.ts";
 import { isModelMultimodal } from "@/config/models.ts";
 import { getVisionModel } from "@/lib/openrouter.ts";
-import { deferAsync } from "@/lib/deferred.ts";
 import { log } from "@/lib/logger.ts";
 
 const toolLog = log.child({ module: "tool:browser" });
@@ -96,6 +96,12 @@ export function createBrowserTool(userId: string, projectId: string, modelId?: s
 
         await backend.ensureContainer(userId, projectId);
 
+        // Sync project files so file:// URLs resolve to up-to-date content
+        if (action.type === "navigate" && action.url.startsWith("file://")) {
+          const manifest = buildFileManifest(projectId);
+          await backend.syncProjectFiles(projectId, manifest);
+        }
+
         // Execute with retry on transient failures
         const MAX_RETRIES = 2;
         for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
@@ -111,7 +117,7 @@ export function createBrowserTool(userId: string, projectId: string, modelId?: s
             // Caption screenshots for non-multimodal models
             if (modelId && !isModelMultimodal(modelId) && result?.type === "screenshot" && typeof result.base64 === "string") {
               try {
-                const { text: caption } = await deferAsync(() => generateText({
+                const { text: caption } = await generateText({
                   model: getVisionModel(),
                   messages: [{
                     role: "user",
@@ -120,7 +126,7 @@ export function createBrowserTool(userId: string, projectId: string, modelId?: s
                       { type: "image", image: result.base64, mediaType: "image/jpeg" },
                     ],
                   }],
-                }));
+                });
                 return { type: "caption" as const, url: result.url, title: result.title, caption };
               } catch (err) {
                 toolLog.warn("screenshot captioning failed", { error: String(err) });

@@ -8,7 +8,6 @@ type UpdateHandler = (projectId: string, update: TelegramUpdate) => Promise<void
 
 interface Poller {
   running: boolean;
-  abortController: AbortController;
 }
 
 const pollers = new Map<string, Poller>();
@@ -24,8 +23,7 @@ export async function startPollingForProject(
   // Delete any existing webhook so getUpdates works
   await deleteTelegramWebhook(botToken);
 
-  const abortController = new AbortController();
-  const poller: Poller = { running: true, abortController };
+  const poller: Poller = { running: true };
   pollers.set(projectId, poller);
 
   pollLog.info("starting polling", { projectId });
@@ -36,7 +34,7 @@ export async function startPollingForProject(
 
     while (poller.running) {
       try {
-        const updates = await getTelegramUpdates(botToken, offset, 25, abortController.signal);
+        const updates = await getTelegramUpdates(botToken, offset, 25);
 
         for (const update of updates) {
           offset = update.update_id + 1;
@@ -61,7 +59,6 @@ export function stopPollingForProject(projectId: string): void {
   const poller = pollers.get(projectId);
   if (poller) {
     poller.running = false;
-    poller.abortController.abort();
     pollers.delete(projectId);
     pollLog.info("stopping polling", { projectId });
   }
@@ -70,7 +67,6 @@ export function stopPollingForProject(projectId: string): void {
 export function stopAllPollers(): void {
   for (const [projectId, poller] of pollers) {
     poller.running = false;
-    poller.abortController.abort();
     pollLog.info("stopping polling", { projectId });
   }
   pollers.clear();

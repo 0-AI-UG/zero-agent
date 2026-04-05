@@ -2,8 +2,6 @@ import { VectorClient } from "@0-ai/s3lite/vectors";
 import type { QueryResult, SparseVector } from "@0-ai/s3lite/vectors";
 import { getSetting } from "@/lib/settings.ts";
 import { log } from "@/lib/logger.ts";
-import { fetchWithTimeout } from "@/lib/deferred.ts";
-
 const vecLog = log.child({ module: "vectors" });
 
 const DIMENSION = 1536;
@@ -75,24 +73,16 @@ export function isEmbeddingConfigured(): boolean {
   return !!getSetting("OPENROUTER_API_KEY");
 }
 
-/**
- * Embed text values via direct fetch to OpenRouter.
- * Uses raw fetch instead of AI SDK's embedMany, and defers the fetch with
- * setTimeout(0) to avoid running concurrently with AbortSignal-bearing
- * fetches in Bun.serve() — concurrent AbortSignal + fetch causes event loop
- * stalls in Bun (see oven-sh/bun#6366 and related issues).
- */
-
 async function embedValues(values: string[]): Promise<number[][]> {
   const apiKey = getSetting("OPENROUTER_API_KEY");
-  const res = await fetchWithTimeout("https://openrouter.ai/api/v1/embeddings", {
+  const res = await fetch("https://openrouter.ai/api/v1/embeddings", {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ model: "openai/text-embedding-3-small", input: values }),
-    timeout: 30_000,
+    signal: AbortSignal.timeout(30_000),
   });
   if (!res.ok) throw new Error(`Embedding API error: ${res.status} ${await res.text()}`);
   const json = await res.json() as any;

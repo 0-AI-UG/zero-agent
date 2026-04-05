@@ -181,7 +181,7 @@ export function createCompactPrepareStep(options: CompactOptions): PrepareStepFu
 
       // Flush learnings to memory incrementally (Phase 3)
       if (learnings.length > 0) {
-        flushLearnings(projectId, learnings).catch((err) => {
+        await flushLearnings(projectId, learnings).catch((err) => {
           compactLog.warn("failed to flush learnings", {
             error: err instanceof Error ? err.message : String(err),
           });

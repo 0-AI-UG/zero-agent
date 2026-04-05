@@ -1,27 +1,10 @@
 /**
- * Defer a promise-returning function with setTimeout(0) to avoid running
- * concurrently with AbortSignal-bearing fetches in Bun.serve() — concurrent
- * AbortSignal + fetch causes event loop stalls in Bun (see oven-sh/bun#6366).
- */
-export function deferAsync<T>(fn: () => Promise<T>): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    setTimeout(() => fn().then(resolve, reject), 0);
-  });
-}
-
-/**
- * Fetch with a manual timeout using setTimeout + AbortController.
+ * Fetch with a timeout using AbortSignal.timeout().
  */
 export function fetchWithTimeout(
   url: string | URL,
   init?: RequestInit & { timeout?: number },
 ): Promise<Response> {
-  const { timeout = 2000, ...rest } = init ?? {};
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeout);
-  return deferAsync(() =>
-    fetch(url, { ...rest, signal: controller.signal }).finally(() =>
-      clearTimeout(timer),
-    ),
-  );
+  const { timeout = 30_000, ...rest } = init ?? {};
+  return fetch(url, { ...rest, signal: AbortSignal.timeout(timeout) });
 }

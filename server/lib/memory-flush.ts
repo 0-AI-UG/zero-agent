@@ -4,7 +4,6 @@ import { getEnrichModel } from "@/lib/openrouter.ts";
 import { readFromS3, writeToS3 } from "@/lib/s3.ts";
 import { extractConversationText } from "@/lib/message-utils.ts";
 import { embedEntries } from "@/lib/vectors.ts";
-import { deferAsync } from "@/lib/deferred.ts";
 import { log } from "@/lib/logger.ts";
 
 const memLog = log.child({ module: "memory-flush" });
@@ -156,7 +155,7 @@ export async function flushLearnings(
     }
   }
   if (allEntries.length > 0) {
-    embedEntries(projectId, "memory", allEntries).catch((err) =>
+    await embedEntries(projectId, "memory", allEntries).catch((err) =>
       memLog.warn("learning embedding failed", { projectId, error: String(err) }),
     );
   }
@@ -193,7 +192,7 @@ export async function flushConversationMemory(
 
   // Ask LLM to extract new memories (with retry for transient API errors)
   const callLLM = () =>
-    deferAsync(() => generateText({
+    generateText({
       model: getEnrichModel(),
       system: `You extract important information from conversations. Output new memory entries, one per line, in the format:
 section: content
@@ -217,7 +216,7 @@ ${existingBullets || "(empty)"}
 
 ## Recent Conversation
 ${conversationText}`,
-    }));
+    });
 
   let result: Awaited<ReturnType<typeof callLLM>> | undefined;
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -287,7 +286,7 @@ ${conversationText}`,
   const newMemoryMd = renderMemory(existingSections);
   await writeToS3(`projects/${projectId}/memory.md`, newMemoryMd);
 
-  // Embed all memory entries for semantic retrieval (fire-and-forget)
+  // Embed all memory entries for semantic retrieval
   const allEntries: { id: string; text: string }[] = [];
   for (const key of MEMORY_SECTIONS) {
     for (let i = 0; i < existingSections[key].length; i++) {
@@ -295,7 +294,7 @@ ${conversationText}`,
     }
   }
   if (allEntries.length > 0) {
-    embedEntries(projectId, "memory", allEntries).catch((err) =>
+    await embedEntries(projectId, "memory", allEntries).catch((err) =>
       memLog.warn("memory embedding failed", { projectId, error: String(err) }),
     );
   }

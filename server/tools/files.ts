@@ -9,7 +9,6 @@ import { sanitizePath } from "@/lib/sanitize.ts";
 import { truncateText } from "@/lib/truncate-result.ts";
 import { indexFileContent, searchFileContent, removeFileIndex } from "@/db/queries/search.ts";
 import { embedAndStore, semanticSearch, deleteVectorsBySource } from "@/lib/vectors.ts";
-import { deferAsync } from "@/lib/deferred.ts";
 import { log } from "@/lib/logger.ts";
 import { isModelMultimodal } from "@/config/models.ts";
 import { getVisionModel } from "@/lib/openrouter.ts";
@@ -136,7 +135,8 @@ function cleanupEmptyFolders(projectId: string, folderPath: string) {
   }
 }
 
-export function createFileTools(projectId: string, options?: { modelId?: string; initialReadPaths?: string[] }) {
+export function createFileTools(projectId: string, options?: { chatId?: string; modelId?: string; initialReadPaths?: string[] }) {
+  const chatId = options?.chatId;
   const readPaths = new Set<string>(options?.initialReadPaths);
 
   return {
@@ -178,7 +178,7 @@ export function createFileTools(projectId: string, options?: { modelId?: string;
             if (modelId && !isModelMultimodal(modelId)) {
               toolLog.info("readFile image captioning", { projectId, path, modelId });
               const base64 = resized.toString("base64");
-              const { text: caption } = await deferAsync(() => generateText({
+              const { text: caption } = await generateText({
                 model: getVisionModel(),
                 messages: [{
                   role: "user",
@@ -187,7 +187,7 @@ export function createFileTools(projectId: string, options?: { modelId?: string;
                     { type: "image", image: base64, mediaType },
                   ],
                 }],
-              }));
+              });
               toolLog.info("readFile image captioned", { projectId, path, captionLength: caption.length });
               return { path, type: "caption" as const, caption };
             }
@@ -304,7 +304,7 @@ export function createFileTools(projectId: string, options?: { modelId?: string;
           // Index for FTS search (text files get content indexed, others just filename)
           indexFileContent(fileRow.id, projectId, filename, isTextMime(mimeType) ? content : "");
 
-          // Embed for semantic search (fire-and-forget)
+          // Embed for semantic search
           if (isTextMime(mimeType)) {
             embedAndStore(projectId, "file", fileRow.id, content, { filename }).catch((err) =>
               toolLog.warn("embedding failed", { projectId, path, error: String(err) }),
@@ -401,11 +401,15 @@ export function createFileTools(projectId: string, options?: { modelId?: string;
           // Re-index for FTS search
           indexFileContent(fileRow.id, projectId, filename, isTextMime(mimeType) ? updated : "");
 
-          // Re-embed for semantic search (fire-and-forget)
+          // Re-embed for semantic search — queue during chat streams
           if (isTextMime(mimeType)) {
-            embedAndStore(projectId, "file", fileRow.id, updated, { filename }).catch((err) =>
-              toolLog.warn("embedding failed", { projectId, path, error: String(err) }),
-            );
+            if (chatId) {
+              queueEmbed(chatId, { projectId, collection: "file", sourceId: fileRow.id, text: updated, metadata: { filename } });
+            } else {
+              embedAndStore(projectId, "file", fileRow.id, updated, { filename }).catch((err) =>
+                toolLog.warn("embedding failed", { projectId, path, error: String(err) }),
+              );
+            }
           }
 
           // Lint the updated content and surface any issues

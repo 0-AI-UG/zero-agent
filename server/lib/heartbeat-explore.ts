@@ -3,7 +3,6 @@ import type { UIMessage } from "ai";
 import { getEnrichModel } from "@/lib/openrouter.ts";
 import { readFromS3, writeToS3 } from "@/lib/s3.ts";
 import { extractConversationText } from "@/lib/message-utils.ts";
-import { deferAsync } from "@/lib/deferred.ts";
 import { log } from "@/lib/logger.ts";
 
 const hbLog = log.child({ module: "heartbeat-explore" });
@@ -74,7 +73,7 @@ export async function detectExploreItems(
   const existingText = existingRaw || "(empty)";
 
   const callLLM = () =>
-    deferAsync(() => generateText({
+    generateText({
       model: getEnrichModel(),
       system: `You identify knowledge gaps and unanswered questions from conversations that an AI agent could investigate autonomously during its next heartbeat check.
 
@@ -90,7 +89,7 @@ ${existingText}
 
 ## Recent conversation
 ${conversationText}`,
-    }));
+    });
 
   let result: Awaited<ReturnType<typeof callLLM>> | undefined;
   for (let attempt = 0; attempt < 3; attempt++) {

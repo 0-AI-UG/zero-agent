@@ -8,7 +8,7 @@ import type {
   ExecutionBackend, BashResult, ExecResult, SessionInfo, ContainerListEntry,
 } from "./backend-interface.ts";
 import { readBinaryFromS3, writeToS3 } from "@/lib/s3.ts";
-import { fetchWithTimeout, deferAsync } from "@/lib/deferred.ts";
+import { fetchWithTimeout } from "@/lib/deferred.ts";
 import { log } from "@/lib/logger.ts";
 
 const clientLog = log.child({ module: "runner-client" });
@@ -29,24 +29,15 @@ export class RunnerClient implements ExecutionBackend {
 
   private async request(path: string, init?: RequestInit & { timeout?: number }): Promise<Response> {
     const { timeout = 30_000, ...rest } = init ?? {};
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeout);
-    try {
-      const res = await deferAsync(() =>
-        fetch(`${this.baseUrl}/api/v1${path}`, {
-          ...rest,
-          signal: controller.signal,
-          headers: {
-            ...Object.fromEntries(new Headers(rest.headers ?? {}).entries()),
-            "Authorization": `Bearer ${this.apiKey}`,
-            "Content-Type": rest.headers ? (new Headers(rest.headers).get("Content-Type") ?? "application/json") : "application/json",
-          },
-        }),
-      );
-      return res;
-    } finally {
-      clearTimeout(timer);
-    }
+    return fetch(`${this.baseUrl}/api/v1${path}`, {
+      ...rest,
+      headers: {
+        ...Object.fromEntries(new Headers(rest.headers ?? {}).entries()),
+        "Authorization": `Bearer ${this.apiKey}`,
+        "Content-Type": rest.headers ? (new Headers(rest.headers).get("Content-Type") ?? "application/json") : "application/json",
+      },
+      signal: AbortSignal.timeout(timeout),
+    });
   }
 
   private async json<T>(path: string, init?: RequestInit & { timeout?: number }): Promise<T> {
@@ -142,12 +133,18 @@ export class RunnerClient implements ExecutionBackend {
     const BATCH_SIZE = 10;
     for (let i = 0; i < entries.length; i += BATCH_SIZE) {
       const batch = entries.slice(i, i + BATCH_SIZE);
-      const files = await Promise.all(batch.map(async ([relativePath, _url]) => {
-        const s3Key = `projects/${projectId}/${relativePath}`;
-        const { readBinaryFromS3: readS3 } = await import("@/lib/s3.ts");
-        const buffer = await readS3(s3Key);
-        return { path: relativePath, data: buffer.toString("base64") };
+      const results = await Promise.all(batch.map(async ([relativePath, _url]) => {
+        try {
+          const s3Key = `projects/${projectId}/${relativePath}`;
+          const { readBinaryFromS3: readS3 } = await import("@/lib/s3.ts");
+          const buffer = await readS3(s3Key);
+          return { path: relativePath, data: buffer.toString("base64") };
+        } catch {
+          return null;
+        }
       }));
+      const files = results.filter((f): f is NonNullable<typeof f> => f !== null);
+      if (files.length === 0) continue;
 
       await this.json(`/containers/${encodeURIComponent(name)}/files/write`, {
         method: "POST",
@@ -356,5 +353,9 @@ export class RunnerClient implements ExecutionBackend {
   getProxyUrl(projectId: string, port: number, path: string): string {
     const name = this.containerName(projectId);
     return `${this.baseUrl}/proxy/${encodeURIComponent(name)}/${port}/${path}`;
+  }
+
+  getProxyInfo(projectId: string, port: number, path: string): { url: string; apiKey: string } {
+    return { url: this.getProxyUrl(projectId, port, path), apiKey: this.apiKey };
   }
 }

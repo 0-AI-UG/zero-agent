@@ -16,7 +16,7 @@ import { detectExploreItems } from "@/lib/heartbeat-explore.ts";
 import { events } from "@/lib/events.ts";
 import { semanticSearch, embedAndStore, embedValue, keywordSearch } from "@/lib/vectors.ts";
 import { log } from "@/lib/logger.ts";
-import { streamContext, setActiveStreamId, clearActiveStreamId, getActiveStreamId, setAbortController, clearAbortController, abortStream } from "@/lib/resumable-stream.ts";
+import { streamContext, setActiveStreamId, clearActiveStreamId, getActiveStreamId, requestAbort, isAbortRequested, clearAbortFlag } from "@/lib/resumable-stream.ts";
 import { ConflictError } from "@/lib/errors.ts";
 import { insertUsageLog } from "@/db/queries/usage-logs.ts";
 import { getModelPricing } from "@/config/models.ts";
@@ -141,9 +141,6 @@ export async function handleChat(request: BunRequest): Promise<Response> {
     const streamId = generateId();
     setActiveStreamId(chatId, streamId);
 
-    const abortController = new AbortController();
-    setAbortController(chatId, abortController);
-
     // Save initial checkpoint so crash recovery knows this run was in-progress
     saveCheckpoint({
       runId,
@@ -155,7 +152,7 @@ export async function handleChat(request: BunRequest): Promise<Response> {
     });
 
     // Register this run for graceful shutdown tracking
-    registerRun({ runId, chatId, projectId, abortController, startedAt: Date.now() });
+    registerRun({ runId, chatId, projectId, startedAt: Date.now() });
 
     // Track the last step's usage so we can report actual context window consumption.
     // totalUsage accumulates inputTokens across all agent steps (tool calls),
@@ -171,7 +168,6 @@ export async function handleChat(request: BunRequest): Promise<Response> {
     return createAgentUIStreamResponse({
       agent,
       uiMessages: messages,
-      abortSignal: abortController.signal,
       headers: corsHeaders,
       generateMessageId: generateId,
       experimental_transform: smoothStream({
@@ -209,7 +205,7 @@ export async function handleChat(request: BunRequest): Promise<Response> {
       },
       onFinish: ({ messages: finalMessages, isAborted }) => {
         clearActiveStreamId(chatId);
-        clearAbortController(chatId);
+        clearAbortFlag(chatId);
         if (runId) {
           deleteCheckpoint(runId);
           deregisterRun(runId);
@@ -297,33 +293,31 @@ export async function handleChat(request: BunRequest): Promise<Response> {
           events.emit("message.sent", { chatId, projectId, content: textPart?.text ?? "" });
         }
 
-        // Flush conversation memories to memory.md (fire and forget)
-        flushConversationMemory(projectId, finalMessages).catch((err) =>
-          chatLog.error("memory flush failed", {
-            projectId,
-            error: err instanceof Error ? err.message : String(err),
-            errorName: err?.constructor?.name,
-          }),
-        );
+        (async () => {
+          try {
+            // Embed new messages for semantic chat history search
+            for (const msg of finalMessages) {
+              const textContent = msg.parts
+                ?.filter((p: { type: string }) => p.type === "text")
+                .map((p: any) => p.text)
+                .join("\n") ?? "";
+              if (textContent.length > 50) {
+                await embedAndStore(projectId, "message", msg.id, textContent, { chatId, role: msg.role }).catch(() => {});
+              }
+            }
 
-        // Embed new messages for semantic chat history search (fire and forget)
-        for (const msg of finalMessages) {
-          const textContent = msg.parts
-            ?.filter((p: { type: string }) => p.type === "text")
-            .map((p: any) => p.text)
-            .join("\n") ?? "";
-          if (textContent.length > 50) {
-            embedAndStore(projectId, "message", msg.id, textContent, { chatId, role: msg.role }).catch(() => {});
+            // 3. Flush conversation memories to memory.md
+            await flushConversationMemory(projectId, finalMessages);
+
+            // 4. Detect knowledge gaps and add explore items to heartbeat.md
+            await detectExploreItems(projectId, finalMessages);
+          } catch (err) {
+            chatLog.warn("post-stream background work failed", {
+              projectId, chatId,
+              error: err instanceof Error ? err.message : String(err),
+            });
           }
-        }
-
-        // Detect knowledge gaps and add explore items to heartbeat.md (fire and forget)
-        detectExploreItems(projectId, finalMessages).catch((err) =>
-          chatLog.error("heartbeat explore detection failed", {
-            projectId,
-            error: err instanceof Error ? err.message : String(err),
-          }),
-        );
+        })();
       },
     });
   } catch (error) {
@@ -331,7 +325,7 @@ export async function handleChat(request: BunRequest): Promise<Response> {
     const { chatId } = (request.params ?? {}) as { chatId?: string };
     if (chatId) {
       clearActiveStreamId(chatId);
-      clearAbortController(chatId);
+      clearAbortFlag(chatId);
     }
     // Persist any accumulated agent work from checkpoint before cleaning up
     if (runId) {
@@ -384,7 +378,7 @@ export async function handleAbortChat(request: BunRequest): Promise<Response> {
     verifyProjectAccess(projectId, userId);
     verifyChatOwnership(chatId, projectId);
 
-    const aborted = abortStream(chatId);
+    const aborted = requestAbort(chatId);
     chatLog.info("abort requested", { projectId, chatId, aborted });
 
     return Response.json({ aborted }, { headers: corsHeaders });

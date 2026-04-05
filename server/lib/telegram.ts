@@ -22,7 +22,6 @@ export async function callTelegramApi(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: body ? JSON.stringify(body) : undefined,
-    signal,
   });
 
   const data = (await res.json()) as TelegramApiResult;

@@ -2,7 +2,6 @@
  * Raw CDP (Chrome DevTools Protocol) client over WebSocket.
  */
 import { enableDomainsStealthy } from "./stealth.ts";
-import { deferAsync } from "./deferred.ts";
 import { log } from "./logger.ts";
 
 const cdpLog = log.child({ module: "cdp" });
@@ -126,7 +125,7 @@ export class CdpClient {
 }
 
 export async function connectToPage(cdpHost: string, cdpPort: number): Promise<{ cdp: CdpClient; targetId: string }> {
-  const res = await deferAsync(() => fetch(`http://${cdpHost}:${cdpPort}/json/list`));
+  const res = await fetch(`http://${cdpHost}:${cdpPort}/json/list`);
   const targets = (await res.json()) as Array<{
     id: string;
     type: string;
@@ -139,7 +138,7 @@ export async function connectToPage(cdpHost: string, cdpPort: number): Promise<{
   if (!target) target = targets.find((t) => t.type === "page");
 
   if (!target) {
-    const newTab = await deferAsync(() => fetch(`http://${cdpHost}:${cdpPort}/json/new?about:blank`, { method: "PUT" }));
+    const newTab = await fetch(`http://${cdpHost}:${cdpPort}/json/new?about:blank`, { method: "PUT" });
     target = (await newTab.json()) as (typeof targets)[0];
   }
 

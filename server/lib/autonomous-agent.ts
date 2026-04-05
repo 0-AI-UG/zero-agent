@@ -254,7 +254,7 @@ export async function runAutonomousTask(
 
         // Flush any learnings to memory
         if (learnings.length > 0) {
-          flushLearnings(project.id, learnings).catch((err) => {
+          await flushLearnings(project.id, learnings).catch((err) => {
             autoLog.warn("failed to flush learnings on suspend", { error: String(err) });
           });
         }
@@ -310,11 +310,11 @@ export async function runAutonomousTask(
         // Promote anchor decisions to memory before cleanup
         const finalAnchor = await loadAnchor(project.id, anchorRunId);
         if (finalAnchor?.activeDecisions.length) {
-          flushLearnings(project.id, finalAnchor.activeDecisions).catch((err) => {
+          await flushLearnings(project.id, finalAnchor.activeDecisions).catch((err) => {
             autoLog.warn("failed to promote anchor decisions", { error: String(err) });
           });
         }
-        deleteAnchor(project.id, anchorRunId).catch(() => {});
+        await deleteAnchor(project.id, anchorRunId).catch(() => {});
       }
       deregisterRun(runId);
     }
