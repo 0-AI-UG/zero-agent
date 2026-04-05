@@ -181,32 +181,26 @@ export function ChatInputArea({
                     className={`size-2 rounded-full ${
                       containerStatus?.status === "running"
                         ? "bg-emerald-500"
-                        : containerStatus?.status === "paused"
-                          ? "bg-amber-500"
-                          : capabilities?.serverDocker
-                            ? "bg-emerald-500/50"
-                            : "bg-muted-foreground/40"
+                        : capabilities?.serverDocker
+                          ? "bg-emerald-500/50"
+                          : "bg-muted-foreground/40"
                     }`}
                   />
                   <span>
                     {containerStatus?.status === "running"
                       ? "Container running"
-                      : containerStatus?.status === "paused"
-                        ? "Container paused"
-                        : capabilities?.serverDocker
-                          ? "Server execution"
-                          : "Execution unavailable"}
+                      : capabilities?.serverDocker
+                        ? "Server execution"
+                        : "Execution unavailable"}
                   </span>
                 </div>
               </TooltipTrigger>
               <TooltipContent side="top">
                 {containerStatus?.status === "running"
                   ? "Container is running — code and browser execute on the server"
-                  : containerStatus?.status === "paused"
-                    ? "Container is paused — will resume automatically on next action"
-                    : capabilities?.serverDocker
-                      ? "No container yet — one will be created on first action"
-                      : "Server execution not available"}
+                  : capabilities?.serverDocker
+                    ? "No container yet — one will be created on first action"
+                    : "Server execution not available"}
               </TooltipContent>
             </Tooltip>
             {(totalUsage.totalTokens ?? 0) > 0 && (
