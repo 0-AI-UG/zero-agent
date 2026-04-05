@@ -2,6 +2,7 @@ import { deleteProjectIndex, ensureIndex, putProjectVectors, isEmbeddingConfigur
 import { readFromS3 } from "@/lib/s3.ts";
 import { getSetting } from "@/lib/settings.ts";
 import { log } from "@/lib/logger.ts";
+import { fetchWithTimeout } from "@/lib/deferred.ts";
 import { db } from "@/db/index.ts";
 import type { SparseVector } from "@0-ai/s3lite/vectors";
 
@@ -106,13 +107,14 @@ const MESSAGE_MAX = 1000;
  */
 async function embedValues(values: string[]): Promise<number[][]> {
   const apiKey = getSetting("OPENROUTER_API_KEY");
-  const res = await fetch("https://openrouter.ai/api/v1/embeddings", {
+  const res = await fetchWithTimeout("https://openrouter.ai/api/v1/embeddings", {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ model: "openai/text-embedding-3-small", input: values }),
+    timeout: 30_000,
   });
   if (!res.ok) throw new Error(`Embedding API error: ${res.status} ${await res.text()}`);
   const json = await res.json() as any;

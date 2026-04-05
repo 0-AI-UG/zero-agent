@@ -2,6 +2,7 @@ import { VectorClient } from "@0-ai/s3lite/vectors";
 import type { QueryResult, SparseVector } from "@0-ai/s3lite/vectors";
 import { getSetting } from "@/lib/settings.ts";
 import { log } from "@/lib/logger.ts";
+import { fetchWithTimeout } from "@/lib/deferred.ts";
 
 const vecLog = log.child({ module: "vectors" });
 
@@ -84,13 +85,14 @@ export function isEmbeddingConfigured(): boolean {
 
 async function embedValues(values: string[]): Promise<number[][]> {
   const apiKey = getSetting("OPENROUTER_API_KEY");
-  const res = await fetch("https://openrouter.ai/api/v1/embeddings", {
+  const res = await fetchWithTimeout("https://openrouter.ai/api/v1/embeddings", {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ model: "openai/text-embedding-3-small", input: values }),
+    timeout: 30_000,
   });
   if (!res.ok) throw new Error(`Embedding API error: ${res.status} ${await res.text()}`);
   const json = await res.json() as any;
@@ -272,24 +274,11 @@ export interface SemanticResult {
  * Hybrid search within a project and collection.
  * Uses both dense (semantic) and sparse (keyword) vectors with RRF fusion.
  */
-/** Cosine distance between two vectors (0 = identical, 1 = unrelated). */
-function cosineDistance(a: number[] | Float32Array, b: number[] | Float32Array): number {
-  let dot = 0, normA = 0, normB = 0;
-  for (let i = 0; i < a.length; i++) {
-    dot += a[i]! * b[i]!;
-    normA += a[i]! * a[i]!;
-    normB += b[i]! * b[i]!;
-  }
-  const denom = Math.sqrt(normA) * Math.sqrt(normB);
-  return denom === 0 ? 1 : 1 - dot / denom;
-}
-
 export async function semanticSearch(
   projectId: string,
   collection: string,
   query: string,
   topK = 10,
-  maxDistance = 0.7,
   precomputedEmbedding?: number[],
 ): Promise<SemanticResult[]> {
   if (!isEmbeddingConfigured() || !query.trim()) return [];
@@ -304,29 +293,20 @@ export async function semanticSearch(
   const sparseQuery = textToSparseVector(query);
   const useSparse = indexConfig.sparse && sparseQuery.indices.length > 0;
 
-  // Use hybrid search for ranking, but include vectors so we can
-  // filter by actual cosine distance (RRF scores are rank-based and
-  // don't reflect absolute relevance).
   const { results } = client.query(indexName, {
     vector: embedding,
     ...(useSparse ? { sparseVector: sparseQuery } : {}),
     topK,
     filter: { collection: { $eq: collection } },
     includeMetadata: true,
-    includeVectors: true,
   });
 
-  return results
-    .filter((r: QueryResult) => {
-      if (!r.vector) return false;
-      return cosineDistance(embedding, r.vector) <= maxDistance;
-    })
-    .map((r: QueryResult) => ({
-      key: r.key,
-      content: (r.metadata?.content as string) ?? "",
-      metadata: r.metadata ?? {},
-      score: r.score,
-    }));
+  return results.map((r: QueryResult) => ({
+    key: r.key,
+    content: (r.metadata?.content as string) ?? "",
+    metadata: r.metadata ?? {},
+    score: r.score,
+  }));
 }
 
 /**
