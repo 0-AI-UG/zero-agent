@@ -6,12 +6,21 @@
       "provider": "minimax",
       "description": "Top Chinese-language model with strong function calling.",
       "contextWindow": 196608,
-      "pricing": { "input": 0.295, "output": 1.20 },
-      "tags": ["chinese", "recommended", "function-calling"],
+      "pricing": {
+        "input": 0.295,
+        "output": 1.2
+      },
+      "tags": [
+        "chinese",
+        "recommended",
+        "function-calling"
+      ],
       "default": true,
       "multimodal": false,
-      "providerRouting": {
-        "order": ["minimax"],
+      "providerConfig": {
+        "order": [
+          "minimax"
+        ],
         "allow_fallbacks": false
       }
     },
@@ -21,11 +30,20 @@
       "provider": "deepseek",
       "description": "Excellent value with strong Chinese and coding capabilities.",
       "contextWindow": 163840,
-      "pricing": { "input": 0.25, "output": 0.40 },
-      "tags": ["chinese", "value", "coding"],
+      "pricing": {
+        "input": 0.25,
+        "output": 0.4
+      },
+      "tags": [
+        "chinese",
+        "value",
+        "coding"
+      ],
       "multimodal": false,
-      "providerRouting": {
-        "order": ["deepseek"],
+      "providerConfig": {
+        "order": [
+          "deepseek"
+        ],
         "allow_fallbacks": true
       }
     },
@@ -35,11 +53,20 @@
       "provider": "alibaba",
       "description": "Alibaba's flagship model with 1M context. Strong Chinese reasoning.",
       "contextWindow": 1000000,
-      "pricing": { "input": 0.26, "output": 1.56 },
-      "tags": ["chinese", "long-context", "reasoning"],
+      "pricing": {
+        "input": 0.26,
+        "output": 1.56
+      },
+      "tags": [
+        "chinese",
+        "long-context",
+        "reasoning"
+      ],
       "multimodal": true,
-      "providerRouting": {
-        "order": ["alibaba"],
+      "providerConfig": {
+        "order": [
+          "alibaba"
+        ],
         "allow_fallbacks": true
       }
     },
@@ -49,11 +76,21 @@
       "provider": "alibaba",
       "description": "Ultra-cheap with 1M context. Great for high-volume Chinese content.",
       "contextWindow": 1000000,
-      "pricing": { "input": 0.10, "output": 0.40 },
-      "tags": ["chinese", "value", "fast", "long-context"],
+      "pricing": {
+        "input": 0.1,
+        "output": 0.4
+      },
+      "tags": [
+        "chinese",
+        "value",
+        "fast",
+        "long-context"
+      ],
       "multimodal": true,
-      "providerRouting": {
-        "order": ["alibaba"],
+      "providerConfig": {
+        "order": [
+          "alibaba"
+        ],
         "allow_fallbacks": true
       }
     },
@@ -63,11 +100,19 @@
       "provider": "zhipuai",
       "description": "Zhipu AI's latest frontier model. Strong Chinese language understanding.",
       "contextWindow": 202752,
-      "pricing": { "input": 0.80, "output": 2.56 },
-      "tags": ["chinese", "reasoning"],
+      "pricing": {
+        "input": 0.8,
+        "output": 2.56
+      },
+      "tags": [
+        "chinese",
+        "reasoning"
+      ],
       "multimodal": true,
-      "providerRouting": {
-        "order": ["zhipuai"],
+      "providerConfig": {
+        "order": [
+          "zhipuai"
+        ],
         "allow_fallbacks": false
       }
     },
@@ -77,11 +122,20 @@
       "provider": "moonshotai",
       "description": "Moonshot's flagship with 256K context. Strong at agentic tasks.",
       "contextWindow": 262144,
-      "pricing": { "input": 0.45, "output": 2.20 },
-      "tags": ["chinese", "long-context", "agents"],
+      "pricing": {
+        "input": 0.45,
+        "output": 2.2
+      },
+      "tags": [
+        "chinese",
+        "long-context",
+        "agents"
+      ],
       "multimodal": true,
-      "providerRouting": {
-        "order": ["moonshotai"],
+      "providerConfig": {
+        "order": [
+          "moonshotai"
+        ],
         "allow_fallbacks": false
       }
     },
@@ -91,11 +145,20 @@
       "provider": "anthropic",
       "description": "High-quality reasoning and writing. Great at nuanced content creation.",
       "contextWindow": 1000000,
-      "pricing": { "input": 3.00, "output": 15.00 },
-      "tags": ["premium", "reasoning", "writing"],
+      "pricing": {
+        "input": 3.0,
+        "output": 15.0
+      },
+      "tags": [
+        "premium",
+        "reasoning",
+        "writing"
+      ],
       "multimodal": true,
-      "providerRouting": {
-        "order": ["anthropic"],
+      "providerConfig": {
+        "order": [
+          "anthropic"
+        ],
         "allow_fallbacks": true
       }
     },
@@ -105,11 +168,21 @@
       "provider": "google",
       "description": "Fast and affordable with 1M context window. Good for high-volume tasks.",
       "contextWindow": 1048576,
-      "pricing": { "input": 0.50, "output": 3.00 },
-      "tags": ["value", "fast", "long-context"],
+      "pricing": {
+        "input": 0.5,
+        "output": 3.0
+      },
+      "tags": [
+        "value",
+        "fast",
+        "long-context"
+      ],
       "multimodal": true,
-      "providerRouting": {
-        "order": ["google-ai-studio", "google-vertex"],
+      "providerConfig": {
+        "order": [
+          "google-ai-studio",
+          "google-vertex"
+        ],
         "allow_fallbacks": true
       }
     },
@@ -119,11 +192,21 @@
       "provider": "openai",
       "description": "OpenAI's unified frontier model with 1M+ context. Strong reasoning and coding.",
       "contextWindow": 1050000,
-      "pricing": { "input": 2.50, "output": 15.00 },
-      "tags": ["premium", "reasoning", "coding", "long-context"],
+      "pricing": {
+        "input": 2.5,
+        "output": 15.0
+      },
+      "tags": [
+        "premium",
+        "reasoning",
+        "coding",
+        "long-context"
+      ],
       "multimodal": true,
-      "providerRouting": {
-        "order": ["openai"],
+      "providerConfig": {
+        "order": [
+          "openai"
+        ],
         "allow_fallbacks": true
       }
     }

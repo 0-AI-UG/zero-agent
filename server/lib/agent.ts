@@ -1,5 +1,5 @@
 import { ToolLoopAgent, stepCountIs, type StopCondition } from "ai";
-import { getChatModel, createChatModel } from "@/lib/openrouter.ts";
+import { getChatModel, createChatModel } from "@/lib/providers/index.ts";
 import { isAbortRequested } from "@/lib/resumable-stream.ts";
 import { createDiscoverableToolset, type ExecutionContext } from "@/tools/registry.ts";
 import { getSkillSummaries } from "@/lib/skills/loader.ts";

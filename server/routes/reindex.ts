@@ -1,13 +1,13 @@
-import type { BunRequest } from "bun";
 import { corsHeaders } from "@/lib/cors.ts";
 import { authenticateRequest } from "@/lib/auth.ts";
+import { getParams } from "@/lib/request.ts";
 import { handleError, verifyProjectAccess } from "@/routes/utils.ts";
 import { reindexProject, isReindexRunning, getReindexStatus, getLatestProgress, addProgressListener } from "@/lib/reindex.ts";
 
-export async function handleReindex(request: BunRequest): Promise<Response> {
+export async function handleReindex(request: Request): Promise<Response> {
   try {
     const { userId } = await authenticateRequest(request);
-    const projectId = (request.params as { projectId: string }).projectId;
+    const projectId = (getParams<{ projectId: string }>(request)).projectId;
     verifyProjectAccess(projectId, userId);
 
     if (isReindexRunning(projectId)) {
@@ -25,10 +25,10 @@ export async function handleReindex(request: BunRequest): Promise<Response> {
   }
 }
 
-export async function handleReindexStatus(request: BunRequest): Promise<Response> {
+export async function handleReindexStatus(request: Request): Promise<Response> {
   try {
     const { userId } = await authenticateRequest(request);
-    const projectId = (request.params as { projectId: string }).projectId;
+    const projectId = (getParams<{ projectId: string }>(request)).projectId;
     verifyProjectAccess(projectId, userId);
 
     return Response.json(getReindexStatus(projectId), { headers: corsHeaders });
@@ -37,10 +37,10 @@ export async function handleReindexStatus(request: BunRequest): Promise<Response
   }
 }
 
-export async function handleReindexStream(request: BunRequest): Promise<Response> {
+export async function handleReindexStream(request: Request): Promise<Response> {
   try {
     const { userId } = await authenticateRequest(request);
-    const projectId = (request.params as { projectId: string }).projectId;
+    const projectId = (getParams<{ projectId: string }>(request)).projectId;
     verifyProjectAccess(projectId, userId);
 
     if (!isReindexRunning(projectId)) {

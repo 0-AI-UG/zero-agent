@@ -1,4 +1,4 @@
-import { test, expect, describe } from "bun:test";
+import { test, expect, describe } from "vitest";
 import { search } from "./search.ts";
 
 const TIMEOUT = 30_000;

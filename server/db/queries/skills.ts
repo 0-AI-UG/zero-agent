@@ -11,31 +11,29 @@ export function insertSkill(
   },
 ): SkillRow {
   const id = generateId();
-  db.run(
+  db.prepare(
     `INSERT INTO skills (id, project_id, name, description, s3_key, metadata)
      VALUES (?, ?, ?, ?, ?, ?)`,
-    [id, projectId, data.name, data.description ?? "", data.s3Key, data.metadata ?? null],
-  );
-  return db.query<SkillRow, [string]>("SELECT * FROM skills WHERE id = ?").get(id)!;
+  ).run(id, projectId, data.name, data.description ?? "", data.s3Key, data.metadata ?? null);
+  return db.prepare("SELECT * FROM skills WHERE id = ?").get(id) as SkillRow;
 }
 
 export function getSkillsByProject(projectId: string): SkillRow[] {
-  return db.query<SkillRow, [string]>(
+  return db.prepare(
     "SELECT * FROM skills WHERE project_id = ? ORDER BY name",
-  ).all(projectId);
+  ).all(projectId) as SkillRow[];
 }
 
 export function getSkillByName(projectId: string, name: string): SkillRow | null {
-  return db.query<SkillRow, [string, string]>(
+  return db.prepare(
     "SELECT * FROM skills WHERE project_id = ? AND name = ?",
-  ).get(projectId, name);
+  ).get(projectId, name) as SkillRow | null;
 }
 
 export function updateSkillEnabled(projectId: string, name: string, enabled: boolean): void {
-  db.run(
+  db.prepare(
     "UPDATE skills SET enabled = ?, updated_at = datetime('now') WHERE project_id = ? AND name = ?",
-    [enabled ? 1 : 0, projectId, name],
-  );
+  ).run(enabled ? 1 : 0, projectId, name);
 }
 
 export function updateSkillMetadata(
@@ -60,15 +58,13 @@ export function updateSkillMetadata(
   sets.push("updated_at = datetime('now')");
   values.push(projectId, name);
 
-  db.run(
+  db.prepare(
     `UPDATE skills SET ${sets.join(", ")} WHERE project_id = ? AND name = ?`,
-    values,
-  );
+  ).run(...values);
 }
 
 export function deleteSkill(projectId: string, name: string): void {
-  db.run(
+  db.prepare(
     "DELETE FROM skills WHERE project_id = ? AND name = ?",
-    [projectId, name],
-  );
+  ).run(projectId, name);
 }

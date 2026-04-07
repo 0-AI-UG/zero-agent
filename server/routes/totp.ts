@@ -1,3 +1,4 @@
+import bcrypt from "bcrypt";
 import { TOTP, Secret } from "otpauth";
 import QRCode from "qrcode";
 import { corsHeaders } from "@/lib/cors.ts";
@@ -140,7 +141,7 @@ export async function handleTotpConfirm(request: Request): Promise<Response> {
     // Generate backup codes
     const backupCodes = generateBackupCodes(8);
     const codeHashes = await Promise.all(
-      backupCodes.map((code) => Bun.password.hash(code.replace("-", ""), "bcrypt")),
+      backupCodes.map((code) => bcrypt.hash(code.replace("-", ""), 10)),
     );
 
     enableTotp(userId);
@@ -195,7 +196,7 @@ export async function handleTotpLogin(request: Request): Promise<Response> {
     const normalizedCode = body.code.replace(/-/g, "");
     const unusedCodes = getUnusedBackupCodes(userId);
     for (const bc of unusedCodes) {
-      const match = await Bun.password.verify(normalizedCode, bc.code_hash);
+      const match = await bcrypt.compare(normalizedCode, bc.code_hash);
       if (match) {
         markBackupCodeUsed(bc.id);
         const token = await createToken({ userId: user.id, email: user.email });
@@ -305,7 +306,7 @@ export async function handleTotpConfirmFromLogin(request: Request): Promise<Resp
     // Generate backup codes
     const backupCodes = generateBackupCodes(8);
     const codeHashes = await Promise.all(
-      backupCodes.map((code) => Bun.password.hash(code.replace("-", ""), "bcrypt")),
+      backupCodes.map((code) => bcrypt.hash(code.replace("-", ""), 10)),
     );
 
     enableTotp(userId);

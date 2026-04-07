@@ -1,7 +1,7 @@
 import { db, generateId } from "@/db/index.ts";
 import type { TelegramBindingRow } from "@/db/types.ts";
 
-const insertStmt = db.query<TelegramBindingRow, [string, string, string, string, string]>(
+const insertStmt = db.prepare(
   `INSERT INTO telegram_bindings (id, project_id, telegram_chat_id, chat_id, chat_title)
    VALUES (?, ?, ?, ?, ?)
    ON CONFLICT(project_id, telegram_chat_id) DO UPDATE SET
@@ -11,19 +11,19 @@ const insertStmt = db.query<TelegramBindingRow, [string, string, string, string,
    RETURNING *`,
 );
 
-const byProjectStmt = db.query<TelegramBindingRow, [string]>(
+const byProjectStmt = db.prepare(
   "SELECT * FROM telegram_bindings WHERE project_id = ? ORDER BY created_at ASC",
 );
 
-const byTelegramChatStmt = db.query<TelegramBindingRow, [string, string]>(
+const byTelegramChatStmt = db.prepare(
   "SELECT * FROM telegram_bindings WHERE project_id = ? AND telegram_chat_id = ?",
 );
 
-const disableStmt = db.query<void, [string]>(
+const disableStmt = db.prepare(
   "UPDATE telegram_bindings SET enabled = 0, updated_at = datetime('now') WHERE id = ?",
 );
 
-const deleteByProjectStmt = db.query<void, [string]>(
+const deleteByProjectStmt = db.prepare(
   "DELETE FROM telegram_bindings WHERE project_id = ?",
 );
 
@@ -34,18 +34,18 @@ export function upsertTelegramBinding(
   chatTitle: string,
 ): TelegramBindingRow {
   const id = generateId();
-  return insertStmt.get(id, projectId, telegramChatId, chatId, chatTitle)!;
+  return insertStmt.get(id, projectId, telegramChatId, chatId, chatTitle) as TelegramBindingRow;
 }
 
 export function getTelegramBindingsByProject(projectId: string): TelegramBindingRow[] {
-  return byProjectStmt.all(projectId);
+  return byProjectStmt.all(projectId) as TelegramBindingRow[];
 }
 
 export function getTelegramBinding(
   projectId: string,
   telegramChatId: string,
 ): TelegramBindingRow | null {
-  return byTelegramChatStmt.get(projectId, telegramChatId) ?? null;
+  return (byTelegramChatStmt.get(projectId, telegramChatId) as TelegramBindingRow | undefined) ?? null;
 }
 
 export function disableTelegramBinding(id: string): void {

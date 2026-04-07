@@ -1,6 +1,6 @@
-import type { BunRequest } from "bun";
 import { authenticateRequest } from "@/lib/auth.ts";
 import { corsHeaders } from "@/lib/cors.ts";
+import { getParams } from "@/lib/request.ts";
 import { handleError, verifyProjectAccess, toUTC } from "@/routes/utils.ts";
 import {
   getQuickActionsByProject,
@@ -49,10 +49,10 @@ function formatQuickAction(row: QuickActionRow) {
   };
 }
 
-export async function handleListQuickActions(request: BunRequest): Promise<Response> {
+export async function handleListQuickActions(request: Request): Promise<Response> {
   try {
     const { userId } = await authenticateRequest(request);
-    const { projectId } = request.params as { projectId: string };
+    const { projectId } = getParams<{ projectId: string }>(request);
     verifyProjectAccess(projectId, userId);
 
     seedDefaultsIfEmpty(projectId);
@@ -66,10 +66,10 @@ export async function handleListQuickActions(request: BunRequest): Promise<Respo
   }
 }
 
-export async function handleCreateQuickAction(request: BunRequest): Promise<Response> {
+export async function handleCreateQuickAction(request: Request): Promise<Response> {
   try {
     const { userId } = await authenticateRequest(request);
-    const { projectId } = request.params as { projectId: string };
+    const { projectId } = getParams<{ projectId: string }>(request);
     verifyProjectAccess(projectId, userId);
 
     const body = await request.json() as { text: string; icon?: string; description?: string; sortOrder?: number };
@@ -90,10 +90,10 @@ export async function handleCreateQuickAction(request: BunRequest): Promise<Resp
   }
 }
 
-export async function handleUpdateQuickAction(request: BunRequest): Promise<Response> {
+export async function handleUpdateQuickAction(request: Request): Promise<Response> {
   try {
     const { userId } = await authenticateRequest(request);
-    const { projectId, actionId } = request.params as { projectId: string; actionId: string };
+    const { projectId, actionId } = getParams<{ projectId: string; actionId: string }>(request);
     verifyProjectAccess(projectId, userId);
 
     const existing = getQuickActionById(actionId);
@@ -114,10 +114,10 @@ export async function handleUpdateQuickAction(request: BunRequest): Promise<Resp
   }
 }
 
-export async function handleDeleteQuickAction(request: BunRequest): Promise<Response> {
+export async function handleDeleteQuickAction(request: Request): Promise<Response> {
   try {
     const { userId } = await authenticateRequest(request);
-    const { projectId, actionId } = request.params as { projectId: string; actionId: string };
+    const { projectId, actionId } = getParams<{ projectId: string; actionId: string }>(request);
     verifyProjectAccess(projectId, userId);
 
     const existing = getQuickActionById(actionId);

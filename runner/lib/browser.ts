@@ -719,11 +719,68 @@ export async function executeAction(
     }
 
     case "evaluate": {
-      const result = await cdp.send("Runtime.evaluate", {
-        expression: action.script,
-        returnByValue: true,
-      });
-      return { type: "evaluate", value: result.result?.value };
+      const awaitPromise = action.awaitPromise !== false;
+      const wrapped = `(async () => { ${action.script} })()`;
+
+      const logs: string[] = [];
+      const onConsole = (params: any) => {
+        try {
+          const level = params?.type ?? "log";
+          const args = (params?.args ?? [])
+            .map((a: any) => {
+              if (a == null) return String(a);
+              if ("value" in a) return typeof a.value === "string" ? a.value : JSON.stringify(a.value);
+              return a.description ?? a.unserializableValue ?? "";
+            })
+            .join(" ");
+          logs.push(`[${level}] ${args}`);
+        } catch {}
+      };
+
+      await cdp.send("Runtime.enable");
+      cdp.on("Runtime.consoleAPICalled", onConsole);
+
+      let value: unknown;
+      let errorStr: string | undefined;
+      try {
+        const result = await cdp.send("Runtime.evaluate", {
+          expression: wrapped,
+          awaitPromise,
+          returnByValue: true,
+          userGesture: true,
+          replMode: true,
+        }, 30_000);
+
+        if (result.exceptionDetails) {
+          const ex = result.exceptionDetails;
+          const desc = ex.exception?.description ?? ex.text ?? "Unknown error";
+          errorStr = `${desc} (line ${ex.lineNumber ?? "?"}:${ex.columnNumber ?? "?"})`;
+        } else {
+          const r = result.result ?? {};
+          value = "value" in r ? r.value : r.description;
+        }
+      } finally {
+        cdp.off("Runtime.consoleAPICalled", onConsole);
+        try { await cdp.send("Runtime.disable"); } catch {}
+      }
+
+      // Cap value size to protect model context (~50 KB).
+      const MAX_VALUE_CHARS = 50_000;
+      try {
+        const serialized = typeof value === "string" ? value : JSON.stringify(value);
+        if (serialized && serialized.length > MAX_VALUE_CHARS) {
+          value = (typeof value === "string" ? value : serialized).slice(0, MAX_VALUE_CHARS) + `\n[...truncated, ${serialized.length - MAX_VALUE_CHARS} chars omitted]`;
+        }
+      } catch {}
+
+      const info = await getPageInfo(cdp);
+      return {
+        type: "evaluate",
+        ...info,
+        value,
+        logs: logs.length > 0 ? logs.slice(0, 200) : undefined,
+        error: errorStr,
+      };
     }
 
     case "tabs": {

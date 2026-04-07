@@ -1,6 +1,7 @@
+import bcrypt from "bcrypt";
 import { corsHeaders } from "@/lib/cors.ts";
 import { db, generateId } from "@/db/index.ts";
-import { createTempToken } from "@/lib/auth.ts";
+import { createTempToken, createToken } from "@/lib/auth.ts";
 import { setSetting } from "@/lib/settings.ts";
 import { handleError } from "@/routes/utils.ts";
 import { log } from "@/lib/logger.ts";
@@ -8,10 +9,10 @@ import { log } from "@/lib/logger.ts";
 const setupLog = log.child({ module: "setup" });
 
 export function isSetupComplete(): boolean {
-  const row = db.query<{ count: number }, []>(
+  const row = db.prepare(
     "SELECT COUNT(*) as count FROM users"
-  ).get();
-  return (row?.count ?? 0) > 0;
+  ).get() as { count: number };
+  return row.count > 0;
 }
 
 export async function handleSetupStatus(_request: Request): Promise<Response> {
@@ -51,11 +52,10 @@ export async function handleSetupComplete(request: Request): Promise<Response> {
 
     // Create admin user
     const userId = generateId();
-    const passwordHash = await Bun.password.hash(password, "bcrypt");
-    db.run(
-      "INSERT INTO users (id, email, password_hash, is_admin) VALUES (?, ?, ?, 1)",
-      [userId, email, passwordHash]
-    );
+    const passwordHash = await bcrypt.hash(password, 10);
+    db.prepare(
+      "INSERT INTO users (id, email, password_hash, is_admin) VALUES (?, ?, ?, 1)"
+    ).run(userId, email, passwordHash);
 
     // Store settings
     setSetting("OPENROUTER_API_KEY", openrouterApiKey);
@@ -64,6 +64,16 @@ export async function handleSetupComplete(request: Request): Promise<Response> {
     }
     if (braveSearchApiKey) {
       setSetting("BRAVE_SEARCH_API_KEY", braveSearchApiKey);
+    }
+
+    const isDev = process.env.NODE_ENV !== "production";
+    if (isDev) {
+      const token = await createToken({ userId, email });
+      setupLog.info("setup completed (dev mode, skipping 2FA)", { userId, email });
+      return Response.json(
+        { token, user: { id: userId, email } },
+        { status: 201, headers: corsHeaders }
+      );
     }
 
     // Return temp token — full JWT is only issued after 2FA setup

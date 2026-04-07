@@ -13,7 +13,7 @@ interface CheckpointData {
   status?: "active" | "suspended";
 }
 
-const upsertStmt = db.query<void, [string, string | null, string, number, string, string | null, string]>(
+const upsertStmt = db.prepare(
   `INSERT INTO agent_checkpoints (run_id, chat_id, project_id, step_number, messages, metadata, status, updated_at)
    VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
    ON CONFLICT(run_id) DO UPDATE SET
@@ -55,12 +55,12 @@ interface StoredCheckpoint {
   updated_at: string;
 }
 
-const loadStmt = db.query<StoredCheckpoint, [string]>(
+const loadStmt = db.prepare(
   "SELECT * FROM agent_checkpoints WHERE run_id = ?",
 );
 
 export function loadCheckpoint(runId: string) {
-  const row = loadStmt.get(runId);
+  const row = loadStmt.get(runId) as StoredCheckpoint | undefined;
   if (!row) return null;
   return {
     runId: row.run_id,
@@ -73,19 +73,19 @@ export function loadCheckpoint(runId: string) {
   };
 }
 
-const deleteStmt = db.query<void, [string]>("DELETE FROM agent_checkpoints WHERE run_id = ?");
+const deleteStmt = db.prepare("DELETE FROM agent_checkpoints WHERE run_id = ?");
 
 export function deleteCheckpoint(runId: string): void {
   deleteStmt.run(runId);
 }
 
-const allActiveStmt = db.query<StoredCheckpoint, []>(
+const allActiveStmt = db.prepare(
   "SELECT * FROM agent_checkpoints WHERE status = 'active'",
 );
 
 /** Get all active (in-progress) checkpoints — used for crash recovery */
 export function getActiveCheckpoints() {
-  return allActiveStmt.all().map((row) => ({
+  return (allActiveStmt.all() as StoredCheckpoint[]).map((row) => ({
     runId: row.run_id,
     chatId: row.chat_id,
     projectId: row.project_id,
@@ -96,13 +96,13 @@ export function getActiveCheckpoints() {
   }));
 }
 
-const suspendedStmt = db.query<StoredCheckpoint, []>(
+const suspendedStmt = db.prepare(
   "SELECT * FROM agent_checkpoints WHERE status = 'suspended'",
 );
 
 /** Get all suspended checkpoints — used for resuming bounded sessions */
 export function getSuspendedCheckpoints() {
-  return suspendedStmt.all().map((row) => ({
+  return (suspendedStmt.all() as StoredCheckpoint[]).map((row) => ({
     runId: row.run_id,
     chatId: row.chat_id,
     projectId: row.project_id,
@@ -113,7 +113,7 @@ export function getSuspendedCheckpoints() {
   }));
 }
 
-const deleteAllStmt = db.query<void, []>("DELETE FROM agent_checkpoints WHERE status = 'active'");
+const deleteAllStmt = db.prepare("DELETE FROM agent_checkpoints WHERE status = 'active'");
 
 /** Delete all active checkpoints (used after crash recovery) */
 export function deleteAllActiveCheckpoints(): void {

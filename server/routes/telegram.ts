@@ -25,7 +25,7 @@ import { getProjectById } from "@/db/queries/projects.ts";
 import { startPollingForProject, stopPollingForProject } from "@/lib/telegram-polling.ts";
 import type { ChatRow, MessageRow } from "@/db/types.ts";
 import type { ModelMessage } from "ai";
-import { Jimp } from "jimp";
+import sharp from "sharp";
 
 const tgLog = log.child({ module: "routes:telegram" });
 
@@ -47,23 +47,23 @@ function withChatLock(key: string, fn: () => Promise<void>): Promise<void> {
 }
 
 // ── DB helpers ──
-const insertChatStmt = db.query<ChatRow, [string, string, string]>(
+const insertChatStmt = db.prepare(
   "INSERT INTO chats (id, project_id, title, source) VALUES (?, ?, ?, 'telegram') RETURNING *",
 );
 
-const getChatStmt = db.query<ChatRow, [string]>(
+const getChatStmt = db.prepare(
   "SELECT * FROM chats WHERE id = ?",
 );
 
-const insertMsgStmt = db.query<void, [string, string, string, string, string]>(
+const insertMsgStmt = db.prepare(
   "INSERT OR REPLACE INTO messages (id, project_id, chat_id, role, content) VALUES (?, ?, ?, ?, ?)",
 );
 
-const getMessagesStmt = db.query<MessageRow, [string]>(
+const getMessagesStmt = db.prepare(
   "SELECT * FROM messages WHERE chat_id = ? ORDER BY created_at ASC",
 );
 
-const touchChatStmt = db.query<void, [string]>(
+const touchChatStmt = db.prepare(
   "UPDATE chats SET updated_at = datetime('now') WHERE id = ?",
 );
 
@@ -148,11 +148,12 @@ export async function processIncomingUpdate(projectId: string, update: TelegramU
     const buffer = await downloadTelegramFile(cred.botToken, bestPhoto.file_id);
     if (buffer) {
       try {
-        const image = await Jimp.read(buffer);
-        if (image.width > 1024) {
-          image.resize({ w: 1024 });
+        const metadata = await sharp(buffer).metadata();
+        let pipeline = sharp(buffer);
+        if (metadata.width && metadata.width > 1024) {
+          pipeline = pipeline.resize(1024, undefined, { fit: "inside" });
         }
-        const resized = await image.getBuffer("image/jpeg", { quality: 80 });
+        const resized = await pipeline.jpeg({ quality: 80 }).toBuffer();
         imageData = { base64: resized.toString("base64"), mediaType: "image/jpeg" };
       } catch {
         // If resize fails, use original
@@ -217,7 +218,7 @@ async function processIncomingMessage(
 
     if (binding?.chat_id) {
       // Verify chat still exists
-      const chat = getChatStmt.get(binding.chat_id);
+      const chat = getChatStmt.get(binding.chat_id) as ChatRow | undefined;
       if (chat) {
         chatId = chat.id;
       } else {
@@ -231,7 +232,7 @@ async function processIncomingMessage(
     }
 
     // Load message history as ModelMessage[] with proper tool call/result reconstruction
-    const dbMessages = getMessagesStmt.all(chatId);
+    const dbMessages = getMessagesStmt.all(chatId) as MessageRow[];
     const messages: ModelMessage[] = [];
     const preActivateToolNames: string[] = [];
 
@@ -402,7 +403,7 @@ async function processIncomingMessage(
 
 function createTelegramChat(projectId: string, title: string): string {
   const chatId = generateId();
-  insertChatStmt.get(chatId, projectId, `Telegram: ${title}`)!;
+  insertChatStmt.get(chatId, projectId, `Telegram: ${title}`);
   return chatId;
 }
 

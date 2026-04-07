@@ -11,8 +11,8 @@ import { indexFileContent, searchFileContent, removeFileIndex } from "@/db/queri
 import { embedAndStore, semanticSearch, deleteVectorsBySource } from "@/lib/vectors.ts";
 import { log } from "@/lib/logger.ts";
 import { isModelMultimodal } from "@/config/models.ts";
-import { getVisionModel } from "@/lib/openrouter.ts";
-import { Jimp } from "jimp";
+import { getVisionModel } from "@/lib/providers/index.ts";
+import sharp from "sharp";
 
 const MAX_READ_CHARS = 15_000;
 
@@ -30,11 +30,12 @@ async function resizeImageForModel(imageData: Buffer, mediaType: string): Promis
     if (mediaType === "image/svg+xml") {
       return { buffer: imageData, mediaType };
     }
-    const image = await Jimp.read(imageData);
-    if (image.width > MODEL_IMAGE_MAX_WIDTH) {
-      image.resize({ w: MODEL_IMAGE_MAX_WIDTH });
+    const metadata = await sharp(imageData).metadata();
+    let pipeline = sharp(imageData);
+    if (metadata.width && metadata.width > MODEL_IMAGE_MAX_WIDTH) {
+      pipeline = pipeline.resize(MODEL_IMAGE_MAX_WIDTH, undefined, { fit: "inside" });
     }
-    const resized = await image.getBuffer("image/jpeg", { quality: MODEL_IMAGE_QUALITY });
+    const resized = await pipeline.jpeg({ quality: MODEL_IMAGE_QUALITY }).toBuffer();
     return { buffer: resized, mediaType: "image/jpeg" };
   } catch {
     // If resize fails (e.g. unsupported format), return original
@@ -136,7 +137,7 @@ function cleanupEmptyFolders(projectId: string, folderPath: string) {
 }
 
 export function createFileTools(projectId: string, options?: { chatId?: string; modelId?: string; initialReadPaths?: string[] }) {
-  const chatId = options?.chatId;
+
   const readPaths = new Set<string>(options?.initialReadPaths);
 
   return {
@@ -401,15 +402,11 @@ export function createFileTools(projectId: string, options?: { chatId?: string; 
           // Re-index for FTS search
           indexFileContent(fileRow.id, projectId, filename, isTextMime(mimeType) ? updated : "");
 
-          // Re-embed for semantic search — queue during chat streams
+          // Re-embed for semantic search
           if (isTextMime(mimeType)) {
-            if (chatId) {
-              queueEmbed(chatId, { projectId, collection: "file", sourceId: fileRow.id, text: updated, metadata: { filename } });
-            } else {
-              embedAndStore(projectId, "file", fileRow.id, updated, { filename }).catch((err) =>
-                toolLog.warn("embedding failed", { projectId, path, error: String(err) }),
-              );
-            }
+            embedAndStore(projectId, "file", fileRow.id, updated, { filename }).catch((err) =>
+              toolLog.warn("embedding failed", { projectId, path, error: String(err) }),
+            );
           }
 
           // Lint the updated content and surface any issues

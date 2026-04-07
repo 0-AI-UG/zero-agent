@@ -1,8 +1,10 @@
-FROM oven/bun:1 AS base
+FROM node:22-slim AS base
 WORKDIR /app
 
-COPY package.json bun.lock* ./
-RUN bun install --frozen-lockfile 2>/dev/null || bun install
+RUN npm install -g tsx
+
+COPY package.json package-lock.json* ./
+RUN npm install 2>/dev/null || true
 
 COPY . .
 
@@ -11,4 +13,4 @@ ENV IMAGE_BUILD_DIR=/app/docker/session
 
 EXPOSE 3100
 
-CMD ["bun", "run", "index.ts"]
+CMD ["node", "--import", "tsx/esm", "index.ts"]

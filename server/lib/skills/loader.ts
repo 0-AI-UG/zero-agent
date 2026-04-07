@@ -1,3 +1,4 @@
+import which from "which";
 import { readFromS3 } from "@/lib/s3.ts";
 import { getSkillFiles, getSkillFileByName, getFilesByFolder } from "@/db/queries/files.ts";
 import { parseSkillMd } from "./parser.ts";
@@ -95,7 +96,7 @@ export function checkGating(metadata: SkillMetadata): { ok: boolean; missing: st
   }
 
   for (const bin of metadata.requires.bins) {
-    if (!Bun.which(bin)) {
+    if (!which.sync(bin, { nothrow: true })) {
       missing.push(`bin:${bin}`);
     }
   }

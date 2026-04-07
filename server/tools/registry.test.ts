@@ -1,4 +1,4 @@
-import { describe, test, expect } from "bun:test";
+import { describe, test, expect } from "vitest";
 import { createToolRegistry, getAlwaysAvailable } from "@/tools/registry.ts";
 
 const PROJECT_ID = "test-project";

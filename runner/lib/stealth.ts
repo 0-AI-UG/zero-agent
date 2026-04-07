@@ -1,4 +1,5 @@
 import type { CdpClient } from "./cdp.ts";
+import { AGENT_HELPERS_SCRIPT } from "./agent-helpers.ts";
 
 const STEALTH_SCRIPT = `
 const navProto = Object.getPrototypeOf(navigator);
@@ -47,6 +48,7 @@ export async function enableDomainsStealthy(cdp: CdpClient): Promise<void> {
   await cdp.send("DOM.enable");
   await cdp.send("Accessibility.enable");
   await cdp.send("Page.addScriptToEvaluateOnNewDocument", { source: STEALTH_SCRIPT });
+  await cdp.send("Page.addScriptToEvaluateOnNewDocument", { source: AGENT_HELPERS_SCRIPT });
   await cdp.send("Runtime.enable");
   await cdp.send("Runtime.disable");
 }

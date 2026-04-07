@@ -1,6 +1,6 @@
-import type { BunRequest } from "bun";
 import { authenticateRequest } from "@/lib/auth.ts";
 import { corsHeaders } from "@/lib/cors.ts";
+import { getParams } from "@/lib/request.ts";
 import { handleError, verifyProjectAccess, verifyProjectOwnership, toUTC } from "@/routes/utils.ts";
 import { ValidationError, ConflictError, NotFoundError } from "@/lib/errors.ts";
 import { getProjectMembers, getMemberRole, removeProjectMember, insertProjectMember } from "@/db/queries/members.ts";
@@ -8,10 +8,10 @@ import { hasPendingInvitation, insertInvitation, getPendingByProject } from "@/d
 import { getUserByEmail } from "@/db/queries/users.ts";
 import { isProjectMember } from "@/db/queries/members.ts";
 
-export async function handleListMembers(request: BunRequest): Promise<Response> {
+export async function handleListMembers(request: Request): Promise<Response> {
   try {
     const { userId } = await authenticateRequest(request);
-    const projectId = (request.params as { projectId: string }).projectId;
+    const projectId = (getParams<{ projectId: string }>(request)).projectId;
     verifyProjectAccess(projectId, userId);
 
     const members = getProjectMembers(projectId).map((m) => ({
@@ -34,10 +34,10 @@ export async function handleListMembers(request: BunRequest): Promise<Response> 
   }
 }
 
-export async function handleInviteMember(request: BunRequest): Promise<Response> {
+export async function handleInviteMember(request: Request): Promise<Response> {
   try {
     const { userId } = await authenticateRequest(request);
-    const projectId = (request.params as { projectId: string }).projectId;
+    const projectId = (getParams<{ projectId: string }>(request)).projectId;
     verifyProjectOwnership(projectId, userId);
 
     const { email } = (await request.json()) as { email?: string };
@@ -75,13 +75,10 @@ export async function handleInviteMember(request: BunRequest): Promise<Response>
   }
 }
 
-export async function handleRemoveMember(request: BunRequest): Promise<Response> {
+export async function handleRemoveMember(request: Request): Promise<Response> {
   try {
     const { userId: authUserId } = await authenticateRequest(request);
-    const { projectId, userId: targetUserId } = request.params as {
-      projectId: string;
-      userId: string;
-    };
+    const { projectId, userId: targetUserId } = getParams<{ projectId: string; userId: string }>(request);
     verifyProjectOwnership(projectId, authUserId);
 
     if (targetUserId === authUserId) {
@@ -102,10 +99,10 @@ export async function handleRemoveMember(request: BunRequest): Promise<Response>
   }
 }
 
-export async function handleLeaveProject(request: BunRequest): Promise<Response> {
+export async function handleLeaveProject(request: Request): Promise<Response> {
   try {
     const { userId } = await authenticateRequest(request);
-    const projectId = (request.params as { projectId: string }).projectId;
+    const projectId = (getParams<{ projectId: string }>(request)).projectId;
     verifyProjectAccess(projectId, userId);
 
     const role = getMemberRole(projectId, userId);

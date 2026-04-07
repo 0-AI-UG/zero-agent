@@ -1,4 +1,4 @@
-import { test, expect, describe } from "bun:test";
+import { test, expect, describe } from "vitest";
 import { clearStaleToolResults } from "./clear-stale-results.ts";
 import type { ModelMessage } from "@ai-sdk/provider-utils";
 

@@ -1,6 +1,6 @@
-import type { BunRequest } from "bun";
 import { corsHeaders } from "@/lib/cors.ts";
 import { authenticateRequest } from "@/lib/auth.ts";
+import { getParams } from "@/lib/request.ts";
 import { validateBody, uploadRequestSchema, folderPathSchema, createFolderSchema, moveFileSchema, moveFolderSchema } from "@/lib/validation.ts";
 import { handleError, verifyProjectAccess, toUTC } from "@/routes/utils.ts";
 import { ValidationError, NotFoundError } from "@/lib/errors.ts";
@@ -51,10 +51,10 @@ function formatFolder(row: import("@/db/types.ts").FolderRow) {
   };
 }
 
-export async function handleListFiles(request: BunRequest): Promise<Response> {
+export async function handleListFiles(request: Request): Promise<Response> {
   try {
     const { userId } = await authenticateRequest(request);
-    const projectId = (request.params as { projectId: string }).projectId;
+    const projectId = (getParams<{ projectId: string }>(request)).projectId;
     verifyProjectAccess(projectId, userId);
 
     const url = new URL(request.url);
@@ -84,10 +84,10 @@ export async function handleListFiles(request: BunRequest): Promise<Response> {
   }
 }
 
-export async function handleGetFileUrl(request: BunRequest): Promise<Response> {
+export async function handleGetFileUrl(request: Request): Promise<Response> {
   try {
     const { userId } = await authenticateRequest(request);
-    const { projectId, id } = request.params as { projectId: string; id: string };
+    const { projectId, id } = getParams<{ projectId: string; id: string }>(request);
     verifyProjectAccess(projectId, userId);
 
     const file = getFileById(id);
@@ -105,10 +105,10 @@ export async function handleGetFileUrl(request: BunRequest): Promise<Response> {
   }
 }
 
-export async function handleUploadRequest(request: BunRequest): Promise<Response> {
+export async function handleUploadRequest(request: Request): Promise<Response> {
   try {
     const { userId } = await authenticateRequest(request);
-    const projectId = (request.params as { projectId: string }).projectId;
+    const projectId = (getParams<{ projectId: string }>(request)).projectId;
     verifyProjectAccess(projectId, userId);
 
     const body = await validateBody(request, uploadRequestSchema);
@@ -148,10 +148,10 @@ export async function handleUploadRequest(request: BunRequest): Promise<Response
   }
 }
 
-export async function handleGetUploadUrl(request: BunRequest): Promise<Response> {
+export async function handleGetUploadUrl(request: Request): Promise<Response> {
   try {
     const { userId } = await authenticateRequest(request);
-    const { projectId, id } = request.params as { projectId: string; id: string };
+    const { projectId, id } = getParams<{ projectId: string; id: string }>(request);
     verifyProjectAccess(projectId, userId);
 
     const file = getFileById(id);
@@ -166,10 +166,10 @@ export async function handleGetUploadUrl(request: BunRequest): Promise<Response>
   }
 }
 
-export async function handleUpdateFileBinary(request: BunRequest): Promise<Response> {
+export async function handleUpdateFileBinary(request: Request): Promise<Response> {
   try {
     const { userId } = await authenticateRequest(request);
-    const { projectId, id } = request.params as { projectId: string; id: string };
+    const { projectId, id } = getParams<{ projectId: string; id: string }>(request);
     verifyProjectAccess(projectId, userId);
 
     const file = getFileById(id);
@@ -198,10 +198,10 @@ export async function handleUpdateFileBinary(request: BunRequest): Promise<Respo
   }
 }
 
-export async function handleDeleteFile(request: BunRequest): Promise<Response> {
+export async function handleDeleteFile(request: Request): Promise<Response> {
   try {
     const { userId } = await authenticateRequest(request);
-    const { projectId, id } = request.params as { projectId: string; id: string };
+    const { projectId, id } = getParams<{ projectId: string; id: string }>(request);
     verifyProjectAccess(projectId, userId);
 
     const file = getFileById(id);
@@ -227,10 +227,10 @@ export async function handleDeleteFile(request: BunRequest): Promise<Response> {
   }
 }
 
-export async function handleCreateFolder(request: BunRequest): Promise<Response> {
+export async function handleCreateFolder(request: Request): Promise<Response> {
   try {
     const { userId } = await authenticateRequest(request);
-    const projectId = (request.params as { projectId: string }).projectId;
+    const projectId = (getParams<{ projectId: string }>(request)).projectId;
     verifyProjectAccess(projectId, userId);
 
     const body = await validateBody(request, createFolderSchema);
@@ -252,10 +252,10 @@ export async function handleCreateFolder(request: BunRequest): Promise<Response>
   }
 }
 
-export async function handleSearchFiles(request: BunRequest): Promise<Response> {
+export async function handleSearchFiles(request: Request): Promise<Response> {
   try {
     const { userId } = await authenticateRequest(request);
-    const projectId = (request.params as { projectId: string }).projectId;
+    const projectId = (getParams<{ projectId: string }>(request)).projectId;
     verifyProjectAccess(projectId, userId);
 
     const url = new URL(request.url);
@@ -287,10 +287,10 @@ export async function handleSearchFiles(request: BunRequest): Promise<Response> 
 }
 
 
-export async function handleUpdateFileContent(request: BunRequest): Promise<Response> {
+export async function handleUpdateFileContent(request: Request): Promise<Response> {
   try {
     const { userId } = await authenticateRequest(request);
-    const { projectId, id } = request.params as { projectId: string; id: string };
+    const { projectId, id } = getParams<{ projectId: string; id: string }>(request);
     verifyProjectAccess(projectId, userId);
 
     const body = await request.json() as { content?: string };
@@ -325,10 +325,10 @@ export async function handleUpdateFileContent(request: BunRequest): Promise<Resp
   }
 }
 
-export async function handleMoveFile(request: BunRequest): Promise<Response> {
+export async function handleMoveFile(request: Request): Promise<Response> {
   try {
     const { userId } = await authenticateRequest(request);
-    const { projectId, id } = request.params as { projectId: string; id: string };
+    const { projectId, id } = getParams<{ projectId: string; id: string }>(request);
     verifyProjectAccess(projectId, userId);
 
     const body = await validateBody(request, moveFileSchema);
@@ -354,10 +354,10 @@ export async function handleMoveFile(request: BunRequest): Promise<Response> {
   }
 }
 
-export async function handleMoveFolder(request: BunRequest): Promise<Response> {
+export async function handleMoveFolder(request: Request): Promise<Response> {
   try {
     const { userId } = await authenticateRequest(request);
-    const { projectId, id } = request.params as { projectId: string; id: string };
+    const { projectId, id } = getParams<{ projectId: string; id: string }>(request);
     verifyProjectAccess(projectId, userId);
 
     const body = await validateBody(request, moveFolderSchema);
@@ -400,10 +400,10 @@ export async function handleMoveFolder(request: BunRequest): Promise<Response> {
   }
 }
 
-export async function handleDeleteFolder(request: BunRequest): Promise<Response> {
+export async function handleDeleteFolder(request: Request): Promise<Response> {
   try {
     const { userId } = await authenticateRequest(request);
-    const { projectId, id } = request.params as { projectId: string; id: string };
+    const { projectId, id } = getParams<{ projectId: string; id: string }>(request);
     verifyProjectAccess(projectId, userId);
 
     const folder = getFolderById(id);

@@ -2,39 +2,39 @@ import { db, generateId } from "@/db/index.ts";
 import type { ScheduledTaskRow } from "@/db/types.ts";
 import { computeNextRun, formatDateForSQLite } from "@/lib/schedule-parser.ts";
 
-const insertStmt = db.query<ScheduledTaskRow, [string, string, string, string, string, string, string, number, string | null, string | null, string, string | null, string | null, number]>(
+const insertStmt = db.prepare(
   "INSERT INTO scheduled_tasks (id, project_id, user_id, name, prompt, schedule, next_run_at, enabled, required_tools, required_skills, trigger_type, trigger_event, trigger_filter, cooldown_seconds) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *",
 );
 
-const byProjectStmt = db.query<ScheduledTaskRow, [string]>(
+const byProjectStmt = db.prepare(
   "SELECT * FROM scheduled_tasks WHERE project_id = ? ORDER BY created_at ASC",
 );
 
-const byIdStmt = db.query<ScheduledTaskRow, [string]>(
+const byIdStmt = db.prepare(
   "SELECT * FROM scheduled_tasks WHERE id = ?",
 );
 
-const deleteStmt = db.query<void, [string]>(
+const deleteStmt = db.prepare(
   "DELETE FROM scheduled_tasks WHERE id = ?",
 );
 
-const dueStmt = db.query<ScheduledTaskRow, []>(
+const dueStmt = db.prepare(
   "SELECT * FROM scheduled_tasks WHERE enabled = 1 AND trigger_type = 'schedule' AND next_run_at <= datetime('now') ORDER BY next_run_at ASC",
 );
 
-const eventTasksStmt = db.query<ScheduledTaskRow, [string, string]>(
+const eventTasksStmt = db.prepare(
   "SELECT * FROM scheduled_tasks WHERE enabled = 1 AND trigger_type = 'event' AND trigger_event = ? AND project_id = ?",
 );
 
-const allEventTasksStmt = db.query<ScheduledTaskRow, []>(
+const allEventTasksStmt = db.prepare(
   "SELECT * FROM scheduled_tasks WHERE enabled = 1 AND trigger_type = 'event'",
 );
 
-const markRunStmt = db.query<void, [string, string]>(
+const markRunStmt = db.prepare(
   "UPDATE scheduled_tasks SET last_run_at = datetime('now'), run_count = run_count + 1, next_run_at = ?, updated_at = datetime('now') WHERE id = ?",
 );
 
-const skipRunStmt = db.query<void, [string, string]>(
+const skipRunStmt = db.prepare(
   "UPDATE scheduled_tasks SET next_run_at = ?, updated_at = datetime('now') WHERE id = ?",
 );
 
@@ -64,22 +64,22 @@ export function insertTask(
     triggerEvent ?? null,
     triggerFilter ? JSON.stringify(triggerFilter) : null,
     cooldownSeconds,
-  )!;
+  ) as ScheduledTaskRow;
 }
 
 export function getTasksByProject(projectId: string): ScheduledTaskRow[] {
-  return byProjectStmt.all(projectId);
+  return byProjectStmt.all(projectId) as ScheduledTaskRow[];
 }
 
 export function getTaskById(id: string): ScheduledTaskRow | null {
-  return byIdStmt.get(id) ?? null;
+  return (byIdStmt.get(id) as ScheduledTaskRow | undefined) ?? null;
 }
 
 export function updateTask(
   id: string,
   fields: Partial<Pick<ScheduledTaskRow, "name" | "prompt" | "schedule" | "enabled" | "required_tools" | "required_skills" | "trigger_type" | "trigger_event" | "trigger_filter" | "cooldown_seconds">>,
 ): ScheduledTaskRow {
-  const task = byIdStmt.get(id);
+  const task = byIdStmt.get(id) as ScheduledTaskRow | undefined;
   if (!task) throw new Error("Task not found");
 
   const sets: string[] = [];
@@ -151,7 +151,7 @@ export function updateTask(
   values.push(id);
 
   const sql = `UPDATE scheduled_tasks SET ${sets.join(", ")} WHERE id = ? RETURNING *`;
-  return db.query<ScheduledTaskRow, (string | number)[]>(sql).get(...values)!;
+  return db.prepare(sql).get(...values) as ScheduledTaskRow;
 }
 
 export function deleteTask(id: string): void {
@@ -159,7 +159,7 @@ export function deleteTask(id: string): void {
 }
 
 export function getDueTasks(): ScheduledTaskRow[] {
-  return dueStmt.all();
+  return dueStmt.all() as ScheduledTaskRow[];
 }
 
 export function markTaskRun(id: string, schedule: string): void {
@@ -174,14 +174,14 @@ export function skipTaskRun(id: string, schedule: string): void {
 }
 
 export function getEventTasksForEvent(eventName: string, projectId: string): ScheduledTaskRow[] {
-  return eventTasksStmt.all(eventName, projectId);
+  return eventTasksStmt.all(eventName, projectId) as ScheduledTaskRow[];
 }
 
 export function getAllEventTasks(): ScheduledTaskRow[] {
-  return allEventTasksStmt.all();
+  return allEventTasksStmt.all() as ScheduledTaskRow[];
 }
 
 /** Update last_run_at and run_count for an event-triggered task (no next_run_at change) */
 export function markEventTaskRun(id: string): void {
-  db.run("UPDATE scheduled_tasks SET last_run_at = datetime('now'), run_count = run_count + 1, updated_at = datetime('now') WHERE id = ?", [id]);
+  db.prepare("UPDATE scheduled_tasks SET last_run_at = datetime('now'), run_count = run_count + 1, updated_at = datetime('now') WHERE id = ?").run(id);
 }

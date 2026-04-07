@@ -1,12 +1,12 @@
-import type { BunRequest } from "bun";
 import { authenticateRequest } from "@/lib/auth.ts";
 import { corsHeaders } from "@/lib/cors.ts";
+import { getParams } from "@/lib/request.ts";
 import { handleError, toUTC } from "@/routes/utils.ts";
 import { NotFoundError, ValidationError } from "@/lib/errors.ts";
 import { getPendingByUser, getInvitationById, updateInvitationStatus } from "@/db/queries/invitations.ts";
 import { insertProjectMember, isProjectMember } from "@/db/queries/members.ts";
 
-export async function handleListInvitations(request: BunRequest): Promise<Response> {
+export async function handleListInvitations(request: Request): Promise<Response> {
   try {
     const { userId } = await authenticateRequest(request);
 
@@ -24,10 +24,10 @@ export async function handleListInvitations(request: BunRequest): Promise<Respon
   }
 }
 
-export async function handleAcceptInvitation(request: BunRequest): Promise<Response> {
+export async function handleAcceptInvitation(request: Request): Promise<Response> {
   try {
     const { userId } = await authenticateRequest(request);
-    const { id } = request.params as { id: string };
+    const { id } = getParams<{ id: string }>(request);
 
     const invitation = getInvitationById(id);
     if (!invitation || invitation.invitee_id !== userId || invitation.status !== "pending") {
@@ -47,10 +47,10 @@ export async function handleAcceptInvitation(request: BunRequest): Promise<Respo
   }
 }
 
-export async function handleDeclineInvitation(request: BunRequest): Promise<Response> {
+export async function handleDeclineInvitation(request: Request): Promise<Response> {
   try {
     const { userId } = await authenticateRequest(request);
-    const { id } = request.params as { id: string };
+    const { id } = getParams<{ id: string }>(request);
 
     const invitation = getInvitationById(id);
     if (!invitation || invitation.invitee_id !== userId || invitation.status !== "pending") {

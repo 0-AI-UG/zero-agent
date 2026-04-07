@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { tool, ToolLoopAgent, stepCountIs } from "ai";
 import { createDiscoverableToolset } from "@/tools/registry.ts";
-import { getChatModel, getEnrichModel } from "@/lib/openrouter.ts";
+import { getChatModel, getEnrichModel } from "@/lib/providers/index.ts";
 import { getLocalBackend } from "@/lib/execution/lifecycle.ts";
 import { getSkillSummaries } from "@/lib/skills/loader.ts";
 import { buildSkillsIndex } from "@/lib/skills/injector.ts";

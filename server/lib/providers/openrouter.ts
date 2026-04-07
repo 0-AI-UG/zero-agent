@@ -1,10 +1,11 @@
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { wrapLanguageModel, extractReasoningMiddleware } from "ai";
 import type { LanguageModelV3Middleware, LanguageModelV3Message } from "@ai-sdk/provider";
-import { getProviderRouting } from "@/config/models.ts";
+import { getModelById } from "@/db/queries/models.ts";
 import { getSetting } from "@/lib/settings.ts";
 import { llmCircuitBreaker, CircuitBreakerOpenError } from "@/lib/durability/circuit-breaker.ts";
 import { log } from "@/lib/logger.ts";
+import type { InferenceProvider, SpecializedKind } from "@/lib/providers/types.ts";
 
 const orLog = log.child({ module: "openrouter" });
 
@@ -49,7 +50,8 @@ function retryFetch(originalFetch: typeof fetch): typeof fetch {
   return wrapper as typeof fetch;
 }
 
-// Lazily create and cache the OpenRouter provider, recreating when the API key changes.
+// ── OpenRouter SDK cache ──
+
 let _cachedKey: string | null = null;
 let _cachedProvider: ReturnType<typeof createOpenRouter> | null = null;
 
@@ -61,11 +63,30 @@ function getOpenRouter() {
   return _cachedProvider;
 }
 
-export function openrouterWithRouting(modelId: string) {
+// ── Provider routing (per-model fallback config from `provider_config`) ──
+
+interface OpenRouterRouting {
+  order: string[];
+  allow_fallbacks?: boolean;
+}
+
+function getProviderRouting(modelId: string): OpenRouterRouting | undefined {
+  const model = getModelById(modelId);
+  if (!model?.provider_config) return undefined;
+  try {
+    return JSON.parse(model.provider_config) as OpenRouterRouting;
+  } catch {
+    return undefined;
+  }
+}
+
+function openrouterWithRouting(modelId: string) {
   const routing = getProviderRouting(modelId);
   const or = getOpenRouter();
   return or(modelId, routing ? { extraBody: { provider: routing } } : {});
 }
+
+// ── Middlewares ──
 
 /**
  * Middleware that extracts image parts from tool results and injects them
@@ -143,11 +164,6 @@ const imageToolResultMiddleware: LanguageModelV3Middleware = {
   },
 };
 
-/**
- * Middleware that integrates the circuit breaker — fails fast when the
- * LLM API is experiencing repeated failures, and records success/failure
- * to drive circuit state transitions.
- */
 const circuitBreakerMiddleware: LanguageModelV3Middleware = {
   specificationVersion: "v3",
   wrapGenerate: async ({ doGenerate }) => {
@@ -174,25 +190,7 @@ const circuitBreakerMiddleware: LanguageModelV3Middleware = {
   },
 };
 
-function getDefaultModelId(): string {
-  return getSetting("OPENROUTER_MODEL") ?? "minimax/minimax-m2.7";
-}
-
-export function getChatModel() {
-  return wrapLanguageModel({
-    model: openrouterWithRouting(getDefaultModelId()),
-    middleware: [
-      circuitBreakerMiddleware,
-      imageToolResultMiddleware,
-      extractReasoningMiddleware({ tagName: "think" }),
-    ],
-  });
-}
-
-/** @deprecated Use getChatModel() for dynamic key support */
-export const chatModel = getChatModel();
-
-export function createChatModel(modelId: string) {
+function wrapChatModel(modelId: string) {
   return wrapLanguageModel({
     model: openrouterWithRouting(modelId),
     middleware: [
@@ -203,65 +201,57 @@ export function createChatModel(modelId: string) {
   });
 }
 
-export function getImageModel(modelId?: string) {
-  const or = getOpenRouter();
-  return or.imageModel(
-    modelId ?? process.env.IMAGE_MODEL ?? "black-forest-labs/flux.2-klein-4b",
-  );
+function getDefaultModelId(): string {
+  return getSetting("OPENROUTER_MODEL") ?? "minimax/minimax-m2.7";
 }
 
-/** @deprecated Use getImageModel() for dynamic key support */
-export const imageModel = getImageModel();
+const SPECIALIZED_DEFAULTS: Record<SpecializedKind, () => string> = {
+  "search-parse": () => process.env.SEARCH_PARSE_MODEL ?? getDefaultModelId(),
+  "edit-apply": () => process.env.EDIT_APPLY_MODEL ?? "openai/gpt-4o",
+  "enrich": () => process.env.ENRICH_MODEL ?? "qwen/qwen3.5-flash-02-23",
+  "extract": () => process.env.EXTRACT_MODEL ?? "google/gemini-2.5-flash",
+};
 
-export function createImageModelInstance(modelId?: string) {
-  return getImageModel(modelId);
-}
+export const openrouterProvider: InferenceProvider = {
+  id: "openrouter",
+  displayName: "OpenRouter",
+  capabilities: { chat: true, image: true, vision: true, embedding: true },
 
-export function getSearchParseModel() {
-  return openrouterWithRouting(
-    process.env.SEARCH_PARSE_MODEL ?? getDefaultModelId(),
-  );
-}
+  getDefaultChatModelId() {
+    return getDefaultModelId();
+  },
 
-/** @deprecated Use getSearchParseModel() for dynamic key support */
-export const searchParseModel = getSearchParseModel();
+  getChatModel(modelId?: string) {
+    return wrapChatModel(modelId ?? getDefaultModelId());
+  },
 
-export function getEditApplyModel() {
-  return openrouterWithRouting(
-    process.env.EDIT_APPLY_MODEL ?? "openai/gpt-4o",
-  );
-}
+  getImageModel(modelId?: string) {
+    const or = getOpenRouter();
+    return or.imageModel(
+      modelId ?? process.env.IMAGE_MODEL ?? "black-forest-labs/flux.2-klein-4b",
+    );
+  },
 
-/** @deprecated Use getEditApplyModel() for dynamic key support */
-export const editApplyModel = getEditApplyModel();
+  getVisionModel(modelId?: string) {
+    return openrouterWithRouting(
+      modelId ?? process.env.VISION_MODEL ?? "qwen/qwen3.5-flash-02-23",
+    );
+  },
 
-export function getVisionModel() {
-  return openrouterWithRouting(
-    process.env.VISION_MODEL ?? "qwen/qwen3.5-flash-02-23",
-  );
-}
+  getEmbeddingModel(modelId?: string) {
+    return getOpenRouter().textEmbeddingModel(modelId ?? "openai/text-embedding-3-small");
+  },
 
-/** @deprecated Use getVisionModel() for dynamic key support */
-export const visionModel = getVisionModel();
+  getSpecializedChatModel(kind: SpecializedKind, modelId?: string) {
+    return openrouterWithRouting(modelId ?? SPECIALIZED_DEFAULTS[kind]());
+  },
 
-export function getEnrichModel() {
-  return openrouterWithRouting(
-    process.env.ENRICH_MODEL ?? "qwen/qwen3.5-flash-02-23",
-  );
-}
-
-/** @deprecated Use getEnrichModel() for dynamic key support */
-export const enrichModel = getEnrichModel();
-
-export function getExtractModel() {
-  return openrouterWithRouting(
-    process.env.EXTRACT_MODEL ?? "google/gemini-2.5-flash",
-  );
-}
-
-/** @deprecated Use getExtractModel() for dynamic key support */
-export const extractModel = getExtractModel();
-
-export function getEmbeddingModel() {
-  return getOpenRouter().textEmbeddingModel("openai/text-embedding-3-small");
-}
+  parseConfig(raw: string | null) {
+    if (!raw) return undefined;
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return undefined;
+    }
+  },
+};

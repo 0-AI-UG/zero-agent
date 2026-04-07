@@ -16,13 +16,14 @@ function formatModel(m: ModelRow) {
     id: m.id,
     name: m.name,
     provider: m.provider,
+    inferenceProvider: m.inference_provider,
     description: m.description,
     contextWindow: m.context_window,
     pricing: { input: m.pricing_input, output: m.pricing_output },
     tags: JSON.parse(m.tags),
     default: m.is_default === 1,
     multimodal: m.multimodal === 1,
-    providerRouting: m.provider_routing ? JSON.parse(m.provider_routing) : undefined,
+    providerConfig: m.provider_config ? JSON.parse(m.provider_config) : undefined,
     enabled: m.enabled === 1,
     sortOrder: m.sort_order,
   };
@@ -61,6 +62,7 @@ export async function handleCreateModel(request: Request): Promise<Response> {
       id: body.id,
       name: body.name,
       provider: body.provider,
+      inferenceProvider: body.inferenceProvider,
       description: body.description,
       contextWindow: body.contextWindow,
       pricingInput: body.pricing?.input ?? body.pricingInput,
@@ -68,7 +70,7 @@ export async function handleCreateModel(request: Request): Promise<Response> {
       tags: body.tags,
       isDefault: body.default ?? body.isDefault,
       multimodal: body.multimodal,
-      providerRouting: body.providerRouting,
+      providerConfig: body.providerConfig ?? body.providerRouting,
       enabled: body.enabled,
       sortOrder: body.sortOrder,
     };
@@ -92,6 +94,7 @@ export async function handleUpdateModel(request: Request): Promise<Response> {
     const data: Partial<ModelInput> = {};
     if (body.name !== undefined) data.name = body.name;
     if (body.provider !== undefined) data.provider = body.provider;
+    if (body.inferenceProvider !== undefined) data.inferenceProvider = body.inferenceProvider;
     if (body.description !== undefined) data.description = body.description;
     if (body.contextWindow !== undefined) data.contextWindow = body.contextWindow;
     if (body.pricing?.input !== undefined) data.pricingInput = body.pricing.input;
@@ -102,7 +105,8 @@ export async function handleUpdateModel(request: Request): Promise<Response> {
     if (body.default !== undefined) data.isDefault = body.default;
     if (body.isDefault !== undefined) data.isDefault = body.isDefault;
     if (body.multimodal !== undefined) data.multimodal = body.multimodal;
-    if (body.providerRouting !== undefined) data.providerRouting = body.providerRouting;
+    if (body.providerConfig !== undefined) data.providerConfig = body.providerConfig;
+    else if (body.providerRouting !== undefined) data.providerConfig = body.providerRouting;
     if (body.enabled !== undefined) data.enabled = body.enabled;
     if (body.sortOrder !== undefined) data.sortOrder = body.sortOrder;
 

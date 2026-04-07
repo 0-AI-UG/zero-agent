@@ -1,6 +1,6 @@
-import type { BunRequest } from "bun";
 import { authenticateRequest } from "@/lib/auth.ts";
 import { corsHeaders } from "@/lib/cors.ts";
+import { getParams } from "@/lib/request.ts";
 import { handleError, verifyProjectAccess, toUTC } from "@/routes/utils.ts";
 import { getTodosByProject, getTodosByProjectAndChat } from "@/db/queries/todos.ts";
 import type { TodoRow } from "@/db/types.ts";
@@ -18,10 +18,10 @@ function formatTodo(row: TodoRow) {
   };
 }
 
-export async function handleListTodos(request: BunRequest): Promise<Response> {
+export async function handleListTodos(request: Request): Promise<Response> {
   try {
     const { userId } = await authenticateRequest(request);
-    const { projectId } = request.params as { projectId: string };
+    const { projectId } = getParams<{ projectId: string }>(request);
 
     verifyProjectAccess(projectId, userId);
 

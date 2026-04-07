@@ -1,4 +1,4 @@
-import { test, expect, describe } from "bun:test";
+import { test, expect, describe } from "vitest";
 import { applyEdits } from "./apply-edits.ts";
 import { lintContent } from "./lint.ts";
 

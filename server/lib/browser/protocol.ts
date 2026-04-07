@@ -13,7 +13,7 @@ export type BrowserAction =
   | { type: "wait"; ms: number }
   | { type: "snapshot"; mode?: "interactive" | "full"; selector?: string }
   | { type: "screenshot" }
-  | { type: "evaluate"; script: string }
+  | { type: "evaluate"; script: string; awaitPromise?: boolean }
   | { type: "tabs" }
   | { type: "switchTab"; index: number }
   | { type: "closeTab"; index?: number };
@@ -23,7 +23,7 @@ export type BrowserAction =
 export type BrowserResult =
   | { type: "snapshot"; url: string; title: string; content: string }
   | { type: "screenshot"; url: string; title: string; base64: string }
-  | { type: "evaluate"; value: unknown }
+  | { type: "evaluate"; url: string; title: string; value: unknown; logs?: string[]; error?: string }
   | { type: "tabs"; tabs: Array<{ index: number; url: string; title: string; active: boolean }> }
   | { type: "done"; url: string; title: string; message?: string; snapshot?: string };
 

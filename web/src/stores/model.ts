@@ -5,6 +5,7 @@ export interface ModelConfig {
   id: string;
   name: string;
   provider: string;
+  inferenceProvider?: string;
   description: string;
   contextWindow: number;
   pricing: { input: number; output: number };

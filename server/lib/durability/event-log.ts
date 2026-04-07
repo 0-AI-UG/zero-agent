@@ -13,7 +13,7 @@ interface EventData {
   data: Record<string, unknown>;
 }
 
-const insertStmt = db.query<void, [string, string, string | null, string, number, string, string | null, string]>(
+const insertStmt = db.prepare(
   `INSERT INTO agent_events (id, run_id, chat_id, project_id, step_number, event_type, tool_names, data)
    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 );
@@ -38,23 +38,31 @@ export function insertEvent(event: EventData): void {
   }
 }
 
-const getByRunStmt = db.query<
-  { id: string; step_number: number; event_type: string; tool_names: string | null; data: string; created_at: string },
-  [string]
->("SELECT id, step_number, event_type, tool_names, data, created_at FROM agent_events WHERE run_id = ? ORDER BY step_number");
+const getByRunStmt = db.prepare(
+  "SELECT id, step_number, event_type, tool_names, data, created_at FROM agent_events WHERE run_id = ? ORDER BY step_number",
+);
 
-export function getEventsByRun(runId: string) {
-  return getByRunStmt.all(runId);
+interface EventRow {
+  id: string;
+  step_number: number;
+  event_type: string;
+  tool_names: string | null;
+  data: string;
+  created_at: string;
 }
 
-const deleteByRunStmt = db.query<void, [string]>("DELETE FROM agent_events WHERE run_id = ?");
+export function getEventsByRun(runId: string) {
+  return getByRunStmt.all(runId) as EventRow[];
+}
+
+const deleteByRunStmt = db.prepare("DELETE FROM agent_events WHERE run_id = ?");
 
 export function deleteEventsByRun(runId: string): void {
   deleteByRunStmt.run(runId);
 }
 
 /** Clean up events older than the given number of days */
-const cleanupStmt = db.query<void, [number]>(
+const cleanupStmt = db.prepare(
   "DELETE FROM agent_events WHERE created_at < datetime('now', '-' || ? || ' days')",
 );
 

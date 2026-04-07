@@ -1,36 +1,36 @@
 import { db, generateId } from "@/db/index.ts";
 import type { CredentialRow } from "@/db/types.ts";
 
-const insertStmt = db.query<CredentialRow, [string, string, string, string, string, string, string | null, string | null, string | null, string | null, string | null, string | null, string | null, string | null, number]>(
+const insertStmt = db.prepare(
   `INSERT INTO credentials (id, project_id, cred_type, label, site_url, domain, username, password_enc, totp_secret_enc, backup_codes_enc, credential_id, private_key_enc, rp_id, user_handle, sign_count)
    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
 );
 
-const byProjectStmt = db.query<CredentialRow, [string]>(
+const byProjectStmt = db.prepare(
   "SELECT * FROM credentials WHERE project_id = ? ORDER BY created_at DESC",
 );
 
-const byIdStmt = db.query<CredentialRow, [string]>(
+const byIdStmt = db.prepare(
   "SELECT * FROM credentials WHERE id = ?",
 );
 
-const byDomainStmt = db.query<CredentialRow, [string, string]>(
+const byDomainStmt = db.prepare(
   "SELECT * FROM credentials WHERE project_id = ? AND domain = ? ORDER BY created_at DESC",
 );
 
-const byDomainAndTypeStmt = db.query<CredentialRow, [string, string, string]>(
+const byDomainAndTypeStmt = db.prepare(
   "SELECT * FROM credentials WHERE project_id = ? AND domain = ? AND cred_type = ? LIMIT 1",
 );
 
-const byLabelStmt = db.query<CredentialRow, [string, string]>(
+const byLabelStmt = db.prepare(
   "SELECT * FROM credentials WHERE project_id = ? AND label LIKE ? ORDER BY created_at DESC",
 );
 
-const deleteStmt = db.query<void, [string]>(
+const deleteStmt = db.prepare(
   "DELETE FROM credentials WHERE id = ?",
 );
 
-const updateSignCountStmt = db.query<void, [number, string]>(
+const updateSignCountStmt = db.prepare(
   "UPDATE credentials SET sign_count = ?, updated_at = datetime('now') WHERE id = ?",
 );
 
@@ -69,27 +69,27 @@ export function insertCredential(
     fields.rpId ?? null,
     fields.userHandle ?? null,
     fields.signCount ?? 0,
-  )!;
+  ) as CredentialRow;
 }
 
 export function getCredentialsByProject(projectId: string): CredentialRow[] {
-  return byProjectStmt.all(projectId);
+  return byProjectStmt.all(projectId) as CredentialRow[];
 }
 
 export function getCredentialById(id: string): CredentialRow | null {
-  return byIdStmt.get(id) ?? null;
+  return (byIdStmt.get(id) as CredentialRow | undefined) ?? null;
 }
 
 export function getCredentialsByDomain(projectId: string, domain: string): CredentialRow[] {
-  return byDomainStmt.all(projectId, domain);
+  return byDomainStmt.all(projectId, domain) as CredentialRow[];
 }
 
 export function getCredentialByDomainAndType(projectId: string, domain: string, credType: string): CredentialRow | null {
-  return byDomainAndTypeStmt.get(projectId, domain, credType) ?? null;
+  return (byDomainAndTypeStmt.get(projectId, domain, credType) as CredentialRow | undefined) ?? null;
 }
 
 export function getCredentialsByLabel(projectId: string, label: string): CredentialRow[] {
-  return byLabelStmt.all(projectId, `%${label}%`);
+  return byLabelStmt.all(projectId, `%${label}%`) as CredentialRow[];
 }
 
 export function updateCredential(
@@ -140,9 +140,9 @@ export function updateCredential(
   sets.push("updated_at = datetime('now')");
   values.push(id);
 
-  const row = db.query<CredentialRow, any[]>(
+  const row = db.prepare(
     `UPDATE credentials SET ${sets.join(", ")} WHERE id = ? RETURNING *`,
-  ).get(...values);
+  ).get(...values) as CredentialRow | undefined;
 
   return row ?? null;
 }

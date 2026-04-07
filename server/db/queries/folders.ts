@@ -11,13 +11,13 @@ export function createFolder(
   name: string,
 ): FolderRow {
   const id = generateId();
-  db.query<void, [string, string, string, string]>(
+  db.prepare(
     "INSERT INTO folders (id, project_id, path, name) VALUES (?, ?, ?, ?)",
   ).run(id, projectId, path, name);
 
-  return db.query<FolderRow, [string]>(
+  return db.prepare(
     "SELECT * FROM folders WHERE id = ?",
-  ).get(id)!;
+  ).get(id) as FolderRow;
 }
 
 export function getFoldersByParent(
@@ -26,13 +26,13 @@ export function getFoldersByParent(
 ): FolderRow[] {
   // Get direct children only: folders whose path starts with parentPath
   // and have exactly one more segment
-  const allChildren = db.query<FolderRow, [string, string]>(
+  const allChildren = db.prepare(
     "SELECT * FROM folders WHERE project_id = ? AND path LIKE ? ESCAPE '\\' ORDER BY name",
-  ).all(projectId, `${escapeLike(parentPath)}%`);
+  ).all(projectId, `${escapeLike(parentPath)}%`) as FolderRow[];
 
   // Filter to direct children by counting path segments
   const parentDepth = parentPath.split("/").filter(Boolean).length;
-  return allChildren.filter((f) => {
+  return allChildren.filter((f: FolderRow) => {
     const depth = f.path.split("/").filter(Boolean).length;
     return depth === parentDepth + 1;
   });
@@ -42,22 +42,22 @@ export function getFolderByPath(
   projectId: string,
   path: string,
 ): FolderRow | null {
-  return db.query<FolderRow, [string, string]>(
+  return (db.prepare(
     "SELECT * FROM folders WHERE project_id = ? AND path = ?",
-  ).get(projectId, path) ?? null;
+  ).get(projectId, path) as FolderRow | undefined) ?? null;
 }
 
 export function getFolderById(id: string): FolderRow | null {
-  return db.query<FolderRow, [string]>(
+  return (db.prepare(
     "SELECT * FROM folders WHERE id = ?",
-  ).get(id) ?? null;
+  ).get(id) as FolderRow | undefined) ?? null;
 }
 
 export function deleteFoldersByPathPrefix(
   projectId: string,
   pathPrefix: string,
 ): void {
-  db.query<void, [string, string]>(
+  db.prepare(
     "DELETE FROM folders WHERE project_id = ? AND path LIKE ? ESCAPE '\\'",
   ).run(projectId, `${escapeLike(pathPrefix)}%`);
 }
@@ -67,10 +67,10 @@ export function updateFolderPath(
   newPath: string,
   newName: string,
 ): FolderRow {
-  db.query<void, [string, string, string]>(
+  db.prepare(
     "UPDATE folders SET path = ?, name = ? WHERE id = ?",
   ).run(newPath, newName, id);
-  return db.query<FolderRow, [string]>("SELECT * FROM folders WHERE id = ?").get(id)!;
+  return db.prepare("SELECT * FROM folders WHERE id = ?").get(id) as FolderRow;
 }
 
 export function updateFolderChildPaths(
@@ -79,22 +79,22 @@ export function updateFolderChildPaths(
   newPathPrefix: string,
 ): void {
   // Update all child folders whose path starts with the old prefix
-  const children = db.query<FolderRow, [string, string, string]>(
+  const children = db.prepare(
     "SELECT * FROM folders WHERE project_id = ? AND path LIKE ? ESCAPE '\\' AND path != ?",
-  ).all(projectId, `${escapeLike(oldPathPrefix)}%`, oldPathPrefix);
+  ).all(projectId, `${escapeLike(oldPathPrefix)}%`, oldPathPrefix) as FolderRow[];
   for (const child of children) {
     const updatedPath = newPathPrefix + child.path.slice(oldPathPrefix.length);
-    db.query<void, [string, string]>(
+    db.prepare(
       "UPDATE folders SET path = ? WHERE id = ?",
     ).run(updatedPath, child.id);
   }
   // Update all files under the old path prefix
-  db.query<void, [string, string, string, string]>(
+  db.prepare(
     "UPDATE files SET folder_path = ? || SUBSTR(folder_path, LENGTH(?) + 1) WHERE project_id = ? AND folder_path LIKE ? ESCAPE '\\'",
   ).run(newPathPrefix, oldPathPrefix, projectId, `${escapeLike(oldPathPrefix)}%`);
 }
 
 export function deleteFolder(id: string): void {
-  db.query<void, [string]>("DELETE FROM folders WHERE id = ?").run(id);
+  db.prepare("DELETE FROM folders WHERE id = ?").run(id);
 }
 

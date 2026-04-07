@@ -3,6 +3,8 @@
  * Manages Docker containers and exposes REST APIs for command execution,
  * browser automation, file I/O, and HTTP proxying.
  */
+import { Hono } from "hono";
+import { serve } from "@hono/node-server";
 import { ContainerManager } from "./lib/container.ts";
 import { validateAuth, unauthorized } from "./lib/auth.ts";
 import { containerRoutes } from "./routes/containers.ts";
@@ -118,30 +120,35 @@ function matchRoute(method: string, pathname: string): { handler: (req: Request)
   return null;
 }
 
-const server = Bun.serve({
+const app = new Hono();
+
+app.all("*", async (c) => {
+  const req = c.req.raw;
+  const url = new URL(req.url);
+  const { method } = req;
+  const pathname = url.pathname;
+
+  // Health endpoint is public
+  if (pathname !== "/health" && !validateAuth(req)) {
+    return unauthorized();
+  }
+
+  const route = matchRoute(method, pathname);
+  if (!route) {
+    return Response.json({ error: "Not found" }, { status: 404 });
+  }
+
+  try {
+    return await route.handler(req);
+  } catch (err) {
+    log.error("unhandled error", { method, pathname, error: String(err) });
+    return Response.json({ error: "Internal server error" }, { status: 500 });
+  }
+});
+
+const server = serve({
+  fetch: app.fetch,
   port: PORT,
-  async fetch(req) {
-    const url = new URL(req.url);
-    const { method } = req;
-    const pathname = url.pathname;
-
-    // Health endpoint is public
-    if (pathname !== "/health" && !validateAuth(req)) {
-      return unauthorized();
-    }
-
-    const route = matchRoute(method, pathname);
-    if (!route) {
-      return Response.json({ error: "Not found" }, { status: 404 });
-    }
-
-    try {
-      return await route.handler(req);
-    } catch (err) {
-      log.error("unhandled error", { method, pathname, error: String(err) });
-      return Response.json({ error: "Internal server error" }, { status: 500 });
-    }
-  },
 });
 
 // Initialize Docker on startup
@@ -157,13 +164,13 @@ mgr.waitForDocker().then((ready) => {
 process.on("SIGTERM", async () => {
   log.info("SIGTERM received, shutting down");
   await mgr.destroyAll();
-  server.stop();
+  server.close();
   process.exit(0);
 });
 
 process.on("SIGINT", async () => {
   log.info("SIGINT received, shutting down");
   await mgr.destroyAll();
-  server.stop();
+  server.close();
   process.exit(0);
 });

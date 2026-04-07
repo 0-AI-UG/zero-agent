@@ -14,13 +14,13 @@ export function indexFileContent(
 ): void {
   // Remove existing entry first to avoid duplicates
   removeFileIndex(fileId);
-  db.query<void, [string, string, string, string]>(
+  db.prepare(
     "INSERT INTO fts_files (file_id, project_id, filename, content) VALUES (?, ?, ?, ?)",
   ).run(fileId, projectId, filename, content);
 }
 
 export function removeFileIndex(fileId: string): void {
-  db.query<void, [string]>(
+  db.prepare(
     "DELETE FROM fts_files WHERE file_id = ?",
   ).run(fileId);
 }
@@ -40,13 +40,13 @@ export function searchFileContent(
     .join(" ");
   if (!sanitized) return [];
 
-  return db.query<{ file_id: string; filename: string; snippet: string }, [string, string, number]>(
+  return db.prepare(
     `SELECT file_id, filename, snippet(fts_files, 3, '<b>', '</b>', '...', 32) as snippet
      FROM fts_files
      WHERE fts_files MATCH ? AND project_id = ?
      ORDER BY rank
      LIMIT ?`,
-  ).all(sanitized, projectId, limit).map((row) => ({
+  ).all(sanitized, projectId, limit).map((row: any) => ({
     fileId: row.file_id,
     filename: row.filename,
     snippet: row.snippet,

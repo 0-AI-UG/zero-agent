@@ -185,6 +185,7 @@ export interface ModelRow {
   id: string;
   name: string;
   provider: string;
+  inference_provider: string;
   description: string;
   context_window: number;
   pricing_input: number;
@@ -192,7 +193,7 @@ export interface ModelRow {
   tags: string;
   is_default: number;
   multimodal: number;
-  provider_routing: string | null;
+  provider_config: string | null;
   enabled: number;
   sort_order: number;
   created_at: string;

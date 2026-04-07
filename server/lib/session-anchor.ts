@@ -1,6 +1,6 @@
 import type { ModelMessage } from "@ai-sdk/provider-utils";
 import { generateText } from "ai";
-import { getEnrichModel } from "@/lib/openrouter.ts";
+import { getEnrichModel } from "@/lib/providers/index.ts";
 import { readFromS3, writeToS3, deleteFromS3 } from "@/lib/s3.ts";
 import { log } from "@/lib/logger.ts";
 

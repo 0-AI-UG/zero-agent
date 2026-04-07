@@ -45,7 +45,7 @@ export function getUsageSummary(opts?: { from?: string; to?: string }): UsageSum
   if (opts?.from) { conditions.push("created_at >= ?"); params.push(opts.from); }
   if (opts?.to) { conditions.push("created_at <= ?"); params.push(opts.to); }
   if (conditions.length) sql += " WHERE " + conditions.join(" AND ");
-  return db.query<UsageSummary, string[]>(sql).get(...params) as UsageSummary;
+  return db.prepare(sql).get(...params) as UsageSummary;
 }
 
 export interface UsageByModel {
@@ -64,7 +64,7 @@ export function getUsageByModel(opts?: { from?: string; to?: string }): UsageByM
   if (opts?.to) { conditions.push("created_at <= ?"); params.push(opts.to); }
   if (conditions.length) sql += " WHERE " + conditions.join(" AND ");
   sql += " GROUP BY model_id ORDER BY totalCost DESC";
-  return db.query<UsageByModel, string[]>(sql).all(...params);
+  return db.prepare(sql).all(...params) as UsageByModel[];
 }
 
 export interface UsageByUser {
@@ -84,5 +84,5 @@ export function getUsageByUser(opts?: { from?: string; to?: string }): UsageByUs
   if (opts?.to) { conditions.push("u.created_at <= ?"); params.push(opts.to); }
   if (conditions.length) sql += " WHERE " + conditions.join(" AND ");
   sql += " GROUP BY u.user_id ORDER BY totalCost DESC";
-  return db.query<UsageByUser, string[]>(sql).all(...params);
+  return db.prepare(sql).all(...params) as UsageByUser[];
 }

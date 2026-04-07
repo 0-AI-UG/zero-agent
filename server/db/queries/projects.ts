@@ -7,31 +7,31 @@ export function insertProject(
   description: string = "",
 ): ProjectRow {
   const id = generateId();
-  db.query<void, [string, string, string, string]>(
+  db.prepare(
     "INSERT INTO projects (id, user_id, name, description) VALUES (?, ?, ?, ?)",
   ).run(id, userId, name, description);
 
-  return db.query<ProjectRow, [string]>(
+  return db.prepare(
     "SELECT * FROM projects WHERE id = ?",
-  ).get(id)!;
+  ).get(id) as ProjectRow;
 }
 
 export function getProjectsByUser(userId: string): ProjectRow[] {
-  return db.query<ProjectRow, [string]>(
+  return db.prepare(
     "SELECT p.* FROM projects p JOIN project_members pm ON pm.project_id = p.id WHERE pm.user_id = ? ORDER BY p.updated_at DESC",
-  ).all(userId);
+  ).all(userId) as ProjectRow[];
 }
 
 export function getAllProjects(): ProjectRow[] {
-  return db.query<ProjectRow, []>(
+  return db.prepare(
     "SELECT * FROM projects ORDER BY updated_at DESC",
-  ).all();
+  ).all() as ProjectRow[];
 }
 
 export function getProjectById(id: string): ProjectRow | null {
-  return db.query<ProjectRow, [string]>(
+  return (db.prepare(
     "SELECT * FROM projects WHERE id = ?",
-  ).get(id);
+  ).get(id) as ProjectRow | undefined) ?? null;
 }
 
 export function updateProject(
@@ -81,20 +81,20 @@ export function updateProject(
   sets.push("updated_at = datetime('now')");
   values.push(id);
 
-  db.run(`UPDATE projects SET ${sets.join(", ")} WHERE id = ?`, values);
+  db.prepare(`UPDATE projects SET ${sets.join(", ")} WHERE id = ?`).run(...values);
 
-  return db.query<ProjectRow, [string]>(
+  return db.prepare(
     "SELECT * FROM projects WHERE id = ?",
-  ).get(id)!;
+  ).get(id) as ProjectRow;
 }
 
 export function deleteProject(id: string): void {
-  db.query<void, [string]>("DELETE FROM projects WHERE id = ?").run(id);
+  db.prepare("DELETE FROM projects WHERE id = ?").run(id);
 }
 
 export function getLastMessageByProject(projectId: string): string | null {
-  const row = db.query<{ content: string }, [string]>(
+  const row = db.prepare(
     "SELECT content FROM messages WHERE project_id = ? AND role = 'assistant' ORDER BY created_at DESC LIMIT 1",
   ).get(projectId);
-  return row?.content ?? null;
+  return (row as { content: string } | undefined)?.content ?? null;
 }

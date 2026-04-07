@@ -1,5 +1,5 @@
 import { generateText } from "ai";
-import { getEnrichModel } from "@/lib/openrouter.ts";
+import { getEnrichModel } from "@/lib/providers/index.ts";
 import type { SubtaskItem } from "@/lib/session-anchor.ts";
 import { log } from "@/lib/logger.ts";
 

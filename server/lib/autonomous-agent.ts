@@ -56,7 +56,7 @@ const CHECKPOINT_INTERVAL = 5;
 /** Max number of continuations to prevent infinite loops */
 const MAX_CONTINUATIONS = 5;
 
-const insertOne = db.query<void, [string, string, string, string, string]>(
+const insertOne = db.prepare(
   "INSERT OR REPLACE INTO messages (id, project_id, chat_id, role, content) VALUES (?, ?, ?, ?, ?)",
 );
 

@@ -1,7 +1,7 @@
-import type { BunRequest } from "bun";
 import { UI_MESSAGE_STREAM_HEADERS } from "ai";
 import { authenticateRequest } from "@/lib/auth.ts";
 import { corsHeaders } from "@/lib/cors.ts";
+import { getParams } from "@/lib/request.ts";
 import { handleError, verifyProjectAccess } from "@/routes/utils.ts";
 import { verifyChatOwnership } from "@/routes/chats.ts";
 import { streamContext, getActiveStreamId } from "@/lib/resumable-stream.ts";
@@ -9,13 +9,10 @@ import { log } from "@/lib/logger.ts";
 
 const streamLog = log.child({ module: "stream" });
 
-export async function handleResumeStream(request: BunRequest): Promise<Response> {
+export async function handleResumeStream(request: Request): Promise<Response> {
   try {
     const { userId } = await authenticateRequest(request);
-    const { projectId, chatId } = request.params as {
-      projectId: string;
-      chatId: string;
-    };
+    const { projectId, chatId } = getParams<{ projectId: string; chatId: string }>(request);
 
     verifyProjectAccess(projectId, userId);
     verifyChatOwnership(chatId, projectId);

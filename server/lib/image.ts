@@ -1,5 +1,5 @@
 import { generateImage } from "ai";
-import { getImageModel } from "@/lib/openrouter.ts";
+import { getImageModel } from "@/lib/providers/index.ts";
 import { log } from "@/lib/logger.ts";
 
 const imgLog = log.child({ module: "image" });

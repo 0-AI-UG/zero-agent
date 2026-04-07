@@ -4,7 +4,7 @@ import { corsHeaders } from "@/lib/cors.ts";
 export async function handleHealth(): Promise<Response> {
   try {
     // Probe SQLite to ensure it's working
-    db.query("SELECT 1").get();
+    db.prepare("SELECT 1").get();
     return Response.json(
       { status: "ok" },
       { headers: corsHeaders },

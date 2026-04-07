@@ -1,17 +1,18 @@
 import { deleteProjectIndex, ensureIndex, putProjectVectors, isEmbeddingConfigured, chunkText, textToSparseVector } from "@/lib/vectors.ts";
 import { readFromS3 } from "@/lib/s3.ts";
-import { getSetting } from "@/lib/settings.ts";
+import { embedMany } from "ai";
+import { getEmbeddingModel } from "@/lib/providers/index.ts";
 import { log } from "@/lib/logger.ts";
 import { db } from "@/db/index.ts";
 import type { SparseVector } from "@0-ai/s3lite/vectors";
 
 const reindexLog = log.child({ module: "reindex" });
 
-const getTextFiles = db.query<{ id: string; s3_key: string; filename: string; mime_type: string }, [string]>(
+const getTextFiles = db.prepare(
   "SELECT id, s3_key, filename, mime_type FROM files WHERE project_id = ? AND (mime_type LIKE 'text/%' OR mime_type = 'application/json')",
 );
 
-const getRecentMessagesPaged = db.query<{ id: string; chat_id: string; role: string; content: string }, [string, number, number]>(
+const getRecentMessagesPaged = db.prepare(
   "SELECT id, chat_id, role, content FROM messages WHERE project_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?",
 );
 
@@ -100,19 +101,12 @@ const MESSAGE_PAGE_SIZE = 200;
 const MESSAGE_MAX = 1000;
 
 async function embedValues(values: string[]): Promise<number[][]> {
-  const apiKey = getSetting("OPENROUTER_API_KEY");
-  const res = await fetch("https://openrouter.ai/api/v1/embeddings", {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ model: "openai/text-embedding-3-small", input: values }),
-    signal: AbortSignal.timeout(30_000),
+  const { embeddings } = await embedMany({
+    model: getEmbeddingModel(),
+    values,
+    abortSignal: AbortSignal.timeout(30_000),
   });
-  if (!res.ok) throw new Error(`Embedding API error: ${res.status} ${await res.text()}`);
-  const json = await res.json() as any;
-  return json.data.map((d: any) => d.embedding);
+  return embeddings;
 }
 
 function storeVectors(projectId: string, vectors: VectorEntry[], indexReset: { done: boolean }): void {
@@ -143,7 +137,7 @@ async function doReindex(projectId: string, overallSignal: AbortSignal): Promise
   let messageCount = 0;
 
   // Phase 1: Files
-  const files = getTextFiles.all(projectId);
+  const files = getTextFiles.all(projectId) as { id: string; s3_key: string; filename: string; mime_type: string }[];
   emitProgress(projectId, { phase: "files", current: 0, total: files.length });
 
   await processInBatches(files, FILE_CONCURRENCY, async (file) => {
@@ -213,7 +207,7 @@ async function doReindex(projectId: string, overallSignal: AbortSignal): Promise
   const msgEntries: { id: string; text: string }[] = [];
   let offset = 0;
   while (offset < MESSAGE_MAX) {
-    const page = getRecentMessagesPaged.all(projectId, MESSAGE_PAGE_SIZE, offset);
+    const page = getRecentMessagesPaged.all(projectId, MESSAGE_PAGE_SIZE, offset) as { id: string; chat_id: string; role: string; content: string }[];
     if (page.length === 0) break;
 
     for (const msg of page) {

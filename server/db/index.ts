@@ -1,4 +1,4 @@
-import { Database } from "bun:sqlite";
+import Database from "better-sqlite3";
 import { nanoid } from "nanoid";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
@@ -8,13 +8,13 @@ mkdirSync(dirname(DB_PATH), { recursive: true });
 
 const db = new Database(DB_PATH);
 
-db.run("PRAGMA journal_mode = WAL");
-db.run("PRAGMA foreign_keys = ON");
-db.run("PRAGMA case_sensitive_like = ON");
+db.exec("PRAGMA journal_mode = WAL");
+db.exec("PRAGMA foreign_keys = ON");
+db.exec("PRAGMA case_sensitive_like = ON");
 
 // ── Schema ──
 
-db.run(`
+db.exec(`
   CREATE TABLE IF NOT EXISTS users (
     id            TEXT PRIMARY KEY,
     email         TEXT UNIQUE NOT NULL,
@@ -24,7 +24,7 @@ db.run(`
   )
 `);
 
-db.run(`
+db.exec(`
   CREATE TABLE IF NOT EXISTS projects (
     id                        TEXT PRIMARY KEY,
     user_id                   TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -43,7 +43,7 @@ db.run(`
   )
 `);
 
-db.run(`
+db.exec(`
   CREATE TABLE IF NOT EXISTS chats (
     id            TEXT PRIMARY KEY,
     project_id    TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -56,7 +56,7 @@ db.run(`
   )
 `);
 
-db.run(`
+db.exec(`
   CREATE TABLE IF NOT EXISTS messages (
     id         TEXT PRIMARY KEY,
     project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -68,7 +68,7 @@ db.run(`
   )
 `);
 
-db.run(`
+db.exec(`
   CREATE TABLE IF NOT EXISTS files (
     id              TEXT PRIMARY KEY,
     project_id      TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -82,7 +82,7 @@ db.run(`
   )
 `);
 
-db.run(`
+db.exec(`
   CREATE TABLE IF NOT EXISTS folders (
     id         TEXT PRIMARY KEY,
     project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -93,7 +93,7 @@ db.run(`
   )
 `);
 
-db.run(`
+db.exec(`
   CREATE TABLE IF NOT EXISTS scheduled_tasks (
     id              TEXT PRIMARY KEY,
     project_id      TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -112,7 +112,7 @@ db.run(`
   )
 `);
 
-db.run(`
+db.exec(`
   CREATE TABLE IF NOT EXISTS task_runs (
     id          TEXT PRIMARY KEY,
     task_id     TEXT NOT NULL REFERENCES scheduled_tasks(id) ON DELETE CASCADE,
@@ -126,7 +126,7 @@ db.run(`
   )
 `);
 
-db.run(`
+db.exec(`
   CREATE VIRTUAL TABLE IF NOT EXISTS fts_files USING fts5(
     file_id UNINDEXED,
     project_id UNINDEXED,
@@ -136,7 +136,7 @@ db.run(`
   )
 `);
 
-db.run(`
+db.exec(`
   CREATE TABLE IF NOT EXISTS project_members (
     id         TEXT PRIMARY KEY,
     project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -147,7 +147,7 @@ db.run(`
   )
 `);
 
-db.run(`
+db.exec(`
   CREATE TABLE IF NOT EXISTS invitations (
     id            TEXT PRIMARY KEY,
     project_id    TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -160,7 +160,7 @@ db.run(`
   )
 `);
 
-db.run(`
+db.exec(`
   CREATE TABLE IF NOT EXISTS todos (
     id          TEXT PRIMARY KEY,
     project_id  TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -174,7 +174,7 @@ db.run(`
   )
 `);
 
-db.run(`
+db.exec(`
   CREATE TABLE IF NOT EXISTS skills (
     id           TEXT PRIMARY KEY,
     project_id   TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -190,7 +190,7 @@ db.run(`
   )
 `);
 
-db.run(`
+db.exec(`
   CREATE TABLE IF NOT EXISTS companion_tokens (
     id                TEXT PRIMARY KEY,
     user_id           TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -203,7 +203,7 @@ db.run(`
   )
 `);
 
-db.run(`
+db.exec(`
   CREATE TABLE IF NOT EXISTS quick_actions (
     id          TEXT PRIMARY KEY,
     project_id  TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -216,7 +216,7 @@ db.run(`
   )
 `);
 
-db.run(`
+db.exec(`
   CREATE TABLE IF NOT EXISTS telegram_bindings (
     id               TEXT PRIMARY KEY,
     project_id       TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -230,7 +230,7 @@ db.run(`
   )
 `);
 
-db.run(`
+db.exec(`
   CREATE TABLE IF NOT EXISTS settings (
     key        TEXT PRIMARY KEY,
     value      TEXT NOT NULL,
@@ -238,27 +238,40 @@ db.run(`
   )
 `);
 
-db.run(`
+db.exec(`
   CREATE TABLE IF NOT EXISTS models (
-    id               TEXT PRIMARY KEY,
-    name             TEXT NOT NULL,
-    provider         TEXT NOT NULL,
-    description      TEXT DEFAULT '',
-    context_window   INTEGER NOT NULL DEFAULT 128000,
-    pricing_input    REAL NOT NULL DEFAULT 0,
-    pricing_output   REAL NOT NULL DEFAULT 0,
-    tags             TEXT NOT NULL DEFAULT '[]',
-    is_default       INTEGER NOT NULL DEFAULT 0,
-    multimodal       INTEGER NOT NULL DEFAULT 0,
-    provider_routing TEXT,
-    enabled          INTEGER NOT NULL DEFAULT 1,
-    sort_order       INTEGER NOT NULL DEFAULT 0,
-    created_at       TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at       TEXT NOT NULL DEFAULT (datetime('now'))
+    id                 TEXT PRIMARY KEY,
+    name               TEXT NOT NULL,
+    provider           TEXT NOT NULL,
+    inference_provider TEXT NOT NULL DEFAULT 'openrouter',
+    description        TEXT DEFAULT '',
+    context_window     INTEGER NOT NULL DEFAULT 128000,
+    pricing_input      REAL NOT NULL DEFAULT 0,
+    pricing_output     REAL NOT NULL DEFAULT 0,
+    tags               TEXT NOT NULL DEFAULT '[]',
+    is_default         INTEGER NOT NULL DEFAULT 0,
+    multimodal         INTEGER NOT NULL DEFAULT 0,
+    provider_config    TEXT,
+    enabled            INTEGER NOT NULL DEFAULT 1,
+    sort_order         INTEGER NOT NULL DEFAULT 0,
+    created_at         TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at         TEXT NOT NULL DEFAULT (datetime('now'))
   )
 `);
 
-db.run(`
+// Idempotent migrations for older installs
+{
+  const cols = db.prepare("PRAGMA table_info(models)").all() as { name: string }[];
+  const names = new Set(cols.map((c) => c.name));
+  if (names.has("provider_routing") && !names.has("provider_config")) {
+    db.exec("ALTER TABLE models RENAME COLUMN provider_routing TO provider_config");
+  }
+  if (!names.has("inference_provider")) {
+    db.exec("ALTER TABLE models ADD COLUMN inference_provider TEXT NOT NULL DEFAULT 'openrouter'");
+  }
+}
+
+db.exec(`
   CREATE TABLE IF NOT EXISTS credentials (
     id               TEXT PRIMARY KEY,
     project_id       TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -280,7 +293,7 @@ db.run(`
   )
 `);
 
-db.run(`
+db.exec(`
   CREATE TABLE IF NOT EXISTS usage_logs (
     id               TEXT PRIMARY KEY,
     user_id          TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -300,7 +313,7 @@ db.run(`
 
 // ── Durability: event log & checkpoints ──
 
-db.run(`
+db.exec(`
   CREATE TABLE IF NOT EXISTS agent_events (
     id          TEXT PRIMARY KEY,
     run_id      TEXT NOT NULL,
@@ -313,9 +326,9 @@ db.run(`
     created_at  TEXT NOT NULL DEFAULT (datetime('now'))
   )
 `);
-db.run(`CREATE INDEX IF NOT EXISTS idx_agent_events_run ON agent_events(run_id, step_number)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_agent_events_run ON agent_events(run_id, step_number)`);
 
-db.run(`
+db.exec(`
   CREATE TABLE IF NOT EXISTS agent_checkpoints (
     run_id      TEXT PRIMARY KEY,
     chat_id     TEXT,
@@ -338,16 +351,16 @@ for (const col of [
   "cooldown_seconds INTEGER NOT NULL DEFAULT 0",
   "decompose INTEGER NOT NULL DEFAULT 0",
 ]) {
-  try { db.run(`ALTER TABLE scheduled_tasks ADD COLUMN ${col}`); } catch {}
+  try { db.exec(`ALTER TABLE scheduled_tasks ADD COLUMN ${col}`); } catch {}
 }
 
 // Users migrations
-try { db.run(`ALTER TABLE users ADD COLUMN can_create_projects INTEGER NOT NULL DEFAULT 1`); } catch {}
-try { db.run(`ALTER TABLE users ADD COLUMN companion_sharing INTEGER NOT NULL DEFAULT 0`); } catch {}
-try { db.run(`ALTER TABLE users ADD COLUMN totp_secret TEXT`); } catch {}
-try { db.run(`ALTER TABLE users ADD COLUMN totp_enabled INTEGER NOT NULL DEFAULT 0`); } catch {}
+try { db.exec(`ALTER TABLE users ADD COLUMN can_create_projects INTEGER NOT NULL DEFAULT 1`); } catch {}
+try { db.exec(`ALTER TABLE users ADD COLUMN companion_sharing INTEGER NOT NULL DEFAULT 0`); } catch {}
+try { db.exec(`ALTER TABLE users ADD COLUMN totp_secret TEXT`); } catch {}
+try { db.exec(`ALTER TABLE users ADD COLUMN totp_enabled INTEGER NOT NULL DEFAULT 0`); } catch {}
 
-db.run(`
+db.exec(`
   CREATE TABLE IF NOT EXISTS totp_backup_codes (
     id         TEXT PRIMARY KEY,
     user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -356,11 +369,11 @@ db.run(`
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   )
 `);
-db.run(`CREATE INDEX IF NOT EXISTS idx_totp_backup_user ON totp_backup_codes(user_id, used)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_totp_backup_user ON totp_backup_codes(user_id, used)`);
 
 // ── Runners ──
 
-db.run(`
+db.exec(`
   CREATE TABLE IF NOT EXISTS runners (
     id         TEXT PRIMARY KEY,
     name       TEXT NOT NULL,
@@ -374,7 +387,7 @@ db.run(`
 
 // ── Forwarded Ports ──
 
-db.run(`
+db.exec(`
   CREATE TABLE IF NOT EXISTS forwarded_ports (
     id            TEXT PRIMARY KEY,
     project_id    TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -397,17 +410,17 @@ db.run(`
 
 // Migrate from deployed_apps if it exists
 try {
-  const hasOld = db.query<{ name: string }, []>("SELECT name FROM sqlite_master WHERE type='table' AND name='deployed_apps'").get();
+  const hasOld = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='deployed_apps'").get();
   if (hasOld) {
-    db.run(`
+    db.exec(`
       INSERT OR IGNORE INTO forwarded_ports (id, project_id, user_id, slug, label, port, container_ip, status, pinned, start_command, working_dir, env_vars, error, created_at, updated_at)
       SELECT id, project_id, user_id, slug, name, internal_port, container_ip,
         CASE WHEN status = 'running' THEN 'active' ELSE 'stopped' END,
         published, start_command, working_dir, env_vars, error, created_at, updated_at
       FROM deployed_apps
     `);
-    db.run("DROP TABLE IF EXISTS app_deploy_logs");
-    db.run("DROP TABLE IF EXISTS deployed_apps");
+    db.exec("DROP TABLE IF EXISTS app_deploy_logs");
+    db.exec("DROP TABLE IF EXISTS deployed_apps");
   }
 } catch {
   // Migration already done or table doesn't exist
@@ -415,56 +428,61 @@ try {
 
 // ── Indexes ──
 
-db.run(`CREATE INDEX IF NOT EXISTS idx_projects_user_id ON projects(user_id)`);
-db.run(`CREATE INDEX IF NOT EXISTS idx_chats_project ON chats(project_id, updated_at)`);
-db.run(`CREATE INDEX IF NOT EXISTS idx_messages_project_created ON messages(project_id, created_at)`);
-db.run(`CREATE INDEX IF NOT EXISTS idx_messages_chat_created ON messages(chat_id, created_at)`);
-db.run(`CREATE INDEX IF NOT EXISTS idx_files_project_folder ON files(project_id, folder_path)`);
-db.run(`CREATE INDEX IF NOT EXISTS idx_folders_project ON folders(project_id)`);
-db.run(`CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_next ON scheduled_tasks(next_run_at, enabled)`);
-db.run(`CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_project ON scheduled_tasks(project_id)`);
-db.run(`CREATE INDEX IF NOT EXISTS idx_task_runs_task ON task_runs(task_id, started_at)`);
-db.run(`CREATE INDEX IF NOT EXISTS idx_project_members_project ON project_members(project_id)`);
-db.run(`CREATE INDEX IF NOT EXISTS idx_project_members_user ON project_members(user_id)`);
-db.run(`CREATE INDEX IF NOT EXISTS idx_invitations_project ON invitations(project_id, status)`);
-db.run(`CREATE INDEX IF NOT EXISTS idx_invitations_email ON invitations(invitee_email, status)`);
-db.run(`CREATE INDEX IF NOT EXISTS idx_todos_project_chat ON todos(project_id, chat_id)`);
-db.run(`CREATE INDEX IF NOT EXISTS idx_skills_project ON skills(project_id)`);
-db.run(`CREATE INDEX IF NOT EXISTS idx_companion_tokens_user ON companion_tokens(user_id)`);
-db.run(`CREATE INDEX IF NOT EXISTS idx_companion_tokens_project ON companion_tokens(project_id)`);
-db.run(`CREATE INDEX IF NOT EXISTS idx_companion_tokens_token ON companion_tokens(token)`);
-db.run(`CREATE INDEX IF NOT EXISTS idx_quick_actions_project ON quick_actions(project_id, sort_order)`);
-db.run(`CREATE INDEX IF NOT EXISTS idx_tg_bind_chat ON telegram_bindings(telegram_chat_id)`);
-db.run(`CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_trigger ON scheduled_tasks(trigger_type, trigger_event, enabled)`);
-db.run(`CREATE INDEX IF NOT EXISTS idx_models_provider ON models(provider)`);
-db.run(`CREATE INDEX IF NOT EXISTS idx_usage_logs_user ON usage_logs(user_id, created_at)`);
-db.run(`CREATE INDEX IF NOT EXISTS idx_usage_logs_model ON usage_logs(model_id, created_at)`);
-db.run(`CREATE INDEX IF NOT EXISTS idx_usage_logs_project ON usage_logs(project_id, created_at)`);
-db.run(`CREATE INDEX IF NOT EXISTS idx_usage_logs_created ON usage_logs(created_at)`);
-db.run(`CREATE INDEX IF NOT EXISTS idx_credentials_project ON credentials(project_id)`);
-db.run(`CREATE INDEX IF NOT EXISTS idx_credentials_domain ON credentials(project_id, domain)`);
-db.run(`CREATE INDEX IF NOT EXISTS idx_forwarded_ports_project ON forwarded_ports(project_id)`);
-db.run(`CREATE INDEX IF NOT EXISTS idx_forwarded_ports_slug ON forwarded_ports(slug)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_projects_user_id ON projects(user_id)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_chats_project ON chats(project_id, updated_at)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_project_created ON messages(project_id, created_at)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_chat_created ON messages(chat_id, created_at)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_files_project_folder ON files(project_id, folder_path)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_folders_project ON folders(project_id)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_next ON scheduled_tasks(next_run_at, enabled)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_project ON scheduled_tasks(project_id)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_task_runs_task ON task_runs(task_id, started_at)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_project_members_project ON project_members(project_id)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_project_members_user ON project_members(user_id)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_invitations_project ON invitations(project_id, status)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_invitations_email ON invitations(invitee_email, status)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_todos_project_chat ON todos(project_id, chat_id)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_skills_project ON skills(project_id)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_companion_tokens_user ON companion_tokens(user_id)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_companion_tokens_project ON companion_tokens(project_id)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_companion_tokens_token ON companion_tokens(token)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_quick_actions_project ON quick_actions(project_id, sort_order)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_tg_bind_chat ON telegram_bindings(telegram_chat_id)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_trigger ON scheduled_tasks(trigger_type, trigger_event, enabled)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_models_provider ON models(provider)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_usage_logs_user ON usage_logs(user_id, created_at)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_usage_logs_model ON usage_logs(model_id, created_at)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_usage_logs_project ON usage_logs(project_id, created_at)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_usage_logs_created ON usage_logs(created_at)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_credentials_project ON credentials(project_id)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_credentials_domain ON credentials(project_id, domain)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_forwarded_ports_project ON forwarded_ports(project_id)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_forwarded_ports_slug ON forwarded_ports(slug)`);
 
 // ── Seed models from JSON if table is empty ──
 
-const modelCount = db.query<{ count: number }, []>("SELECT count(*) as count FROM models").get()!;
+const modelCount = db.prepare("SELECT count(*) as count FROM models").get() as { count: number };
 if (modelCount.count === 0) {
-  const seedModels = require("@/config/models.json").models;
+  const { default: modelsJson } = await import("@/config/models.json", { with: { type: "json" } });
+  const seedModels = (modelsJson as any).models;
   const insertModel = db.prepare(
-    `INSERT INTO models (id, name, provider, description, context_window, pricing_input, pricing_output, tags, is_default, multimodal, provider_routing, sort_order)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO models (id, name, provider, inference_provider, description, context_window, pricing_input, pricing_output, tags, is_default, multimodal, provider_config, sort_order)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
   for (let i = 0; i < seedModels.length; i++) {
     const m = seedModels[i];
     insertModel.run(
-      m.id, m.name, m.provider, m.description ?? "",
+      m.id, m.name, m.provider,
+      m.inferenceProvider ?? "openrouter",
+      m.description ?? "",
       m.contextWindow ?? 128000,
       m.pricing?.input ?? 0, m.pricing?.output ?? 0,
       JSON.stringify(m.tags ?? []),
       m.default ? 1 : 0,
       m.multimodal ? 1 : 0,
-      m.providerRouting ? JSON.stringify(m.providerRouting) : null,
+      m.providerConfig ? JSON.stringify(m.providerConfig)
+        : m.providerRouting ? JSON.stringify(m.providerRouting)
+        : null,
       i,
     );
   }

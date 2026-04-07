@@ -1,17 +1,17 @@
 import { db, generateId } from "@/db/index.ts";
 import type { TaskRunRow } from "@/db/types.ts";
 
-const insertStmt = db.query<TaskRunRow, [string, string, string]>(
+const insertStmt = db.prepare(
   "INSERT INTO task_runs (id, task_id, project_id) VALUES (?, ?, ?) RETURNING *",
 );
 
-const byTaskStmt = db.query<TaskRunRow, [string, number]>(
+const byTaskStmt = db.prepare(
   "SELECT * FROM task_runs WHERE task_id = ? ORDER BY started_at DESC LIMIT ?",
 );
 
 export function insertTaskRun(taskId: string, projectId: string): TaskRunRow {
   const id = generateId();
-  return insertStmt.get(id, taskId, projectId)!;
+  return insertStmt.get(id, taskId, projectId) as TaskRunRow;
 }
 
 export function updateTaskRun(
@@ -46,10 +46,10 @@ export function updateTaskRun(
 
   values.push(id);
   const sql = `UPDATE task_runs SET ${sets.join(", ")} WHERE id = ?`;
-  db.query<void, (string | null)[]>(sql).run(...values);
+  db.prepare(sql).run(...values);
 }
 
 export function getRunsByTask(taskId: string, limit: number = 20): TaskRunRow[] {
-  return byTaskStmt.all(taskId, limit);
+  return byTaskStmt.all(taskId, limit) as TaskRunRow[];
 }
 

@@ -1,6 +1,6 @@
-import type { BunRequest } from "bun";
 import { corsHeaders } from "@/lib/cors.ts";
 import { authenticateRequest } from "@/lib/auth.ts";
+import { getParams } from "@/lib/request.ts";
 import { handleError, verifyProjectAccess } from "@/routes/utils.ts";
 import {
   getPortsByProject,
@@ -45,10 +45,10 @@ function formatPort(p: any) {
 
 // ── Handlers ──
 
-export async function handleListServices(req: BunRequest): Promise<Response> {
+export async function handleListServices(req: Request): Promise<Response> {
   try {
     const { userId } = await authenticateRequest(req);
-    const { projectId } = req.params as { projectId: string };
+    const { projectId } = getParams<{ projectId: string }>(req);
     verifyProjectAccess(projectId, userId);
 
     const ports = getPortsByProject(projectId);
@@ -58,10 +58,10 @@ export async function handleListServices(req: BunRequest): Promise<Response> {
   }
 }
 
-export async function handleDeleteService(req: BunRequest): Promise<Response> {
+export async function handleDeleteService(req: Request): Promise<Response> {
   try {
     const { userId } = await authenticateRequest(req);
-    const { projectId, serviceId } = req.params as { projectId: string; serviceId: string };
+    const { projectId, serviceId } = getParams<{ projectId: string; serviceId: string }>(req);
     verifyProjectAccess(projectId, userId);
 
     const port = getPortById(serviceId);
@@ -79,10 +79,10 @@ export async function handleDeleteService(req: BunRequest): Promise<Response> {
   }
 }
 
-export async function handlePinService(req: BunRequest): Promise<Response> {
+export async function handlePinService(req: Request): Promise<Response> {
   try {
     const { userId } = await authenticateRequest(req);
-    const { projectId, serviceId } = req.params as { projectId: string; serviceId: string };
+    const { projectId, serviceId } = getParams<{ projectId: string; serviceId: string }>(req);
     verifyProjectAccess(projectId, userId);
 
     const port = getPortById(serviceId);
@@ -103,10 +103,10 @@ export async function handlePinService(req: BunRequest): Promise<Response> {
  */
 const coldStartInflight = new Map<string, Promise<{ success: boolean; error?: string }>>();
 
-export async function handleAppStatus(req: BunRequest): Promise<Response> {
+export async function handleAppStatus(req: Request): Promise<Response> {
   try {
     await authenticateRequest(req);
-    const { slug } = req.params as { slug: string };
+    const { slug } = getParams<{ slug: string }>(req);
 
     const port = getPortBySlug(slug);
     if (!port) {
@@ -151,10 +151,10 @@ export async function handleAppStatus(req: BunRequest): Promise<Response> {
   }
 }
 
-export async function handleUnpinService(req: BunRequest): Promise<Response> {
+export async function handleUnpinService(req: Request): Promise<Response> {
   try {
     const { userId } = await authenticateRequest(req);
-    const { projectId, serviceId } = req.params as { projectId: string; serviceId: string };
+    const { projectId, serviceId } = getParams<{ projectId: string; serviceId: string }>(req);
     verifyProjectAccess(projectId, userId);
 
     const port = getPortById(serviceId);

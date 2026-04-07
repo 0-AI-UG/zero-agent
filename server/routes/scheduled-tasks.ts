@@ -1,6 +1,6 @@
-import type { BunRequest } from "bun";
 import { authenticateRequest } from "@/lib/auth.ts";
 import { corsHeaders } from "@/lib/cors.ts";
+import { getParams } from "@/lib/request.ts";
 import { handleError, verifyProjectAccess, toUTC } from "@/routes/utils.ts";
 import { NotFoundError, ValidationError } from "@/lib/errors.ts";
 import {
@@ -73,10 +73,10 @@ function verifyTaskOwnership(taskId: string, projectId: string): ScheduledTaskRo
   return task;
 }
 
-export async function handleListTasks(request: BunRequest): Promise<Response> {
+export async function handleListTasks(request: Request): Promise<Response> {
   try {
     const { userId } = await authenticateRequest(request);
-    const { projectId } = request.params as { projectId: string };
+    const { projectId } = getParams<{ projectId: string }>(request);
     verifyProjectAccess(projectId, userId);
 
     const rows = getTasksByProject(projectId);
@@ -89,10 +89,10 @@ export async function handleListTasks(request: BunRequest): Promise<Response> {
   }
 }
 
-export async function handleCreateTask(request: BunRequest): Promise<Response> {
+export async function handleCreateTask(request: Request): Promise<Response> {
   try {
     const { userId } = await authenticateRequest(request);
-    const { projectId } = request.params as { projectId: string };
+    const { projectId } = getParams<{ projectId: string }>(request);
     verifyProjectAccess(projectId, userId);
 
     const body = await request.json() as {
@@ -159,10 +159,10 @@ export async function handleCreateTask(request: BunRequest): Promise<Response> {
   }
 }
 
-export async function handleUpdateTask(request: BunRequest): Promise<Response> {
+export async function handleUpdateTask(request: Request): Promise<Response> {
   try {
     const { userId } = await authenticateRequest(request);
-    const { projectId, taskId } = request.params as { projectId: string; taskId: string };
+    const { projectId, taskId } = getParams<{ projectId: string; taskId: string }>(request);
     verifyProjectAccess(projectId, userId);
     verifyTaskOwnership(taskId, projectId);
 
@@ -229,10 +229,10 @@ export async function handleUpdateTask(request: BunRequest): Promise<Response> {
   }
 }
 
-export async function handleDeleteTask(request: BunRequest): Promise<Response> {
+export async function handleDeleteTask(request: Request): Promise<Response> {
   try {
     const { userId } = await authenticateRequest(request);
-    const { projectId, taskId } = request.params as { projectId: string; taskId: string };
+    const { projectId, taskId } = getParams<{ projectId: string; taskId: string }>(request);
     verifyProjectAccess(projectId, userId);
     verifyTaskOwnership(taskId, projectId);
 
@@ -244,10 +244,10 @@ export async function handleDeleteTask(request: BunRequest): Promise<Response> {
   }
 }
 
-export async function handleRunTaskNow(request: BunRequest): Promise<Response> {
+export async function handleRunTaskNow(request: Request): Promise<Response> {
   try {
     const { userId } = await authenticateRequest(request);
-    const { projectId, taskId } = request.params as { projectId: string; taskId: string };
+    const { projectId, taskId } = getParams<{ projectId: string; taskId: string }>(request);
     const project = verifyProjectAccess(projectId, userId);
     const task = verifyTaskOwnership(taskId, projectId);
 
@@ -288,10 +288,10 @@ export async function handleRunTaskNow(request: BunRequest): Promise<Response> {
   }
 }
 
-export async function handleGetTaskRuns(request: BunRequest): Promise<Response> {
+export async function handleGetTaskRuns(request: Request): Promise<Response> {
   try {
     const { userId } = await authenticateRequest(request);
-    const { projectId, taskId } = request.params as { projectId: string; taskId: string };
+    const { projectId, taskId } = getParams<{ projectId: string; taskId: string }>(request);
     verifyProjectAccess(projectId, userId);
     verifyTaskOwnership(taskId, projectId);
 

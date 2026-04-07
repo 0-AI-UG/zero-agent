@@ -85,6 +85,12 @@ export function SetupPage() {
         openrouterModel: openrouterModel || undefined,
         braveSearchApiKey: braveSearchApiKey || undefined,
       });
+      // Dev mode: server returns a full JWT, skip 2FA
+      if ("token" in result) {
+        useAuthStore.getState().login(result.token, result.user);
+        return;
+      }
+
       if (!("tempToken" in result)) throw new Error("Unexpected response");
       setTempToken(result.tempToken);
 

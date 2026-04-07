@@ -1,23 +1,8 @@
 import { getModelById } from "@/db/queries/models.ts";
 
-interface ProviderRouting {
-  order: string[];
-  allow_fallbacks?: boolean;
-}
-
 export function getModelContextWindow(modelId: string): number {
   const model = getModelById(modelId);
   return model?.context_window ?? 128_000;
-}
-
-export function getProviderRouting(modelId: string): ProviderRouting | undefined {
-  const model = getModelById(modelId);
-  if (!model?.provider_routing) return undefined;
-  try {
-    return JSON.parse(model.provider_routing) as ProviderRouting;
-  } catch {
-    return undefined;
-  }
 }
 
 export function isModelMultimodal(modelId: string): boolean {

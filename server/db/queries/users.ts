@@ -3,27 +3,27 @@ import type { UserRow } from "@/db/types.ts";
 
 export function insertUser(email: string, passwordHash: string): UserRow {
   const id = generateId();
-  db.query<void, [string, string, string]>(
+  db.prepare(
     "INSERT INTO users (id, email, password_hash) VALUES (?, ?, ?)",
   ).run(id, email, passwordHash);
 
-  return db.query<UserRow, [string]>(
+  return db.prepare(
     "SELECT * FROM users WHERE id = ?",
-  ).get(id)!;
+  ).get(id) as UserRow;
 }
 
 export function getUserByEmail(email: string): UserRow | null {
-  return db.query<UserRow, [string]>(
+  return (db.prepare(
     "SELECT * FROM users WHERE email = ?",
-  ).get(email);
+  ).get(email) as UserRow | undefined) ?? null;
 }
 
 export function getUserById(id: string): UserRow | null {
-  return db.query<UserRow, [string]>(
+  return (db.prepare(
     "SELECT * FROM users WHERE id = ?",
-  ).get(id);
+  ).get(id) as UserRow | undefined) ?? null;
 }
 
 export function updateUserCompanionSharing(userId: string, enabled: boolean): void {
-  db.run("UPDATE users SET companion_sharing = ? WHERE id = ?", [enabled ? 1 : 0, userId]);
+  db.prepare("UPDATE users SET companion_sharing = ? WHERE id = ?").run(enabled ? 1 : 0, userId);
 }

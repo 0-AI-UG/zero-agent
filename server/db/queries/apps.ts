@@ -3,35 +3,35 @@ import type { ForwardedPortRow } from "@/db/types.ts";
 
 // ── Forwarded Ports ──
 
-const byProjectStmt = db.query<ForwardedPortRow, [string]>(
+const byProjectStmt = db.prepare(
   "SELECT * FROM forwarded_ports WHERE project_id = ? ORDER BY pinned ASC, created_at DESC",
 );
 
-const byIdStmt = db.query<ForwardedPortRow, [string]>(
+const byIdStmt = db.prepare(
   "SELECT * FROM forwarded_ports WHERE id = ?",
 );
 
-const bySlugStmt = db.query<ForwardedPortRow, [string]>(
+const bySlugStmt = db.prepare(
   "SELECT * FROM forwarded_ports WHERE slug = ?",
 );
 
-const deleteStmt = db.query<void, [string]>(
+const deleteStmt = db.prepare(
   "DELETE FROM forwarded_ports WHERE id = ?",
 );
 
-const byProjectAndPortStmt = db.query<ForwardedPortRow, [string, number]>(
+const byProjectAndPortStmt = db.prepare(
   "SELECT * FROM forwarded_ports WHERE project_id = ? AND port = ? LIMIT 1",
 );
 
-const pinnedByProjectStmt = db.query<ForwardedPortRow, [string]>(
+const pinnedByProjectStmt = db.prepare(
   "SELECT * FROM forwarded_ports WHERE project_id = ? AND pinned = 1",
 );
 
-const allActiveStmt = db.query<ForwardedPortRow, []>(
+const allActiveStmt = db.prepare(
   "SELECT * FROM forwarded_ports WHERE status = 'active'",
 );
 
-const activeByProjectStmt = db.query<ForwardedPortRow, [string]>(
+const activeByProjectStmt = db.prepare(
   "SELECT * FROM forwarded_ports WHERE project_id = ? AND status = 'active'",
 );
 
@@ -51,7 +51,7 @@ export function insertPort(
   const id = generateId();
   const sql = `INSERT INTO forwarded_ports (id, project_id, user_id, slug, label, port, container_ip, start_command, working_dir, env_vars)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`;
-  return db.query<ForwardedPortRow, [string, string, string, string, string, number, string | null, string | null, string, string]>(sql).get(
+  return db.prepare(sql).get(
     id,
     projectId,
     userId,
@@ -62,35 +62,35 @@ export function insertPort(
     opts?.startCommand ?? null,
     opts?.workingDir ?? "/workspace",
     JSON.stringify(opts?.envVars ?? {}),
-  )!;
+  ) as ForwardedPortRow;
 }
 
 export function getPortsByProject(projectId: string): ForwardedPortRow[] {
-  return byProjectStmt.all(projectId);
+  return byProjectStmt.all(projectId) as ForwardedPortRow[];
 }
 
 export function getPortById(id: string): ForwardedPortRow | null {
-  return byIdStmt.get(id) ?? null;
+  return (byIdStmt.get(id) as ForwardedPortRow | undefined) ?? null;
 }
 
 export function getPortBySlug(slug: string): ForwardedPortRow | null {
-  return bySlugStmt.get(slug) ?? null;
+  return (bySlugStmt.get(slug) as ForwardedPortRow | undefined) ?? null;
 }
 
 export function getPortByProjectAndPort(projectId: string, port: number): ForwardedPortRow | null {
-  return byProjectAndPortStmt.get(projectId, port) ?? null;
+  return (byProjectAndPortStmt.get(projectId, port) as ForwardedPortRow | undefined) ?? null;
 }
 
 export function getPinnedPortsByProject(projectId: string): ForwardedPortRow[] {
-  return pinnedByProjectStmt.all(projectId);
+  return pinnedByProjectStmt.all(projectId) as ForwardedPortRow[];
 }
 
 export function getAllActivePorts(): ForwardedPortRow[] {
-  return allActiveStmt.all();
+  return allActiveStmt.all() as ForwardedPortRow[];
 }
 
 export function getActivePortsByProject(projectId: string): ForwardedPortRow[] {
-  return activeByProjectStmt.all(projectId);
+  return activeByProjectStmt.all(projectId) as ForwardedPortRow[];
 }
 
 export function updatePort(
@@ -110,13 +110,13 @@ export function updatePort(
     }
   }
 
-  if (sets.length === 0) return byIdStmt.get(id)!;
+  if (sets.length === 0) return byIdStmt.get(id) as ForwardedPortRow;
 
   sets.push("updated_at = datetime('now')");
   values.push(id);
 
   const sql = `UPDATE forwarded_ports SET ${sets.join(", ")} WHERE id = ? RETURNING *`;
-  return db.query<ForwardedPortRow, (string | number | null)[]>(sql).get(...values)!;
+  return db.prepare(sql).get(...values) as ForwardedPortRow;
 }
 
 export function deletePort(id: string): void {

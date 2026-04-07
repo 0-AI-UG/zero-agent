@@ -1,18 +1,15 @@
-import type { BunRequest } from "bun";
 import { authenticateRequest } from "@/lib/auth.ts";
 import { corsHeaders } from "@/lib/cors.ts";
+import { getParams } from "@/lib/request.ts";
 import { handleError, verifyProjectAccess } from "@/routes/utils.ts";
 import { verifyChatOwnership } from "@/routes/chats.ts";
 import { getMessagesByChat } from "@/db/queries/messages.ts";
 import type { UIMessage } from "ai";
 
-export async function handleGetMessages(request: BunRequest): Promise<Response> {
+export async function handleGetMessages(request: Request): Promise<Response> {
   try {
     const { userId } = await authenticateRequest(request);
-    const { projectId, chatId } = request.params as {
-      projectId: string;
-      chatId: string;
-    };
+    const { projectId, chatId } = getParams<{ projectId: string; chatId: string }>(request);
     verifyProjectAccess(projectId, userId);
     verifyChatOwnership(chatId, projectId);
 

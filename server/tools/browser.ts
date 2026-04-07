@@ -4,7 +4,7 @@ import { getLocalBackend } from "@/lib/execution/lifecycle.ts";
 import { buildFileManifest } from "@/tools/code.ts";
 import type { BrowserAction } from "@/lib/browser/protocol.ts";
 import { isModelMultimodal } from "@/config/models.ts";
-import { getVisionModel } from "@/lib/openrouter.ts";
+import { getVisionModel } from "@/lib/providers/index.ts";
 import { log } from "@/lib/logger.ts";
 
 const toolLog = log.child({ module: "tool:browser" });
@@ -13,7 +13,8 @@ export function createBrowserTool(userId: string, projectId: string, modelId?: s
   return {
     browser: tool({
       description:
-        "Control the browser. Actions: navigate (go to URL), click/type/select/hover (interact with elements by ref like [e1]), scroll, back/forward/reload, wait, snapshot (get page state), screenshot (capture visible page), evaluate (run JS), tabs/switchTab/closeTab (manage tabs). Take a snapshot first to discover interactive elements, then use refs [e1], [e2] to interact. Snapshot modes: 'interactive' (default, flat list of buttons/links/inputs — cheap) or 'full' (complete accessibility tree with all text content — use when you need to read page text). You can also scope snapshots to a CSS selector. After click/type/select/hover/scroll, only a confirmation is returned — take a new snapshot if you need to see the updated page.",
+        "Control the browser. Actions: navigate (go to URL), click/type/select/hover (interact with elements by ref like [e1]), scroll, back/forward/reload, wait, snapshot (get page state), screenshot (capture visible page), evaluate (run JS in the page), tabs/switchTab/closeTab (manage tabs). Take a snapshot first to discover interactive elements, then use refs [e1], [e2] to interact. Snapshot modes: 'interactive' (default, flat list of buttons/links/inputs — cheap) or 'full' (complete accessibility tree with all text content — use when you need to read page text). You can also scope snapshots to a CSS selector. After click/type/select/hover/scroll, only a confirmation is returned — take a new snapshot if you need to see the updated page.\n\n" +
+        "evaluate: runs JavaScript inside the active page. Top-level `await` is supported. The script's last expression is the return value (REPL mode). Returns { value, logs, error } plus the current url/title. A helper library is preloaded as `window.__agent` on every page with: $ / $$ (querySelector/All), byText(text,{tag,exact}), text(sel?), fill(sel,value), click(sel), waitFor(selOrFn,{timeout}), table(sel), attrs(sel), forms(), summary(). Prefer ref-based click/type for simple interactions; use evaluate for bulk extraction, multi-step DOM work, custom waits, or anything the a11y snapshot can't express.",
       inputSchema: z.object({
         stealth: z.boolean().optional().describe("Enable human-like mouse movement and typing delays for bot detection avoidance. Default: false (fast mode)."),
         action: z.discriminatedUnion("type", [
@@ -46,7 +47,11 @@ export function createBrowserTool(userId: string, projectId: string, modelId?: s
             selector: z.string().optional().describe("CSS selector to scope the snapshot to (e.g. 'main', '#content', 'nav')"),
           }),
           z.object({ type: z.literal("screenshot") }),
-          z.object({ type: z.literal("evaluate"), script: z.string().describe("JavaScript to evaluate in page") }),
+          z.object({
+            type: z.literal("evaluate"),
+            script: z.string().describe("JavaScript to run in the page. Top-level `await` is supported; the last expression is returned. Use `window.__agent` helpers for common DOM tasks."),
+            awaitPromise: z.boolean().optional().describe("Await a returned Promise before returning. Default: true."),
+          }),
           z.object({ type: z.literal("tabs") }),
           z.object({ type: z.literal("switchTab"), index: z.number().describe("Tab index to switch to") }),
           z.object({ type: z.literal("closeTab"), index: z.number().optional().describe("Tab index to close") }),
@@ -74,6 +79,21 @@ export function createBrowserTool(userId: string, projectId: string, modelId?: s
             type: "text" as const,
             value: `Page snapshot: ${result.title} (${result.url})\n\n${result.content}`,
           };
+        }
+        if (result?.type === "evaluate") {
+          const lines = [`evaluate result — ${result.title} (${result.url})`];
+          if (result.error) {
+            lines.push(`error: ${result.error}`);
+          } else {
+            const v = result.value;
+            const valueStr = typeof v === "string" ? v : JSON.stringify(v, null, 2);
+            lines.push(`value: ${valueStr ?? "undefined"}`);
+          }
+          if (Array.isArray(result.logs) && result.logs.length > 0) {
+            lines.push("logs:");
+            for (const l of result.logs as string[]) lines.push(`  ${l}`);
+          }
+          return { type: "text" as const, value: lines.join("\n") };
         }
         if (result?.type === "done") {
           const base = `${result.message} — ${result.title} (${result.url})`;

@@ -1,6 +1,6 @@
-import type { BunRequest } from "bun";
 import { authenticateRequest } from "@/lib/auth.ts";
 import { corsHeaders } from "@/lib/cors.ts";
+import { getParams } from "@/lib/request.ts";
 import { handleError, verifyProjectAccess, toUTC } from "@/routes/utils.ts";
 import { NotFoundError } from "@/lib/errors.ts";
 import {
@@ -36,10 +36,10 @@ export function verifyChatOwnership(chatId: string, projectId: string): ChatRow 
   return chat;
 }
 
-export async function handleListChats(request: BunRequest): Promise<Response> {
+export async function handleListChats(request: Request): Promise<Response> {
   try {
     const { userId } = await authenticateRequest(request);
-    const projectId = (request.params as { projectId: string }).projectId;
+    const projectId = (getParams<{ projectId: string }>(request)).projectId;
     verifyProjectAccess(projectId, userId);
 
     const rows = getChatsByProject(projectId);
@@ -52,10 +52,10 @@ export async function handleListChats(request: BunRequest): Promise<Response> {
   }
 }
 
-export async function handleCreateChat(request: BunRequest): Promise<Response> {
+export async function handleCreateChat(request: Request): Promise<Response> {
   try {
     const { userId } = await authenticateRequest(request);
-    const projectId = (request.params as { projectId: string }).projectId;
+    const projectId = (getParams<{ projectId: string }>(request)).projectId;
     verifyProjectAccess(projectId, userId);
 
     const body = (await request.json().catch(() => ({}))) as { title?: string };
@@ -71,13 +71,10 @@ export async function handleCreateChat(request: BunRequest): Promise<Response> {
   }
 }
 
-export async function handleUpdateChat(request: BunRequest): Promise<Response> {
+export async function handleUpdateChat(request: Request): Promise<Response> {
   try {
     const { userId } = await authenticateRequest(request);
-    const { projectId, chatId } = request.params as {
-      projectId: string;
-      chatId: string;
-    };
+    const { projectId, chatId } = getParams<{ projectId: string; chatId: string }>(request);
     verifyProjectAccess(projectId, userId);
     verifyChatOwnership(chatId, projectId);
 
@@ -93,10 +90,10 @@ export async function handleUpdateChat(request: BunRequest): Promise<Response> {
   }
 }
 
-export async function handleSearchChats(request: BunRequest): Promise<Response> {
+export async function handleSearchChats(request: Request): Promise<Response> {
   try {
     const { userId } = await authenticateRequest(request);
-    const projectId = (request.params as { projectId: string }).projectId;
+    const projectId = (getParams<{ projectId: string }>(request)).projectId;
     verifyProjectAccess(projectId, userId);
 
     const url = new URL(request.url);
@@ -137,13 +134,10 @@ export async function handleSearchChats(request: BunRequest): Promise<Response> 
   }
 }
 
-export async function handleDeleteChat(request: BunRequest): Promise<Response> {
+export async function handleDeleteChat(request: Request): Promise<Response> {
   try {
     const { userId } = await authenticateRequest(request);
-    const { projectId, chatId } = request.params as {
-      projectId: string;
-      chatId: string;
-    };
+    const { projectId, chatId } = getParams<{ projectId: string; chatId: string }>(request);
     verifyProjectAccess(projectId, userId);
     verifyChatOwnership(chatId, projectId);
 

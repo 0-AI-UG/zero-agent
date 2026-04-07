@@ -1,11 +1,54 @@
 /**
  * Docker Engine API client — communicates with Docker via Unix socket.
  */
+import http from "node:http";
 import { log } from "./logger.ts";
 
 const dockerLog = log.child({ module: "docker-client" });
 
 const API_VERSION = "v1.47";
+
+/** fetch-like wrapper for Unix socket HTTP requests */
+function unixFetch(url: string, socketPath: string, init?: RequestInit): Promise<Response> {
+  return new Promise((resolve, reject) => {
+    const parsed = new URL(url);
+    const options: http.RequestOptions = {
+      socketPath,
+      path: parsed.pathname + parsed.search,
+      method: init?.method ?? "GET",
+      headers: init?.headers as Record<string, string> | undefined,
+    };
+
+    const req = http.request(options, (res) => {
+      const chunks: Buffer[] = [];
+      res.on("data", (chunk) => chunks.push(chunk));
+      res.on("end", () => {
+        const body = Buffer.concat(chunks);
+        const headers = new Headers();
+        for (const [key, value] of Object.entries(res.headers)) {
+          if (value) headers.set(key, Array.isArray(value) ? value.join(", ") : value);
+        }
+        resolve(new Response(body, {
+          status: res.statusCode ?? 200,
+          statusText: res.statusMessage,
+          headers,
+        }));
+      });
+      res.on("error", reject);
+    });
+
+    req.on("error", reject);
+
+    if (init?.body) {
+      if (init.body instanceof ArrayBuffer || init.body instanceof Uint8Array || Buffer.isBuffer(init.body)) {
+        req.write(Buffer.from(init.body as ArrayBuffer));
+      } else if (typeof init.body === "string") {
+        req.write(init.body);
+      }
+    }
+    req.end();
+  });
+}
 
 // -- Types --
 
@@ -46,11 +89,8 @@ export class DockerClient {
     this.baseUrl = `http://localhost/${API_VERSION}`;
   }
 
-  private async fetch(path: string, init?: RequestInit & { unix?: string }): Promise<Response> {
-    return fetch(`${this.baseUrl}${path}`, {
-      ...init,
-      unix: this.socket,
-    } as any);
+  private async fetch(path: string, init?: RequestInit): Promise<Response> {
+    return unixFetch(`${this.baseUrl}${path}`, this.socket, init);
   }
 
   // -- System --
@@ -76,17 +116,21 @@ export class DockerClient {
     contextDir: string,
     opts?: { cacheFrom?: string; timeout?: number },
   ): Promise<{ log: string }> {
-    const tarProc = Bun.spawn(["tar", "-cf", "-", "-C", contextDir, "."], {
-      stdout: "pipe",
-      stderr: "pipe",
+    const { spawn } = await import("child_process");
+    const tarData = await new Promise<Buffer>((resolve, reject) => {
+      const tarProc = spawn("tar", ["-cf", "-", "-C", contextDir, "."], {
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      const chunks: Buffer[] = [];
+      let stderr = "";
+      tarProc.stdout.on("data", (chunk: Buffer) => chunks.push(chunk));
+      tarProc.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString(); });
+      tarProc.on("close", (code) => {
+        if (code !== 0) reject(new Error(`Failed to create build context tar: ${stderr}`));
+        else resolve(Buffer.concat(chunks));
+      });
+      tarProc.on("error", reject);
     });
-
-    const tarData = await new Response(tarProc.stdout).arrayBuffer();
-    const tarExit = await tarProc.exited;
-    if (tarExit !== 0) {
-      const stderr = await new Response(tarProc.stderr).text();
-      throw new Error(`Failed to create build context tar: ${stderr}`);
-    }
 
     let queryParams = `t=${encodeURIComponent(tag)}`;
     if (opts?.cacheFrom) {

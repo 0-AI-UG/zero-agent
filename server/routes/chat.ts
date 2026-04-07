@@ -1,8 +1,8 @@
-import type { BunRequest } from "bun";
 import { createAgentUIStreamResponse, generateId, smoothStream } from "ai";
 import type { UIMessage } from "ai";
 import { authenticateRequest } from "@/lib/auth.ts";
 import { corsHeaders } from "@/lib/cors.ts";
+import { getParams } from "@/lib/request.ts";
 import { validateBody, chatRequestSchema } from "@/lib/validation.ts";
 import { handleError, verifyProjectAccess } from "@/routes/utils.ts";
 import { verifyChatOwnership } from "@/routes/chats.ts";
@@ -26,15 +26,12 @@ import { CircuitBreakerOpenError } from "@/lib/durability/circuit-breaker.ts";
 
 const chatLog = log.child({ module: "chat" });
 
-export async function handleChat(request: BunRequest): Promise<Response> {
+export async function handleChat(request: Request): Promise<Response> {
   const start = Date.now();
   let runId: string | undefined;
   try {
     const { userId } = await authenticateRequest(request);
-    const { projectId, chatId } = request.params as {
-      projectId: string;
-      chatId: string;
-    };
+    const { projectId, chatId } = getParams<{ projectId: string; chatId: string }>(request);
     chatLog.info("chat request", { userId, projectId, chatId });
 
     const project = verifyProjectAccess(projectId, userId);
@@ -322,7 +319,7 @@ export async function handleChat(request: BunRequest): Promise<Response> {
     });
   } catch (error) {
     // Clear active stream so retries aren't blocked
-    const { chatId } = (request.params ?? {}) as { chatId?: string };
+    const { chatId } = getParams<{ chatId?: string }>(request);
     if (chatId) {
       clearActiveStreamId(chatId);
       clearAbortFlag(chatId);
@@ -367,13 +364,10 @@ export async function handleChat(request: BunRequest): Promise<Response> {
 }
 
 
-export async function handleAbortChat(request: BunRequest): Promise<Response> {
+export async function handleAbortChat(request: Request): Promise<Response> {
   try {
     const { userId } = await authenticateRequest(request);
-    const { projectId, chatId } = request.params as {
-      projectId: string;
-      chatId: string;
-    };
+    const { projectId, chatId } = getParams<{ projectId: string; chatId: string }>(request);
 
     verifyProjectAccess(projectId, userId);
     verifyChatOwnership(chatId, projectId);

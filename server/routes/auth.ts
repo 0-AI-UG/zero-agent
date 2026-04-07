@@ -1,3 +1,4 @@
+import bcrypt from "bcrypt";
 import { corsHeaders } from "@/lib/cors.ts";
 import { authenticateRequest, createToken, createTempToken } from "@/lib/auth.ts";
 import { AuthError } from "@/lib/errors.ts";
@@ -55,7 +56,7 @@ export async function handleLogin(request: Request): Promise<Response> {
       throw new AuthError("Invalid email or password");
     }
 
-    const valid = await Bun.password.verify(body.password, user.password_hash);
+    const valid = await bcrypt.compare(body.password, user.password_hash);
     if (!valid) {
       authLog.warn("login failed - wrong password", { email: body.email });
       throw new AuthError("Invalid email or password");
@@ -137,7 +138,7 @@ export async function handleUpdateMe(request: Request): Promise<Response> {
       }
       const user = getUserById(userId);
       if (!user) throw new AuthError("Unauthorized");
-      const valid = await Bun.password.verify(body.currentPassword, user.password_hash);
+      const valid = await bcrypt.compare(body.currentPassword, user.password_hash);
       if (!valid) {
         return Response.json(
           { error: "Current password is incorrect" },
@@ -151,8 +152,8 @@ export async function handleUpdateMe(request: Request): Promise<Response> {
         );
       }
       const { db } = await import("@/db/index.ts");
-      const hash = await Bun.password.hash(body.newPassword, "bcrypt");
-      db.run("UPDATE users SET password_hash = ? WHERE id = ?", [hash, userId]);
+      const hash = await bcrypt.hash(body.newPassword, 10);
+      db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(hash, userId);
     }
 
     const user = getUserById(userId);

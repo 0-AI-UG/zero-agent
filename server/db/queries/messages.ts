@@ -2,15 +2,15 @@ import { db } from "@/db/index.ts";
 import type { MessageRow } from "@/db/types.ts";
 
 export function getMessagesByChat(chatId: string): MessageRow[] {
-  return db.query<MessageRow, [string]>(
+  return db.prepare(
     "SELECT * FROM messages WHERE chat_id = ? ORDER BY ROWID ASC",
-  ).all(chatId);
+  ).all(chatId) as MessageRow[];
 }
 
-const insertOne = db.query<void, [string, string, string, string, string, string | null]>(
+const insertOne = db.prepare(
   "INSERT OR REPLACE INTO messages (id, project_id, chat_id, role, content, user_id) VALUES (?, ?, ?, ?, ?, ?)",
 );
-const deleteByChatId = db.query<void, [string]>(
+const deleteByChatId = db.prepare(
   "DELETE FROM messages WHERE chat_id = ?",
 );
 
