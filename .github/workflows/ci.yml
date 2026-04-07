@@ -11,16 +11,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
+      - uses: pnpm/action-setup@v4
         with:
-          bun-version: "1.3.5"
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
 
-      - run: bun install
+      - run: pnpm install --frozen-lockfile
 
       - name: Typecheck server
         run: |
-          errors=$(bunx tsc --noEmit 2>&1 | grep -E '^\S.*\([0-9]+,[0-9]+\)' | grep -v '^node_modules/' || true)
+          errors=$(pnpm exec tsc --noEmit 2>&1 | grep -E '^\S.*\([0-9]+,[0-9]+\)' | grep -v '^node_modules/' || true)
           if [ -n "$errors" ]; then echo "$errors"; exit 1; fi
 
       - name: Typecheck web
-        run: bunx tsc --noEmit -p web/tsconfig.json
+        run: pnpm exec tsc --noEmit -p web/tsconfig.json
