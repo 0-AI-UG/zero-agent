@@ -20,6 +20,16 @@ import {
   DialogFooter,
   DialogDescription,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { FilePlusIcon, FolderPlusIcon, RefreshCwIcon, SearchIcon, UploadIcon, XIcon } from "lucide-react";
 import { apiFetch } from "@/api/client";
 import { queryKeys } from "@/lib/query-keys";
@@ -32,22 +42,35 @@ export function FilesPage() {
   const isMobile = useIsMobile();
   const [searchParams, setSearchParams] = useSearchParams();
   const {
-    selectedFileId,
-    setSelectedFileId,
     currentPath,
     navigateTo,
     sortBy,
     setSortBy,
   } = useFilesStore();
 
+  // Bulk selection (source of truth for both selection and single-file preview)
+  const [checkedFileIds, setCheckedFileIds] = useState<Set<string>>(new Set());
+  const [checkedFolderIds, setCheckedFolderIds] = useState<Set<string>>(new Set());
+
+  // Preview shows when exactly one file (and no folders) are selected
+  const previewFileId =
+    checkedFolderIds.size === 0 && checkedFileIds.size === 1
+      ? ([...checkedFileIds][0] ?? null)
+      : null;
+
+  const selectSingleFile = useCallback((id: string) => {
+    setCheckedFileIds(new Set([id]));
+    setCheckedFolderIds(new Set());
+  }, []);
+
   // Auto-select file from ?fileId= query param
   useEffect(() => {
     const fileId = searchParams.get("fileId");
     if (fileId) {
-      setSelectedFileId(fileId);
+      selectSingleFile(fileId);
       setSearchParams({}, { replace: true });
     }
-  }, [searchParams, setSelectedFileId, setSearchParams]);
+  }, [searchParams, selectSingleFile, setSearchParams]);
 
   const {
     data,
@@ -60,16 +83,16 @@ export function FilesPage() {
   const files = data?.files;
   const folders = data?.folders;
 
-  const fileInCurrentFolder = selectedFileId
-    ? files?.find((f) => f.id === selectedFileId)
+  const fileInCurrentFolder = previewFileId
+    ? files?.find((f) => f.id === previewFileId)
     : undefined;
 
   // If selected file isn't in current folder, fetch it directly
   const { data: remoteFileData } = useQuery({
-    queryKey: ["file-detail", projectId, selectedFileId],
+    queryKey: ["file-detail", projectId, previewFileId],
     queryFn: () =>
-      apiFetch<{ file: FileItem }>(`/projects/${projectId}/files/${selectedFileId}/url`),
-    enabled: !!selectedFileId && !fileInCurrentFolder,
+      apiFetch<{ file: FileItem }>(`/projects/${projectId}/files/${previewFileId}/url`),
+    enabled: !!previewFileId && !fileInCurrentFolder,
     staleTime: 30_000,
   });
 
@@ -169,6 +192,80 @@ export function FilesPage() {
   const moveFile = useMoveFile(projectId!);
   const moveFolder = useMoveFolder(projectId!);
 
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
+
+  // Clear selection when folder changes
+  useEffect(() => {
+    setCheckedFileIds(new Set());
+    setCheckedFolderIds(new Set());
+  }, [currentPath]);
+
+  const toggleFileChecked = (id: string, checked: boolean) => {
+    setCheckedFileIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id); else next.delete(id);
+      return next;
+    });
+  };
+  const toggleFolderChecked = (id: string, checked: boolean) => {
+    setCheckedFolderIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id); else next.delete(id);
+      return next;
+    });
+  };
+  const rangeSelect = (
+    ids: { fileIds: string[]; folderIds: string[] },
+    additive: boolean,
+  ) => {
+    setCheckedFileIds((prev) => {
+      const next = additive ? new Set(prev) : new Set<string>();
+      for (const id of ids.fileIds) next.add(id);
+      return next;
+    });
+    setCheckedFolderIds((prev) => {
+      const next = additive ? new Set(prev) : new Set<string>();
+      for (const id of ids.folderIds) next.add(id);
+      return next;
+    });
+  };
+
+  const clearSelection = () => {
+    setCheckedFileIds(new Set());
+    setCheckedFolderIds(new Set());
+  };
+
+  const runBulkDelete = async () => {
+    const fileIds = Array.from(checkedFileIds);
+    const folderIds = Array.from(checkedFolderIds);
+    setIsBulkDeleting(true);
+    try {
+      const results = await Promise.allSettled([
+        ...fileIds.map((id) =>
+          apiFetch(`/projects/${projectId}/files/${id}`, { method: "DELETE" })
+        ),
+        ...folderIds.map((id) =>
+          apiFetch(`/projects/${projectId}/folders/${id}`, { method: "DELETE" })
+        ),
+      ]);
+      const failed = results.filter((r) => r.status === "rejected").length;
+      const succeeded = results.length - failed;
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.files.byProject(projectId!, currentPath),
+      });
+      if (failed === 0) {
+        toast(`Deleted ${succeeded} item${succeeded !== 1 ? "s" : ""}.`);
+      } else {
+        toast.error(`Deleted ${succeeded}, failed ${failed}.`);
+      }
+      clearSelection();
+    } finally {
+      setIsBulkDeleting(false);
+      setBulkConfirmOpen(false);
+    }
+  };
+
   // Drag overlay state
   const [isDragOver, setIsDragOver] = useState(false);
   const dragCounter = useRef(0);
@@ -211,7 +308,7 @@ export function FilesPage() {
       <FilePreview
         file={selectedFile}
         projectId={projectId!}
-        onBack={() => setSelectedFileId(null)}
+        onBack={clearSelection}
       />
     );
   }
@@ -331,7 +428,7 @@ export function FilesPage() {
                 <button
                   key={result.fileId}
                   className="w-full text-left px-3 py-2 rounded-md hover:bg-muted transition-colors"
-                  onClick={() => { setSelectedFileId(result.fileId); setSearchInput(""); setDebouncedQuery(""); }}
+                  onClick={() => { selectSingleFile(result.fileId); setSearchInput(""); setDebouncedQuery(""); }}
                 >
                   <div className="text-sm font-medium truncate">{result.filename}</div>
                   <div
@@ -350,16 +447,23 @@ export function FilesPage() {
             projectId={projectId!}
             sortBy={sortBy}
             onSortChange={setSortBy}
-            onFileClick={setSelectedFileId}
-            onFolderClick={navigateTo}
+            onFileClick={selectSingleFile}
+            onFolderClick={(path) => { clearSelection(); navigateTo(path); }}
             onDeleteFolder={(id) => deleteFolderMutation.mutate(id)}
             isDeletingFolder={deleteFolderMutation.isPending}
             onDeleteFile={(id) => deleteFile.mutate(id)}
             isDeletingFile={deleteFile.isPending}
             onRetry={() => refetch()}
             currentPath={currentPath}
-            selectedFileId={selectedFileId}
             onDropItem={handleDropItem}
+            checkedFileIds={checkedFileIds}
+            checkedFolderIds={checkedFolderIds}
+            onToggleFileChecked={toggleFileChecked}
+            onToggleFolderChecked={toggleFolderChecked}
+            onClearSelection={clearSelection}
+            onBulkDelete={() => setBulkConfirmOpen(true)}
+            isBulkDeleting={isBulkDeleting}
+            onRangeSelect={rangeSelect}
           />
           )}
         </div>
@@ -371,7 +475,7 @@ export function FilesPage() {
           <FilePreview
             file={selectedFile}
             projectId={projectId!}
-            onBack={() => setSelectedFileId(null)}
+            onBack={clearSelection}
           />
         </div>
       )}
@@ -425,6 +529,33 @@ export function FilesPage() {
         </DialogContent>
       </Dialog>
 
+      {/* Bulk delete confirm */}
+      <AlertDialog open={bulkConfirmOpen} onOpenChange={setBulkConfirmOpen}>
+        <AlertDialogContent size="sm">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete selected items</AlertDialogTitle>
+            <AlertDialogDescription>
+              Delete {checkedFileIds.size + checkedFolderIds.size} item
+              {checkedFileIds.size + checkedFolderIds.size !== 1 ? "s" : ""}
+              {checkedFolderIds.size > 0 ? " (folders will be removed recursively)" : ""}? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={isBulkDeleting}
+              onClick={(e) => {
+                e.preventDefault();
+                runBulkDelete();
+              }}
+            >
+              {isBulkDeleting ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* Create file dialog */}
       <Dialog open={fileDialogOpen} onOpenChange={setFileDialogOpen}>
         <DialogContent className="sm:max-w-sm">
@@ -450,7 +581,7 @@ export function FilesPage() {
                   onSuccess: (file) => {
                     setFileDialogOpen(false);
                     setNewFileName("");
-                    setSelectedFileId(file.id);
+                    selectSingleFile(file.id);
                     toast(`File "${name}" created.`);
                   },
                   onError: () => {

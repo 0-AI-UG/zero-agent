@@ -10,10 +10,23 @@ import {
   updateCredential,
   deleteCredential,
 } from "@/db/queries/credentials.ts";
-import { getBaseDomain } from "@/tools/credentials.ts";
 import { log } from "@/lib/logger.ts";
 
 const credLog = log.child({ module: "routes:credentials" });
+
+const TWO_PART_TLDS = new Set([
+  "co.uk", "co.jp", "co.kr", "co.nz", "co.za", "co.in", "co.il",
+  "com.au", "com.br", "com.cn", "com.mx", "com.tw", "com.hk", "com.sg", "com.ar",
+  "org.uk", "org.au", "net.au", "ac.uk",
+]);
+
+function getBaseDomain(hostname: string): string {
+  const parts = hostname.split(".");
+  if (parts.length <= 2) return hostname;
+  const lastTwo = parts.slice(-2).join(".");
+  if (TWO_PART_TLDS.has(lastTwo)) return parts.slice(-3).join(".");
+  return parts.slice(-2).join(".");
+}
 
 function extractHostname(url: string): string {
   try {

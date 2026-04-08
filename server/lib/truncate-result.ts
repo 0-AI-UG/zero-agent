@@ -5,6 +5,19 @@
  */
 
 /**
+ * Strip long base64 runs from text. Browser screenshots, image downloads, etc.
+ * often land in tool stdout as giant base64 blobs that serve no purpose to the
+ * model — replace them with a short placeholder noting the original size.
+ *
+ * Matches runs of base64 alphabet chars at least 400 long (ordinary tokens and
+ * hashes stay under that), optionally followed by padding.
+ */
+export function stripBase64(text: string): string {
+  if (!text) return text;
+  return text.replace(/[A-Za-z0-9+/]{400,}={0,2}/g, (match) => `[base64 omitted ${match.length} chars]`);
+}
+
+/**
  * Truncate text by keeping the first and last portions, dropping the middle.
  */
 export function truncateText(text: string, maxChars: number): string {

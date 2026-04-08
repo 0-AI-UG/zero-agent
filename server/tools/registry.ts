@@ -1,19 +1,17 @@
 import { z } from "zod";
 import { tool } from "ai";
 import type { Tool } from "ai";
-import { createSearchWebTool } from "@/tools/searchWeb.ts";
-import { fetchUrlTool } from "@/tools/fetchUrl.ts";
 import { createFileTools } from "@/tools/files.ts";
-import { createGenerateImageTool } from "@/tools/generateImage.ts";
-import { createSchedulingTools } from "@/tools/scheduling.ts";
 import { createProgressTools } from "@/tools/progress.ts";
 import { createSkillTools } from "@/tools/skills.ts";
-import { createBrowserTool } from "@/tools/browser.ts";
 import { createCodeTools } from "@/tools/code.ts";
-import { createCredentialTools } from "@/tools/credentials.ts";
-import { createTelegramTools } from "@/tools/telegram.ts";
-import { createChatHistoryTools } from "@/tools/chat-history.ts";
-import { createPortTools } from "@/tools/apps.ts";
+
+// NOTE: searchWeb, fetchUrl, generateImage, scheduling (4 tools),
+// browser, credentials (2 tools), telegram, chat-history, listFiles,
+// searchFiles, and forwardPort have all been migrated out of the
+// in-process tool registry. They live in server/cli-handlers/ now and the agent invokes
+// them via the `zero` CLI/SDK from inside the runner sandbox. See
+// server/cli-handlers/index.ts for the new mount points.
 
 export type ToolRegistry = Record<string, Tool<any, any>>;
 
@@ -24,12 +22,11 @@ const TOOL_SCOPES: Record<string, ToolScope> = {
   agent: "all",
 };
 
-// Tools explicitly denied in subagent context (on top of scope filtering)
+// Tools explicitly denied in subagent context (on top of scope filtering).
+// The scheduling tools used to be listed here; they are no longer
+// in-process tools at all (migrated to `zero schedule ...`), so they
+// are denied by default in any context that doesn't run `bash`.
 const SUBAGENT_DENIED = new Set([
-  "scheduleTask",
-  "listScheduledTasks",
-  "updateScheduledTask",
-  "removeScheduledTask",
   "delete",
 ]);
 
@@ -43,8 +40,10 @@ function isToolAvailable(name: string, context: ExecutionContext): boolean {
   return scope === "all" || scope === context;
 }
 
-// Always-available base tools (all contexts)
-const ALWAYS_AVAILABLE_BASE = new Set(["readFile", "writeFile", "editFile", "listFiles", "loadSkill"]);
+// Always-available base tools (all contexts).
+// listFiles was removed when the file-listing tool was migrated to
+// `zero` / standard unix (`ls`, `find`) inside the bash sandbox.
+const ALWAYS_AVAILABLE_BASE = new Set(["readFile", "writeFile", "editFile", "loadSkill", "bash"]);
 // Additional always-available tools for chat context
 const ALWAYS_AVAILABLE_CHAT_EXTRA = new Set<string>([]);
 
@@ -65,25 +64,15 @@ export function createToolRegistry(
     context?: ExecutionContext;
     onlyTools?: string[];
     onlySkills?: string[];
-    codeExecutionEnabled?: boolean;
     initialReadPaths?: string[];
     anchorRunId?: string;
   },
 ): ToolRegistry {
   const registry: ToolRegistry = {
-    searchWeb: createSearchWebTool(),
-    fetchUrl: fetchUrlTool,
-    ...createFileTools(projectId, { chatId: options.chatId, modelId: options.modelId, initialReadPaths: options.initialReadPaths }),
-    ...createGenerateImageTool(projectId),
-    ...createSchedulingTools(projectId),
+    ...createFileTools(projectId, { chatId: options.chatId, userId: options.userId, modelId: options.modelId, initialReadPaths: options.initialReadPaths }),
     ...(options.chatId ? createProgressTools({ projectId, chatId: options.chatId, anchorRunId: options.anchorRunId }) : {}),
     ...createSkillTools(projectId, options.chatId),
-    ...(options.userId ? createBrowserTool(options.userId, projectId, options.modelId) : {}),
-    ...(options.userId && options.codeExecutionEnabled ? createCodeTools(options.userId, projectId) : {}),
-    ...createCredentialTools(projectId, options.userId ?? undefined),
-    ...createTelegramTools(projectId),
-    ...createChatHistoryTools(projectId),
-    ...(options.userId && options.codeExecutionEnabled ? createPortTools(options.userId, projectId) : {}),
+    ...(options.userId ? createCodeTools(options.userId, projectId) : {}),
   };
 
   // 1. Scope filtering — remove tools not available in this context
@@ -146,7 +135,6 @@ export function createDiscoverableToolset(
     context?: ExecutionContext;
     onlyTools?: string[];
     onlySkills?: string[];
-    codeExecutionEnabled?: boolean;
     initialReadPaths?: string[];
     anchorRunId?: string;
   },

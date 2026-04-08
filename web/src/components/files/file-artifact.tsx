@@ -1,4 +1,4 @@
-import { CopyIcon, DownloadIcon, EyeIcon } from "lucide-react";
+import { CopyIcon, DownloadIcon } from "lucide-react";
 import {
   Artifact,
   ArtifactHeader,
@@ -8,7 +8,6 @@ import {
   ArtifactAction,
 } from "@/components/ai/artifact";
 import { usePresignedUrl } from "@/hooks/use-presigned-url";
-import { useFilesStore } from "@/stores/files-store";
 
 interface FileArtifactProps {
   fileId: string;
@@ -23,7 +22,6 @@ export function FileArtifact({
   mimeType,
   projectId,
 }: FileArtifactProps) {
-  const { openFilePreview } = useFilesStore();
   const { data: urlData } = usePresignedUrl(projectId, fileId);
   const url = urlData?.url;
   const displayUrl = urlData?.thumbnailUrl ?? url;
@@ -34,11 +32,6 @@ export function FileArtifact({
       <ArtifactHeader>
         <ArtifactTitle>{filename}</ArtifactTitle>
         <ArtifactActions>
-          <ArtifactAction
-            icon={EyeIcon}
-            tooltip="Preview"
-            onClick={() => openFilePreview(fileId)}
-          />
           <ArtifactAction
             icon={CopyIcon}
             tooltip="Copy"

@@ -123,7 +123,7 @@ function extractWithTurndown(html: string): { title: string; content: string } {
 
 // ── Query-Aware Snippet Extraction (Phase 5) ──────────────────────────
 
-function extractRelevantExcerpts(
+export function extractRelevantExcerpts(
   content: string,
   query: string,
   maxExcerpts = 5,
@@ -202,7 +202,7 @@ async function fetchHtml(
 
 // ── Content Processing Pipeline ────────────────────────────────────────
 
-function processHtml(
+export function processHtml(
   html: string,
   url: string,
   query?: string,

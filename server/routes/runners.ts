@@ -10,16 +10,20 @@ import {
   updateRunner,
   deleteRunner,
 } from "@/db/queries/runners.ts";
-import { reloadRunners } from "@/lib/execution/lifecycle.ts";
+import { reconcile, getLocalBackend } from "@/lib/execution/lifecycle.ts";
 import { RunnerClient } from "@/lib/execution/runner-client.ts";
+import { RunnerPool } from "@/lib/execution/runner-pool.ts";
 
 export async function handleListRunners(req: Request): Promise<Response> {
   await requireAdmin(req);
   const runners = listRunners();
-  // Mask API keys in response
+  const backend = getLocalBackend();
+  const pool = backend instanceof RunnerPool ? backend : null;
+  // Mask API keys and include live connection state from the pool
   const masked = runners.map(r => ({
     ...r,
     api_key: r.api_key ? "••••••" : "",
+    connected: pool?.hasRunner(r.id) ?? false,
   }));
   return Response.json({ runners: masked }, { headers: corsHeaders });
 }
@@ -33,7 +37,7 @@ export async function handleCreateRunner(req: Request): Promise<Response> {
   }
 
   const runner = insertRunner({ name: body.name, url: body.url, apiKey: body.apiKey });
-  await reloadRunners();
+  await reconcile();
 
   return Response.json({ runner: { ...runner, api_key: runner.api_key ? "••••••" : "" } }, { headers: corsHeaders });
 }
@@ -50,7 +54,7 @@ export async function handleUpdateRunner(req: Request): Promise<Response> {
 
   const body = await req.json() as { name?: string; url?: string; api_key?: string; enabled?: number };
   updateRunner(runnerId, body);
-  await reloadRunners();
+  await reconcile();
 
   const updated = getRunner(runnerId)!;
   return Response.json({ runner: { ...updated, api_key: updated.api_key ? "••••••" : "" } }, { headers: corsHeaders });
@@ -67,7 +71,7 @@ export async function handleDeleteRunner(req: Request): Promise<Response> {
   }
 
   deleteRunner(runnerId);
-  await reloadRunners();
+  await reconcile();
 
   return Response.json({ ok: true }, { headers: corsHeaders });
 }
@@ -86,6 +90,10 @@ export async function handleTestRunner(req: Request): Promise<Response> {
 
   const client = new RunnerClient(runner.url, runner.api_key);
   const healthy = await client.healthCheck();
+
+  // Reconcile so a newly-healthy runner gets added (or a now-unhealthy one
+  // gets dropped) from the live pool.
+  await reconcile();
 
   return Response.json({ healthy, url: runner.url }, { headers: corsHeaders });
 }

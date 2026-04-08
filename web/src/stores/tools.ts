@@ -8,6 +8,13 @@ export interface ToolGroup {
   tools: string[];
 }
 
+// NOTE: Many tools (searchWeb, fetchUrl, generateImage, scheduling, browser,
+// credentials, telegram, chat-history, listFiles, searchFiles) have moved out
+// of the in-process tool registry and into the `zero` CLI/SDK that the agent
+// invokes from inside the runner sandbox via `bash`. They are no longer
+// toggleable from this UI — toggling them would do nothing — so they have
+// been removed from TOOL_GROUPS. See server/tools/registry.ts and
+// server/cli-handlers/ for the new mount points.
 export const TOOL_GROUPS: ToolGroup[] = [
   {
     id: "agent",
@@ -19,63 +26,19 @@ export const TOOL_GROUPS: ToolGroup[] = [
     id: "files",
     label: "File Operations",
     icon: "FolderOpen",
-    tools: [
-      "readFile",
-      "writeFile",
-      "editFile",
-      "listFiles",
-      "searchFiles",
-      "moveFile",
-      "createFolder",
-      "delete",
-    ],
-  },
-  {
-    id: "web",
-    label: "Web & Browse",
-    icon: "Globe",
-    tools: ["searchWeb", "fetchUrl", "browser"],
-  },
-  {
-    id: "creative",
-    label: "Image Generation",
-    icon: "Image",
-    tools: ["generateImage"],
+    tools: ["readFile", "writeFile", "editFile", "delete"],
   },
   {
     id: "code",
     label: "Code Execution",
     icon: "Terminal",
-    tools: ["bash"],
-  },
-  {
-    id: "scheduling",
-    label: "Scheduling",
-    icon: "Calendar",
-    tools: [
-      "scheduleTask",
-      "listScheduledTasks",
-      "updateScheduledTask",
-      "removeScheduledTask",
-    ],
+    tools: ["bash", "forwardPort"],
   },
   {
     id: "skills",
     label: "Skills",
     icon: "Puzzle",
     tools: ["loadSkill"],
-  },
-  {
-    id: "credentials",
-    label: "Credentials",
-    icon: "KeyRound",
-    tools: ["saveAccount", "loadAccount"],
-  },
-  {
-    id: "messaging",
-    label: "Messaging",
-    icon: "Send",
-    tools: ["sendTelegramMessage"],
   },
   {
     id: "progress",

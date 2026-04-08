@@ -1,6 +1,12 @@
 import { jwtVerify, SignJWT } from "jose";
 import { AuthError, ForbiddenError } from "@/lib/errors.ts";
 import { getUserById } from "@/db/queries/users.ts";
+import { getSetting } from "@/lib/settings.ts";
+
+export function isTotpRequired(user: { is_admin?: number }): boolean {
+  if (user.is_admin === 1) return true;
+  return getSetting("REQUIRE_2FA") === "1";
+}
 
 export interface TokenPayload {
   userId: string;
@@ -40,18 +46,32 @@ export async function createToken(payload: TokenPayload): Promise<string> {
     .sign(JWT_SECRET);
 }
 
-export async function createTempToken(userId: string): Promise<string> {
-  return new SignJWT({ userId, purpose: "2fa" } as unknown as Record<string, unknown>)
+export type TempTokenPurpose = "2fa" | "password-reset" | "2fa-reenroll";
+
+const TEMP_TOKEN_EXPIRY: Record<TempTokenPurpose, string> = {
+  "2fa": "5m",
+  "password-reset": "5m",
+  "2fa-reenroll": "10m",
+};
+
+export async function createTempToken(
+  userId: string,
+  purpose: TempTokenPurpose = "2fa",
+): Promise<string> {
+  return new SignJWT({ userId, purpose } as unknown as Record<string, unknown>)
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
-    .setExpirationTime("5m")
+    .setExpirationTime(TEMP_TOKEN_EXPIRY[purpose])
     .sign(JWT_SECRET);
 }
 
-export async function verifyTempToken(token: string): Promise<string> {
+export async function verifyTempToken(
+  token: string,
+  expectedPurpose: TempTokenPurpose = "2fa",
+): Promise<string> {
   try {
     const { payload } = await jwtVerify(token, JWT_SECRET);
-    if ((payload as any).purpose !== "2fa") throw new AuthError("Invalid token");
+    if ((payload as any).purpose !== expectedPurpose) throw new AuthError("Invalid token");
     return (payload as any).userId;
   } catch (err) {
     if (err instanceof AuthError) throw err;
@@ -71,6 +91,20 @@ export async function verifyAppToken(token: string): Promise<TokenPayload> {
   const { payload } = await jwtVerify(token, JWT_SECRET);
   if ((payload as any).purpose !== "app") throw new AuthError("Invalid token");
   return { userId: (payload as any).userId, email: (payload as any).email };
+}
+
+export async function createShareToken(slug: string, expiresIn: string): Promise<string> {
+  return new SignJWT({ slug, purpose: "share" } as unknown as Record<string, unknown>)
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt()
+    .setExpirationTime(expiresIn)
+    .sign(JWT_SECRET);
+}
+
+export async function verifyShareToken(token: string, slug: string): Promise<void> {
+  const { payload } = await jwtVerify(token, JWT_SECRET);
+  if ((payload as any).purpose !== "share") throw new AuthError("Invalid token");
+  if ((payload as any).slug !== slug) throw new AuthError("Token does not match app");
 }
 
 export async function requireAdmin(request: Request): Promise<TokenPayload> {

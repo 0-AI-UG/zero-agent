@@ -9,6 +9,7 @@ import {
   DatabaseIcon,
   FolderIcon,
   ZapIcon,
+  ShieldCheckIcon,
   CheckIcon,
   LoaderIcon,
   AlertCircleIcon,
@@ -62,6 +63,33 @@ export function SettingsPage() {
                 }
                 disabled={updateProject.isPending}
                 aria-label="Enable automations"
+              />
+            </div>
+          </div>
+        </section>
+
+        {/* Review section */}
+        <section className="space-y-4">
+          <div className="flex items-center gap-2">
+            <ShieldCheckIcon className="size-4 text-green-500" />
+            <h3 className="text-sm font-semibold">Review</h3>
+          </div>
+
+          <div className="rounded-lg border p-4 space-y-4">
+            <div className="flex items-center justify-between gap-4">
+              <div className="space-y-1">
+                <p className="text-sm font-medium">Review changes before saving</p>
+                <p className="text-xs text-muted-foreground">
+                  Preview file changes and approve them before they're saved to your project.
+                </p>
+              </div>
+              <Switch
+                checked={project.syncGatingEnabled}
+                onCheckedChange={(checked) =>
+                  updateProject.mutate({ syncGatingEnabled: checked })
+                }
+                disabled={updateProject.isPending}
+                aria-label="Review changes before saving"
               />
             </div>
           </div>

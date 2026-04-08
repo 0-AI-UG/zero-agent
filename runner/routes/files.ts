@@ -56,6 +56,17 @@ export function fileRoutes(mgr: ContainerManager) {
       }
     },
 
+    async manifest(req: Request, name: string): Promise<Response> {
+      const url = new URL(req.url);
+      const dir = url.searchParams.get("dir") ?? "/workspace";
+      try {
+        const files = await mgr.manifest(name, dir);
+        return Response.json({ files });
+      } catch (err) {
+        return Response.json({ error: String(err) }, { status: 500 });
+      }
+    },
+
     async changes(_req: Request, name: string): Promise<Response> {
       try {
         const result = await mgr.getChanges(name);
@@ -81,6 +92,41 @@ export function fileRoutes(mgr: ContainerManager) {
       try {
         const data = Buffer.from(await req.arrayBuffer());
         const ok = await mgr.restoreSnapshot(name, data);
+        return Response.json({ ok });
+      } catch (err) {
+        return Response.json({ error: String(err) }, { status: 500 });
+      }
+    },
+
+    async listBlobDirs(_req: Request, name: string): Promise<Response> {
+      try {
+        const dirs = await mgr.getBlobDirs(name);
+        return Response.json({ dirs });
+      } catch (err) {
+        return Response.json({ error: String(err) }, { status: 500 });
+      }
+    },
+
+    async saveBlob(req: Request, name: string): Promise<Response> {
+      try {
+        const url = new URL(req.url);
+        const dir = url.searchParams.get("dir");
+        if (!dir) return Response.json({ error: "missing ?dir" }, { status: 400 });
+        const buffer = await mgr.saveBlob(name, dir);
+        if (!buffer) return Response.json({ error: "blob not found or empty" }, { status: 404 });
+        return new Response(buffer as any, { headers: { "Content-Type": "application/gzip" } });
+      } catch (err) {
+        return Response.json({ error: String(err) }, { status: 500 });
+      }
+    },
+
+    async restoreBlob(req: Request, name: string): Promise<Response> {
+      try {
+        const url = new URL(req.url);
+        const dir = url.searchParams.get("dir");
+        if (!dir) return Response.json({ error: "missing ?dir" }, { status: 400 });
+        const data = Buffer.from(await req.arrayBuffer());
+        const ok = await mgr.restoreBlob(name, dir, data);
         return Response.json({ ok });
       } catch (err) {
         return Response.json({ error: String(err) }, { status: 500 });

@@ -103,9 +103,8 @@ export class PortManager {
     if (!session) return { success: false, error: "Could not create session" };
 
     // Sync workspace files so the start command has something to run
-    const { buildFileManifest } = await import("@/tools/code.ts");
-    const manifest = buildFileManifest(projectId);
-    await backend.syncProjectFiles(projectId, manifest);
+    const { reconcileToContainer } = await import("@/lib/execution/workspace-sync.ts");
+    await reconcileToContainer(projectId);
 
     // If we have a start command, run it
     if (port.start_command) {

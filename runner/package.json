@@ -3,10 +3,14 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "node --import tsx/esm --watch index.ts",
-    "start": "node --import tsx/esm index.ts"
+    "dev": "docker compose -f ../docker-compose.yml --profile build build session-image && docker compose -f ../docker-compose.yml up --build runner",
+    "dev:host": "bun --watch index.ts",
+    "start": "bun index.ts"
   },
-  "dependencies": {},
+  "dependencies": {
+    "@hono/node-server": "^1.19.12",
+    "hono": "^4.6.0"
+  },
   "devDependencies": {
     "@types/node": "^22.0.0"
   }

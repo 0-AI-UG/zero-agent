@@ -29,11 +29,18 @@ export class RunnerPool implements ExecutionBackend {
   private projectRunner = new Map<string, string>();
   private _ready = false;
 
-  async init(): Promise<boolean> {
+  /**
+   * Single source of truth for pool membership. Reads enabled runners from DB,
+   * re-health-checks every one, and converges the client map:
+   *   - removes runners no longer in DB / no longer healthy
+   *   - adds runners now in DB / newly healthy
+   * Migrates legacy RUNNER_URL setting on first call. Idempotent.
+   */
+  async sync(): Promise<{ healthy: number; total: number }> {
     let runners = listEnabledRunners();
 
     // Backward compat: migrate legacy single-runner settings
-    if (runners.length === 0) {
+    if (runners.length === 0 && this.clients.size === 0) {
       const url = getSetting("RUNNER_URL");
       const key = getSetting("RUNNER_API_KEY") ?? "";
       if (url) {
@@ -43,50 +50,33 @@ export class RunnerPool implements ExecutionBackend {
       }
     }
 
-    if (runners.length === 0) return false;
+    const dbIds = new Set(runners.map(r => r.id));
 
-    for (const r of runners) {
-      const client = new RunnerClient(r.url, r.api_key);
-      const healthy = await client.init();
-      if (healthy) {
-        this.clients.set(r.id, client);
-        this.runnerNames.set(r.id, r.name);
-      } else {
-        poolLog.warn("runner not healthy, skipping", { id: r.id, name: r.name, url: r.url });
-      }
-    }
-
-    this._ready = this.clients.size > 0;
-    if (this._ready) {
-      poolLog.info("runner pool ready", { healthy: this.clients.size, total: runners.length });
-    }
-    return this._ready;
-  }
-
-  /** Hot-reload runners from DB without tearing down existing connections. */
-  async reload(): Promise<void> {
-    const runners = listEnabledRunners();
-    const newIds = new Set(runners.map(r => r.id));
-
-    // Remove deleted/disabled runners
-    for (const id of this.clients.keys()) {
-      if (!newIds.has(id)) {
+    // Drop runners no longer in DB
+    for (const id of [...this.clients.keys()]) {
+      if (!dbIds.has(id)) {
         this.clients.delete(id);
         this.runnerNames.delete(id);
         poolLog.info("removed runner from pool", { id });
       }
     }
 
-    // Add new runners
+    // Health-check every DB runner; add healthy, drop unhealthy
     for (const r of runners) {
       this.runnerNames.set(r.id, r.name);
-      if (!this.clients.has(r.id)) {
-        const client = new RunnerClient(r.url, r.api_key);
-        const healthy = await client.init();
-        if (healthy) {
+      const existing = this.clients.get(r.id);
+      const client = existing ?? new RunnerClient(r.url, r.api_key);
+      const healthy = await client.healthCheck().catch(() => false);
+
+      if (healthy) {
+        if (!existing) {
+          await client.init().catch(() => {});
           this.clients.set(r.id, client);
           poolLog.info("added runner to pool", { id: r.id, name: r.name });
         }
+      } else if (existing) {
+        this.clients.delete(r.id);
+        poolLog.warn("runner unhealthy, removed from pool", { id: r.id, name: r.name });
       }
     }
 
@@ -98,6 +88,15 @@ export class RunnerPool implements ExecutionBackend {
     }
 
     this._ready = this.clients.size > 0;
+    return { healthy: this.clients.size, total: runners.length };
+  }
+
+  size(): number {
+    return this.clients.size;
+  }
+
+  hasRunner(runnerId: string): boolean {
+    return this.clients.has(runnerId);
   }
 
   isReady(): boolean {
@@ -190,9 +189,43 @@ export class RunnerPool implements ExecutionBackend {
     this.projectRunner.delete(projectId);
   }
 
-  async syncProjectFiles(projectId: string, manifest: Record<string, string>): Promise<void> {
+  async getContainerManifest(projectId: string, subpath?: string): Promise<Record<string, string>> {
     const { client } = await this.getClientForProject(projectId);
-    await client.syncProjectFiles(projectId, manifest);
+    return client.getContainerManifest(projectId, subpath);
+  }
+
+  async pushFile(projectId: string, relativePath: string, buffer: Buffer): Promise<void> {
+    const { client } = await this.getClientForProject(projectId);
+    await client.pushFile(projectId, relativePath, buffer);
+  }
+
+  async deleteFile(projectId: string, relativePath: string): Promise<void> {
+    const { client } = await this.getClientForProject(projectId);
+    await client.deleteFile(projectId, relativePath);
+  }
+
+  async listBlobDirs(projectId: string): Promise<string[]> {
+    const resolved = await this.resolveRunner(projectId);
+    if (!resolved) return [];
+    return resolved.client.listBlobDirs(projectId);
+  }
+
+  async saveBlobDir(projectId: string, dir: string): Promise<Buffer | null> {
+    const resolved = await this.resolveRunner(projectId);
+    if (!resolved) return null;
+    return resolved.client.saveBlobDir(projectId, dir);
+  }
+
+  async restoreBlobDir(projectId: string, dir: string, data: Buffer): Promise<void> {
+    const resolved = await this.resolveRunner(projectId);
+    if (!resolved) return;
+    return resolved.client.restoreBlobDir(projectId, dir, data);
+  }
+
+  async persistSystemSnapshot(projectId: string): Promise<void> {
+    const resolved = await this.resolveRunner(projectId);
+    if (!resolved) return;
+    await resolved.client.persistSystemSnapshot(projectId);
   }
 
   touchActivity(projectId: string): void {

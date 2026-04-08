@@ -22,6 +22,9 @@ export interface SessionInfo {
   sessionId: string;
   containerIp: string;
   containerName: string;
+  /** User who most recently provisioned this session. Used by the
+   *  runner-proxy CLI handlers to resolve container → principal. */
+  userId: string;
 }
 
 export interface ContainerListEntry {
@@ -38,7 +41,14 @@ export interface ExecutionBackend {
 
   ensureContainer(userId: string, projectId: string): Promise<void>;
   destroyContainer(projectId: string): Promise<void>;
-  syncProjectFiles(projectId: string, manifest: Record<string, string>): Promise<void>;
+  pushFile(projectId: string, relativePath: string, buffer: Buffer): Promise<void>;
+  deleteFile(projectId: string, relativePath: string): Promise<void>;
+  /** Fetch a sha256 manifest of files under `subpath` (default /workspace) inside the container. */
+  getContainerManifest(projectId: string, subpath?: string): Promise<Record<string, string>>;
+
+  listBlobDirs(projectId: string): Promise<string[]>;
+  saveBlobDir(projectId: string, dir: string): Promise<Buffer | null>;
+  restoreBlobDir(projectId: string, dir: string, data: Buffer): Promise<void>;
   touchActivity(projectId: string): void;
 
   runBash(userId: string, projectId: string, command: string, timeout?: number, background?: boolean): Promise<BashResult>;

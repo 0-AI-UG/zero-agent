@@ -1,19 +1,14 @@
 import bcrypt from "bcrypt";
 import { corsHeaders } from "@/lib/cors.ts";
-import { authenticateRequest, createToken, createTempToken } from "@/lib/auth.ts";
+import { authenticateRequest, createToken, createTempToken, verifyTempToken, isTotpRequired } from "@/lib/auth.ts";
 import { AuthError } from "@/lib/errors.ts";
-import { validateBody, loginSchema } from "@/lib/validation.ts";
-import { getUserByEmail, getUserById, updateUserCompanionSharing } from "@/db/queries/users.ts";
+import { validateBody, loginSchema, passwordSchema } from "@/lib/validation.ts";
+import { getUserByEmail, getUserById, updateUserCompanionSharing, updateUserPassword } from "@/db/queries/users.ts";
+import { getTotpSecret } from "@/db/queries/totp.ts";
+import { createTOTP } from "@/routes/totp.ts";
 import { handleError } from "@/routes/utils.ts";
 import { authRateLimiter } from "@/lib/rate-limit.ts";
 import { log } from "@/lib/logger.ts";
-import { getSetting } from "@/lib/settings.ts";
-
-function isTotpRequired(user: { is_admin?: number }): boolean {
-  if (user.is_admin === 1) return true;
-  return getSetting("REQUIRE_2FA") === "1";
-}
-
 const authLog = log.child({ module: "auth" });
 
 function getClientIP(request: Request): string {
@@ -115,6 +110,83 @@ export async function handleMe(request: Request): Promise<Response> {
       },
       { headers: corsHeaders },
     );
+  } catch (error) {
+    return handleError(error);
+  }
+}
+
+export async function handlePasswordResetInit(request: Request): Promise<Response> {
+  const rateLimitResponse = checkRateLimit(request);
+  if (rateLimitResponse) return rateLimitResponse;
+
+  try {
+    const body = await request.json() as { email?: string };
+    if (!body.email) {
+      return Response.json(
+        { error: "Email is required" },
+        { status: 400, headers: corsHeaders },
+      );
+    }
+
+    const user = getUserByEmail(body.email);
+    if (!user || user.totp_enabled !== 1) {
+      authLog.warn("password reset unavailable", { email: body.email });
+      return Response.json(
+        { error: "Password reset unavailable for this account" },
+        { status: 400, headers: corsHeaders },
+      );
+    }
+
+    const tempToken = await createTempToken(user.id, "password-reset");
+    authLog.info("password reset initiated", { userId: user.id });
+    return Response.json({ tempToken }, { headers: corsHeaders });
+  } catch (error) {
+    return handleError(error);
+  }
+}
+
+export async function handlePasswordResetConfirm(request: Request): Promise<Response> {
+  const rateLimitResponse = checkRateLimit(request);
+  if (rateLimitResponse) return rateLimitResponse;
+
+  try {
+    const body = await request.json() as { tempToken?: string; code?: string; newPassword?: string };
+    if (!body.tempToken || !body.code || !body.newPassword) {
+      return Response.json(
+        { error: "tempToken, code, and newPassword are required" },
+        { status: 400, headers: corsHeaders },
+      );
+    }
+
+    const passwordResult = passwordSchema.safeParse(body.newPassword);
+    if (!passwordResult.success) {
+      return Response.json(
+        { error: passwordResult.error.issues.map((i) => i.message).join("; ") },
+        { status: 400, headers: corsHeaders },
+      );
+    }
+
+    const userId = await verifyTempToken(body.tempToken, "password-reset");
+    const user = getUserById(userId);
+    if (!user || user.totp_enabled !== 1) throw new AuthError("Invalid token");
+
+    const secret = getTotpSecret(userId);
+    if (!secret) throw new AuthError("TOTP not configured");
+
+    const totp = createTOTP(secret, user.email);
+    const delta = totp.validate({ token: body.code, window: 1 });
+    if (delta === null) {
+      authLog.warn("password reset failed - invalid totp", { userId });
+      return Response.json(
+        { error: "Invalid code" },
+        { status: 400, headers: corsHeaders },
+      );
+    }
+
+    const hash = await bcrypt.hash(body.newPassword, 10);
+    updateUserPassword(userId, hash);
+    authLog.info("password reset success", { userId });
+    return Response.json({ success: true }, { headers: corsHeaders });
   } catch (error) {
     return handleError(error);
   }

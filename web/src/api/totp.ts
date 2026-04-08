@@ -30,6 +30,22 @@ export async function totpLogin(
   return res.json();
 }
 
+export async function totpRecover(
+  tempToken: string,
+  code: string,
+): Promise<{ tempToken: string }> {
+  const res = await fetch(`${API_BASE}/auth/totp/recover`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ tempToken, code }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error ?? `Request failed: ${res.status}`);
+  }
+  return res.json();
+}
+
 export async function totpDisable(code: string): Promise<{ disabled: true }> {
   return apiFetch("/auth/totp/disable", {
     method: "POST",

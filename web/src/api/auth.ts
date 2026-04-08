@@ -27,6 +27,24 @@ export async function loginApi(
   });
 }
 
+export async function passwordResetInit(email: string): Promise<{ tempToken: string }> {
+  return apiFetch("/auth/password-reset/init", {
+    method: "POST",
+    body: JSON.stringify({ email }),
+  });
+}
+
+export async function passwordResetConfirm(
+  tempToken: string,
+  code: string,
+  newPassword: string,
+): Promise<{ success: true }> {
+  return apiFetch("/auth/password-reset/confirm", {
+    method: "POST",
+    body: JSON.stringify({ tempToken, code, newPassword }),
+  });
+}
+
 export async function registerApi(
   email: string,
   password: string,

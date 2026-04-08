@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Link } from "react-router";
 import { useAuthStore } from "@/stores/auth";
 import { Input } from "@/components/ui/input";
@@ -66,10 +66,16 @@ import {
   ServerIcon,
   PowerIcon,
   PowerOffIcon,
+  GaugeIcon,
 } from "lucide-react";
 import {
+  useAdminInvitations,
+  useCreateInvitation,
+  useDeleteInvitation,
+  type AdminInvitation,
+} from "@/api/user-invitations";
+import {
   useAdminUsers,
-  useCreateUser,
   useDeleteUser,
   useUpdateUser,
   useAdminSettings,
@@ -81,6 +87,10 @@ import {
   useUpdateRunner,
   useDeleteRunner,
   useTestRunner,
+  useReconnectRunner,
+  useCodexStatus,
+  useCodexDisconnect,
+  useCodexImport,
   type AdminUser,
   type Runner,
 } from "@/api/admin";
@@ -104,6 +114,14 @@ import { Switch } from "@/components/ui/switch";
 import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { toast } from "sonner";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 const AVATAR_COLORS = [
   "bg-blue-500/15 text-blue-700 dark:text-blue-300",
@@ -200,8 +218,9 @@ export function AdminPage() {
             <TabsContent value="usage" className="pt-4">
               <UsageSection />
             </TabsContent>
-            <TabsContent value="users" className="pt-4">
+            <TabsContent value="users" className="pt-4 space-y-8">
               <UserManagementSection />
+              <InvitationsSection />
             </TabsContent>
           </Tabs>
         </div>
@@ -278,6 +297,10 @@ function ApiKeyField({
 
 function InstanceSettingsSection() {
   const { data: settings } = useAdminSettings();
+  const updateSettings = useUpdateSettings();
+  const queryClient = useQueryClient();
+  const activeProvider = settings?.INFERENCE_PROVIDER ?? "openrouter";
+  const activeTheme = settings?.UI_THEME ?? "default";
 
   return (
     <section className="space-y-4">
@@ -286,6 +309,74 @@ function InstanceSettingsSection() {
         <h3 className="text-sm font-semibold">Instance Settings</h3>
       </div>
       <div className="rounded-lg border p-4 space-y-4">
+        <div className="space-y-2">
+          <label className="text-sm font-medium">Inference Provider</label>
+          <p className="text-xs text-muted-foreground">
+            Active backend for chat. Embeddings and image generation always fall back to OpenRouter when the active provider doesn't support them.
+          </p>
+          <Select
+            value={activeProvider}
+            onValueChange={(value) => {
+              updateSettings.mutate(
+                { INFERENCE_PROVIDER: value },
+                {
+                  onSuccess: () => toast.success("Inference provider updated"),
+                  onError: (err) => toast.error(err.message),
+                },
+              );
+            }}
+          >
+            <SelectTrigger className="h-8 w-full text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="openrouter">OpenRouter</SelectItem>
+              <SelectItem value="codex">ChatGPT (Codex OAuth)</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {activeProvider === "codex" && <CodexConnectionCard />}
+
+        <div className="space-y-2">
+          <label className="text-sm font-medium">UI Theme</label>
+          <p className="text-xs text-muted-foreground">
+            Switches the visual theme for all users. Applied at runtime.
+          </p>
+          <Select
+            value={activeTheme}
+            onValueChange={(next) => {
+              // Apply immediately so the admin sees the switch even before
+              // /capabilities refetches.
+              const root = document.documentElement;
+              if (next === "default") root.removeAttribute("data-theme");
+              else root.setAttribute("data-theme", next);
+              updateSettings.mutate(
+                { UI_THEME: next },
+                {
+                  onSuccess: () => {
+                    toast.success("Theme updated");
+                    queryClient.invalidateQueries({ queryKey: ["capabilities"] });
+                  },
+                  onError: (err) => toast.error(err.message),
+                },
+              );
+            }}
+          >
+            <SelectTrigger className="h-8 w-full text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="default">Default</SelectItem>
+              <SelectItem value="bw">Black & White</SelectItem>
+              <SelectItem value="sunset">Sunset</SelectItem>
+              <SelectItem value="compact">Compact</SelectItem>
+              <SelectItem value="editorial">Editorial</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+
         <ApiKeyField
           label="OpenRouter API Key"
           placeholder="sk-or-..."
@@ -303,6 +394,85 @@ function InstanceSettingsSection() {
   );
 }
 
+function CodexConnectionCard() {
+  const { data: status, refetch } = useCodexStatus();
+  const disconnect = useCodexDisconnect();
+  const importMut = useCodexImport();
+  const [authJson, setAuthJson] = useState("");
+
+  const handleImport = () => {
+    const value = authJson.trim();
+    if (!value) {
+      toast.error("Paste the contents of ~/.codex/auth.json first");
+      return;
+    }
+    importMut.mutate(value, {
+      onSuccess: (data) => {
+        setAuthJson("");
+        toast.success(
+          `Connected${data.accountEmail ? ` as ${data.accountEmail}` : ""}`,
+        );
+        refetch();
+      },
+      onError: (err) => toast.error(err.message),
+    });
+  };
+
+  return (
+    <div className="rounded border p-3 space-y-2">
+      <div className="text-xs font-medium">ChatGPT subscription</div>
+      {status?.connected ? (
+        <div className="space-y-2">
+          <p className="text-xs text-muted-foreground">
+            Connected{status.accountEmail ? ` as ${status.accountEmail}` : ""}.
+            {status.expiresAt
+              ? ` Token expires ${new Date(status.expiresAt).toLocaleString()}.`
+              : ""}
+          </p>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() =>
+              disconnect.mutate(undefined, {
+                onSuccess: () => {
+                  toast.success("Disconnected");
+                  refetch();
+                },
+                onError: (err) => toast.error(err.message),
+              })
+            }
+          >
+            Disconnect
+          </Button>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <p className="text-xs text-muted-foreground">
+            Run <code>codex login</code> on a machine with a browser, then paste the
+            contents of <code>~/.codex/auth.json</code> here.
+          </p>
+          <textarea
+            aria-label="codex auth.json contents"
+            placeholder='{ "auth_mode": "chatgpt", "tokens": { ... } }'
+            className="h-32 w-full rounded border bg-background px-2 py-1 text-xs font-mono"
+            value={authJson}
+            onChange={(e) => setAuthJson(e.target.value)}
+            spellCheck={false}
+          />
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleImport}
+            disabled={importMut.isPending}
+          >
+            Import
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ServerExecutionSection() {
   const { data: settings } = useAdminSettings();
   const updateSettings = useUpdateSettings();
@@ -315,6 +485,7 @@ function ServerExecutionSection() {
   const updateRunnerMut = useUpdateRunner();
   const deleteRunnerMut = useDeleteRunner();
   const testRunner = useTestRunner();
+  const reconnectRunner = useReconnectRunner();
 
   const [addOpen, setAddOpen] = useState(false);
   const [editRunner, setEditRunner] = useState<Runner | null>(null);
@@ -322,8 +493,6 @@ function ServerExecutionSection() {
 
   const { data: containers, isLoading: containersLoading } = useContainers();
   const destroyContainer = useDestroyContainer();
-
-  const running = containers?.length ?? 0;
 
   function formatAge(lastUsedAt: number) {
     const seconds = Math.round((Date.now() - lastUsedAt) / 1000);
@@ -348,9 +517,11 @@ function ServerExecutionSection() {
       <div className="flex items-center gap-2">
         <CpuIcon className="size-4 text-cyan-500" />
         <h3 className="text-sm font-semibold">Server Execution</h3>
-        <span className="text-xs text-muted-foreground ml-auto">
-          {running} running
-        </span>
+        {serverExecutionEnabled && runnerStatus?.connected ? (
+          <Badge variant="default" className="text-[10px]">On</Badge>
+        ) : (
+          <Badge variant="outline" className="text-[10px]">Off</Badge>
+        )}
       </div>
 
       {/* Runners */}
@@ -360,6 +531,31 @@ function ServerExecutionSection() {
             <ServerIcon className="size-4 text-muted-foreground" />
             <p className="text-sm font-medium">Runners</p>
           </div>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={reconnectRunner.isPending}
+              onClick={async () => {
+                try {
+                  const result = await reconnectRunner.mutateAsync();
+                  if (result.success) {
+                    toast.success("Execution reconnected");
+                  } else {
+                    toast.error(result.error ?? "No healthy runners");
+                  }
+                } catch {
+                  toast.error("Reconnect failed");
+                }
+              }}
+            >
+              {reconnectRunner.isPending ? (
+                <Spinner className="size-3 mr-1.5" />
+              ) : (
+                <RefreshCwIcon className="size-3 mr-1.5" />
+              )}
+              Refresh
+            </Button>
           <Dialog open={addOpen} onOpenChange={setAddOpen}>
             <DialogTrigger asChild>
               <Button size="sm" variant="outline">
@@ -382,6 +578,7 @@ function ServerExecutionSection() {
               />
             </DialogContent>
           </Dialog>
+          </div>
         </div>
 
         {!runners?.length ? (
@@ -408,14 +605,12 @@ function ServerExecutionSection() {
                   <TableCell>
                     {testResults[r.id] === "loading" ? (
                       <Spinner className="size-3" />
-                    ) : testResults[r.id] === true ? (
-                      <Badge variant="default" className="text-[10px]">Healthy</Badge>
-                    ) : testResults[r.id] === false ? (
-                      <Badge variant="destructive" className="text-[10px]">Unhealthy</Badge>
-                    ) : r.enabled ? (
-                      <Badge variant="secondary" className="text-[10px]">Enabled</Badge>
-                    ) : (
+                    ) : !r.enabled ? (
                       <Badge variant="outline" className="text-[10px]">Disabled</Badge>
+                    ) : r.connected ? (
+                      <Badge variant="default" className="text-[10px]">Connected</Badge>
+                    ) : (
+                      <Badge variant="destructive" className="text-[10px]">Disconnected</Badge>
                     )}
                   </TableCell>
                   <TableCell>
@@ -544,6 +739,9 @@ function ServerExecutionSection() {
       </div>
 
       {/* Active Containers */}
+      <p className="text-xs text-muted-foreground mb-2">
+        Destroying a container may take a while.
+      </p>
       <div className="rounded-lg border">
         {containersLoading ? (
           <div className="p-4 text-xs text-muted-foreground">Loading...</div>
@@ -582,12 +780,21 @@ function ServerExecutionSection() {
                       <Button
                         variant="ghost"
                         size="icon-sm"
-                        onClick={() => destroyContainer.mutate(c.sessionId)}
-                        disabled={destroyContainer.isPending}
+                        onClick={() =>
+                          destroyContainer.mutate(c.sessionId, {
+                            onSuccess: () => toast.success("Container destroyed"),
+                            onError: (e) => toast.error(`Failed: ${(e as Error).message}`),
+                          })
+                        }
+                        disabled={destroyContainer.isPending && destroyContainer.variables === c.sessionId}
                         aria-label="Destroy container"
                         className="text-destructive hover:text-destructive"
                       >
-                        <TrashIcon className="size-3" />
+                        {destroyContainer.isPending && destroyContainer.variables === c.sessionId ? (
+                          <Spinner className="size-3" />
+                        ) : (
+                          <TrashIcon className="size-3" />
+                        )}
                       </Button>
                     </div>
                   </TableCell>
@@ -708,6 +915,7 @@ function ModelManagementSection() {
 
   const modelCount = models?.length ?? 0;
   const enabledCount = models?.filter((m) => m.enabled).length ?? 0;
+  const providers = Array.from(new Set((models ?? []).map((m) => m.provider).filter(Boolean))).sort();
 
   return (
     <section className="space-y-4">
@@ -721,7 +929,7 @@ function ModelManagementSection() {
             </span>
           )}
         </div>
-        <AddModelDialog open={addOpen} onOpenChange={setAddOpen} />
+        <AddModelDialog open={addOpen} onOpenChange={setAddOpen} providers={providers} />
       </div>
 
       <div className="rounded-lg border overflow-hidden">
@@ -860,6 +1068,7 @@ function ModelManagementSection() {
       {editModel && (
         <EditModelDialog
           model={editModel}
+          providers={providers}
           open={!!editModel}
           onOpenChange={(v) => { if (!v) setEditModel(null); }}
         />
@@ -868,11 +1077,11 @@ function ModelManagementSection() {
   );
 }
 
-function AddModelDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
+function AddModelDialog({ open, onOpenChange, providers }: { open: boolean; onOpenChange: (v: boolean) => void; providers: string[] }) {
   const createModel = useCreateModel();
   const [id, setId] = useState("");
   const [name, setName] = useState("");
-  const [provider, setProvider] = useState("");
+  const [provider, setProvider] = useState(providers[0] ?? "");
   const [description, setDescription] = useState("");
   const [contextWindow, setContextWindow] = useState("128000");
   const [pricingInput, setPricingInput] = useState("0");
@@ -882,7 +1091,7 @@ function AddModelDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
   const canSubmit = id.trim() && name.trim() && provider.trim();
 
   function reset() {
-    setId(""); setName(""); setProvider(""); setDescription("");
+    setId(""); setName(""); setProvider(providers[0] ?? ""); setDescription("");
     setContextWindow("128000"); setPricingInput("0"); setPricingOutput("0");
     setMultimodal(false);
   }
@@ -930,7 +1139,16 @@ function AddModelDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium">Provider</label>
-              <Input placeholder="openai" value={provider} onChange={(e) => setProvider(e.target.value)} className="h-8 text-xs" />
+              <Select value={provider} onValueChange={setProvider}>
+                <SelectTrigger className="h-8 w-full text-xs">
+                  <SelectValue placeholder={providers.length === 0 ? "No providers" : "Select provider"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {providers.map((p) => (
+                    <SelectItem key={p} value={p}>{p}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="col-span-2 space-y-1">
               <label className="text-xs font-medium">Description</label>
@@ -967,7 +1185,7 @@ function AddModelDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
   );
 }
 
-function EditModelDialog({ model, open, onOpenChange }: { model: AdminModel; open: boolean; onOpenChange: (v: boolean) => void }) {
+function EditModelDialog({ model, providers, open, onOpenChange }: { model: AdminModel; providers: string[]; open: boolean; onOpenChange: (v: boolean) => void }) {
   const updateModelMutation = useUpdateModel();
   const [name, setName] = useState(model.name);
   const [provider, setProvider] = useState(model.provider);
@@ -1010,7 +1228,19 @@ function EditModelDialog({ model, open, onOpenChange }: { model: AdminModel; ope
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium">Provider</label>
-              <Input value={provider} onChange={(e) => setProvider(e.target.value)} className="h-8 text-xs" />
+              <Select value={provider} onValueChange={setProvider}>
+                <SelectTrigger className="h-8 w-full text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {!providers.includes(provider) && provider && (
+                    <SelectItem value={provider}>{provider}</SelectItem>
+                  )}
+                  {providers.map((p) => (
+                    <SelectItem key={p} value={p}>{p}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="col-span-2 space-y-1">
               <label className="text-xs font-medium">Description</label>
@@ -1230,7 +1460,7 @@ function UserManagementSection() {
             </span>
           )}
         </div>
-        <CreateUserDialog />
+        <CreateInvitationDialog />
       </div>
 
       <div className="rounded-lg border overflow-hidden">
@@ -1282,6 +1512,9 @@ function UserManagementSection() {
                 </TableHead>
                 <TableHead className="text-xs font-medium text-muted-foreground hidden sm:table-cell">
                   Joined
+                </TableHead>
+                <TableHead className="text-xs font-medium text-muted-foreground hidden md:table-cell">
+                  Tokens
                 </TableHead>
                 <TableHead className="text-xs font-medium text-muted-foreground w-10">
                   <span className="sr-only">Actions</span>
@@ -1371,6 +1604,13 @@ function UserRow({ user, index }: { user: AdminUser; index: number }) {
           {user.createdAt ? formatRelativeDate(user.createdAt) : "-"}
         </span>
       </TableCell>
+      <TableCell className="hidden md:table-cell">
+        <span className="text-xs text-muted-foreground tabular-nums">
+          {user.tokensUsed.toLocaleString()}
+          {" / "}
+          {user.tokenLimit == null ? "∞" : user.tokenLimit.toLocaleString()}
+        </span>
+      </TableCell>
       <TableCell>
         <UserActions user={user} />
       </TableCell>
@@ -1383,6 +1623,7 @@ function UserActions({ user }: { user: AdminUser }) {
   const updateUser = useUpdateUser();
   const [resetOpen, setResetOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [limitOpen, setLimitOpen] = useState(false);
 
   return (
     <>
@@ -1401,6 +1642,10 @@ function UserActions({ user }: { user: AdminUser }) {
           <DropdownMenuItem onSelect={() => setResetOpen(true)}>
             <KeyRoundIcon />
             Reset password
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => setLimitOpen(true)}>
+            <GaugeIcon />
+            Set token limit
           </DropdownMenuItem>
           {!user.isAdmin && (
             <DropdownMenuItem
@@ -1444,6 +1689,12 @@ function UserActions({ user }: { user: AdminUser }) {
         onOpenChange={setResetOpen}
       />
 
+      <TokenLimitDialog
+        user={user}
+        open={limitOpen}
+        onOpenChange={setLimitOpen}
+      />
+
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <AlertDialogContent size="sm">
           <AlertDialogHeader>
@@ -1474,29 +1725,61 @@ function UserActions({ user }: { user: AdminUser }) {
   );
 }
 
-function CreateUserDialog() {
-  const createUser = useCreateUser();
+function CreateInvitationDialog() {
+  const createInvite = useCreateInvitation();
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
+  const [canCreateProjects, setCanCreateProjects] = useState(true);
+  const [tokenLimit, setTokenLimit] = useState("");
+  const [expiresInDays, setExpiresInDays] = useState("7");
+  const [inviteUrl, setInviteUrl] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
-  const canSubmit = email.includes("@") && password.length >= 8;
+  const canSubmit = email.includes("@");
+
+  function reset() {
+    setEmail("");
+    setCanCreateProjects(true);
+    setTokenLimit("");
+    setExpiresInDays("7");
+    setInviteUrl(null);
+    setCopied(false);
+  }
 
   function handleCreate() {
-    createUser.mutate(
-      { email, password },
+    const parsedLimit = tokenLimit.trim() === "" ? null : Number(tokenLimit);
+    if (parsedLimit !== null && (!Number.isFinite(parsedLimit) || parsedLimit < 0)) {
+      toast.error("Token limit must be a non-negative number");
+      return;
+    }
+    const parsedDays = Number(expiresInDays);
+    if (!Number.isFinite(parsedDays) || parsedDays <= 0) {
+      toast.error("Expiry must be a positive number of days");
+      return;
+    }
+    createInvite.mutate(
       {
-        onSuccess: () => {
-          setEmail("");
-          setPassword("");
-          setShowPassword(false);
-          setOpen(false);
-          toast.success("User created");
+        email: email.trim(),
+        canCreateProjects,
+        tokenLimit: parsedLimit,
+        expiresInDays: parsedDays,
+      },
+      {
+        onSuccess: (res) => {
+          const url = `${window.location.origin}/invite/${res.token}`;
+          setInviteUrl(url);
+          toast.success("Invitation created");
         },
         onError: (err) => toast.error(err.message),
-      }
+      },
     );
+  }
+
+  function copy() {
+    if (!inviteUrl) return;
+    navigator.clipboard.writeText(inviteUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   }
 
   return (
@@ -1504,89 +1787,196 @@ function CreateUserDialog() {
       open={open}
       onOpenChange={(v) => {
         setOpen(v);
-        if (!v) {
-          setEmail("");
-          setPassword("");
-          setShowPassword(false);
-        }
+        if (!v) reset();
       }}
     >
       <DialogTrigger asChild>
         <Button size="sm" className="gap-1.5">
           <UserPlusIcon className="size-3.5" />
-          Add user
+          Invite user
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle className="font-display">Create new user</DialogTitle>
+          <DialogTitle className="font-display">Invite user</DialogTitle>
           <DialogDescription>
-            Add a new user to your instance. They will be able to sign in
-            immediately.
+            Generates a single-use signup link. Share it with the recipient — they'll set their own password.
           </DialogDescription>
         </DialogHeader>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (canSubmit) handleCreate();
-          }}
-          className="space-y-4"
-        >
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Email</label>
-            <Input
-              type="email"
-              placeholder="user@example.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              autoFocus
-              autoComplete="off"
-            />
-          </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Password</label>
-            <div className="relative">
-              <Input
-                type={showPassword ? "text" : "password"}
-                placeholder="Minimum 8 characters"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="pr-9"
-                autoComplete="new-password"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                tabIndex={-1}
-              >
-                {showPassword ? (
-                  <EyeOffIcon className="size-4" />
-                ) : (
-                  <EyeIcon className="size-4" />
-                )}
-              </button>
-            </div>
-            {password.length > 0 && password.length < 8 && (
-              <p className="text-[11px] text-destructive">
-                {8 - password.length} more character
-                {8 - password.length !== 1 ? "s" : ""} needed
+        {inviteUrl ? (
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Invitation link</label>
+              <p className="text-[11px] text-muted-foreground">
+                This link is shown only once. Copy it now.
               </p>
-            )}
+              <div className="flex gap-2">
+                <Input value={inviteUrl} readOnly className="font-mono text-xs" />
+                <Button type="button" size="sm" variant="outline" onClick={copy}>
+                  {copied ? <CheckIcon className="size-3.5" /> : "Copy"}
+                </Button>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button onClick={() => { setOpen(false); reset(); }}>Done</Button>
+            </DialogFooter>
           </div>
-          <DialogFooter>
-            <Button
-              type="submit"
-              disabled={!canSubmit || createUser.isPending}
-              className="w-full sm:w-auto"
-            >
-              <PlusIcon className="size-3.5 mr-1.5" />
-              {createUser.isPending ? "Creating..." : "Create user"}
-            </Button>
-          </DialogFooter>
-        </form>
+        ) : (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (canSubmit) handleCreate();
+            }}
+            className="space-y-4"
+          >
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Email</label>
+              <Input
+                type="email"
+                placeholder="user@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                autoFocus
+                autoComplete="off"
+              />
+            </div>
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium">Can create projects</label>
+              <Switch checked={canCreateProjects} onCheckedChange={setCanCreateProjects} />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Token limit (optional)</label>
+              <Input
+                type="number"
+                min="0"
+                placeholder="Unlimited"
+                value={tokenLimit}
+                onChange={(e) => setTokenLimit(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Expires in (days)</label>
+              <Input
+                type="number"
+                min="1"
+                value={expiresInDays}
+                onChange={(e) => setExpiresInDays(e.target.value)}
+              />
+            </div>
+            <DialogFooter>
+              <Button
+                type="submit"
+                disabled={!canSubmit || createInvite.isPending}
+                className="w-full sm:w-auto"
+              >
+                <PlusIcon className="size-3.5 mr-1.5" />
+                {createInvite.isPending ? "Creating..." : "Create invitation"}
+              </Button>
+            </DialogFooter>
+          </form>
+        )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+function InvitationsSection() {
+  const { data: invitations, isLoading } = useAdminInvitations();
+  const deleteInvite = useDeleteInvitation();
+
+  return (
+    <section className="space-y-4">
+      <div className="flex items-center gap-2">
+        <UserPlusIcon className="size-4 text-blue-500" />
+        <h3 className="text-sm font-semibold">Invitations</h3>
+        {invitations && invitations.length > 0 && (
+          <span className="text-xs text-muted-foreground tabular-nums">
+            {invitations.length}
+          </span>
+        )}
+      </div>
+      <div className="rounded-lg border overflow-hidden">
+        {isLoading ? (
+          <div className="p-8 text-center text-xs text-muted-foreground">Loading…</div>
+        ) : !invitations || invitations.length === 0 ? (
+          <div className="p-8 text-center">
+            <UserPlusIcon className="size-8 text-muted-foreground/30 mx-auto mb-2" />
+            <p className="text-sm text-muted-foreground">No invitations yet</p>
+          </div>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="text-xs font-medium text-muted-foreground">Email</TableHead>
+                <TableHead className="text-xs font-medium text-muted-foreground">Status</TableHead>
+                <TableHead className="text-xs font-medium text-muted-foreground hidden sm:table-cell">Expires</TableHead>
+                <TableHead className="text-xs font-medium text-muted-foreground w-10" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {invitations.map((inv) => (
+                <InvitationRow
+                  key={inv.id}
+                  invitation={inv}
+                  onDelete={() =>
+                    deleteInvite.mutate(inv.id, {
+                      onSuccess: () => toast.success("Invitation revoked"),
+                      onError: (err) => toast.error(err.message),
+                    })
+                  }
+                />
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function InvitationRow({
+  invitation,
+  onDelete,
+}: {
+  invitation: AdminInvitation;
+  onDelete: () => void;
+}) {
+  const statusColor =
+    invitation.status === "pending"
+      ? "border-primary/30 text-primary"
+      : invitation.status === "accepted"
+      ? "border-emerald-500/30 text-emerald-600 dark:text-emerald-400"
+      : "border-muted-foreground/30 text-muted-foreground";
+  const expiresDate = new Date(invitation.expiresAt * 1000);
+  return (
+    <TableRow className="group">
+      <TableCell>
+        <span className="text-xs font-medium">{invitation.email}</span>
+      </TableCell>
+      <TableCell>
+        <Badge variant="outline" className={`text-[10px] h-5 ${statusColor}`}>
+          {invitation.status}
+        </Badge>
+      </TableCell>
+      <TableCell className="hidden sm:table-cell">
+        <span className="text-xs text-muted-foreground">
+          {expiresDate.toLocaleDateString()}
+        </span>
+      </TableCell>
+      <TableCell>
+        {invitation.status !== "accepted" && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={onDelete}
+            className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
+            aria-label={`Revoke invitation for ${invitation.email}`}
+          >
+            <TrashIcon className="size-3.5" />
+          </Button>
+        )}
+      </TableCell>
+    </TableRow>
   );
 }
 
@@ -1686,6 +2076,104 @@ function ResetPasswordDialog({
             >
               <KeyRoundIcon className="size-3.5 mr-1.5" />
               {updateUser.isPending ? "Resetting..." : "Reset password"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function TokenLimitDialog({
+  user,
+  open,
+  onOpenChange,
+}: {
+  user: AdminUser;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const updateUser = useUpdateUser();
+  const [value, setValue] = useState<string>(user.tokenLimit == null ? "" : String(user.tokenLimit));
+
+  useEffect(() => {
+    if (open) setValue(user.tokenLimit == null ? "" : String(user.tokenLimit));
+  }, [open, user.tokenLimit]);
+
+  const parsed = value.trim() === "" ? null : Number(value);
+  const isValid =
+    parsed === null || (Number.isInteger(parsed) && parsed >= 0);
+
+  function save(limit: number | null) {
+    updateUser.mutate(
+      { userId: user.id, tokenLimit: limit },
+      {
+        onSuccess: () => {
+          onOpenChange(false);
+          toast.success(
+            limit === null ? "Token limit cleared" : `Token limit set to ${limit.toLocaleString()}`,
+          );
+        },
+        onError: (err) => toast.error(err.message),
+      },
+    );
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="font-display">Set token limit</DialogTitle>
+          <DialogDescription>
+            Cap total input+output tokens for{" "}
+            <span className="font-medium text-foreground">{user.email}</span>.
+            Chat requests are blocked once the cap is reached. Leave empty for unlimited.
+          </DialogDescription>
+        </DialogHeader>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (isValid) save(parsed);
+          }}
+          className="space-y-4"
+        >
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Token limit</label>
+            <Input
+              type="number"
+              min={0}
+              step={1}
+              placeholder="Unlimited"
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              autoFocus
+            />
+            <p className="text-[11px] text-muted-foreground tabular-nums">
+              Used: {user.tokensUsed.toLocaleString()} tokens
+            </p>
+            {!isValid && (
+              <p className="text-[11px] text-destructive">
+                Must be a non-negative integer.
+              </p>
+            )}
+          </div>
+          <DialogFooter className="gap-2 sm:gap-2">
+            {user.tokenLimit != null && (
+              <Button
+                type="button"
+                variant="outline"
+                disabled={updateUser.isPending}
+                onClick={() => save(null)}
+              >
+                Clear limit
+              </Button>
+            )}
+            <Button
+              type="submit"
+              disabled={!isValid || updateUser.isPending}
+            >
+              <GaugeIcon className="size-3.5 mr-1.5" />
+              {updateUser.isPending ? "Saving..." : "Save"}
             </Button>
           </DialogFooter>
         </form>

@@ -5,6 +5,7 @@ import { db, generateId } from "@/db/index.ts";
 import { handleError } from "@/routes/utils.ts";
 import { log } from "@/lib/logger.ts";
 import type { UserRow } from "@/db/types.ts";
+import { getUserTokenTotalsByIds } from "@/db/queries/usage-logs.ts";
 
 const adminLog = log.child({ module: "admin" });
 
@@ -13,8 +14,10 @@ export async function handleListUsers(request: Request): Promise<Response> {
     await requireAdmin(request);
 
     const users = db.prepare(
-      "SELECT id, email, is_admin, can_create_projects, created_at FROM users ORDER BY created_at"
-    ).all() as Pick<UserRow, "id" | "email" | "is_admin" | "can_create_projects" | "created_at">[];
+      "SELECT id, email, is_admin, can_create_projects, token_limit, created_at FROM users ORDER BY created_at"
+    ).all() as Pick<UserRow, "id" | "email" | "is_admin" | "can_create_projects" | "token_limit" | "created_at">[];
+
+    const tokensUsedMap = getUserTokenTotalsByIds(users.map((u) => u.id));
 
     return Response.json(
       {
@@ -23,6 +26,8 @@ export async function handleListUsers(request: Request): Promise<Response> {
           email: u.email,
           isAdmin: u.is_admin === 1,
           canCreateProjects: u.can_create_projects !== 0,
+          tokenLimit: u.token_limit ?? null,
+          tokensUsed: tokensUsedMap[u.id] ?? 0,
           createdAt: u.created_at,
         })),
       },
@@ -131,6 +136,21 @@ export async function handleUpdateUser(request: Request): Promise<Response> {
 
     if (body.canCreateProjects !== undefined) {
       db.prepare("UPDATE users SET can_create_projects = ? WHERE id = ?").run(body.canCreateProjects ? 1 : 0, targetId);
+    }
+
+    if (body.tokenLimit !== undefined) {
+      if (body.tokenLimit === null) {
+        db.prepare("UPDATE users SET token_limit = NULL WHERE id = ?").run(targetId);
+      } else {
+        const limit = Number(body.tokenLimit);
+        if (!Number.isFinite(limit) || limit < 0 || !Number.isInteger(limit)) {
+          return Response.json(
+            { error: "tokenLimit must be a non-negative integer or null" },
+            { status: 400, headers: corsHeaders }
+          );
+        }
+        db.prepare("UPDATE users SET token_limit = ? WHERE id = ?").run(limit, targetId);
+      }
     }
 
     return Response.json({ success: true }, { headers: corsHeaders });

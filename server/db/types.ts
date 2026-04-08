@@ -7,6 +7,7 @@ export interface UserRow {
   companion_sharing?: number;
   totp_secret?: string | null;
   totp_enabled?: number;
+  token_limit?: number | null;
   created_at: string;
 }
 
@@ -25,8 +26,7 @@ export interface ProjectRow {
   description: string;
   automation_enabled: number;
   browser_search_fallback: number;
-  code_execution_enabled: number;
-  browser_automation_enabled: number;
+  sync_gating_enabled: number;
   show_skills_in_files: number;
   assistant_name: string;
   assistant_description: string;
@@ -65,6 +65,7 @@ export interface FileRow {
   size_bytes: number;
   folder_path: string;
   thumbnail_s3_key: string | null;
+  hash: string;
   created_at: string;
 }
 

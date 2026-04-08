@@ -2,7 +2,6 @@ import { z } from "zod";
 import { tool, ToolLoopAgent, stepCountIs } from "ai";
 import { createDiscoverableToolset } from "@/tools/registry.ts";
 import { getChatModel, getEnrichModel } from "@/lib/providers/index.ts";
-import { getLocalBackend } from "@/lib/execution/lifecycle.ts";
 import { getSkillSummaries } from "@/lib/skills/loader.ts";
 import { buildSkillsIndex } from "@/lib/skills/injector.ts";
 import { nanoid } from "nanoid";
@@ -49,19 +48,18 @@ export function createAgentTool(projectId: string, toolOptions: AgentToolOptions
       };
 
       const completedResults: Array<{ index: number; status: string; text?: string; steps?: number; error?: string }> = [];
+      const progress = new Map<number, { index: number; step: number; currentTools?: string[]; lastText?: string }>();
 
       let resolveUpdate: (() => void) | null = null;
 
       const promises = tasks.map(async (task, index) => {
         // Each subagent gets its own discoverable toolset
-        const codeExecutionEnabled = !!getLocalBackend()?.isReady();
         const { activeTools, toolIndex } = createDiscoverableToolset(projectId, {
           userId: toolOptions.userId,
           excludeTools: AGENT_EXCLUDED_TOOLS,
           context: "subagent",
           onlyTools: toolOptions.onlyTools,
           modelId: toolOptions.modelId,
-          codeExecutionEnabled,
         });
 
         const selectedModel = task.model === "default" ? getChatModel() : getEnrichModel();
@@ -108,6 +106,13 @@ ${skillsIndex ? `\n## Skills\n${skillsIndex}\nCall \`loadSkill\` with a skill na
               else summary.preview = JSON.stringify(r).slice(0, 200);
               return summary;
             }) ?? [];
+            progress.set(index, {
+              index,
+              step: stepNum,
+              currentTools: toolNames,
+              lastText: text?.slice(0, 200),
+            });
+            if (resolveUpdate) resolveUpdate();
             toolLog.info("subagent step", {
               index,
               step: stepNum,
@@ -172,6 +177,7 @@ ${skillsIndex ? `\n## Skills\n${skillsIndex}\nCall \`loadSkill\` with a skill na
         resolveUpdate = null;
 
         if (!allDone) {
+          const completedIndices = new Set(completedResults.map((r) => r.index));
           yield {
             status: "running" as const,
             completed: completedResults.length,
@@ -181,7 +187,9 @@ ${skillsIndex ? `\n## Skills\n${skillsIndex}\nCall \`loadSkill\` with a skill na
               status: r.status,
               text: r.text,
               error: r.error,
+              steps: r.steps,
             })),
+            progress: Array.from(progress.values()).filter((p) => !completedIndices.has(p.index)),
           };
         }
       }

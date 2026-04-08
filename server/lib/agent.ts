@@ -1,13 +1,11 @@
 import { ToolLoopAgent, stepCountIs, type StopCondition } from "ai";
 import { getChatModel, createChatModel } from "@/lib/providers/index.ts";
-import { isAbortRequested } from "@/lib/resumable-stream.ts";
 import { createDiscoverableToolset, type ExecutionContext } from "@/tools/registry.ts";
 import { getSkillSummaries } from "@/lib/skills/loader.ts";
 import { buildSkillsIndex } from "@/lib/skills/injector.ts";
 import { createAgentTool } from "@/tools/agent.ts";
 import { createCompactPrepareStep } from "@/lib/compact-conversation.ts";
 import { readFromS3 } from "@/lib/s3.ts";
-import { getLocalBackend } from "@/lib/execution/lifecycle.ts";
 import { insertEvent } from "@/lib/durability/event-log.ts";
 import { log } from "@/lib/logger.ts";
 
@@ -16,7 +14,6 @@ const agentLog = log.child({ module: "agent" });
 interface ProjectForAgent {
   id: string;
   name: string;
-  code_execution_enabled?: number;
 }
 
 export interface AgentOptions {
@@ -90,144 +87,91 @@ async function buildSystemPrompt(project: {
   const sections: string[] = [];
 
   // ── Opening ──
-  sections.push(`${identity} You are working inside the project "${project.name}".
+  sections.push(`${identity} You are working inside the project "${project.name}". Today's date is ${today}.
 
-Today's date is ${today}.
-
-You help users accomplish tasks by browsing the web, managing files, running code, scheduling automations, and using skills. Your identity is defined by soul.md (pre-loaded above). Relevant memories and file context are auto-retrieved for each conversation. You can update soul.md, memory.md, and heartbeat.md via editFile.`);
+You help users accomplish tasks via web, files, code, automations, and skills. Your identity lives in soul.md (above). You can update soul.md, memory.md, and heartbeat.md via editFile.`);
 
   if (language === "zh") {
     sections.push("Write all responses and generated content in Chinese unless the user explicitly asks for another language.");
   }
 
-  // ── Soul (chat only — automation shouldn't evolve identity) ──
-  if (isChat) {
-    sections.push(`## Soul
-
-\`soul.md\` defines your identity, personality, and behavioral rules. It is pre-loaded as the opening of this system prompt.
-
-**This file is yours to evolve.** As you learn who you are through conversations — your strengths, the user's preferred interaction style, what tone works best — update soul.md to reflect that. If you change soul.md, briefly tell the user what you changed and why — it's your identity, and they should know.
-
-**Update when:** you discover a communication style that works well, the user gives feedback about your personality or tone, or you develop domain expertise worth encoding into your identity. **Don't update:** for trivial or one-off adjustments.`);
-  }
-
-  // ── Memory (both modes) ──
-  if (isChat) {
-    sections.push(`## Memory
-
-\`memory.md\` persists across conversations (sections: Facts, Preferences, Decisions). This is your curated memory — distilled insights, not raw logs.
-
-**Update IMMEDIATELY via editFile when triggered** — don't wait for conversation end.
-
-**Prioritize feedback:** when the user says something is better/worse, capture the WHY, not just the what.
-
-**Update when:**
-- User explicitly asks you to remember something
-- User describes their role, audience, or expertise level
-- User gives quality feedback on your output (capture what they liked/disliked and why)
-- You spot a recurring pattern or preference across the conversation
-- A significant decision is made with reasoning worth preserving
-- You learn a lesson about what works or doesn't work
-
-**Don't update:** transient info, one-time requests, small talk, or credentials.`);
-  } else {
-    sections.push(`## Memory
-
-\`memory.md\` persists across conversations. If this task reveals something worth remembering (a significant finding, a changed status, a lesson learned), update memory.md via editFile.`);
-  }
-
-  // ── Relevant Memories (RAG-retrieved, both modes) ──
-  if (options.relevantMemories?.length) {
-    const memLines = options.relevantMemories.map((m) => `- ${m.content}`).join("\n");
-    sections.push(`### Relevant Memories (auto-retrieved for this conversation)\n\n${memLines}`);
-  }
-
-  // ── Relevant Files (RAG-retrieved, both modes) ──
-  if (options.relevantFiles?.length) {
-    const fileLines = options.relevantFiles.map((f) => `- ${f.path}`).join("\n");
-    sections.push(`### Relevant Files (auto-retrieved for this conversation)\n\nThese files may be relevant — read them if needed:\n${fileLines}`);
-  }
-
-  // ── Heartbeat context (automation only — pre-loaded) ──
-  if (heartbeatContext) {
-    sections.push(heartbeatContext);
-  }
-
-  // ── Skills (both modes) ──
+  // ── Skills ──
   sections.push(`## Skills
-
-Skills provide specialized instructions for particular workflows.
 
 ${skillsIndex}
 
-**How to use a skill:** Call \`loadSkill\` with the skill name. This returns detailed instructions. If the skill references additional files, read them from \`/skills/<skill-name>/\` in project files.`);
+Call \`loadSkill\` with a skill name to get its instructions. Referenced files live under \`/skills/<skill-name>/\`.`);
 
-  // ── Agents (both modes) ──
+  // ── Workspace persistence ──
+  sections.push(`## Workspace persistence
+
+\`/workspace\` (the \`bash\` cwd) has two layers: **source files** sync to project storage after every bash call and go through user approval; **gitignored paths** persist as an opaque blob — they survive restarts but are invisible in the file tree.
+
+Keep \`.gitignore\` accurate (node_modules, .venv, __pycache__, build outputs) so approval cards stay readable.`);
+
+  // ── Agents ──
   sections.push(`## Agents
 
-**Use when:** 4+ tool calls, multiple independent parallel tasks, or isolating failure. **Don't use when:** you need intermediate results for decisions, trivial tasks (1-2 calls), or approval-based tools (e.g., delete).
+Use for 4+ tool calls, independent parallel tasks, or failure isolation. Don't use when you need intermediate results, for 1-2 call tasks, or approval-gated tools.
 
-**Lifecycle:** Spawn (self-contained prompt) → Run (autonomous) → Return (only final text) → Reconcile (synthesize for user). Pass ALL independent tasks in one \`agent\` call — they run in parallel.
+Agent prompts have **zero conversation history** — include every URL, goal, constraint, and desired output format. Pass all independent tasks in one \`agent\` call to run them in parallel.`);
 
-**Prompts must be completely self-contained** (agents have ZERO conversation history):
-- Include ALL context: URLs, project goals, details, criteria
-- State desired output format explicitly
-- Don't specify tools — agents discover them via \`loadTools\`
-- Use "fast" model for research/scraping, "default" for nuanced writing/reasoning`);
-
-  // ── Progress tracking (chat only — automation tasks are already planned) ──
-  if (isChat) {
-    sections.push(`## Progress — Planning Before Execution
-
-For tasks with 3+ steps, create ALL progress items upfront before starting work. Each item = one actionable step, ordered by dependency, with success criteria in the description.
-
-**Lifecycle:** progressCreate → mark \`in_progress\` via progressUpdate → do work → mark \`completed\`. Add new items if scope grows. Mark \`failed\` with reason if blocked, then continue.
-
-Do NOT skip planning for complex tasks — the user should always see what you're working on.`);
-  }
-
-  // ── Heartbeat & Scheduling ──
+  // ── Heartbeat ──
   if (isChat) {
     sections.push(`## Heartbeat & Scheduling
 
-\`heartbeat.md\` is a monitoring checklist that runs automatically every 2 hours. Each item should be a concrete, actionable check.
+\`heartbeat.md\` is a checklist that runs every 2 hours. When the user wants to track or monitor something ongoing, add a concrete check item via editFile and tell them you did. Remove stale items.
 
-**Update proactively.** When the user mentions wanting to track, monitor, or stay on top of something ongoing, add it as a checklist item to heartbeat.md via editFile. Don't just note it — actually update the file. Remove items that are no longer relevant.
+\`heartbeat.md\` also has an \`## Explore\` section — add questions/topics worth investigating later; they get picked up automatically on heartbeat runs.
 
-**Proactively suggest heartbeat items** when relevant: "I can add this to your heartbeat checklist so it gets checked automatically." Good candidates: monitoring a website for changes, tracking a competitor, checking if a service is up, following up on pending items, recurring research.
-
-**Explore items.** heartbeat.md also has an \`## Explore\` section for self-directed investigations — knowledge gaps and unanswered questions worth looking into. When you notice something worth investigating later (a question you can't answer now, a topic worth researching, a connection worth verifying), add it under \`## Explore\` via editFile. These get investigated automatically during heartbeat runs.
-
-For recurring actions beyond the heartbeat (e.g., "check every hour", "post a summary every day"), use \`scheduleTask\` (load via \`loadTools\`). Always check \`listScheduledTasks\` first to avoid duplicates.`);
+For non-heartbeat recurring actions, use \`zero schedule add\` (check \`zero schedule ls\` first).`);
   } else {
     sections.push(`## Heartbeat
 
-If a heartbeat checklist is provided in the user prompt, follow each item. Update heartbeat.md via editFile if a check item is resolved or needs changing. If nothing needs attention, reply exactly: HEARTBEAT_OK`);
+Follow each check item in the user prompt. Update heartbeat.md via editFile if an item is resolved or needs changing. If nothing needs attention, reply exactly: HEARTBEAT_OK`);
   }
 
-  // ── Tool index (both modes) ──
+  // ── Memory (chat only — automation runs shouldn't mutate long-term memory) ──
+  if (isChat) {
+    sections.push(`## Memory & Soul
+
+\`memory.md\` persists across conversations (Facts, Preferences, Decisions). Update immediately via editFile when the user asks you to remember something, gives feedback on your output (capture the *why*), or reveals a durable preference. Skip transient info and credentials.
+
+\`soul.md\` is your identity — evolve it when you discover a tone or expertise worth encoding. Tell the user briefly when you change it.`);
+  }
+
+  // ── Tool index ──
   sections.push(`${toolIndex}
 
-Before using a tool not listed as always-loaded, call \`loadTools\` with the tool names to activate them. Loaded tools remain available for the rest of the conversation.`);
+Call \`loadTools\` with tool names to activate any tool not listed as always-loaded. Activated tools stay available for the rest of the conversation.`);
 
-  // ── Credentials (both modes) ──
-  sections.push(`## Credentials
+  // ── Zero CLI ──
+  sections.push(`## Zero CLI
 
-Use \`loadAccount\` (via \`loadTools\`) to find and load saved credentials for a site. For passkey sign-in it loads the key into the authenticator automatically. For password sign-in it returns the username, password, and TOTP secret. Use \`saveAccount\` to save new credentials after creating an account or registering a passkey.
+Web search/fetch, browser automation, image generation, scheduling, chat search, telegram, credentials, and port forwarding all live in the \`zero\` CLI — call from \`bash\`. Groups: \`web\`, \`browser\`, \`image\`, \`schedule\`, \`chat\`, \`telegram\`, \`creds\`, \`ports\`. Use \`zero --help\` or \`zero <group> --help\` for exact usage; add \`--json\` for machine-readable output.
 
-CRITICAL: Never include passwords, TOTP secrets, or passkey keys in your text responses. These are provided exclusively for filling browser forms via the browser tool. Refer to credentials as "your saved login".`);
+Full reference lives in the container at \`/opt/zero/USAGE.md\` — \`cat\` it when you need more than \`--help\` shows. The same functions are also importable from bun scripts: \`import { web, ports, creds } from "zero"\` (typed — source under \`/opt/zero/src/sdk/\`).
 
-  // ── Response Style ──
+CRITICAL: Never print passwords, TOTP secrets, or passkey keys from \`zero creds\` — they are for filling forms only. Refer to them as "your saved login".`);
+
+  // ── Response Style (chat only — automation defaults are fine) ──
   if (isChat) {
     sections.push(`## Response Style
 
-- **NEVER expose internal thinking.** No "Let me read…", "I should…", "I first need to activate…" — just act and respond naturally.
-- Concise and conversational — helpful colleague, not a robot. Brief progress summaries between tool calls.
-- After \`searchWeb\`, use \`fetchUrl\` to read full content of promising results when snippets aren't enough.`);
-  } else {
-    sections.push(`## Response Style
+**NEVER expose internal thinking** — no "Let me read…", "I should…", "I need to activate…". Just act and respond. Be concise and conversational, like a colleague. After \`zero web search\`, use \`zero web fetch\` when snippets aren't enough.`);
+  }
 
-Be concise and action-oriented. Report only what was done and what needs attention. Skip pleasantries.`);
+  // ── RAG sections (last — they change every turn, keep the prefix cacheable) ──
+  if (heartbeatContext) {
+    sections.push(heartbeatContext);
+  }
+  if (options.relevantMemories?.length) {
+    const memLines = options.relevantMemories.map((m) => `- ${m.content}`).join("\n");
+    sections.push(`## Relevant Memories (auto-retrieved)\n\n${memLines}`);
+  }
+  if (options.relevantFiles?.length) {
+    const fileLines = options.relevantFiles.map((f) => `- ${f.path}`).join("\n");
+    sections.push(`## Relevant Files (auto-retrieved)\n\nRead if needed:\n${fileLines}`);
   }
 
   return sections.join("\n\n");
@@ -254,15 +198,12 @@ export async function createAgent(project: ProjectForAgent, options: AgentOption
 
   const context = options.context ?? (options.chatId ? "chat" : "automation");
 
-  const codeExecutionEnabled = project.code_execution_enabled === 1 && !!getLocalBackend()?.isReady();
-
   const { activeTools, fullRegistry, toolIndex } = createDiscoverableToolset(project.id, {
     chatId: options.chatId,
     userId: options.userId,
     context,
     onlyTools: options.onlyTools,
     onlySkills: options.onlySkills,
-    codeExecutionEnabled,
     modelId: options.model,
     initialReadPaths: options.initialReadPaths,
     anchorRunId: options.anchorRunId,
@@ -301,10 +242,6 @@ export async function createAgent(project: ProjectForAgent, options: AgentOption
   const stopConditions: StopCondition<any>[] = [
     stepCountIs(options.maxSteps ?? 100),
   ];
-  if (options.chatId) {
-    const chatId = options.chatId;
-    stopConditions.push(() => isAbortRequested(chatId));
-  }
 
   return new ToolLoopAgent({
     model,

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useParams, useNavigate } from "react-router";
+import { useParams, useNavigate, useSearchParams } from "react-router";
 import { apiFetch } from "@/api/client";
 import { Loader2Icon } from "lucide-react";
 
@@ -7,6 +7,8 @@ type Status = "checking" | "starting" | "redirecting" | "error";
 
 export function AppGatePage() {
   const { slug, "*": rest } = useParams();
+  const [searchParams] = useSearchParams();
+  const shareToken = searchParams.get("share");
   const navigate = useNavigate();
   const [status, setStatus] = useState<Status>("checking");
   const [error, setError] = useState<string | null>(null);
@@ -18,21 +20,28 @@ export function AppGatePage() {
       try {
         setStatus("starting");
 
+        const statusPath = shareToken
+          ? `/apps/${slug}/status?share=${encodeURIComponent(shareToken)}`
+          : `/apps/${slug}/status`;
         const { status: appStatus, error: appError } = await apiFetch<{
           status: string;
           error?: string;
-        }>(`/apps/${slug}/status`);
+        }>(statusPath);
 
         if (cancelled) return;
 
         if (appStatus === "ready") {
           setStatus("redirecting");
-          const { token } = await apiFetch<{ token: string }>("/app-token", {
-            method: "POST",
-          });
+          let proxyToken = shareToken;
+          if (!proxyToken) {
+            const { token } = await apiFetch<{ token: string }>("/app-token", {
+              method: "POST",
+            });
+            proxyToken = token;
+          }
           if (cancelled) return;
           const path = rest ? `/${rest}` : "";
-          window.location.href = `/_apps/${slug}${path}?token=${encodeURIComponent(token)}`;
+          window.location.href = `/_apps/${slug}${path}?token=${encodeURIComponent(proxyToken!)}`;
           return;
         }
 
@@ -44,15 +53,15 @@ export function AppGatePage() {
       } catch {
         if (!cancelled) {
           setStatus("error");
-          setError("Not authenticated");
-          setTimeout(() => navigate("/login"), 1000);
+          setError(shareToken ? "Invalid or expired share link" : "Not authenticated");
+          if (!shareToken) setTimeout(() => navigate("/login"), 1000);
         }
       }
     }
 
     go();
     return () => { cancelled = true; };
-  }, [slug, rest, navigate]);
+  }, [slug, rest, navigate, shareToken]);
 
   if (status === "error") {
     return (

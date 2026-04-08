@@ -2,7 +2,7 @@ import { z } from "zod";
 import { ValidationError } from "@/lib/errors.ts";
 
 // Auth
-const passwordSchema = z
+export const passwordSchema = z
   .string()
   .min(8, "Password must be at least 8 characters")
   .regex(/[a-z]/, "Password must contain a lowercase letter")
@@ -30,8 +30,7 @@ export const updateProjectSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   description: z.string().max(500).optional(),
   automationEnabled: z.boolean().optional(),
-  codeExecutionEnabled: z.boolean().optional(),
-  browserAutomationEnabled: z.boolean().optional(),
+  syncGatingEnabled: z.boolean().optional(),
   showSkillsInFiles: z.boolean().optional(),
   assistantName: z.string().min(1).max(100).optional(),
   assistantDescription: z.string().max(500).optional(),

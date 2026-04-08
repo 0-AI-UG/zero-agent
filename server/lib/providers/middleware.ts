@@ -14,6 +14,12 @@ function isRetryable(status: number): boolean {
   return status === 429 || (status >= 500 && status < 600);
 }
 
+function isAbortError(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const name = (err as { name?: string }).name;
+  return name === "AbortError" || name === "ResponseAborted";
+}
+
 export function retryFetch(originalFetch: typeof fetch): typeof fetch {
   const wrapper = async (input: any, init?: any) => {
     let lastError: unknown;
@@ -32,6 +38,9 @@ export function retryFetch(originalFetch: typeof fetch): typeof fetch {
         return response;
       } catch (err) {
         lastError = err;
+        if (isAbortError(err) || (init as RequestInit | undefined)?.signal?.aborted) {
+          throw err;
+        }
         if (attempt < MAX_RETRIES) {
           const delay = BASE_DELAY_MS * Math.pow(2, attempt) * (1 + (Math.random() - 0.5) * 2 * JITTER_FACTOR);
           mwLog.warn("retrying LLM request after error", { attempt: attempt + 1, error: err instanceof Error ? err.message : String(err), delayMs: Math.round(delay) });
@@ -39,7 +48,9 @@ export function retryFetch(originalFetch: typeof fetch): typeof fetch {
         }
       }
     }
-    mwLog.error("LLM request exhausted retries", lastError instanceof Error ? lastError : new Error(String(lastError)));
+    if (!isAbortError(lastError)) {
+      mwLog.error("LLM request exhausted retries", lastError instanceof Error ? lastError : new Error(String(lastError)));
+    }
     throw lastError;
   };
   return wrapper as typeof fetch;

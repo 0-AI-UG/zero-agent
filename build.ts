@@ -2,8 +2,7 @@
 /**
  * Builds the full application:
  * 1. Builds the web frontend into web/dist/
- * 2. Embeds the built assets into a TS module
- * 3. Compiles companion + desktop (Electrobun, still uses Bun)
+ * 2. Embeds the built assets into a TS module for the Node server to serve
  */
 import { readdirSync, readFileSync, writeFileSync, mkdirSync, statSync, rmSync } from "node:fs";
 import { join, extname, dirname } from "node:path";
@@ -34,7 +33,7 @@ function run(cmd: string, opts?: { cwd?: string }) {
 
 // Step 1: Build frontend
 console.log("1/3 Building frontend...");
-run("npx vite build", { cwd: join(__dirname, "web") });
+run("bun run build", { cwd: join(__dirname, "web") });
 const distFiles = readdirSync(DIST_DIR, { recursive: true })
   .map(String)
   .filter((f) => !f.endsWith(".map"));

@@ -7,7 +7,7 @@ import type { BrowserAction, BrowserResult } from "@/lib/browser/protocol.ts";
 import type {
   ExecutionBackend, BashResult, ExecResult, SessionInfo, ContainerListEntry,
 } from "./backend-interface.ts";
-import { readBinaryFromS3, writeToS3 } from "@/lib/s3.ts";
+import { readBinaryFromS3, writeToS3, listS3Files } from "@/lib/s3.ts";
 import { fetchWithTimeout } from "@/lib/deferred.ts";
 import { log } from "@/lib/logger.ts";
 
@@ -41,12 +41,37 @@ export class RunnerClient implements ExecutionBackend {
   }
 
   private async json<T>(path: string, init?: RequestInit & { timeout?: number }): Promise<T> {
-    const res = await this.request(path, init);
+    let res: Response;
+    try {
+      res = await this.request(path, init);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      clientLog.error("runner request failed", { path, method: init?.method ?? "GET", error: message });
+      throw new Error(`Runner request failed (${init?.method ?? "GET"} ${path}): ${message}`);
+    }
     if (!res.ok) {
       const body = await res.text().catch(() => "");
-      throw new Error(`Runner API error ${res.status}: ${body}`);
+      clientLog.error("runner API error", { path, status: res.status, body: body.slice(0, 500) });
+      throw new Error(`Runner API error ${res.status} (${init?.method ?? "GET"} ${path}): ${body}`);
     }
-    return res.json() as Promise<T>;
+    const text = await res.text();
+    if (!text) {
+      clientLog.error("runner returned empty body", { path, status: res.status });
+      throw new Error(`Runner returned empty body (${init?.method ?? "GET"} ${path})`);
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(text);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      clientLog.error("runner returned invalid JSON", { path, status: res.status, body: text.slice(0, 500), error: message });
+      throw new Error(`Runner returned invalid JSON (${init?.method ?? "GET"} ${path}): ${message}`);
+    }
+    if (parsed === null || parsed === undefined) {
+      clientLog.error("runner returned null JSON", { path, status: res.status });
+      throw new Error(`Runner returned null JSON (${init?.method ?? "GET"} ${path})`);
+    }
+    return parsed as T;
   }
 
   // -- Lifecycle --
@@ -82,15 +107,120 @@ export class RunnerClient implements ExecutionBackend {
 
   async ensureContainer(userId: string, projectId: string): Promise<void> {
     const name = this.containerName(projectId);
+    const existed = this.sessionCache.has(projectId);
     const result = await this.json<{ name: string; ip: string; status: string }>(`/containers`, {
       method: "POST",
       body: JSON.stringify({ name }),
       timeout: 60_000,
     });
     this.sessionCache.set(projectId, {
-      info: { sessionId: projectId, containerIp: result.ip, containerName: name },
+      info: { sessionId: projectId, containerIp: result.ip, containerName: name, userId },
       expiresAt: Date.now() + RunnerClient.SESSION_CACHE_TTL,
     });
+
+    // First time seeing this container in this process — try to restore the
+    // system snapshot + workspace blob dirs from S3.
+    if (!existed) {
+      try {
+        const buffer = await readBinaryFromS3(`containers/${projectId}/system.tar.gz`);
+        if (buffer && buffer.byteLength > 0) {
+          await this.request(`/containers/${encodeURIComponent(name)}/files/snapshot`, {
+            method: "PUT",
+            body: new Uint8Array(buffer),
+            timeout: 120_000,
+            headers: { "Content-Type": "application/gzip" },
+          });
+          clientLog.info("system snapshot restored from S3", { projectId, sizeBytes: buffer.byteLength });
+        }
+      } catch {
+        // First-time projects have no snapshot — silently skip.
+      }
+
+      // Restore workspace blob dirs in parallel
+      try {
+        const prefix = `projects/${projectId}/.session/blobs/`;
+        const keys = await listS3Files(prefix);
+        await Promise.all(keys.map(async (key) => {
+          try {
+            const filename = key.slice(prefix.length);
+            const dir = filename.replace(/\.tar\.gz$/, "").replace(/__/g, "/");
+            if (!dir) return;
+            const buf = await readBinaryFromS3(key);
+            if (!buf || buf.byteLength === 0) return;
+            await this.restoreBlobDir(projectId, dir, buf);
+            clientLog.info("blob dir restored", { projectId, dir, sizeBytes: buf.byteLength });
+          } catch (err) {
+            clientLog.warn("blob restore failed", { projectId, key, error: String(err) });
+          }
+        }));
+      } catch {
+        // No blob dirs in S3 yet — fine.
+      }
+    }
+  }
+
+  // -- Blob dir methods --
+
+  async listBlobDirs(projectId: string): Promise<string[]> {
+    const name = this.containerName(projectId);
+    try {
+      const result = await this.json<{ dirs: string[] }>(`/containers/${encodeURIComponent(name)}/files/blob-dirs`, {
+        timeout: 30_000,
+      });
+      return result.dirs ?? [];
+    } catch (err) {
+      clientLog.warn("listBlobDirs failed", { projectId, error: String(err) });
+      return [];
+    }
+  }
+
+  async saveBlobDir(projectId: string, dir: string): Promise<Buffer | null> {
+    const name = this.containerName(projectId);
+    try {
+      const res = await this.request(
+        `/containers/${encodeURIComponent(name)}/files/blob?dir=${encodeURIComponent(dir)}`,
+        { method: "POST", timeout: 180_000, headers: { "Content-Type": "application/json" } },
+      );
+      if (!res.ok) return null;
+      const buf = Buffer.from(await res.arrayBuffer());
+      return buf.byteLength > 0 ? buf : null;
+    } catch (err) {
+      clientLog.warn("saveBlobDir failed", { projectId, dir, error: String(err) });
+      return null;
+    }
+  }
+
+  async restoreBlobDir(projectId: string, dir: string, data: Buffer): Promise<void> {
+    const name = this.containerName(projectId);
+    await this.request(
+      `/containers/${encodeURIComponent(name)}/files/blob?dir=${encodeURIComponent(dir)}`,
+      {
+        method: "PUT",
+        body: new Uint8Array(data),
+        timeout: 180_000,
+        headers: { "Content-Type": "application/gzip" },
+      },
+    );
+  }
+
+  /** Save a system snapshot to S3. Best-effort, never throws. */
+  async persistSystemSnapshot(projectId: string): Promise<void> {
+    const name = this.containerName(projectId);
+    try {
+      const res = await this.request(`/containers/${encodeURIComponent(name)}/files/snapshot`, {
+        method: "POST",
+        timeout: 120_000,
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!res.ok) return;
+      const buffer = Buffer.from(await res.arrayBuffer());
+      if (buffer.byteLength > 0) {
+        await writeToS3(`containers/${projectId}/system.tar.gz`, buffer);
+        clientLog.info("system snapshot persisted", { projectId, sizeBytes: buffer.byteLength });
+      }
+    } catch (err) {
+      clientLog.warn("persistSystemSnapshot failed", { projectId, error: String(err) });
+    }
   }
 
   async destroyContainer(projectId: string): Promise<void> {
@@ -122,36 +252,31 @@ export class RunnerClient implements ExecutionBackend {
     this.sessionCache.delete(projectId);
   }
 
-  async syncProjectFiles(projectId: string, manifest: Record<string, string>): Promise<void> {
+  async pushFile(projectId: string, relativePath: string, buffer: Buffer): Promise<void> {
     const name = this.containerName(projectId);
+    await this.json(`/containers/${encodeURIComponent(name)}/files/write`, {
+      method: "POST",
+      body: JSON.stringify({ files: [{ path: relativePath, data: buffer.toString("base64") }] }),
+      timeout: 30_000,
+    });
+  }
 
-    // Download files from S3 and write them to the container
-    const entries = Object.entries(manifest);
-    if (entries.length === 0) return;
+  async deleteFile(projectId: string, relativePath: string): Promise<void> {
+    const name = this.containerName(projectId);
+    await this.json(`/containers/${encodeURIComponent(name)}/files/delete`, {
+      method: "POST",
+      body: JSON.stringify({ paths: [relativePath] }),
+      timeout: 30_000,
+    });
+  }
 
-    // Download in batches of 10
-    const BATCH_SIZE = 10;
-    for (let i = 0; i < entries.length; i += BATCH_SIZE) {
-      const batch = entries.slice(i, i + BATCH_SIZE);
-      const results = await Promise.all(batch.map(async ([relativePath, _url]) => {
-        try {
-          const s3Key = `projects/${projectId}/${relativePath}`;
-          const { readBinaryFromS3: readS3 } = await import("@/lib/s3.ts");
-          const buffer = await readS3(s3Key);
-          return { path: relativePath, data: buffer.toString("base64") };
-        } catch {
-          return null;
-        }
-      }));
-      const files = results.filter((f): f is NonNullable<typeof f> => f !== null);
-      if (files.length === 0) continue;
-
-      await this.json(`/containers/${encodeURIComponent(name)}/files/write`, {
-        method: "POST",
-        body: JSON.stringify({ files }),
-        timeout: 60_000,
-      });
-    }
+  async getContainerManifest(projectId: string, subpath = "/workspace"): Promise<Record<string, string>> {
+    const name = this.containerName(projectId);
+    const res = await this.json<{ files: Record<string, string> }>(
+      `/containers/${encodeURIComponent(name)}/files/manifest?dir=${encodeURIComponent(subpath)}`,
+      { timeout: 120_000 },
+    );
+    return res.files ?? {};
   }
 
   touchActivity(projectId: string): void {
@@ -201,15 +326,32 @@ export class RunnerClient implements ExecutionBackend {
     const effectiveTimeout = timeout ?? 120_000;
     const httpTimeout = effectiveTimeout + 30_000;
 
+    clientLog.debug("runBash request", { name, commandLength: command.length, effectiveTimeout });
     const result = await this.json<{ stdout: string; stderr: string; exitCode: number }>(`/containers/${encodeURIComponent(name)}/bash`, {
       method: "POST",
       body: JSON.stringify({ command, timeout: effectiveTimeout }),
       timeout: httpTimeout,
     });
 
+    if (!result || typeof result !== "object") {
+      clientLog.error("runBash: runner returned non-object", { name, result });
+      throw new Error(`Runner /bash returned invalid payload: ${JSON.stringify(result)}`);
+    }
+    const rawStdout = typeof result.stdout === "string" ? result.stdout : "";
+    const rawStderr = typeof result.stderr === "string" ? result.stderr : "";
+    if (typeof result.stdout !== "string" || typeof result.stderr !== "string" || typeof result.exitCode !== "number") {
+      clientLog.warn("runBash: runner payload missing fields", {
+        name,
+        hasStdout: typeof result.stdout,
+        hasStderr: typeof result.stderr,
+        hasExitCode: typeof result.exitCode,
+      });
+    }
+    clientLog.debug("runBash response", { name, exitCode: result.exitCode, stdoutLen: rawStdout.length, stderrLen: rawStderr.length });
+
     // Strip workspace paths
-    const stdout = result.stdout.replaceAll("/workspace/", "").replaceAll("/workspace", ".");
-    const stderr = result.stderr.replaceAll("/workspace/", "").replaceAll("/workspace", ".");
+    const stdout = rawStdout.replaceAll("/workspace/", "").replaceAll("/workspace", ".");
+    const stderr = rawStderr.replaceAll("/workspace/", "").replaceAll("/workspace", ".");
 
     // Detect changes
     const changes = await this.json<{ changed: string[]; deleted: string[] }>(`/containers/${encodeURIComponent(name)}/files/changes`, {
@@ -231,7 +373,7 @@ export class RunnerClient implements ExecutionBackend {
     return {
       stdout,
       stderr,
-      exitCode: result.exitCode,
+      exitCode: typeof result.exitCode === "number" ? result.exitCode : -1,
       ...(changedFiles && changedFiles.length > 0 ? { changedFiles } : {}),
       ...(changes.deleted.length > 0 ? { deletedFiles: changes.deleted } : {}),
     };

@@ -144,7 +144,10 @@ docker run -p 3000:3000 --env-file .env zero-agent
 
 # Runner only
 docker build -t zero-runner runner/
-docker run -p 3100:3100 -v /var/run/docker.sock:/var/run/docker.sock zero-runner
+docker run -p 3100:3100 \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v /var/run/zero-runner:/var/run/zero-runner \
+  zero-runner
 ```
 
 ## Architecture

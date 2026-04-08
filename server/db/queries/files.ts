@@ -12,6 +12,7 @@ export function insertFile(
   mimeType: string,
   sizeBytes: number,
   folderPath: string,
+  hash: string = "",
 ): FileRow {
   // Check if a file with this s3_key already exists (upsert)
   const existing = db.prepare(
@@ -20,8 +21,8 @@ export function insertFile(
 
   if (existing) {
     db.prepare(
-      "UPDATE files SET filename = ?, mime_type = ?, size_bytes = ?, folder_path = ? WHERE id = ?",
-    ).run(filename, mimeType, sizeBytes, folderPath, existing.id);
+      "UPDATE files SET filename = ?, mime_type = ?, size_bytes = ?, folder_path = ?, hash = ? WHERE id = ?",
+    ).run(filename, mimeType, sizeBytes, folderPath, hash, existing.id);
     return db.prepare(
       "SELECT * FROM files WHERE id = ?",
     ).get(existing.id) as FileRow;
@@ -29,8 +30,8 @@ export function insertFile(
 
   const id = generateId();
   db.prepare(
-    "INSERT INTO files (id, project_id, s3_key, filename, mime_type, size_bytes, folder_path) VALUES (?, ?, ?, ?, ?, ?, ?)",
-  ).run(id, projectId, s3Key, filename, mimeType, sizeBytes, folderPath);
+    "INSERT INTO files (id, project_id, s3_key, filename, mime_type, size_bytes, folder_path, hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+  ).run(id, projectId, s3Key, filename, mimeType, sizeBytes, folderPath, hash);
 
   return db.prepare(
     "SELECT * FROM files WHERE id = ?",
@@ -103,6 +104,14 @@ export function updateFileSize(id: string, sizeBytes: number): FileRow {
     "UPDATE files SET size_bytes = ? WHERE id = ?",
   ).run(sizeBytes, id);
   return db.prepare("SELECT * FROM files WHERE id = ?").get(id) as FileRow;
+}
+
+export function updateFileHash(id: string, hash: string): void {
+  db.prepare("UPDATE files SET hash = ? WHERE id = ?").run(hash, id);
+}
+
+export function getAllProjectFiles(projectId: string): FileRow[] {
+  return db.prepare("SELECT * FROM files WHERE project_id = ?").all(projectId) as FileRow[];
 }
 
 export function deleteFile(id: string): void {

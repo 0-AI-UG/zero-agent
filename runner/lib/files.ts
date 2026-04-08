@@ -7,8 +7,57 @@ import { log } from "./logger.ts";
 
 const fsLog = log.child({ module: "container-fs" });
 
-const IGNORED_DIRS = new Set([".venv", "node_modules", ".tmp", "__pycache__", ".git"]);
-const FIND_PRUNE_ARGS = [...IGNORED_DIRS].map(d => `-name ${d} -prune`).join(" -o ");
+/**
+ * Static fallback for projects without a .gitignore (or before the first
+ * detectBlobDirs call). Always-opaque dirs that should never appear in the
+ * source-file change feed.
+ */
+export const STATIC_BLOB_DIRS = [".git", ".tmp"];
+
+function buildPruneArgs(dirs: readonly string[]): string {
+  if (dirs.length === 0) return "-false";
+  return dirs.map(d => `-name ${shellQuote(d)} -prune`).join(" -o ");
+}
+
+function shellQuote(s: string): string {
+  return `'${s.replace(/'/g, "'\\''")}'`;
+}
+
+/**
+ * Detect "opaque" workspace directories — anything ignored by `.gitignore`
+ * (plus `.git`/`.tmp` always). Used to prune the source-file change feed and
+ * to drive blob-dir tarball persistence.
+ */
+export async function detectBlobDirs(containerName: string): Promise<string[]> {
+  const script = `
+set -e
+cd /workspace 2>/dev/null || exit 0
+echo .git
+echo .tmp
+if [ -f .gitignore ]; then
+  for entry in */; do
+    d="\${entry%/}"
+    if [ "$d" = ".git" ] || [ "$d" = ".tmp" ]; then continue; fi
+    if git check-ignore --no-index -q "$d" 2>/dev/null; then
+      echo "$d"
+    fi
+  done
+fi
+`;
+  try {
+    const result = await docker.exec(containerName, ["bash", "-c", script], {
+      workingDir: "/", timeout: 15_000,
+    });
+    const seen = new Set<string>();
+    for (const line of result.stdout.split("\n")) {
+      const trimmed = line.trim();
+      if (trimmed) seen.add(trimmed);
+    }
+    return [...seen];
+  } catch {
+    return [...STATIC_BLOB_DIRS];
+  }
+}
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024;   // 10 MB per file
 const MAX_TOTAL_BYTES = 50 * 1024 * 1024;   // 50 MB total
@@ -16,6 +65,9 @@ const MAX_TOTAL_BYTES = 50 * 1024 * 1024;   // 50 MB total
 const SYSTEM_SNAPSHOT_EXCLUDES = [
   "./workspace", "./proc", "./sys", "./dev", "./tmp", "./run", "./var/run",
   "./etc/hostname", "./etc/hosts", "./etc/resolv.conf",
+  // The `zero` CLI/SDK is baked into the image and must track image
+  // upgrades — never freeze it inside a per-project snapshot.
+  "./opt/zero",
 ].map(d => `--exclude=${d}`).join(" ");
 
 // -- Marker-based change detection --
@@ -24,10 +76,15 @@ export async function touchMarker(containerName: string): Promise<void> {
   await docker.exec(containerName, ["bash", "-c", "touch /tmp/.snapshot-marker"], { workingDir: "/" });
 }
 
-export async function listFiles(containerName: string, dir = "/workspace"): Promise<Set<string>> {
+export async function listFiles(
+  containerName: string,
+  dir = "/workspace",
+  blobDirs: readonly string[] = STATIC_BLOB_DIRS,
+): Promise<Set<string>> {
+  const pruneArgs = buildPruneArgs(blobDirs);
   const result = await docker.exec(containerName, [
     "bash", "-c",
-    `find ${dir} \\( ${FIND_PRUNE_ARGS} \\) -o -type f -print`,
+    `find ${dir} \\( ${pruneArgs} \\) -o -type f -print`,
   ], { workingDir: "/" });
   const files = new Set<string>();
   const prefix = dir.endsWith("/") ? dir : dir + "/";
@@ -40,6 +97,39 @@ export async function listFiles(containerName: string, dir = "/workspace"): Prom
   return files;
 }
 
+/**
+ * Compute a sha256 manifest of every regular file under `dir` in the container.
+ * Returns `{ relativePath: hex-hash }` keyed by path relative to `dir`.
+ * Used by the server's workspace reconcile loop to diff DB state vs container state.
+ */
+export async function manifest(
+  containerName: string,
+  dir = "/workspace",
+  blobDirs: readonly string[] = STATIC_BLOB_DIRS,
+): Promise<Record<string, string>> {
+  const pruneArgs = buildPruneArgs(blobDirs);
+  // sha256sum prints "<hex>  <path>" per line. Use -print0/xargs-style safe form via -exec.
+  const result = await docker.exec(containerName, [
+    "bash", "-c",
+    `find ${dir} \\( ${pruneArgs} \\) -o -type f -exec sha256sum {} +`,
+  ], { workingDir: "/", timeout: 120_000 });
+
+  const out: Record<string, string> = {};
+  const prefix = dir.endsWith("/") ? dir : dir + "/";
+  for (const line of result.stdout.split("\n")) {
+    if (!line) continue;
+    // sha256sum format: "<64 hex>  <path>"
+    const sep = line.indexOf("  ");
+    if (sep !== 64) continue;
+    const hash = line.slice(0, 64);
+    const fullPath = line.slice(sep + 2);
+    if (fullPath.startsWith(prefix)) {
+      out[fullPath.slice(prefix.length)] = hash;
+    }
+  }
+  return out;
+}
+
 export interface DetectedChanges {
   changed: string[];
   deleted: string[];
@@ -49,12 +139,14 @@ export async function detectChanges(
   containerName: string,
   preFileList: Set<string>,
   dir = "/workspace",
+  blobDirs: readonly string[] = STATIC_BLOB_DIRS,
 ): Promise<DetectedChanges> {
   const prefix = dir.endsWith("/") ? dir : dir + "/";
+  const pruneArgs = buildPruneArgs(blobDirs);
 
   const findResult = await docker.exec(containerName, [
     "bash", "-c",
-    `find ${dir} \\( ${FIND_PRUNE_ARGS} \\) -o -type f -newer /tmp/.snapshot-marker -print`,
+    `find ${dir} \\( ${pruneArgs} \\) -o -type f -newer /tmp/.snapshot-marker -print`,
   ], { workingDir: "/" });
 
   const changed: string[] = [];
@@ -65,7 +157,7 @@ export async function detectChanges(
     }
   }
 
-  const postFileList = await listFiles(containerName, dir);
+  const postFileList = await listFiles(containerName, dir, blobDirs);
   const deleted: string[] = [];
   for (const file of preFileList) {
     if (!postFileList.has(file)) {
@@ -203,6 +295,64 @@ export async function restoreSystemSnapshot(containerName: string, buffer: Buffe
     return true;
   } catch (err) {
     fsLog.warn("failed to restore system snapshot", { error: String(err) });
+    return false;
+  }
+}
+
+// -- Workspace blob dir snapshots (per-dir tarballs) --
+
+function safeBlobName(dir: string): string {
+  return dir.replace(/[^a-zA-Z0-9._-]/g, "_");
+}
+
+export async function tarWorkspaceDir(containerName: string, dir: string): Promise<Buffer | null> {
+  try {
+    const safe = safeBlobName(dir);
+    const target = `/tmp/blob-${safe}.tar.gz`;
+    const result = await docker.exec(containerName, [
+      "bash", "-c",
+      `cd /workspace && [ -e ${shellQuote(dir)} ] && tar czf ${shellQuote(target)} ${shellQuote(dir)} 2>&1 || exit 9`,
+    ], { workingDir: "/", timeout: 120_000 });
+
+    if (result.exitCode === 9) return null; // dir doesn't exist
+    if (result.exitCode !== 0) {
+      fsLog.warn("blob tar failed", { dir, stderr: result.stderr });
+      return null;
+    }
+
+    const outerTar = await docker.getArchive(containerName, target);
+    docker.exec(containerName, ["rm", "-f", target], { workingDir: "/" }).catch(() => {});
+    const inner = extractSingleFileFromTar(outerTar);
+    if (!inner) {
+      fsLog.warn("blob extract failed", { dir });
+      return null;
+    }
+    return inner;
+  } catch (err) {
+    fsLog.warn("tarWorkspaceDir failed", { dir, error: String(err) });
+    return null;
+  }
+}
+
+export async function untarWorkspaceDir(containerName: string, dir: string, data: Buffer): Promise<boolean> {
+  try {
+    const safe = safeBlobName(dir);
+    const inner = `blob-${safe}.tar.gz`;
+    const wrapped = buildTar([{ path: inner, data }]);
+    await docker.putArchive(containerName, "/tmp", wrapped);
+
+    const result = await docker.exec(containerName, [
+      "bash", "-c",
+      `mkdir -p /workspace && cd /workspace && tar xzf /tmp/${inner} 2>/dev/null; rm -f /tmp/${inner}`,
+    ], { workingDir: "/", timeout: 120_000 });
+
+    if (result.exitCode !== 0) {
+      fsLog.warn("blob untar failed", { dir, stderr: result.stderr });
+      return false;
+    }
+    return true;
+  } catch (err) {
+    fsLog.warn("untarWorkspaceDir failed", { dir, error: String(err) });
     return false;
   }
 }

@@ -7,7 +7,7 @@ import type { Context } from "hono";
 import { corsHeaders } from "@/lib/cors.ts";
 import { log } from "@/lib/logger.ts";
 import { handleHealth } from "@/routes/health.ts";
-import { handleLogin, handleMe, handleUpdateMe } from "@/routes/auth.ts";
+import { handleLogin, handleMe, handleUpdateMe, handlePasswordResetInit, handlePasswordResetConfirm } from "@/routes/auth.ts";
 import {
   handleTotpSetup,
   handleTotpConfirm,
@@ -16,6 +16,7 @@ import {
   handleTotpStatus,
   handleTotpSetupFromLogin,
   handleTotpConfirmFromLogin,
+  handleTotpRecover,
 } from "@/routes/totp.ts";
 import {
   handleListProjects,
@@ -101,13 +102,14 @@ import {
   handlePinService,
   handleUnpinService,
   handleAppStatus,
+  handleCreateShareLink,
 } from "@/routes/apps.ts";
 import { presignHandler, s3 } from "@/lib/s3.ts";
 import {
   enableExecution,
   disableExecution,
   teardownExecution,
-  reconnectExecution,
+  reconcile,
   getLocalBackend,
 } from "@/lib/execution/lifecycle.ts";
 import { proxyAppRequest } from "@/lib/app-proxy.ts";
@@ -126,8 +128,20 @@ import { startScheduler, stopScheduler } from "@/lib/scheduler.ts";
 import { requestShutdown, drainActiveRuns, isShuttingDown } from "@/lib/durability/shutdown.ts";
 import { recoverInterruptedRuns } from "@/lib/durability/recovery.ts";
 import { handleListUsers, handleCreateUser, handleDeleteUser, handleUpdateUser } from "@/routes/admin.ts";
+import {
+  handleCreateInvitation,
+  handleListAdminInvitations,
+  handleDeleteInvitation,
+  handleLookupInvitation,
+  handleAcceptUserInvitation,
+} from "@/routes/user-invitations.ts";
 import { handleSetupStatus, handleSetupComplete } from "@/routes/setup.ts";
 import { handleGetSettings, handleUpdateSettings } from "@/routes/settings.ts";
+import {
+  handleCodexImport,
+  handleCodexStatus,
+  handleCodexDisconnect,
+} from "@/routes/oauth.ts";
 import {
   handleListEnabledModels,
   handleListAllModels,
@@ -136,6 +150,7 @@ import {
   handleDeleteModel,
 } from "@/routes/models.ts";
 import { handleUsageSummary, handleUsageByModel, handleUsageByUser } from "@/routes/usage.ts";
+import { handleSyncVerdict, handleSyncDiff } from "@/routes/sync.ts";
 import {
   handleListRunners,
   handleCreateRunner,
@@ -147,6 +162,7 @@ import { startAllPollers, stopAllPollers } from "@/lib/telegram-polling.ts";
 import { processIncomingUpdate } from "@/routes/telegram.ts";
 
 import { requireAdmin, authenticateRequest } from "@/lib/auth.ts";
+import { mountCliHandlers } from "@/cli-handlers/index.ts";
 import { db } from "@/db/index.ts";
 
 const httpLog = log.child({ module: "http" });
@@ -243,6 +259,8 @@ app.get("/api/health", h(handleHealth));
 
 // Auth
 app.post("/api/auth/login", h(handleLogin));
+app.post("/api/auth/password-reset/init", h(handlePasswordResetInit));
+app.post("/api/auth/password-reset/confirm", h(handlePasswordResetConfirm));
 app.get("/api/me", h(handleMe));
 app.put("/api/me", h(handleUpdateMe));
 
@@ -250,6 +268,7 @@ app.put("/api/me", h(handleUpdateMe));
 app.post("/api/auth/totp/setup", h(handleTotpSetup));
 app.post("/api/auth/totp/confirm", h(handleTotpConfirm));
 app.post("/api/auth/totp/login", h(handleTotpLogin));
+app.post("/api/auth/totp/recover", h(handleTotpRecover));
 app.post("/api/auth/totp/disable", h(handleTotpDisable));
 app.get("/api/auth/totp/status", h(handleTotpStatus));
 app.post("/api/auth/totp/setup-from-login", h(handleTotpSetupFromLogin));
@@ -354,6 +373,15 @@ app.post("/api/admin/users", h(handleCreateUser));
 app.put("/api/admin/users/:userId", h(handleUpdateUser));
 app.delete("/api/admin/users/:userId", h(handleDeleteUser));
 
+// Admin: user invitations
+app.get("/api/admin/invitations", h(handleListAdminInvitations));
+app.post("/api/admin/invitations", h(handleCreateInvitation));
+app.delete("/api/admin/invitations/:id", h(handleDeleteInvitation));
+
+// Public: user invitation accept flow
+app.get("/api/user-invitations/:token", h(handleLookupInvitation));
+app.post("/api/user-invitations/:token/accept", h(handleAcceptUserInvitation));
+
 // Runners (admin)
 app.get("/api/admin/runners", h(handleListRunners));
 app.post("/api/admin/runners", h(handleCreateRunner));
@@ -373,9 +401,18 @@ app.get("/api/admin/usage/summary", h(handleUsageSummary));
 app.get("/api/admin/usage/by-model", h(handleUsageByModel));
 app.get("/api/admin/usage/by-user", h(handleUsageByUser));
 
+// Workspace sync approval
+app.post("/api/sync/:id/verdict", h(handleSyncVerdict));
+app.get("/api/sync/:id/diff", h(handleSyncDiff));
+
 // Settings
 app.get("/api/settings", h(handleGetSettings));
 app.put("/api/settings/:key", h(handleUpdateSettings));
+
+// OAuth — Codex inference provider
+app.get("/api/oauth/codex/status", h(handleCodexStatus));
+app.post("/api/oauth/codex/import", h(handleCodexImport));
+app.post("/api/oauth/codex/disconnect", h(handleCodexDisconnect));
 
 // Credentials (saved logins)
 app.get("/api/projects/:projectId/credentials", h(handleListCredentials));
@@ -388,6 +425,7 @@ app.get("/api/projects/:projectId/services", h(handleListServices));
 app.delete("/api/projects/:projectId/services/:serviceId", h(handleDeleteService));
 app.post("/api/projects/:projectId/services/:serviceId/pin", h(handlePinService));
 app.post("/api/projects/:projectId/services/:serviceId/unpin", h(handleUnpinService));
+app.post("/api/projects/:projectId/services/:serviceId/share", h(handleCreateShareLink));
 app.get("/api/apps/:slug/status", h(handleAppStatus));
 
 // Containers (admin)
@@ -439,7 +477,10 @@ app.post("/api/admin/execution/disable", h(async (req: Request) => {
 }));
 app.post("/api/admin/execution/reconnect", h(async (req: Request) => {
   await requireAdmin(req);
-  const result = await reconnectExecution();
+  const result = await reconcile().then(r => ({
+    success: r.healthy > 0,
+    error: r.healthy === 0 ? "No healthy runners available" : undefined,
+  }));
   return Response.json(result, { status: result.success ? 200 : 500, headers: corsHeaders });
 }));
 app.get("/api/admin/runner/status", h(async (req: Request) => {
@@ -464,6 +505,7 @@ app.get("/api/capabilities", h((req: Request) => {
     serverDocker: hasDocker,
     serverBrowser: hasDocker,
     appDeployments: hasDocker,
+    theme: getSetting("UI_THEME") ?? "default",
   }, { headers: corsHeaders });
 }));
 
@@ -485,28 +527,33 @@ app.all("/_apps/:slug/*", (c) => {
   return new Response("Not found", { status: 404 });
 });
 
+// Runner-proxy CLI handlers — only reachable via the trusted runner
+// proxy on behalf of an in-container `zero` CLI/SDK call. See
+// server/cli-handlers/middleware.ts for the auth model.
+mountCliHandlers(app);
+
 // API 404 catch-all
 app.all("/api/*", (c) => {
   httpLog.warn("not found", { method: c.req.method, path: c.req.path });
   return Response.json({ error: "Not found" }, { status: 404, headers: corsHeaders });
 });
 
-// Frontend serving (production only — dev uses Vite middleware below)
-if (IS_PROD) {
-  app.get("*", async (c) => {
-    const pathname = c.req.path;
+// Frontend serving — same path for dev and prod.
+// In dev: served from web/dist/ on disk (rebuilt by `bun build.ts --watch`).
+// In compiled prod: served from embedded assets, with disk fallback.
+app.get("*", async (c) => {
+  const pathname = c.req.path;
 
-    const embedded = serveEmbedded(pathname);
-    if (embedded) return embedded;
+  const embedded = serveEmbedded(pathname);
+  if (embedded) return embedded;
 
-    const filePath = path.join(WEB_DIST, pathname === "/" ? "index.html" : pathname);
-    const staticRes = await serveStatic(filePath);
-    if (staticRes) return staticRes;
+  const filePath = path.join(WEB_DIST, pathname === "/" ? "index.html" : pathname);
+  const staticRes = await serveStatic(filePath);
+  if (staticRes) return staticRes;
 
-    // SPA fallback
-    return serveEmbedded("/") ?? (await serveStatic(path.join(WEB_DIST, "index.html")))!;
-  });
-}
+  // SPA fallback
+  return serveEmbedded("/") ?? (await serveStatic(path.join(WEB_DIST, "index.html")))!;
+});
 
 // Error handler
 app.onError((err, c) => {
@@ -517,50 +564,10 @@ app.onError((err, c) => {
 // ── Start server ──
 
 import { createServer as createHttpServer } from "node:http";
-import { readFileSync } from "node:fs";
 import { getRequestListener } from "@hono/node-server";
 
 const honoListener = getRequestListener(app.fetch);
 const nodeServer = createHttpServer(honoListener);
-
-// In dev mode, attach Vite dev server in middleware mode (official Vite approach)
-if (!IS_PROD) {
-  const { createServer: createViteServer } = await import("vite");
-  const vite = await createViteServer({
-    configFile: path.resolve(__dirname, "../web/vite.config.ts"),
-    server: { middlewareMode: true, hmr: { server: nodeServer } },
-    appType: "custom",
-  });
-
-  const indexHtmlPath = path.resolve(__dirname, "../web/src/index.html");
-
-  // Vite handles all requests first (source modules, HMR, static assets).
-  // If Vite doesn't match, fall through: API/app routes go to Hono, the rest get SPA fallback.
-  nodeServer.removeAllListeners("request");
-  nodeServer.on("request", (req, res) => {
-    const url = req.url ?? "";
-    const pathname = url.split("?")[0]!;
-    // Route real API / app-proxy calls to Hono, but let Vite handle
-    // source-module requests (e.g. /api/client.ts) that have a file extension.
-    const isSourceModule = /\.\w+$/.test(pathname);
-    if (!isSourceModule && (pathname.startsWith("/api/") || pathname.startsWith("/_apps/"))) {
-      return honoListener(req, res);
-    }
-    vite.middlewares(req, res, async () => {
-      try {
-        const template = readFileSync(indexHtmlPath, "utf-8");
-        const html = await vite.transformIndexHtml(url, template);
-        res.writeHead(200, { "Content-Type": "text/html" });
-        res.end(html);
-      } catch (e: any) {
-        vite.ssrFixStacktrace(e);
-        res.writeHead(500);
-        res.end(e.message);
-      }
-    });
-  });
-  log.info("vite dev server attached");
-}
 
 const server = nodeServer.listen(PORT, "0.0.0.0");
 

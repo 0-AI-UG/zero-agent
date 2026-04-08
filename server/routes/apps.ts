@@ -1,5 +1,5 @@
 import { corsHeaders } from "@/lib/cors.ts";
-import { authenticateRequest } from "@/lib/auth.ts";
+import { authenticateRequest, createShareToken, verifyShareToken } from "@/lib/auth.ts";
 import { getParams } from "@/lib/request.ts";
 import { handleError, verifyProjectAccess } from "@/routes/utils.ts";
 import {
@@ -105,8 +105,18 @@ const coldStartInflight = new Map<string, Promise<{ success: boolean; error?: st
 
 export async function handleAppStatus(req: Request): Promise<Response> {
   try {
-    await authenticateRequest(req);
     const { slug } = getParams<{ slug: string }>(req);
+    const url = new URL(req.url);
+    const shareToken = url.searchParams.get("share");
+    if (shareToken) {
+      try {
+        await verifyShareToken(shareToken, slug);
+      } catch {
+        return Response.json({ status: "failed", error: "Invalid or expired share link" }, { status: 401, headers: corsHeaders });
+      }
+    } else {
+      await authenticateRequest(req);
+    }
 
     const port = getPortBySlug(slug);
     if (!port) {
@@ -146,6 +156,45 @@ export async function handleAppStatus(req: Request): Promise<Response> {
       return Response.json({ status: "ready" }, { headers: corsHeaders });
     }
     return Response.json({ status: "failed", error: result.error }, { headers: corsHeaders });
+  } catch (error) {
+    return handleError(error);
+  }
+}
+
+// Allowed durations for shareable links — keep these short.
+const SHARE_DURATIONS: Record<string, { label: string; value: string }> = {
+  "5m": { label: "5 minutes", value: "5m" },
+  "15m": { label: "15 minutes", value: "15m" },
+  "1h": { label: "1 hour", value: "1h" },
+};
+const DURATION_SECONDS: Record<string, number> = { "5m": 300, "15m": 900, "1h": 3600 };
+
+export async function handleCreateShareLink(req: Request): Promise<Response> {
+  try {
+    const { userId } = await authenticateRequest(req);
+    const { projectId, serviceId } = getParams<{ projectId: string; serviceId: string }>(req);
+    verifyProjectAccess(projectId, userId);
+
+    const port = getPortById(serviceId);
+    if (!port || port.project_id !== projectId) {
+      return Response.json({ error: "Service not found" }, { status: 404, headers: corsHeaders });
+    }
+    if (port.pinned !== 1) {
+      return Response.json({ error: "Only pinned apps can be shared" }, { status: 400, headers: corsHeaders });
+    }
+
+    const body = await req.json().catch(() => ({}));
+    const duration = (body?.duration as string) ?? "15m";
+    if (!SHARE_DURATIONS[duration]) {
+      return Response.json({ error: "Invalid duration" }, { status: 400, headers: corsHeaders });
+    }
+
+    const token = await createShareToken(port.slug, duration);
+    const expiresAt = new Date(Date.now() + DURATION_SECONDS[duration]! * 1000).toISOString();
+    return Response.json(
+      { path: `/app/${port.slug}?share=${token}`, expiresAt, duration },
+      { headers: corsHeaders },
+    );
   } catch (error) {
     return handleError(error);
   }

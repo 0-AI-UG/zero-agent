@@ -25,7 +25,6 @@ import {
 import { cn } from "@/lib/utils";
 import { useEffect } from "react";
 import { useFilesStore } from "@/stores/files-store";
-import { FilePreviewModal } from "@/components/files/file-preview-modal";
 
 function getProjectColor(name: string): string {
   let hash = 0;
@@ -208,7 +207,7 @@ export function ProjectLayout() {
     {
       to: `${basePath}/services`,
       icon: NetworkIcon,
-      label: "Services",
+      label: "Apps",
     },
     {
       to: `${basePath}/skills`,
@@ -277,7 +276,6 @@ export function ProjectLayout() {
             <BottomTabItem key={item.to} {...item} />
           ))}
         </nav>
-        <FilePreviewModal projectId={projectId!} />
       </div>
     );
   }
@@ -332,7 +330,6 @@ export function ProjectLayout() {
       <main className="flex-1 overflow-hidden h-full">
         {outletContent}
       </main>
-      <FilePreviewModal projectId={projectId!} />
     </div>
   );
 }

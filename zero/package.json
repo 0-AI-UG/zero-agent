@@ -1,0 +1,32 @@
+{
+  "name": "zero",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "bin": {
+    "zero": "./dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./src/sdk/index.ts",
+      "default": "./dist/sdk.js"
+    },
+    "./schemas": {
+      "types": "./src/sdk/schemas.ts",
+      "default": "./src/sdk/schemas.ts"
+    }
+  },
+  "main": "./dist/sdk.js",
+  "types": "./src/sdk/index.ts",
+  "scripts": {
+    "build": "bun build.ts",
+    "dev:cli": "bun src/cli/index.ts"
+  },
+  "dependencies": {
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5"
+  }
+}

@@ -2,13 +2,15 @@
  * Container manager — manages named containers with browser state,
  * idle reaping, and execution primitives.
  */
-import * as path from "node:path";
 import { docker } from "./docker-client.ts";
 import { CdpClient, connectToPage } from "./cdp.ts";
 import { executeAction, type RefMap, type CursorState, type SnapshotCache } from "./browser.ts";
-import { touchMarker, listFiles, detectChanges, readFiles, writeFiles, deleteFiles, saveSystemSnapshot, restoreSystemSnapshot } from "./files.ts";
+import { touchMarker, listFiles, detectChanges, readFiles, writeFiles, deleteFiles, saveSystemSnapshot, restoreSystemSnapshot, detectBlobDirs, tarWorkspaceDir, untarWorkspaceDir, manifest as filesManifest, STATIC_BLOB_DIRS } from "./files.ts";
 import { fetchWithTimeout } from "./deferred.ts";
 import { log } from "./logger.ts";
+import { startSocketServer, stopSocketServer, socketPathFor, socketSubpathFor, ensureSocketDir } from "./socket-proxy.ts";
+import type { DockerMount } from "./docker-client.ts";
+import type * as http from "node:http";
 import type { BrowserAction, BrowserResult, ContainerInfo, ExecResult } from "./types.ts";
 
 const mgrLog = log.child({ module: "container-mgr" });
@@ -21,6 +23,22 @@ const IDLE_TIMEOUT_MS = Number(process.env.IDLE_TIMEOUT_SECS ?? 600) * 1000;
 const REAPER_INTERVAL_MS = 30_000;
 const MAX_CONTAINERS = Number(process.env.MAX_CONTAINERS ?? 10);
 
+// In-container mount target + socket file. The whole directory is
+// mounted (from a named volume subpath or a host bind), and the socket
+// lives inside it. Path is /run/zero/sock so we don't clobber /run.
+const CONTAINER_SOCKET_DIR = "/run/zero";
+const CONTAINER_SOCKET_PATH = `${CONTAINER_SOCKET_DIR}/sock`;
+
+/**
+ * Name of the Docker named volume holding per-container socket subdirs.
+ * When set, session containers receive a VolumeOptions.Subpath mount of
+ * this volume instead of a host bind-mount — this is the only mode that
+ * works on Docker Desktop for macOS, because AF_UNIX endpoints on
+ * bind-mounted macOS files aren't connectable from inside the Linux VM.
+ * When unset, we fall back to the legacy host bind-mount (Linux host dev).
+ */
+const SOCKET_VOLUME = process.env.ZERO_RUNNER_SOCKET_VOLUME;
+
 interface ContainerState {
   name: string;
   containerId: string;
@@ -30,19 +48,22 @@ interface ContainerState {
   cursor: CursorState;
   snapshotCache: SnapshotCache;
   fileList: Set<string>; // for change detection
+  blobDirs: string[];
+  blobDirsExpiresAt: number;
   lock: Promise<void>;
   cdpReconnectAttempts: number;
   createdAt: number;
   lastUsedAt: number;
   busyCount: number;
+  socketServer: http.Server | null;
 }
 
 export class ContainerManager {
   private containers = new Map<string, ContainerState>();
   private creationLocks = new Map<string, Promise<void>>();
   private destroying = new Set<string>();
-  private imageReady = false;
-  private imageBuilding: Promise<void> | null = null;
+  private imageReadyTag: string | null = null;
+  private imageBuilding: Promise<string> | null = null;
   private readyNetworks = new Set<string>();
   private _dockerReady = false;
   private reaperInterval: ReturnType<typeof setInterval> | null = null;
@@ -56,6 +77,12 @@ export class ContainerManager {
         mgrLog.info("Docker daemon is ready");
         await this.cleanupOrphaned();
         this.startReaper();
+        // Prebuild the session image so the first user doesn't pay the
+        // build cost on their first request. Fire-and-forget: log on
+        // failure but don't block startup.
+        this.ensureImage(DEFAULT_IMAGE).catch((err) =>
+          mgrLog.error("prebuild of session image failed", { error: String(err) }),
+        );
         return true;
       }
       await new Promise((r) => setTimeout(r, 1000));
@@ -119,19 +146,54 @@ export class ContainerManager {
     const image = opts?.image ?? DEFAULT_IMAGE;
     mgrLog.info("creating container", { name, image });
 
-    await this.ensureImage(image);
+    const resolvedImage = await this.ensureImage(image);
 
     const network = opts?.network ?? `runner-net-${name}`;
     await this.ensureNetwork(network);
+
+    // Start a per-container Unix socket the in-container `zero` CLI/SDK
+    // will talk to. Identity is established by the mount itself (either
+    // a file bind-mount or a volume subpath mount) — so this surface
+    // needs no network attach, no DNS, no token, no source-IP check.
+    await ensureSocketDir();
+    const socketServer = await startSocketServer(this, { name });
+
+    const baseEnv = opts?.env ?? [];
+    const env = [...baseEnv, `ZERO_PROXY_URL=unix:${CONTAINER_SOCKET_PATH}`];
+
+    // Pick the socket transport shape. SOCKET_VOLUME implies we're a
+    // containerized runner sharing a named volume with sessions; otherwise
+    // we fall back to a plain host bind-mount of the socket file.
+    let mounts: DockerMount[] | undefined;
+    let binds: string[] | undefined;
+    if (SOCKET_VOLUME) {
+      mounts = [
+        {
+          Type: "volume",
+          Source: SOCKET_VOLUME,
+          Target: CONTAINER_SOCKET_DIR,
+          VolumeOptions: { Subpath: socketSubpathFor(name) },
+        },
+      ];
+    } else {
+      const hostSocketPath = socketPathFor(name);
+      // Host bind-mount the whole per-container directory (not just the
+      // file) so the runner can re-create the socket without the bind
+      // losing track of it.
+      const hostDir = hostSocketPath.replace(/\/sock$/, "");
+      binds = [`${hostDir}:${CONTAINER_SOCKET_DIR}`];
+    }
 
     try {
       await docker.removeContainer(name).catch(() => {});
 
       const containerId = await docker.createAndStartContainer({
         name,
-        image,
+        image: resolvedImage,
         network,
-        env: opts?.env,
+        env,
+        binds,
+        mounts,
         memory: opts?.memory ?? 1024 * 1024 * 1024,
         cpus: opts?.cpus ?? 2,
         pidsLimit: 512,
@@ -155,11 +217,14 @@ export class ContainerManager {
         cursor: { x: 0, y: 0 },
         snapshotCache,
         fileList: new Set(),
+        blobDirs: [...STATIC_BLOB_DIRS],
+        blobDirsExpiresAt: 0,
         lock: Promise.resolve(),
         cdpReconnectAttempts: 0,
         createdAt: Date.now(),
         lastUsedAt: Date.now(),
         busyCount: 0,
+        socketServer,
       };
 
       this.registerDomListener(cdp, snapshotCache);
@@ -172,6 +237,7 @@ export class ContainerManager {
     } catch (err) {
       mgrLog.error("container creation failed, cleaning up", { name, error: String(err) });
       await docker.removeContainer(name).catch(() => {});
+      await stopSocketServer(socketServer, name).catch(() => {});
       throw err;
     }
   }
@@ -190,6 +256,11 @@ export class ContainerManager {
       try { state.cdp?.close(); } catch {}
       try { await docker.removeContainer(name); } catch (err) {
         mgrLog.warn("failed to remove container", { name, error: String(err) });
+      }
+      if (state.socketServer) {
+        await stopSocketServer(state.socketServer, name).catch((err) => {
+          mgrLog.warn("failed to stop socket server", { name, error: String(err) });
+        });
       }
 
       mgrLog.info("container destroyed", { name });
@@ -211,7 +282,7 @@ export class ContainerManager {
     return { name, ip: state.ip, status: "running", createdAt: state.createdAt, lastUsedAt: state.lastUsedAt };
   }
 
-  list(): ContainerInfo[] {
+list(): ContainerInfo[] {
     return [...this.containers.values()].map((s) => ({
       name: s.name,
       ip: s.ip,
@@ -282,20 +353,49 @@ export class ContainerManager {
 
   // -- File operations --
 
+  async getBlobDirs(name: string): Promise<string[]> {
+    const state = this.containers.get(name);
+    if (!state) throw new Error(`Container "${name}" not found`);
+    if (Date.now() < state.blobDirsExpiresAt && state.blobDirs.length > 0) {
+      return state.blobDirs;
+    }
+    state.blobDirs = await detectBlobDirs(name);
+    state.blobDirsExpiresAt = Date.now() + 60_000;
+    return state.blobDirs;
+  }
+
   async touchChangeMarker(name: string): Promise<void> {
     if (!this.containers.has(name)) throw new Error(`Container "${name}" not found`);
     this.containers.get(name)!.lastUsedAt = Date.now();
     await touchMarker(name);
-    this.containers.get(name)!.fileList = await listFiles(name);
+    const blobDirs = await this.getBlobDirs(name);
+    this.containers.get(name)!.fileList = await listFiles(name, "/workspace", blobDirs);
   }
 
   async getChanges(name: string): Promise<{ changed: string[]; deleted: string[] }> {
     const state = this.containers.get(name);
     if (!state) throw new Error(`Container "${name}" not found`);
     state.lastUsedAt = Date.now();
-    const result = await detectChanges(name, state.fileList);
-    state.fileList = await listFiles(name);
+    const blobDirs = await this.getBlobDirs(name);
+    const result = await detectChanges(name, state.fileList, "/workspace", blobDirs);
+    state.fileList = await listFiles(name, "/workspace", blobDirs);
     return result;
+  }
+
+  async saveBlob(name: string, dir: string): Promise<Buffer | null> {
+    const state = this.containers.get(name);
+    if (!state) throw new Error(`Container "${name}" not found`);
+    state.lastUsedAt = Date.now();
+    return tarWorkspaceDir(name, dir);
+  }
+
+  async restoreBlob(name: string, dir: string, data: Buffer): Promise<boolean> {
+    const state = this.containers.get(name);
+    if (!state) throw new Error(`Container "${name}" not found`);
+    state.lastUsedAt = Date.now();
+    // Invalidate blob dir cache since contents changed
+    state.blobDirsExpiresAt = 0;
+    return untarWorkspaceDir(name, dir, data);
   }
 
   async readFiles(name: string, paths: string[]): Promise<Array<{ path: string; data: string; sizeBytes: number }>> {
@@ -315,6 +415,14 @@ export class ContainerManager {
     if (!this.containers.has(name)) throw new Error(`Container "${name}" not found`);
     this.containers.get(name)!.lastUsedAt = Date.now();
     await deleteFiles(name, paths);
+  }
+
+  async manifest(name: string, dir?: string): Promise<Record<string, string>> {
+    const state = this.containers.get(name);
+    if (!state) throw new Error(`Container "${name}" not found`);
+    state.lastUsedAt = Date.now();
+    const blobDirs = await this.getBlobDirs(name);
+    return filesManifest(name, dir ?? "/workspace", blobDirs);
   }
 
   async listFiles(name: string, dir?: string): Promise<string[]> {
@@ -428,37 +536,24 @@ export class ContainerManager {
     throw new Error("Chrome CDP not ready within timeout");
   }
 
-  private async ensureImage(image: string): Promise<void> {
-    if (this.imageReady) return;
+  private async ensureImage(image: string): Promise<string> {
+    if (this.imageReadyTag) return this.imageReadyTag;
     if (this.imageBuilding) return this.imageBuilding;
 
     this.imageBuilding = (async () => {
       if (await docker.imageExists(image)) {
-        this.imageReady = true;
-        return;
+        this.imageReadyTag = image;
+        return image;
       }
 
-      const registryImage = process.env.REGISTRY_IMAGE;
-      if (registryImage) {
-        try {
-          mgrLog.info("pulling image from registry", { image: registryImage });
-          await docker.pullImage(registryImage);
-          await docker.tagImage(registryImage, image);
-          this.imageReady = true;
-          return;
-        } catch (err) {
-          mgrLog.warn("failed to pull image, will try building", { error: String(err) });
-        }
+      const registryImage = process.env.REGISTRY_IMAGE ?? image;
+      mgrLog.info("pulling image", { image: registryImage });
+      await docker.pullImage(registryImage);
+      if (registryImage !== image) {
+        await docker.tagImage(registryImage, image);
       }
-
-      const buildDir = process.env.IMAGE_BUILD_DIR;
-      if (buildDir) {
-        mgrLog.info("building image", { dir: buildDir, tag: image });
-        await docker.buildImage(image, buildDir);
-        this.imageReady = true;
-      } else {
-        throw new Error(`Image "${image}" not found and no IMAGE_BUILD_DIR configured`);
-      }
+      this.imageReadyTag = image;
+      return image;
     })();
 
     return this.imageBuilding;
@@ -509,3 +604,4 @@ export class ContainerManager {
     }
   }
 }
+

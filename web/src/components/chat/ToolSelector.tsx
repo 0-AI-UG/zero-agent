@@ -7,11 +7,11 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { TOOL_GROUPS, useToolsStore } from "@/stores/tools";
 import {
-  CalendarIcon,
   FolderOpenIcon,
-  GlobeIcon,
-  ImageIcon,
+  ListTodoIcon,
+  PuzzleIcon,
   SparklesIcon,
+  TerminalIcon,
   WrenchIcon,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -20,9 +20,9 @@ import { cn } from "@/lib/utils";
 const GROUP_ICONS: Record<string, LucideIcon> = {
   agent: SparklesIcon,
   files: FolderOpenIcon,
-  web: GlobeIcon,
-  creative: ImageIcon,
-  scheduling: CalendarIcon,
+  code: TerminalIcon,
+  skills: PuzzleIcon,
+  progress: ListTodoIcon,
 };
 
 export function ToolSelector() {

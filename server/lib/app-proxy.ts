@@ -4,7 +4,7 @@
  * Auth via short-lived app tokens in the query string (issued by the gate page).
  */
 import { getPortBySlug } from "@/db/queries/apps.ts";
-import { verifyAppToken } from "@/lib/auth.ts";
+import { verifyAppToken, verifyShareToken } from "@/lib/auth.ts";
 import { corsHeaders } from "@/lib/cors.ts";
 import { log } from "@/lib/logger.ts";
 
@@ -59,7 +59,11 @@ export async function proxyAppRequest(slug: string, request: Request): Promise<R
     return Response.json({ error: "Authentication required" }, { status: 401, headers: corsHeaders });
   }
   try {
-    await verifyAppToken(appToken);
+    try {
+      await verifyAppToken(appToken);
+    } catch {
+      await verifyShareToken(appToken, slug);
+    }
   } catch {
     return Response.json({ error: "Invalid or expired token" }, { status: 401, headers: corsHeaders });
   }

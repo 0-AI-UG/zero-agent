@@ -3,11 +3,9 @@ import type { LucideIcon } from "lucide-react";
 import {
   PenToolIcon,
   DownloadIcon,
-  MaximizeIcon,
   Loader2Icon,
 } from "lucide-react";
 import { usePresignedUrl } from "@/hooks/use-presigned-url";
-import { useFilesStore } from "@/stores/files-store";
 import { Shimmer } from "@/components/ai/shimmer";
 import { injectVizDesignSystem } from "@/lib/viz-design-system";
 import { useTheme } from "next-themes";
@@ -159,7 +157,6 @@ function VizPreview({ fileId, projectId, filename, content: directContent }: Wri
   const isDark = resolvedTheme === "dark";
   const { htmlContent: fetchedContent, loading, url } = useHtmlContent(projectId, fileId);
   const htmlContent = directContent ?? fetchedContent;
-  const { openFilePreview } = useFilesStore();
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [iframeHeight, setIframeHeight] = useState(300);
 
@@ -206,13 +203,6 @@ function VizPreview({ fileId, projectId, filename, content: directContent }: Wri
         <PenToolIcon className="size-3 shrink-0" />
         <span className="truncate">{filename}</span>
         <div className="ml-auto flex items-center gap-2">
-          <button
-            onClick={() => openFilePreview(fileId)}
-            className="hover:text-foreground transition-colors"
-            title="Full preview"
-          >
-            <MaximizeIcon className="size-3" />
-          </button>
           {url && (
             <button
               onClick={() => window.open(url)}

@@ -36,7 +36,7 @@ export function getProjectById(id: string): ProjectRow | null {
 
 export function updateProject(
   id: string,
-  fields: { name?: string; description?: string; automationEnabled?: boolean; codeExecutionEnabled?: boolean; browserAutomationEnabled?: boolean; showSkillsInFiles?: boolean; assistantName?: string; assistantDescription?: string; assistantIcon?: string },
+  fields: { name?: string; description?: string; automationEnabled?: boolean; syncGatingEnabled?: boolean; showSkillsInFiles?: boolean; assistantName?: string; assistantDescription?: string; assistantIcon?: string },
 ): ProjectRow {
   const sets: string[] = [];
   const values: (string | number)[] = [];
@@ -53,13 +53,9 @@ export function updateProject(
     sets.push("automation_enabled = ?");
     values.push(fields.automationEnabled ? 1 : 0);
   }
-  if (fields.codeExecutionEnabled !== undefined) {
-    sets.push("code_execution_enabled = ?");
-    values.push(fields.codeExecutionEnabled ? 1 : 0);
-  }
-  if (fields.browserAutomationEnabled !== undefined) {
-    sets.push("browser_automation_enabled = ?");
-    values.push(fields.browserAutomationEnabled ? 1 : 0);
+  if (fields.syncGatingEnabled !== undefined) {
+    sets.push("sync_gating_enabled = ?");
+    values.push(fields.syncGatingEnabled ? 1 : 0);
   }
   if (fields.showSkillsInFiles !== undefined) {
     sets.push("show_skills_in_files = ?");

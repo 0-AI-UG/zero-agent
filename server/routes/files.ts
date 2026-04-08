@@ -24,11 +24,16 @@ import {
   updateFolderPath,
   updateFolderChildPaths,
 } from "@/db/queries/folders.ts";
-import { generateDownloadUrl, generateUploadUrl, deleteFromS3, writeToS3 } from "@/lib/s3.ts";
+import { generateDownloadUrl, generateUploadUrl, deleteFromS3, writeToS3, readBinaryFromS3 } from "@/lib/s3.ts";
 import { generateId } from "@/db/index.ts";
 import { searchFileContent } from "@/db/queries/search.ts";
 import { events } from "@/lib/events.ts";
 import { embedAndStore, deleteVectorsBySource, semanticSearch } from "@/lib/vectors.ts";
+import { reconcileToContainer, sha256Hex } from "@/lib/execution/workspace-sync.ts";
+import { updateFileHash } from "@/db/queries/files.ts";
+import { log } from "@/lib/logger.ts";
+
+const routeLog = log.child({ module: "routes:files" });
 
 function formatFile(row: import("@/db/types.ts").FileRow) {
   return {
@@ -192,6 +197,15 @@ export async function handleUpdateFileBinary(request: Request): Promise<Response
 
     events.emit("file.updated", { projectId, path: file.folder_path, filename: file.filename, mimeType: file.mime_type });
 
+    // Compute hash from the freshly-uploaded blob and reconcile container.
+    try {
+      const buf = await readBinaryFromS3(file.s3_key);
+      updateFileHash(id, sha256Hex(buf));
+    } catch {
+      // Best-effort
+    }
+    await reconcileToContainer(projectId);
+
     return Response.json({ success: true }, { headers: corsHeaders });
   } catch (error) {
     return handleError(error);
@@ -219,6 +233,7 @@ export async function handleDeleteFile(request: Request): Promise<Response> {
     removeFileIndex(id);
     deleteVectorsBySource(projectId, "file", id);
     deleteFileRecord(id);
+    await reconcileToContainer(projectId);
     events.emit("file.deleted", { projectId, path: file.folder_path, filename: file.filename });
 
     return Response.json({ success: true }, { headers: corsHeaders });
@@ -315,6 +330,8 @@ export async function handleUpdateFileContent(request: Request): Promise<Respons
     const buffer = Buffer.from(body.content, "utf-8");
     await writeToS3(file.s3_key, buffer);
     const updated = updateFileSize(id, buffer.length);
+    updateFileHash(id, sha256Hex(buffer));
+    await reconcileToContainer(projectId);
     indexFileContent(id, projectId, file.filename, body.content);
     embedAndStore(projectId, "file", id, body.content, { filename: file.filename }).catch(() => {});
     events.emit("file.updated", { projectId, path: file.folder_path, filename: file.filename, mimeType: file.mime_type });
@@ -347,6 +364,9 @@ export async function handleMoveFile(request: Request): Promise<Response> {
 
     const oldPath = file.folder_path;
     const updated = updateFileFolderPath(id, body.destinationPath);
+
+    await reconcileToContainer(projectId);
+
     events.emit("file.moved", { projectId, fromPath: oldPath, toPath: body.destinationPath, filename: file.filename });
     return Response.json({ file: formatFile(updated) }, { headers: corsHeaders });
   } catch (error) {
@@ -394,6 +414,8 @@ export async function handleMoveFolder(request: Request): Promise<Response> {
     // Update all child folders and files
     updateFolderChildPaths(projectId, oldPath, newPath);
 
+    await reconcileToContainer(projectId);
+
     return Response.json({ folder: formatFolder(updated) }, { headers: corsHeaders });
   } catch (error) {
     return handleError(error);
@@ -428,6 +450,8 @@ export async function handleDeleteFolder(request: Request): Promise<Response> {
 
     // Delete this folder and all child folders
     deleteFoldersByPathPrefix(projectId, folder.path);
+
+    await reconcileToContainer(projectId);
     events.emit("folder.deleted", { projectId, path: folder.path });
 
     return Response.json({ success: true }, { headers: corsHeaders });

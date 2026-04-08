@@ -1,23 +1,17 @@
 import { isToolUIPart, getToolName } from "ai";
 import type { UIMessage } from "ai";
-import { memo } from "react";
+import { memo, useState } from "react";
+import { ChevronRightIcon } from "lucide-react";
 import { Shimmer } from "@/components/ai/shimmer";
 import {
   CheckCircleIcon,
-  ClockIcon,
   DownloadIcon,
   ExternalLinkIcon,
   FileTextIcon,
-  FolderOpenIcon,
-  GlobeIcon,
   ImageIcon,
-  InboxIcon,
-  KeyRoundIcon,
-  MonitorIcon,
   NetworkIcon,
   PencilIcon,
   PlugIcon,
-  SendIcon,
   TerminalSquareIcon,
   SearchIcon,
   SparklesIcon,
@@ -26,9 +20,9 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { usePresignedUrl } from "@/hooks/use-presigned-url";
 import { FileArtifact } from "@/components/files/file-artifact";
 import { findWriteFileRenderer, StreamingVizPreview } from "@/components/chat/write-file-renderers";
+import { DisplayFileCard } from "./DisplayFileCard";
 import { ParallelSubagentCard } from "./ParallelSubagentCard";
 import {
   Confirmation,
@@ -59,90 +53,25 @@ const TOOL_CONFIG: Record<
     activeLabel: "Editing file",
     icon: PencilIcon,
   },
-  listFiles: {
-    label: "Listed files",
-    activeLabel: "Listing files",
-    icon: FolderOpenIcon,
-  },
-  generateImage: {
-    label: "Generated image",
-    activeLabel: "Generating image",
+  displayFile: {
+    label: "Displayed file",
+    activeLabel: "Loading file",
     icon: ImageIcon,
-  },
-  searchWeb: {
-    label: "Searched the web",
-    activeLabel: "Searching the web",
-    icon: SearchIcon,
-  },
-  fetchUrl: {
-    label: "Fetched a page",
-    activeLabel: "Fetching a page",
-    icon: ExternalLinkIcon,
   },
   agent: {
     label: "Agents completed",
     activeLabel: "Running agents",
     icon: SparklesIcon,
   },
-  searchFiles: {
-    label: "Searched files",
-    activeLabel: "Searching files",
-    icon: SearchIcon,
-  },
-  searchChatHistory: {
-    label: "Searched chat history",
-    activeLabel: "Searching chat history",
-    icon: SearchIcon,
-  },
   loadTools: {
     label: "Loaded tools",
     activeLabel: "Loading tools",
     icon: PlugIcon,
   },
-  moveFile: {
-    label: "Moved file",
-    activeLabel: "Moving file",
-    icon: FolderOpenIcon,
-  },
-  createFolder: {
-    label: "Created folder",
-    activeLabel: "Creating folder",
-    icon: FolderOpenIcon,
-  },
-  deleteFile: {
-    label: "Deleted file",
-    activeLabel: "Deleting file",
-    icon: Trash2Icon,
-  },
   delete: {
     label: "Deleted",
     activeLabel: "Deleting",
     icon: Trash2Icon,
-  },
-  scheduleTask: {
-    label: "Scheduled task",
-    activeLabel: "Scheduling task",
-    icon: ClockIcon,
-  },
-  listScheduledTasks: {
-    label: "Listed scheduled tasks",
-    activeLabel: "Listing scheduled tasks",
-    icon: ClockIcon,
-  },
-  updateScheduledTask: {
-    label: "Updated scheduled task",
-    activeLabel: "Updating scheduled task",
-    icon: ClockIcon,
-  },
-  removeScheduledTask: {
-    label: "Removed scheduled task",
-    activeLabel: "Removing scheduled task",
-    icon: ClockIcon,
-  },
-  browser: {
-    label: "Browser action",
-    activeLabel: "Using browser",
-    icon: MonitorIcon,
   },
   loadSkill: {
     label: "Loaded skill",
@@ -154,25 +83,10 @@ const TOOL_CONFIG: Record<
     activeLabel: "Running command",
     icon: TerminalSquareIcon,
   },
-  saveAccount: {
-    label: "Saved account",
-    activeLabel: "Saving account",
-    icon: KeyRoundIcon,
-  },
-  loadAccount: {
-    label: "Loaded account",
-    activeLabel: "Loading account",
-    icon: KeyRoundIcon,
-  },
   forwardPort: {
     label: "Forwarded port",
     activeLabel: "Forwarding port",
     icon: NetworkIcon,
-  },
-  sendTelegramMessage: {
-    label: "Sent message",
-    activeLabel: "Sending message",
-    icon: SendIcon,
   },
 };
 
@@ -199,44 +113,12 @@ function getToolDetail(toolName: string, input: unknown): string | null {
     case "readFile":
     case "writeFile":
     case "editFile":
-    case "deleteFile":
     case "delete":
+    case "displayFile":
       return typeof inp.path === "string" ? inp.path : null;
-    case "listFiles":
-      return typeof inp.folderPath === "string" ? inp.folderPath : null;
-    case "searchWeb":
-      return typeof inp.query === "string" ? inp.query : null;
-    case "generateImage":
-      return typeof inp.prompt === "string"
-        ? inp.prompt.length > 40
-          ? inp.prompt.slice(0, 40) + "…"
-          : inp.prompt
-        : null;
     case "agent": {
       const tasks = inp.tasks as any[];
       return tasks ? `${tasks.length} parallel tasks` : null;
-    }
-    case "searchFiles":
-    case "searchChatHistory":
-      return typeof inp.query === "string" ? inp.query : null;
-    case "createFolder":
-      return typeof inp.path === "string" ? inp.path : null;
-    case "moveFile":
-      return typeof inp.path === "string" ? inp.path : null;
-    case "scheduleTask":
-    case "updateScheduledTask":
-    case "removeScheduledTask":
-      return typeof inp.name === "string" ? inp.name : null;
-    case "browser": {
-      const action = inp.action as Record<string, unknown> | undefined;
-      if (!action) return null;
-      if (action.type === "navigate") return action.url as string;
-      if (action.type === "snapshot") return "snapshot";
-      if (action.type === "screenshot") return "screenshot";
-      if (action.type === "click") return "clicking";
-      if (action.type === "type") return "typing";
-      if (action.type === "hover") return "hovering";
-      return null;
     }
     case "loadSkill":
       return typeof inp.name === "string" ? inp.name : null;
@@ -246,13 +128,6 @@ function getToolDetail(toolName: string, input: unknown): string | null {
         ? (cmd.length > 60 ? cmd.slice(0, 60) + "…" : cmd)
         : null;
     }
-    case "saveAccount":
-    case "loadAccount":
-      return typeof inp.siteUrl === "string"
-        ? inp.siteUrl
-        : typeof inp.label === "string"
-          ? inp.label
-          : null;
     case "forwardPort": {
       const port = inp.port;
       const label = inp.label;
@@ -263,57 +138,9 @@ function getToolDetail(toolName: string, input: unknown): string | null {
       const names = inp.names as string[] | undefined;
       return names ? names.join(", ") : null;
     }
-    case "sendTelegramMessage":
-      return typeof inp.chatId === "string" ? `to ${inp.chatId}` : null;
     default:
       return null;
   }
-}
-
-function GeneratedImageCard({ fileId, filename, projectId }: { fileId: string; filename?: string; projectId?: string }) {
-  const { data: urlData } = usePresignedUrl(projectId ?? "", fileId);
-  const src = urlData?.thumbnailUrl ?? urlData?.url;
-  return (
-    <div className="rounded-xl border bg-card overflow-hidden max-w-[200px]">
-      {src && <img src={src} alt={filename ?? "Generated image"} className="w-full h-auto max-h-[300px] object-cover" />}
-      <div className="p-3 text-xs text-muted-foreground">
-        {filename ?? "Image"} saved to project files
-      </div>
-    </div>
-  );
-}
-
-function SearchResultsCard({
-  results,
-  query,
-}: {
-  results: Array<{ title: string; snippet: string; url: string }>;
-  query: string;
-}) {
-  return (
-    <div className="rounded-lg border bg-card p-3 my-2">
-      <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-2">
-        <SearchIcon className="size-3" />
-        <span>Results for "{query}"</span>
-      </div>
-      <ul className="space-y-2">
-        {(results ?? []).map((r, i) => (
-          <li key={i} className="text-sm">
-            <a
-              href={r.url}
-              target="_blank"
-              rel="noopener"
-              className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
-            >
-              {r.title}
-              <ExternalLinkIcon className="size-3 opacity-50" />
-            </a>
-            <p className="text-muted-foreground text-xs mt-0.5">{r.snippet}</p>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
 }
 
 // ── File Tool Cards ──
@@ -348,107 +175,6 @@ function WriteFileCard({ output, projectId }: { output: any; projectId?: string 
       mimeType={mimeType}
       projectId={projectId}
     />
-  );
-}
-
-function ListFilesCard({ output, input }: { output: any[]; input: any }) {
-  const folder = input?.folderPath;
-  return (
-    <div className="rounded-lg border bg-card p-3 max-w-md">
-      <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-2">
-        <FolderOpenIcon className="size-3" />
-        <span>Listed {output.length} file{output.length !== 1 ? "s" : ""}{folder ? ` in ${folder}` : ""}</span>
-      </div>
-      <ul className="space-y-1">
-        {output.slice(0, 5).map((f: any, i: number) => {
-          const name = f.name ?? f.path?.split("/").pop() ?? f.s3Key?.split("/").pop() ?? "file";
-          const filePath = f.folderPath && f.folderPath !== "/" ? `${f.folderPath}${f.filename ?? name}` : name;
-          const mime = f.mimeType?.split("/")?.[1] ?? null;
-          const sizeStr = f.size != null
-            ? f.size < 1024 ? `${f.size} B` : `${(f.size / 1024).toFixed(1)} KB`
-            : f.sizeBytes != null
-            ? f.sizeBytes < 1024 ? `${f.sizeBytes} B` : `${(f.sizeBytes / 1024).toFixed(1)} KB`
-            : null;
-          return (
-            <li key={f.id ?? i} className="flex items-center justify-between text-sm">
-              <span className="truncate mr-2 font-mono text-xs">{filePath}</span>
-              <div className="flex items-center gap-2 text-xs text-muted-foreground shrink-0">
-                {mime && <span>{mime}</span>}
-                {sizeStr && <span>{sizeStr}</span>}
-              </div>
-            </li>
-          );
-        })}
-      </ul>
-      {output.length > 5 && (
-        <p className="text-xs text-muted-foreground mt-2">+{output.length - 5} more</p>
-      )}
-    </div>
-  );
-}
-
-function SearchFilesCard({ output, input }: { output: any; input: any }) {
-  const results = Array.isArray(output) ? output : [];
-  const query = input?.query ?? "";
-  return (
-    <div className="rounded-lg border bg-card p-3 max-w-md">
-      <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-2">
-        <SearchIcon className="size-3" />
-        <span>"{query}" — {results.length} file{results.length !== 1 ? "s" : ""}</span>
-      </div>
-      {results.length > 0 ? (
-        <ul className="space-y-1.5">
-          {results.slice(0, 5).map((r: any, i: number) => (
-            <li key={r.fileId ?? i} className="text-sm">
-              <span className="font-medium font-mono text-xs">{r.folderPath && r.folderPath !== "/" ? `${r.folderPath}${r.filename}` : r.filename}</span>
-              {r.snippet && (
-                <p
-                  className="text-xs text-muted-foreground mt-0.5 line-clamp-2"
-                  dangerouslySetInnerHTML={{ __html: r.snippet }}
-                />
-              )}
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="text-xs text-muted-foreground">No matching files found</p>
-      )}
-      {results.length > 5 && (
-        <p className="text-xs text-muted-foreground mt-2">+{results.length - 5} more</p>
-      )}
-    </div>
-  );
-}
-
-function ChatHistoryCard({ output, input }: { output: any; input: any }) {
-  const results = Array.isArray(output) ? output : [];
-  const query = input?.query ?? "";
-  return (
-    <div className="rounded-lg border bg-card p-3 max-w-md">
-      <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-2">
-        <SearchIcon className="size-3" />
-        <span>History: "{query}" — {results.length} result{results.length !== 1 ? "s" : ""}</span>
-      </div>
-      {results.length > 0 ? (
-        <ul className="space-y-1.5">
-          {results.slice(0, 5).map((r: any, i: number) => (
-            <li key={i} className="text-sm">
-              <div className="flex items-center gap-1.5">
-                <span className="text-[10px] font-medium uppercase text-muted-foreground">{r.role ?? "message"}</span>
-                {typeof r.score === "number" && (
-                  <span className="text-[10px] text-muted-foreground tabular-nums">{(r.score * 100).toFixed(0)}%</span>
-                )}
-              </div>
-              {r.snippet && (
-                <p className="text-xs text-muted-foreground mt-0.5 line-clamp-3">{r.snippet}</p>
-              )}
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="text-xs text-muted-foreground">No matching conversations found</p>
-      )}
-    </div>
   );
 }
 
@@ -518,22 +244,6 @@ function DeleteFileCard({
 
 // ── Other Tool Cards ──
 
-function FetchUrlCard({ output }: { output: any }) {
-  return (
-    <div className="rounded-lg border bg-card p-3 max-w-md">
-      <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1">
-        <GlobeIcon className="size-3" />
-        <span>Page fetched</span>
-      </div>
-      {output.title && <p className="text-sm font-medium">{output.title}</p>}
-      <a href={output.url} target="_blank" rel="noopener" className="text-xs text-primary hover:underline inline-flex items-center gap-1 truncate max-w-full">
-        {output.url}
-        <ExternalLinkIcon className="size-3 opacity-50 shrink-0" />
-      </a>
-    </div>
-  );
-}
-
 function CodeTable({ lines, lineOffset = 0, className }: { lines: string[]; lineOffset?: number; className?: string }) {
   return (
     <table className="w-full text-xs font-mono border-collapse">
@@ -549,11 +259,36 @@ function CodeTable({ lines, lineOffset = 0, className }: { lines: string[]; line
   );
 }
 
+/**
+ * True when the command runs `zero creds get` as a top-level invocation
+ * (i.e. its stdout is the secret). We deliberately do NOT match occurrences
+ * inside `$(…)` or backticks — those interpolate the secret into another
+ * command and the secret never reaches stdout.
+ */
+function shouldRedactCredsOutput(command: string | undefined): boolean {
+  if (!command) return false;
+  // Strip $(...) and `...` substitutions, then look for `zero creds get`.
+  const stripped = command
+    .replace(/\$\([^)]*\)/g, "")
+    .replace(/`[^`]*`/g, "");
+  return /(^|[\s;&|])zero\s+creds\s+get\b/.test(stripped);
+}
+
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+}
+
 function BashResultCard({ output, command }: { output: any; command?: string }) {
   const exitCode = output.exitCode ?? output.exit_code;
-  const stdout = output.stdout ?? "";
+  const redactCreds = shouldRedactCredsOutput(command);
+  const rawStdout = output.stdout ?? "";
+  const stdout = redactCreds && rawStdout ? "••••••" : rawStdout;
   const stderr = output.stderr ?? "";
   const error = output.error;
+  const collapseByDefault = exitCode === 0 && !error;
+  const [expanded, setExpanded] = useState(!collapseByDefault);
 
   const exitBadgeColor =
     exitCode === 0
@@ -568,20 +303,40 @@ function BashResultCard({ output, command }: { output: any; command?: string }) 
   const errorLineCount = error ? (error as string).split("\n").length : 0;
   const stderrLineCount = stderr ? stderr.split("\n").length : 0;
 
+  const summary =
+    outputLines.length > 0
+      ? `${outputLines.length} line${outputLines.length === 1 ? "" : "s"} · ${formatBytes(outputContent.length)}`
+      : "no output";
+
   return (
     <div className="rounded-lg border bg-card max-w-2xl w-full my-1 overflow-hidden">
-      <div className="flex items-center justify-between text-xs text-muted-foreground px-3 py-2 border-b bg-muted/50">
-        <div className="flex items-center gap-1.5">
-          <TerminalSquareIcon className="size-3" />
-          <span className="font-medium font-mono truncate max-w-md">{command ? `$ ${command}` : "Terminal"}</span>
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="w-full flex items-center justify-between text-xs text-muted-foreground px-3 py-2 border-b bg-muted/50 hover:bg-muted text-left"
+      >
+        <div className="flex items-center gap-1.5 min-w-0">
+          <ChevronRightIcon className={cn("size-3 shrink-0 transition-transform", expanded && "rotate-90")} />
+          <TerminalSquareIcon className="size-3 shrink-0" />
+          <span className="font-medium font-mono truncate">{command ? `$ ${command}` : "Terminal"}</span>
         </div>
-        {exitCode != null && (
-          <span className={cn("text-xs px-1.5 py-0.5 rounded-full font-medium ml-2 shrink-0", exitBadgeColor)}>
-            {exitCode === -1 ? "timeout" : `exit ${exitCode}`}
-          </span>
-        )}
-      </div>
-      {outputLines.length > 0 && (
+        <div className="flex items-center gap-2 ml-2 shrink-0">
+          {!expanded && outputLines.length > 0 && (
+            <span className="text-xs text-muted-foreground/70">{summary}</span>
+          )}
+          {exitCode != null && (
+            <span className={cn("text-xs px-1.5 py-0.5 rounded-full font-medium", exitBadgeColor)}>
+              {exitCode === -1 ? "timeout" : `exit ${exitCode}`}
+            </span>
+          )}
+        </div>
+      </button>
+      {expanded && redactCreds && rawStdout && (
+        <div className="px-3 py-2 text-xs text-amber-700 dark:text-amber-400 border-b bg-amber-50/50 dark:bg-amber-950/20">
+          Output redacted: contains credential value from <span className="font-mono">zero creds get</span>.
+        </div>
+      )}
+      {expanded && outputLines.length > 0 && (
         <div className="max-h-80 overflow-auto">
           <table className="w-full text-xs font-mono border-collapse">
             <tbody>
@@ -662,89 +417,6 @@ function ForwardPortCard({ output, input }: { output: any; input: any }) {
   );
 }
 
-function RepliesCheckCard({ output }: { output: any }) {
-  const { totalSent = 0, totalReplied = 0, repliedMessages = [] } = output;
-
-  return (
-    <div className="rounded-lg border bg-card p-3 max-w-md">
-      <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-2">
-        <InboxIcon className="size-3" />
-        <span>Reply check</span>
-      </div>
-      <div className="flex gap-4 text-sm mb-1">
-        <span className="text-muted-foreground">
-          Sent: <span className="text-foreground font-medium">{totalSent}</span>
-        </span>
-        <span className="text-muted-foreground">
-          Replied: <span className={cn("font-medium", totalReplied > 0 ? "text-blue-500" : "text-foreground")}>{totalReplied}</span>
-        </span>
-      </div>
-      {repliedMessages.length > 0 && (
-        <ul className="mt-2 space-y-1">
-          {repliedMessages.slice(0, 3).map((m: any) => (
-            <li key={m.id} className="text-xs">
-              <span className="text-blue-500 font-medium">Reply:</span>{" "}
-              <span className="text-muted-foreground">{m.replyBody}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
-
-/** Human-friendly label for a browser action step */
-function getBrowserStepLabel(input: any, output: any): { label: string; skip: boolean } {
-  const action = input?.action;
-  if (!action) return { label: "Browser action", skip: false };
-
-  switch (action.type) {
-    case "navigate": {
-      try {
-        const host = new URL(action.url).hostname.replace(/^www\./, "");
-        return { label: `Opened ${host}`, skip: false };
-      } catch {
-        return { label: `Opened ${action.url}`, skip: false };
-      }
-    }
-    case "click":
-      return { label: output?.title ? `Clicked on ${output.title}` : "Clicked", skip: false };
-    case "type":
-      return {
-        label: action.text
-          ? `Typed "${action.text.length > 30 ? action.text.slice(0, 30) + "…" : action.text}"${action.submit ? " and searched" : ""}`
-          : "Typed text",
-        skip: false,
-      };
-    case "select":
-      return { label: `Selected "${action.value}"`, skip: false };
-    case "hover":
-      return { label: "Hovered", skip: false };
-    case "scroll":
-      return { label: `Scrolled ${action.direction}`, skip: false };
-    case "back":
-      return { label: "Went back", skip: false };
-    case "forward":
-      return { label: "Went forward", skip: false };
-    case "reload":
-      return { label: "Reloaded page", skip: false };
-    case "wait":
-      return { label: "Waiting", skip: true };
-    case "snapshot":
-      return { label: "Reading page", skip: true };
-    case "screenshot":
-      return { label: "Taking screenshot", skip: false };
-    case "evaluate":
-      return { label: "Running script", skip: true };
-    case "tabs":
-    case "switchTab":
-    case "closeTab":
-      return { label: "Managing tabs", skip: true };
-    default:
-      return { label: "Browser action", skip: false };
-  }
-}
-
 type MessagePart = UIMessage["parts"][number];
 
 /**
@@ -790,7 +462,7 @@ export const ToolCallPart = memo(function ToolCallPart({
   }
 
   // Approval-based tools
-  if ((toolName === "deleteFile" || toolName === "delete") && (part as any).approval) {
+  if (toolName === "delete" && (part as any).approval) {
     return (
       <DeleteFileCard
         part={part}
@@ -833,30 +505,21 @@ export const ToolCallPart = memo(function ToolCallPart({
 
   // Custom rich rendering for specific tool results
   if (hasOutput) {
+    if (toolName === "displayFile") {
+      const out = part.output as any;
+      if (out?.fileId && projectId) {
+        return (
+          <DisplayFileCard
+            fileId={out.fileId}
+            filename={out.filename}
+            mimeType={out.mimeType}
+            projectId={projectId}
+            caption={out.caption}
+          />
+        );
+      }
+    }
     // readFile: fall through to default status line for both text and image
-    if (toolName === "generateImage" && (part.output as any)?.fileId) {
-      const output = part.output as any;
-      return <GeneratedImageCard fileId={output.fileId} filename={output.filename} projectId={projectId} />;
-    }
-    if (toolName === "searchWeb") {
-      const output = part.output as any;
-      const results = Array.isArray(output) ? output : output?.results;
-      return (
-        <SearchResultsCard
-          results={results}
-          query={output?.query ?? (part.input as any)?.query ?? ""}
-        />
-      );
-    }
-    // File tools
-    if (toolName === "searchFiles") {
-      const output = part.output as any;
-      if (Array.isArray(output)) return <SearchFilesCard output={output} input={part.input} />;
-    }
-    if (toolName === "searchChatHistory") {
-      const output = part.output as any;
-      if (Array.isArray(output)) return <ChatHistoryCard output={output} input={part.input} />;
-    }
     if (toolName === "writeFile") {
       const output = part.output as any;
       // For custom-rendered files (e.g. .viz), render from input content
@@ -871,40 +534,23 @@ export const ToolCallPart = memo(function ToolCallPart({
       }
       if (output?.fileId) return <WriteFileCard output={output} projectId={projectId} />;
     }
-    if (toolName === "listFiles") {
-      const output = part.output as any;
-      if (Array.isArray(output)) return <ListFilesCard output={output} input={part.input} />;
-    }
     // Other tools
     if (toolName === "forwardPort") {
       return <ForwardPortCard output={part.output} input={part.input} />;
     }
-    if (toolName === "fetchUrl") {
-      const output = part.output as any;
-      if (output?.url) return <FetchUrlCard output={output} />;
-    }
     if (toolName === "bash") {
       const output = part.output as any;
-      if (output) return <BashResultCard output={output} command={(part.input as any)?.command} />;
-    }
-    // Browser tool: skip hidden actions, show status line for visible ones
-    if (toolName === "browser") {
-      const { label, skip } = getBrowserStepLabel(part.input, part.output);
-      if (skip) return null;
-      // Fall through to default status line rendering with browser label
+      if (output) {
+        return <BashResultCard output={output} command={(part.input as any)?.command} />;
+      }
     }
   }
 
-  // For browser tools, use the human-friendly step label
-  const isBrowser = toolName === "browser";
-  const browserLabel = isBrowser ? getBrowserStepLabel(part.input, part.output) : null;
   // For readFile images, show "Viewed image" instead of "Read file"
   const isImageRead = toolName === "readFile" && (part.output as any)?.type === "image";
-  const displayLabel = isBrowser && browserLabel
-    ? (isLoading ? config.activeLabel : browserLabel.label)
-    : isLoading
-      ? (isImageRead ? "Viewing image" : config.activeLabel)
-      : isImageRead ? "Viewed image" : config.label;
+  const displayLabel = isLoading
+    ? (isImageRead ? "Viewing image" : config.activeLabel)
+    : isImageRead ? "Viewed image" : config.label;
 
   return (
     <div
@@ -924,7 +570,7 @@ export const ToolCallPart = memo(function ToolCallPart({
           displayLabel
         )}
       </span>
-      {!isBrowser && detail && (
+      {detail && (
         <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
           {detail}
         </span>

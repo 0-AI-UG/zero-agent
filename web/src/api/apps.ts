@@ -60,6 +60,16 @@ export function usePinService(projectId: string) {
   });
 }
 
+export function useCreateShareLink(projectId: string) {
+  return useMutation({
+    mutationFn: ({ serviceId, duration }: { serviceId: string; duration: string }) =>
+      apiFetch<{ path: string; expiresAt: string; duration: string }>(
+        `/projects/${projectId}/services/${serviceId}/share`,
+        { method: "POST", body: JSON.stringify({ duration }) },
+      ),
+  });
+}
+
 export function useUnpinService(projectId: string) {
   const queryClient = useQueryClient();
   return useMutation({

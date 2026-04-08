@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { useNavigate, useLocation } from "react-router";
 import { useAuthStore } from "@/stores/auth";
-import { loginApi } from "@/api/auth";
-import { totpLogin, totpSetupFromLogin, totpConfirmFromLogin } from "@/api/totp";
+import { loginApi, passwordResetInit, passwordResetConfirm } from "@/api/auth";
+import { totpLogin, totpRecover, totpSetupFromLogin, totpConfirmFromLogin } from "@/api/totp";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -24,7 +24,14 @@ export function LoginPage() {
   // 2FA verify state
   const [tempToken, setTempToken] = useState<string | null>(null);
   const [totpCode, setTotpCode] = useState("");
-  const [useBackupCode, setUseBackupCode] = useState(false);
+  const [recoverMode, setRecoverMode] = useState(false);
+  const [recoveryCode, setRecoveryCode] = useState("");
+
+  // Password reset state
+  const [resetMode, setResetMode] = useState(false);
+  const [resetCode, setResetCode] = useState("");
+  const [resetNewPassword, setResetNewPassword] = useState("");
+  const [resetSuccess, setResetSuccess] = useState(false);
 
   // 2FA setup state (for required setup during login)
   const [setupMode, setSetupMode] = useState(false);
@@ -126,12 +133,55 @@ export function LoginPage() {
     setTempToken(null);
     setTotpCode("");
     setError(null);
-    setUseBackupCode(false);
+    setRecoverMode(false);
+    setRecoveryCode("");
     setSetupMode(false);
     setQrCode("");
     setSecret("");
     setSetupCode("");
     setBackupCodes(null);
+    setResetMode(false);
+    setResetCode("");
+    setResetNewPassword("");
+    setResetSuccess(false);
+  };
+
+  const handleRecover = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!tempToken || !recoveryCode) return;
+    setError(null);
+    setLoading(true);
+    try {
+      const { tempToken: reenrollToken } = await totpRecover(tempToken, recoveryCode);
+      // Enter re-enroll flow: fetch a fresh setup
+      const data = await totpSetupFromLogin(reenrollToken);
+      setTempToken(reenrollToken);
+      setQrCode(data.qrCode);
+      setSecret(data.secret);
+      setSetupMode(true);
+      setRecoverMode(false);
+      setRecoveryCode("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Recovery failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email || !resetCode || !resetNewPassword) return;
+    setError(null);
+    setLoading(true);
+    try {
+      const { tempToken: resetToken } = await passwordResetInit(email);
+      await passwordResetConfirm(resetToken, resetCode, resetNewPassword);
+      setResetSuccess(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Password reset failed");
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Backup codes screen (after successful setup during login)
@@ -222,6 +272,48 @@ export function LoginPage() {
     );
   }
 
+  // 2FA recovery screen — consume a backup code to re-enroll
+  if (tempToken && recoverMode) {
+    return (
+      <Card className="w-full max-w-sm">
+        <CardHeader>
+          <CardTitle className="font-display">Recover Access</CardTitle>
+          <CardDescription>
+            Enter one of your recovery codes. This will disable your current 2FA and let you set up a new authenticator.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleRecover} className="space-y-4">
+            {error && <div className="text-sm text-destructive">{error}</div>}
+            <div className="space-y-2">
+              <Label htmlFor="recovery-code">Recovery Code</Label>
+              <Input
+                id="recovery-code"
+                type="text"
+                maxLength={9}
+                value={recoveryCode}
+                onChange={(e) => setRecoveryCode(e.target.value)}
+                placeholder="XXXX-XXXX"
+                autoFocus
+                autoComplete="one-time-code"
+              />
+            </div>
+            <Button type="submit" className="w-full" disabled={loading || !recoveryCode}>
+              {loading ? "Verifying..." : "Recover & Re-enroll"}
+            </Button>
+            <button
+              type="button"
+              className="text-xs text-muted-foreground hover:text-foreground w-full text-center"
+              onClick={() => { setRecoverMode(false); setRecoveryCode(""); setError(null); }}
+            >
+              Back
+            </button>
+          </form>
+        </CardContent>
+      </Card>
+    );
+  }
+
   // 2FA code entry screen (existing TOTP)
   if (tempToken) {
     return (
@@ -229,9 +321,7 @@ export function LoginPage() {
         <CardHeader>
           <CardTitle className="font-display">Two-Factor Authentication</CardTitle>
           <CardDescription>
-            {useBackupCode
-              ? "Enter one of your backup codes."
-              : "Enter the 6-digit code from your authenticator app."}
+            Enter the 6-digit code from your authenticator app.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -240,18 +330,16 @@ export function LoginPage() {
               <div className="text-sm text-destructive">{error}</div>
             )}
             <div className="space-y-2">
-              <Label htmlFor="totp-code">
-                {useBackupCode ? "Backup Code" : "Authentication Code"}
-              </Label>
+              <Label htmlFor="totp-code">Authentication Code</Label>
               <Input
                 id="totp-code"
                 type="text"
-                inputMode={useBackupCode ? "text" : "numeric"}
-                pattern={useBackupCode ? undefined : "[0-9]*"}
-                maxLength={useBackupCode ? 9 : 6}
+                inputMode="numeric"
+                pattern="[0-9]*"
+                maxLength={6}
                 value={totpCode}
                 onChange={(e) => setTotpCode(e.target.value)}
-                placeholder={useBackupCode ? "XXXX-XXXX" : "000000"}
+                placeholder="000000"
                 autoFocus
                 autoComplete="one-time-code"
               />
@@ -263,13 +351,9 @@ export function LoginPage() {
               <button
                 type="button"
                 className="text-xs text-muted-foreground hover:text-foreground"
-                onClick={() => {
-                  setUseBackupCode(!useBackupCode);
-                  setTotpCode("");
-                  setError(null);
-                }}
+                onClick={() => { setRecoverMode(true); setError(null); }}
               >
-                {useBackupCode ? "Use authenticator code" : "Use a backup code"}
+                Lost your device?
               </button>
               <button
                 type="button"
@@ -279,6 +363,83 @@ export function LoginPage() {
                 Back to login
               </button>
             </div>
+          </form>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // Forgot password screen
+  if (resetMode) {
+    if (resetSuccess) {
+      return (
+        <Card className="w-full max-w-sm">
+          <CardHeader>
+            <CardTitle className="font-display">Password Reset</CardTitle>
+            <CardDescription>Your password has been updated. You can now sign in.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button className="w-full" onClick={resetToLogin}>Back to sign in</Button>
+          </CardContent>
+        </Card>
+      );
+    }
+    return (
+      <Card className="w-full max-w-sm">
+        <CardHeader>
+          <CardTitle className="font-display">Reset Password</CardTitle>
+          <CardDescription>
+            Enter your email, a current 6-digit code from your authenticator, and a new password. Password reset requires 2FA to be enabled.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleForgotPassword} className="space-y-4">
+            {error && <div className="text-sm text-destructive">{error}</div>}
+            <div className="space-y-2">
+              <Label htmlFor="reset-email">Email</Label>
+              <Input
+                id="reset-email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                autoComplete="email"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="reset-code">Authenticator Code</Label>
+              <Input
+                id="reset-code"
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                maxLength={6}
+                value={resetCode}
+                onChange={(e) => setResetCode(e.target.value)}
+                placeholder="000000"
+                autoComplete="one-time-code"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="reset-password">New Password</Label>
+              <Input
+                id="reset-password"
+                type="password"
+                value={resetNewPassword}
+                onChange={(e) => setResetNewPassword(e.target.value)}
+                autoComplete="new-password"
+              />
+            </div>
+            <Button type="submit" className="w-full" disabled={loading || !email || resetCode.length !== 6 || !resetNewPassword}>
+              {loading ? "Resetting..." : "Reset Password"}
+            </Button>
+            <button
+              type="button"
+              className="text-xs text-muted-foreground hover:text-foreground w-full text-center"
+              onClick={resetToLogin}
+            >
+              Back to sign in
+            </button>
           </form>
         </CardContent>
       </Card>
@@ -323,6 +484,13 @@ export function LoginPage() {
           <Button type="submit" className="w-full" disabled={loading}>
             {loading ? "Signing in..." : "Sign In"}
           </Button>
+          <button
+            type="button"
+            className="text-xs text-muted-foreground hover:text-foreground w-full text-center"
+            onClick={() => { setResetMode(true); setError(null); }}
+          >
+            Forgot password?
+          </button>
         </form>
       </CardContent>
     </Card>

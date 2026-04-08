@@ -20,6 +20,24 @@ import { useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChatMessage } from "@/components/chat/ChatMessageItem";
+import { SyncApproval, type SyncProposal } from "@/components/ai/sync-approval";
+
+/** Find the most recent bash tool output with an awaiting sync proposal. */
+function findPendingSync(messages: ChatMessage[]): SyncProposal | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+    if (!msg || msg.role !== "assistant") continue;
+    for (let j = msg.parts.length - 1; j >= 0; j--) {
+      const part: any = msg.parts[j];
+      if (part?.type === "tool-bash" && part?.output?.sync) {
+        const sync = part.output.sync as SyncProposal;
+        if (sync.status === "awaiting") return sync;
+        return null; // most recent sync is already resolved
+      }
+    }
+  }
+  return null;
+}
 
 /** Deduplicate text parts within a single message (streaming can cause duplicates) */
 function deduplicateTextParts(messages: ChatMessage[]): ChatMessage[] {
@@ -164,7 +182,16 @@ export function ChatPanel({ projectId, chatId, initialMessages, isAutonomous }: 
           </p>
         </div>
       ) : (
-        <ChatInputArea
+        <>
+          {(() => {
+            const pendingSync = findPendingSync(messages);
+            return pendingSync ? (
+              <div className="px-6 md:px-10 pt-2">
+                <SyncApproval proposal={pendingSync} title="Review file changes" />
+              </div>
+            ) : null;
+          })()}
+          <ChatInputArea
           projectId={projectId}
           chatId={chatId}
           messages={messages}
@@ -174,6 +201,7 @@ export function ChatPanel({ projectId, chatId, initialMessages, isAutonomous }: 
           stop={stop}
           capabilities={capabilities}
         />
+        </>
       )}
     </div>
   );

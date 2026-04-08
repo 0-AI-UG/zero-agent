@@ -23,7 +23,7 @@ import { nanoid } from "nanoid";
 
 const totpLog = log.child({ module: "totp" });
 
-function createTOTP(secret: string, email: string): TOTP {
+export function createTOTP(secret: string, email: string): TOTP {
   return new TOTP({
     issuer: "ZeroAgent",
     label: email,
@@ -178,34 +178,16 @@ export async function handleTotpLogin(request: Request): Promise<Response> {
     const secret = getTotpSecret(userId);
     if (!secret) throw new AuthError("TOTP not configured");
 
-    // Try TOTP code first
     const totp = createTOTP(secret, user.email);
     const delta = totp.validate({ token: body.code, window: 1 });
 
     if (delta !== null) {
-      // Valid TOTP code
       const token = await createToken({ userId: user.id, email: user.email });
       totpLog.info("totp login success", { userId });
       return Response.json(
         { token, user: { id: user.id, email: user.email } },
         { headers: corsHeaders },
       );
-    }
-
-    // Try backup codes (strip dashes for comparison)
-    const normalizedCode = body.code.replace(/-/g, "");
-    const unusedCodes = getUnusedBackupCodes(userId);
-    for (const bc of unusedCodes) {
-      const match = await bcrypt.compare(normalizedCode, bc.code_hash);
-      if (match) {
-        markBackupCodeUsed(bc.id);
-        const token = await createToken({ userId: user.id, email: user.email });
-        totpLog.info("totp login via backup code", { userId, backupCodeId: bc.id });
-        return Response.json(
-          { token, user: { id: user.id, email: user.email } },
-          { headers: corsHeaders },
-        );
-      }
     }
 
     totpLog.warn("totp login failed - invalid code", { userId });
@@ -232,7 +214,12 @@ export async function handleTotpSetupFromLogin(request: Request): Promise<Respon
       );
     }
 
-    const userId = await verifyTempToken(body.tempToken);
+    let userId: string;
+    try {
+      userId = await verifyTempToken(body.tempToken, "2fa");
+    } catch {
+      userId = await verifyTempToken(body.tempToken, "2fa-reenroll");
+    }
     const user = getUserById(userId);
     if (!user) throw new AuthError("Unauthorized");
 
@@ -282,7 +269,12 @@ export async function handleTotpConfirmFromLogin(request: Request): Promise<Resp
       );
     }
 
-    const userId = await verifyTempToken(body.tempToken);
+    let userId: string;
+    try {
+      userId = await verifyTempToken(body.tempToken, "2fa");
+    } catch {
+      userId = await verifyTempToken(body.tempToken, "2fa-reenroll");
+    }
     const user = getUserById(userId);
     if (!user) throw new AuthError("Unauthorized");
 
@@ -371,6 +363,51 @@ export async function handleTotpDisable(request: Request): Promise<Response> {
     disableTotp(userId);
     totpLog.info("totp disabled", { userId });
     return Response.json({ disabled: true }, { headers: corsHeaders });
+  } catch (error) {
+    return handleError(error);
+  }
+}
+
+/** POST /api/auth/totp/recover — consume a backup code to wipe 2FA and get a re-enroll token */
+export async function handleTotpRecover(request: Request): Promise<Response> {
+  const rateLimitResponse = checkRateLimit(request);
+  if (rateLimitResponse) return rateLimitResponse;
+
+  try {
+    const body = await request.json() as { tempToken?: string; code?: string };
+    if (!body.tempToken || !body.code) {
+      return Response.json(
+        { error: "tempToken and code are required" },
+        { status: 400, headers: corsHeaders },
+      );
+    }
+
+    const userId = await verifyTempToken(body.tempToken, "2fa");
+    const user = getUserById(userId);
+    if (!user) throw new AuthError("Unauthorized");
+
+    const normalizedCode = body.code.replace(/-/g, "");
+    const unusedCodes = getUnusedBackupCodes(userId);
+    for (const bc of unusedCodes) {
+      const match = await bcrypt.compare(normalizedCode, bc.code_hash);
+      if (match) {
+        markBackupCodeUsed(bc.id);
+        // Wipe current TOTP secret + all backup codes; user must re-enroll
+        disableTotp(userId);
+        const reenrollToken = await createTempToken(userId, "2fa-reenroll");
+        totpLog.info("totp recovery via backup code", { userId, backupCodeId: bc.id });
+        return Response.json(
+          { tempToken: reenrollToken },
+          { headers: corsHeaders },
+        );
+      }
+    }
+
+    totpLog.warn("totp recovery failed - invalid backup code", { userId });
+    return Response.json(
+      { error: "Invalid recovery code" },
+      { status: 400, headers: corsHeaders },
+    );
   } catch (error) {
     return handleError(error);
   }

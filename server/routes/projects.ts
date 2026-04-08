@@ -98,17 +98,30 @@ You are a helpful AI assistant.
 - Keep responses focused and actionable
 `;
 
-  const files = [
-    { path: "soul.md", content: soulMd },
-    { path: "memory.md", content: memoryMd },
-    { path: "heartbeat.md", content: heartbeatMd },
+  const defaultGitignore = `node_modules/
+.venv/
+__pycache__/
+*.pyc
+.next/
+dist/
+build/
+target/
+.cache/
+.DS_Store
+`;
+
+  const files: Array<{ path: string; content: string; mime: string }> = [
+    { path: "soul.md", content: soulMd, mime: "text/markdown" },
+    { path: "memory.md", content: memoryMd, mime: "text/markdown" },
+    { path: "heartbeat.md", content: heartbeatMd, mime: "text/markdown" },
+    { path: ".gitignore", content: defaultGitignore, mime: "text/plain" },
   ];
 
   for (const file of files) {
     const s3Key = `projects/${projectId}/${file.path}`;
     const buffer = Buffer.from(file.content, "utf-8");
     await writeToS3(s3Key, buffer);
-    const fileRow = insertFile(projectId, s3Key, file.path, "text/markdown", buffer.length, "/");
+    const fileRow = insertFile(projectId, s3Key, file.path, file.mime, buffer.length, "/");
     indexFileContent(fileRow.id, projectId, file.path, file.content);
   }
 }

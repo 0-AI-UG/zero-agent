@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 import {
   Select,
   SelectContent,
@@ -7,7 +7,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
 import { EmptyFilesIllustration } from "@/components/ui/illustrations";
+import { Trash2Icon, XIcon } from "lucide-react";
 import { FileRow } from "./file-row";
 import { FolderRow } from "./folder-row";
 import { useProject } from "@/api/projects";
@@ -29,8 +31,15 @@ interface FileListProps {
   isDeletingFile?: boolean;
   onRetry: () => void;
   currentPath: string;
-  selectedFileId?: string | null;
   onDropItem?: (itemId: string, itemType: "file" | "folder", targetPath: string) => void;
+  checkedFileIds: Set<string>;
+  checkedFolderIds: Set<string>;
+  onToggleFileChecked: (id: string, checked: boolean) => void;
+  onToggleFolderChecked: (id: string, checked: boolean) => void;
+  onClearSelection: () => void;
+  onBulkDelete: () => void;
+  isBulkDeleting?: boolean;
+  onRangeSelect: (ids: { fileIds: string[]; folderIds: string[] }, additive: boolean) => void;
 }
 
 export function FileList({
@@ -49,9 +58,17 @@ export function FileList({
   isDeletingFile,
   onRetry,
   currentPath,
-  selectedFileId,
   onDropItem,
+  checkedFileIds,
+  checkedFolderIds,
+  onToggleFileChecked,
+  onToggleFolderChecked,
+  onClearSelection,
+  onBulkDelete,
+  isBulkDeleting,
+  onRangeSelect,
 }: FileListProps) {
+  const anchorIndexRef = useRef<number | null>(null);
   const { data: project } = useProject(projectId);
   const showSkillsInFiles = project?.showSkillsInFiles ?? true;
   // Protect skill name folders and SKILL.md, but allow editing other files inside skills
@@ -129,9 +146,97 @@ export function FileList({
   }
 
   const totalItems = sortedFolders.length + sorted.length;
+  const isFolderReadOnly = (f: FolderItem) =>
+    f.path === "/skills/" || (isSkillsRoot && f.path.startsWith("/skills/"));
+  const isFileReadOnly = (f: FileItem) => isSkillFolder && f.filename === "SKILL.md";
+
+  // Ordered selectable items — folders first, then files (matches render order)
+  type SelectableItem =
+    | { type: "folder"; id: string }
+    | { type: "file"; id: string };
+  const orderedSelectable: SelectableItem[] = [
+    ...sortedFolders.filter((f) => !isFolderReadOnly(f)).map((f) => ({ type: "folder" as const, id: f.id })),
+    ...sorted.filter((f) => !isFileReadOnly(f)).map((f) => ({ type: "file" as const, id: f.id })),
+  ];
+  const indexOfItem = (type: "file" | "folder", id: string) =>
+    orderedSelectable.findIndex((it) => it.type === type && it.id === id);
+
+  const handleRowClick = (
+    e: React.MouseEvent,
+    type: "file" | "folder",
+    id: string,
+    defaultAction: () => void,
+  ) => {
+    const idx = indexOfItem(type, id);
+    const isMeta = e.metaKey || e.ctrlKey;
+    const isShift = e.shiftKey;
+
+    if (isShift && anchorIndexRef.current !== null && idx !== -1) {
+      e.preventDefault();
+      e.stopPropagation();
+      const start = Math.min(anchorIndexRef.current, idx);
+      const end = Math.max(anchorIndexRef.current, idx);
+      const range = orderedSelectable.slice(start, end + 1);
+      onRangeSelect(
+        {
+          fileIds: range.filter((i) => i.type === "file").map((i) => i.id),
+          folderIds: range.filter((i) => i.type === "folder").map((i) => i.id),
+        },
+        isMeta,
+      );
+      // don't move anchor on shift-click
+      return;
+    }
+
+    if (isMeta && idx !== -1) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (type === "file") onToggleFileChecked(id, !checkedFileIds.has(id));
+      else onToggleFolderChecked(id, !checkedFolderIds.has(id));
+      anchorIndexRef.current = idx;
+      return;
+    }
+
+    if (idx !== -1) anchorIndexRef.current = idx;
+    defaultAction();
+  };
+
+  const totalSelected = checkedFileIds.size + checkedFolderIds.size;
+  // Show bulk action bar when >1 item is selected, or any folder is selected.
+  // A single file selection shows the preview instead.
+  const showSelectionBar =
+    totalSelected > 1 || checkedFolderIds.size > 0;
 
   return (
     <div className="flex flex-col">
+      {showSelectionBar ? (
+        <div className="px-4 py-2 flex items-center justify-between bg-accent/50 border-b">
+          <span className="text-xs font-medium tabular-nums">
+            {totalSelected} selected
+          </span>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-destructive hover:text-destructive"
+              onClick={onBulkDelete}
+              disabled={isBulkDeleting}
+            >
+              <Trash2Icon className="h-3.5 w-3.5 mr-1" />
+              {isBulkDeleting ? "Deleting..." : "Delete"}
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              onClick={onClearSelection}
+              aria-label="Clear selection"
+            >
+              <XIcon className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        </div>
+      ) : (
       <div className="px-4 py-2 flex items-center justify-between">
         <span className="text-xs text-muted-foreground tabular-nums">
           {totalItems} item{totalItems !== 1 ? "s" : ""}
@@ -152,20 +257,18 @@ export function FileList({
           </SelectContent>
         </Select>
       </div>
+      )}
       <div className="flex-1 overflow-y-auto">
         {sortedFolders.map((folder) => (
           <FolderRow
             key={folder.id}
             folder={folder}
-            onClick={() => onFolderClick(folder.path)}
+            onClick={(e) => handleRowClick(e, "folder", folder.id, () => onFolderClick(folder.path))}
             onDelete={onDeleteFolder}
             isDeleting={isDeletingFolder}
             onDropItem={onDropItem}
-            readOnly={
-              // The /skills/ root folder and skill name folders (e.g. /skills/visualizer/) are protected
-              folder.path === "/skills/" ||
-              (isSkillsRoot && folder.path.startsWith("/skills/"))
-            }
+            readOnly={isFolderReadOnly(folder)}
+            isSelected={checkedFolderIds.has(folder.id)}
           />
         ))}
         {sorted.map((file) => (
@@ -173,14 +276,11 @@ export function FileList({
             key={file.id}
             file={file}
             projectId={projectId}
-            onClick={() => onFileClick(file.id)}
+            onClick={(e) => handleRowClick(e, "file", file.id, () => onFileClick(file.id))}
             onDelete={onDeleteFile}
             isDeleting={isDeletingFile}
-            isSelected={file.id === selectedFileId}
-            readOnly={
-              // Only SKILL.md inside a skill folder is protected
-              isSkillFolder && file.filename === "SKILL.md"
-            }
+            isSelected={checkedFileIds.has(file.id)}
+            readOnly={isFileReadOnly(file)}
           />
         ))}
       </div>

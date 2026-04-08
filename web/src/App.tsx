@@ -5,6 +5,7 @@ import { AuthLayout } from "@/components/layouts/AuthLayout";
 import { ProtectedRoute } from "@/components/layouts/ProtectedRoute";
 import { ProjectLayout } from "@/components/layouts/ProjectLayout";
 import { LoginPage } from "@/pages/LoginPage";
+import { InvitePage } from "@/pages/InvitePage";
 import { DashboardPage } from "@/pages/DashboardPage";
 import { ProjectPage } from "@/pages/ProjectPage";
 import { FilesPage } from "@/pages/FilesPage";
@@ -18,23 +19,29 @@ import { AdminPage } from "@/pages/AdminPage";
 import { AppGatePage } from "@/pages/AppGatePage";
 import { SetupPage } from "@/pages/SetupPage";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { ThemeApplier } from "@/components/ThemeApplier";
 import "./index.css";
 
 export function App() {
   return (
     <QueryClientProvider client={queryClient}>
+      <ThemeApplier />
       <TooltipProvider delayDuration={0}>
       <BrowserRouter>
         <Routes>
           {/* Public routes */}
           <Route element={<AuthLayout />}>
             <Route path="/login" element={<LoginPage />} />
+            <Route path="/invite/:token" element={<InvitePage />} />
             <Route path="/setup" element={<SetupPage />} />
           </Route>
 
+          {/* App gate — public so share links work without auth; the page itself
+              uses an auth token or share token to talk to the API. */}
+          <Route path="/app/:slug/*" element={<AppGatePage />} />
+
           {/* Protected routes */}
           <Route element={<ProtectedRoute />}>
-            <Route path="/app/:slug/*" element={<AppGatePage />} />
             <Route path="/" element={<DashboardPage />} />
             <Route path="/account" element={<AccountPage />} />
             <Route path="/help" element={<HelpPage />} />

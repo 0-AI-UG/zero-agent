@@ -95,21 +95,27 @@ export function clearActiveStreamId(chatId: string) {
   activeStreams.delete(chatId);
 }
 
-// Track abort flags per chat so streams can be cancelled at step boundaries.
-const abortedChats = new Set<string>();
+// Track AbortControllers per chat so streams can be cancelled out-of-band.
+// Resumable streams keep generating after the client SSE connection drops, so
+// the official `useChat.stop()` (which only aborts the fetch) is not enough —
+// we need a side channel that calls controller.abort() on the in-flight model
+// call. The signal is passed into createAgentUIStreamResponse, which forwards
+// it to streamText for native, token-level cancellation.
+const abortControllers = new Map<string, AbortController>();
+
+export function createAbortController(chatId: string): AbortController {
+  const controller = new AbortController();
+  abortControllers.set(chatId, controller);
+  return controller;
+}
 
 export function requestAbort(chatId: string): boolean {
-  if (activeStreams.has(chatId)) {
-    abortedChats.add(chatId);
-    return true;
-  }
-  return false;
+  const controller = abortControllers.get(chatId);
+  if (!controller) return false;
+  controller.abort();
+  return true;
 }
 
-export function isAbortRequested(chatId: string): boolean {
-  return abortedChats.has(chatId);
-}
-
-export function clearAbortFlag(chatId: string) {
-  abortedChats.delete(chatId);
+export function clearAbortController(chatId: string) {
+  abortControllers.delete(chatId);
 }

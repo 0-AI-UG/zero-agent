@@ -27,3 +27,7 @@ export function getUserById(id: string): UserRow | null {
 export function updateUserCompanionSharing(userId: string, enabled: boolean): void {
   db.prepare("UPDATE users SET companion_sharing = ? WHERE id = ?").run(enabled ? 1 : 0, userId);
 }
+
+export function updateUserPassword(userId: string, passwordHash: string): void {
+  db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(passwordHash, userId);
+}

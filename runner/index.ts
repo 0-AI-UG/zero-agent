@@ -13,6 +13,7 @@ import { browserRoutes } from "./routes/browser.ts";
 import { fileRoutes } from "./routes/files.ts";
 import { proxyRoute } from "./routes/proxy.ts";
 import { healthRoutes } from "./routes/health.ts";
+import { ensureSocketDir } from "./lib/socket-proxy.ts";
 import { log } from "./lib/logger.ts";
 
 const PORT = Number(process.env.PORT ?? 3100);
@@ -107,6 +108,9 @@ function matchRoute(method: string, pathname: string): { handler: (req: Request)
   if (method === "GET" && sub === "/files/list") {
     return { handler: (req) => files.list(req, name!) };
   }
+  if (method === "GET" && sub === "/files/manifest") {
+    return { handler: (req) => files.manifest(req, name!) };
+  }
   if (method === "POST" && sub === "/files/changes") {
     return { handler: (req) => files.changes(req, name!) };
   }
@@ -115,6 +119,15 @@ function matchRoute(method: string, pathname: string): { handler: (req: Request)
   }
   if (method === "PUT" && sub === "/files/snapshot") {
     return { handler: (req) => files.restoreSnapshot(req, name!) };
+  }
+  if (method === "GET" && sub === "/files/blob-dirs") {
+    return { handler: (req) => files.listBlobDirs(req, name!) };
+  }
+  if (method === "POST" && sub === "/files/blob") {
+    return { handler: (req) => files.saveBlob(req, name!) };
+  }
+  if (method === "PUT" && sub === "/files/blob") {
+    return { handler: (req) => files.restoreBlob(req, name!) };
   }
 
   return null;
@@ -127,6 +140,12 @@ app.all("*", async (c) => {
   const url = new URL(req.url);
   const { method } = req;
   const pathname = url.pathname;
+
+  // NOTE: /v1/proxy/* (the generic container→server forwarder) is no
+  // longer exposed on TCP. Each managed container gets a dedicated Unix
+  // socket bind-mounted at /run/zero.sock — see lib/socket-proxy.ts.
+  // Identity is the bind-mount itself, so this surface no longer
+  // depends on source IP at all.
 
   // Health endpoint is public
   if (pathname !== "/health" && !validateAuth(req)) {
@@ -152,6 +171,9 @@ const server = serve({
 });
 
 // Initialize Docker on startup
+ensureSocketDir().catch((err) => {
+  log.warn("failed to create socket dir", { error: String(err) });
+});
 mgr.waitForDocker().then((ready) => {
   if (ready) {
     log.info(`Runner service listening on port ${PORT}`);

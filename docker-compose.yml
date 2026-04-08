@@ -12,16 +12,49 @@ services:
     depends_on:
       - runner
 
+  # Build-only helper for the session image used by the runner to spawn
+  # agent containers. Lives under the `build` profile so it never starts
+  # as a runtime service; invoke with `docker compose build session-image`.
+  session-image:
+    image: zero-session:latest
+    build:
+      context: ./zero
+      dockerfile: ../runner/docker/session/Dockerfile
+    profiles: ["build"]
+
   runner:
     build: runner
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      # Per-container Unix sockets the `zero` CLI/SDK connects to. This
+      # is a Docker **named volume**, not a host bind-mount: its backing
+      # storage lives inside the Linux VM on Docker Desktop/macOS, which
+      # is the only way AF_UNIX sockets survive being shared between the
+      # runner container and sibling session containers on macOS.
+      #
+      # Session containers receive a subpath mount of this same volume
+      # (VolumeOptions.Subpath = <session-name>), so each session only
+      # sees its own socket file. The volume name must match
+      # ZERO_RUNNER_SOCKET_VOLUME below so the runner can pass it to
+      # dockerd when creating session containers.
+      - zero-runner-sockets:/var/run/zero-runner
+      # Dev hot-reload: mount runner source so `bun --watch` picks up edits.
+      # Anonymous volume on /app/node_modules shields the image-installed
+      # deps from being shadowed by the (possibly empty) host node_modules.
+      - ./runner:/app
+      - /app/node_modules
     environment:
       - RUNNER_API_KEY=${RUNNER_API_KEY:-}
       - DEFAULT_IMAGE=zero-session:latest
       - IDLE_TIMEOUT_SECS=600
+      - ZERO_RUNNER_SOCKET_DIR=/var/run/zero-runner
+      - ZERO_RUNNER_SOCKET_VOLUME=zero-runner-sockets
     ports:
       - "3100:3100"
 
 volumes:
   data:
+  zero-runner-sockets:
+    # Pin the unqualified name so it matches ZERO_RUNNER_SOCKET_VOLUME
+    # (compose otherwise prefixes it with the project name).
+    name: zero-runner-sockets

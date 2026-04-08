@@ -113,6 +113,345 @@
   --sidebar-ring: oklch(0.556 0 0);
 }
 
+/* ── Theme: Black & White (monochrome, very round) ── */
+:root[data-theme="bw"] {
+  --radius: 1.25rem;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0 0 0);
+  --primary: oklch(0 0 0);
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.96 0 0);
+  --secondary-foreground: oklch(0 0 0);
+  --muted: oklch(0.96 0 0);
+  --muted-foreground: oklch(0.45 0 0);
+  --accent: oklch(0.93 0 0);
+  --accent-foreground: oklch(0 0 0);
+  --destructive: oklch(0.4 0 0);
+  --border: oklch(0.85 0 0);
+  --input: oklch(0.85 0 0);
+  --ring: oklch(0 0 0 / 40%);
+  --chart-1: oklch(0.2 0 0);
+  --chart-2: oklch(0.4 0 0);
+  --chart-3: oklch(0.6 0 0);
+  --chart-4: oklch(0.75 0 0);
+  --chart-5: oklch(0.9 0 0);
+  --sidebar: oklch(1 0 0);
+  --sidebar-foreground: oklch(0 0 0);
+  --sidebar-primary: oklch(0 0 0);
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: oklch(0.93 0 0);
+  --sidebar-accent-foreground: oklch(0 0 0);
+  --sidebar-border: oklch(0.85 0 0);
+  --sidebar-ring: oklch(0 0 0 / 40%);
+}
+
+.dark[data-theme="bw"] {
+  --background: oklch(0 0 0);
+  --foreground: oklch(1 0 0);
+  --card: oklch(0.12 0 0);
+  --card-foreground: oklch(1 0 0);
+  --popover: oklch(0.12 0 0);
+  --popover-foreground: oklch(1 0 0);
+  --primary: oklch(1 0 0);
+  --primary-foreground: oklch(0 0 0);
+  --secondary: oklch(0.18 0 0);
+  --secondary-foreground: oklch(1 0 0);
+  --muted: oklch(0.18 0 0);
+  --muted-foreground: oklch(0.7 0 0);
+  --accent: oklch(0.22 0 0);
+  --accent-foreground: oklch(1 0 0);
+  --destructive: oklch(0.7 0 0);
+  --border: oklch(1 0 0 / 18%);
+  --input: oklch(1 0 0 / 22%);
+  --ring: oklch(1 0 0 / 50%);
+  --sidebar: oklch(0.08 0 0);
+  --sidebar-foreground: oklch(1 0 0);
+  --sidebar-primary: oklch(1 0 0);
+  --sidebar-primary-foreground: oklch(0 0 0);
+  --sidebar-accent: oklch(0.22 0 0);
+  --sidebar-accent-foreground: oklch(1 0 0);
+  --sidebar-border: oklch(1 0 0 / 18%);
+  --sidebar-ring: oklch(1 0 0 / 50%);
+}
+
+/* ── Theme: Neo-Brutalist ──
+   Palette researched from canonical neo-brutalist sites (Gumroad, Figma
+   community, neobrutalism.dev). Warm cream base, near-black ink, with a
+   harmonized quartet of saturated-but-not-neon accents that share roughly
+   equal lightness so they coexist without clashing:
+     - sun yellow   #FFD23F  (primary)
+     - coral red    #FF6B6B  (destructive / hot accent)
+     - mint teal    #4ECDC4  (cool accent)
+     - lavender     #C8B6FF  (secondary surface)
+*/
+/* ── Theme: Sunset (warm amber + terracotta on cream) ── */
+:root[data-theme="sunset"] {
+  --radius: 0.625rem;
+  --background: oklch(0.985 0.012 75);
+  --foreground: oklch(0.22 0.03 40);
+  --card: oklch(1 0.005 75);
+  --card-foreground: oklch(0.22 0.03 40);
+  --popover: oklch(1 0.005 75);
+  --popover-foreground: oklch(0.22 0.03 40);
+  --primary: oklch(0.65 0.18 45);              /* terracotta */
+  --primary-foreground: oklch(0.99 0 0);
+  --secondary: oklch(0.95 0.025 75);
+  --secondary-foreground: oklch(0.28 0.04 40);
+  --muted: oklch(0.95 0.025 75);
+  --muted-foreground: oklch(0.5 0.03 40);
+  --accent: oklch(0.92 0.06 75);               /* warm amber wash */
+  --accent-foreground: oklch(0.28 0.04 40);
+  --destructive: oklch(0.58 0.22 27);
+  --border: oklch(0.88 0.03 60);
+  --input: oklch(0.88 0.03 60);
+  --ring: oklch(0.65 0.18 45 / 40%);
+  --chart-1: oklch(0.65 0.18 45);
+  --chart-2: oklch(0.78 0.16 75);
+  --chart-3: oklch(0.55 0.15 25);
+  --chart-4: oklch(0.7 0.13 95);
+  --chart-5: oklch(0.5 0.1 55);
+  --sidebar: oklch(0.97 0.02 75);
+  --sidebar-foreground: oklch(0.22 0.03 40);
+  --sidebar-primary: oklch(0.65 0.18 45);
+  --sidebar-primary-foreground: oklch(0.99 0 0);
+  --sidebar-accent: oklch(0.93 0.04 75);
+  --sidebar-accent-foreground: oklch(0.28 0.04 40);
+  --sidebar-border: oklch(0.88 0.03 60);
+  --sidebar-ring: oklch(0.65 0.18 45 / 40%);
+}
+
+.dark[data-theme="sunset"] {
+  --background: oklch(0.18 0.02 35);
+  --foreground: oklch(0.96 0.02 75);
+  --card: oklch(0.22 0.025 35);
+  --card-foreground: oklch(0.96 0.02 75);
+  --popover: oklch(0.22 0.025 35);
+  --popover-foreground: oklch(0.96 0.02 75);
+  --primary: oklch(0.72 0.18 50);
+  --primary-foreground: oklch(0.18 0.02 35);
+  --secondary: oklch(0.27 0.03 35);
+  --secondary-foreground: oklch(0.96 0.02 75);
+  --muted: oklch(0.27 0.03 35);
+  --muted-foreground: oklch(0.72 0.03 60);
+  --accent: oklch(0.32 0.05 45);
+  --accent-foreground: oklch(0.96 0.02 75);
+  --destructive: oklch(0.7 0.2 25);
+  --border: oklch(1 0 0 / 12%);
+  --input: oklch(1 0 0 / 16%);
+  --ring: oklch(0.72 0.18 50 / 40%);
+  --sidebar: oklch(0.22 0.025 35);
+  --sidebar-foreground: oklch(0.96 0.02 75);
+  --sidebar-primary: oklch(0.72 0.18 50);
+  --sidebar-primary-foreground: oklch(0.18 0.02 35);
+  --sidebar-accent: oklch(0.32 0.05 45);
+  --sidebar-accent-foreground: oklch(0.96 0.02 75);
+  --sidebar-border: oklch(1 0 0 / 12%);
+  --sidebar-ring: oklch(0.72 0.18 50 / 40%);
+}
+:root[data-theme="brutal"] input,
+:root[data-theme="brutal"] textarea,
+:root[data-theme="brutal"] select,
+:root[data-theme="brutal"] .border {
+  border-width: 3px;
+  border-color: var(--foreground);
+}
+/* Don't slap a hard border on bare links or icon/ghost/link buttons —
+   only buttons that already opt into a border keep the 3px treatment. */
+:root[data-theme="brutal"] button.border,
+:root[data-theme="brutal"] [role="button"].border {
+  border-width: 3px;
+  border-color: var(--foreground);
+}
+:root[data-theme="brutal"] a {
+  border: none !important;
+  background: transparent;
+}
+
+/* B&W signature: extra-round everything for a soft, pillowy feel. */
+:root[data-theme="bw"] .rounded,
+:root[data-theme="bw"] .rounded-sm,
+:root[data-theme="bw"] .rounded-md {
+  border-radius: 1rem !important;
+}
+:root[data-theme="bw"] .rounded-lg,
+:root[data-theme="bw"] .rounded-xl {
+  border-radius: 1.5rem !important;
+}
+:root[data-theme="bw"] button,
+:root[data-theme="bw"] [role="button"] {
+  border-radius: 9999px !important;
+}
+:root[data-theme="bw"] input,
+:root[data-theme="bw"] textarea,
+:root[data-theme="bw"] select {
+  border-radius: 1rem !important;
+}
+
+/* ── Theme: Compact ──
+   IDE-style density. Same neutral palette as default, but smaller base
+   font, tighter rhythm, and a much smaller radius so more fits on screen.
+   For users who want a "pro tool" feel. */
+:root[data-theme="compact"] {
+  --radius: 0.25rem;
+  --background: oklch(0.99 0 0);
+  --foreground: oklch(0.16 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.16 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.16 0 0);
+  --primary: oklch(0.5 0.16 250);
+  --primary-foreground: oklch(0.99 0 0);
+  --secondary: oklch(0.96 0 0);
+  --secondary-foreground: oklch(0.2 0 0);
+  --muted: oklch(0.96 0 0);
+  --muted-foreground: oklch(0.5 0 0);
+  --accent: oklch(0.94 0 0);
+  --accent-foreground: oklch(0.2 0 0);
+  --destructive: oklch(0.55 0.22 27);
+  --border: oklch(0.9 0 0);
+  --input: oklch(0.9 0 0);
+  --ring: oklch(0.5 0.16 250 / 35%);
+  --chart-1: oklch(0.5 0.16 250);
+  --chart-2: oklch(0.6 0.12 185);
+  --chart-3: oklch(0.55 0.15 145);
+  --chart-4: oklch(0.65 0.18 75);
+  --chart-5: oklch(0.55 0.18 320);
+  --sidebar: oklch(0.98 0 0);
+  --sidebar-foreground: oklch(0.16 0 0);
+  --sidebar-primary: oklch(0.5 0.16 250);
+  --sidebar-primary-foreground: oklch(0.99 0 0);
+  --sidebar-accent: oklch(0.94 0 0);
+  --sidebar-accent-foreground: oklch(0.2 0 0);
+  --sidebar-border: oklch(0.9 0 0);
+  --sidebar-ring: oklch(0.5 0.16 250 / 35%);
+}
+
+.dark[data-theme="compact"] {
+  --background: oklch(0.14 0 0);
+  --foreground: oklch(0.97 0 0);
+  --card: oklch(0.18 0 0);
+  --card-foreground: oklch(0.97 0 0);
+  --popover: oklch(0.18 0 0);
+  --popover-foreground: oklch(0.97 0 0);
+  --primary: oklch(0.62 0.16 250);
+  --primary-foreground: oklch(0.14 0 0);
+  --secondary: oklch(0.2 0 0);
+  --secondary-foreground: oklch(0.97 0 0);
+  --muted: oklch(0.2 0 0);
+  --muted-foreground: oklch(0.7 0 0);
+  --accent: oklch(0.22 0 0);
+  --accent-foreground: oklch(0.97 0 0);
+  --destructive: oklch(0.7 0.2 22);
+  --border: oklch(1 0 0 / 12%);
+  --input: oklch(1 0 0 / 16%);
+  --ring: oklch(0.62 0.16 250 / 40%);
+  --sidebar: oklch(0.16 0 0);
+  --sidebar-foreground: oklch(0.97 0 0);
+  --sidebar-primary: oklch(0.62 0.16 250);
+  --sidebar-primary-foreground: oklch(0.14 0 0);
+  --sidebar-accent: oklch(0.22 0 0);
+  --sidebar-accent-foreground: oklch(0.97 0 0);
+  --sidebar-border: oklch(1 0 0 / 12%);
+  --sidebar-ring: oklch(0.62 0.16 250 / 40%);
+}
+
+/* Compact density: shrink the base type scale and tighten line-height.
+   Affects everything that uses rem (padding, gaps, font sizes). */
+:root[data-theme="compact"] {
+  font-size: 14px;
+}
+:root[data-theme="compact"] body {
+  line-height: 1.4;
+}
+
+/* ── Theme: Editorial ──
+   Magazine feel: serif headings, larger comfortable type, generous radius
+   and whitespace, soft warm paper background. The opposite end of the
+   spectrum from Compact — for reading-heavy sessions. */
+:root[data-theme="editorial"] {
+  --radius: 1rem;
+  --background: oklch(0.985 0.008 85);
+  --foreground: oklch(0.2 0.015 60);
+  --card: oklch(1 0.004 85);
+  --card-foreground: oklch(0.2 0.015 60);
+  --popover: oklch(1 0.004 85);
+  --popover-foreground: oklch(0.2 0.015 60);
+  --primary: oklch(0.35 0.07 250);
+  --primary-foreground: oklch(0.985 0.008 85);
+  --secondary: oklch(0.95 0.012 85);
+  --secondary-foreground: oklch(0.25 0.015 60);
+  --muted: oklch(0.95 0.012 85);
+  --muted-foreground: oklch(0.48 0.02 60);
+  --accent: oklch(0.93 0.02 85);
+  --accent-foreground: oklch(0.25 0.015 60);
+  --destructive: oklch(0.5 0.2 28);
+  --border: oklch(0.88 0.015 75);
+  --input: oklch(0.88 0.015 75);
+  --ring: oklch(0.35 0.07 250 / 35%);
+  --chart-1: oklch(0.35 0.07 250);
+  --chart-2: oklch(0.55 0.12 185);
+  --chart-3: oklch(0.5 0.15 25);
+  --chart-4: oklch(0.6 0.13 75);
+  --chart-5: oklch(0.45 0.15 295);
+  --sidebar: oklch(0.97 0.012 85);
+  --sidebar-foreground: oklch(0.2 0.015 60);
+  --sidebar-primary: oklch(0.35 0.07 250);
+  --sidebar-primary-foreground: oklch(0.985 0.008 85);
+  --sidebar-accent: oklch(0.93 0.02 85);
+  --sidebar-accent-foreground: oklch(0.25 0.015 60);
+  --sidebar-border: oklch(0.88 0.015 75);
+  --sidebar-ring: oklch(0.35 0.07 250 / 35%);
+}
+
+.dark[data-theme="editorial"] {
+  --background: oklch(0.18 0.01 60);
+  --foreground: oklch(0.96 0.01 85);
+  --card: oklch(0.22 0.012 60);
+  --card-foreground: oklch(0.96 0.01 85);
+  --popover: oklch(0.22 0.012 60);
+  --popover-foreground: oklch(0.96 0.01 85);
+  --primary: oklch(0.78 0.1 250);
+  --primary-foreground: oklch(0.18 0.01 60);
+  --secondary: oklch(0.26 0.012 60);
+  --secondary-foreground: oklch(0.96 0.01 85);
+  --muted: oklch(0.26 0.012 60);
+  --muted-foreground: oklch(0.72 0.015 75);
+  --accent: oklch(0.3 0.015 60);
+  --accent-foreground: oklch(0.96 0.01 85);
+  --destructive: oklch(0.65 0.2 25);
+  --border: oklch(1 0 0 / 12%);
+  --input: oklch(1 0 0 / 16%);
+  --ring: oklch(0.78 0.1 250 / 40%);
+  --sidebar: oklch(0.22 0.012 60);
+  --sidebar-foreground: oklch(0.96 0.01 85);
+  --sidebar-primary: oklch(0.78 0.1 250);
+  --sidebar-primary-foreground: oklch(0.18 0.01 60);
+  --sidebar-accent: oklch(0.3 0.015 60);
+  --sidebar-accent-foreground: oklch(0.96 0.01 85);
+  --sidebar-border: oklch(1 0 0 / 12%);
+  --sidebar-ring: oklch(0.78 0.1 250 / 40%);
+}
+
+/* Editorial typography: comfortable size, serif headings. */
+:root[data-theme="editorial"] {
+  font-size: 17px;
+}
+:root[data-theme="editorial"] body {
+  font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+  line-height: 1.65;
+}
+:root[data-theme="editorial"] h1,
+:root[data-theme="editorial"] h2,
+:root[data-theme="editorial"] h3,
+:root[data-theme="editorial"] h4 {
+  font-family: 'Bricolage Grotesque', Georgia, 'Times New Roman', serif;
+  letter-spacing: -0.01em;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

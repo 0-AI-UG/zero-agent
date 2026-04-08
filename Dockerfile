@@ -1,21 +1,27 @@
-FROM oven/bun:1.3.5
+FROM node:22-slim
 
-# Install Docker CLI (for debugging) and tar (for build contexts)
+# Install Bun (used for install + build only — server runtime is Node)
 RUN apt-get update && apt-get install -y \
-    docker.io \
+    curl \
+    unzip \
+    python3 \
+    make \
+    g++ \
     && rm -rf /var/lib/apt/lists/*
+RUN curl -fsSL https://bun.sh/install | bash
+ENV PATH="/root/.bun/bin:${PATH}"
 
 WORKDIR /app
 
 # Install dependencies first (layer caching)
-COPY package.json ./package.json
+COPY package.json bun.lock ./
 COPY web/package.json ./web/package.json
-COPY bun.lock ./
-RUN bun install
+COPY runner/package.json ./runner/package.json
+COPY zero/package.json ./zero/package.json
+RUN bun install --frozen-lockfile
 
 # Copy config files needed for build & runtime
 COPY tsconfig.json ./tsconfig.json
-COPY bunfig.toml ./bunfig.toml
 
 # Copy server source
 COPY server/ ./server/
@@ -24,9 +30,10 @@ COPY server/ ./server/
 COPY skills/ ./skills/
 COPY skills-lock.json ./skills-lock.json
 
-# Build frontend
+# Build frontend (build.ts uses `bun x vite build`)
 COPY web/ ./web/
-RUN bun run build
+COPY build.ts ./build.ts
+RUN bun run compile
 
 # Create data directories
 RUN mkdir -p /app/data/workspaces
@@ -34,4 +41,4 @@ RUN mkdir -p /app/data/workspaces
 EXPOSE 3000
 
 ENV NODE_ENV=production
-CMD ["bun", "server/index.ts"]
+CMD ["node", "--import", "tsx/esm", "server/index.ts"]

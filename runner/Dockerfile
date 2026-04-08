@@ -1,16 +1,16 @@
-FROM node:22-slim AS base
+FROM oven/bun:1.3.5
 WORKDIR /app
 
-RUN npm install -g tsx
-
-COPY package.json package-lock.json* ./
-RUN npm install 2>/dev/null || true
+COPY package.json ./
+RUN bun install --no-save
 
 COPY . .
 
 ENV PORT=3100
-ENV IMAGE_BUILD_DIR=/app/docker/session
+# Directory where per-container Unix sockets are created. Mounted from
+# the named volume `zero-runner-sockets` (see docker-compose.yml).
+ENV ZERO_RUNNER_SOCKET_DIR=/var/run/zero-runner
 
 EXPOSE 3100
 
-CMD ["node", "--import", "tsx/esm", "index.ts"]
+CMD ["bun", "--watch", "index.ts"]

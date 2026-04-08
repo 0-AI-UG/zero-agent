@@ -1,17 +1,18 @@
 import { z } from "zod";
 import { tool, generateText } from "ai";
-import { getFilesByFolder, getFileByS3Key, getFilesByFolderPath, insertFile, updateFileFolderPath, updateFileRecord, deleteFile as deleteFileRecord } from "@/db/queries/files.ts";
+import { getFilesByFolder, getFileByS3Key, getFilesByFolderPath, insertFile, deleteFile as deleteFileRecord } from "@/db/queries/files.ts";
 import { createFolder as createFolderRecord, getFoldersByParent, getFolderByPath, deleteFolder as deleteFolderRecord, deleteFoldersByPathPrefix } from "@/db/queries/folders.ts";
 import { readFromS3, readBinaryFromS3, writeToS3, deleteFromS3, s3 } from "@/lib/s3.ts";
 import { applyEdits } from "@/lib/apply-edits.ts";
 import { lintContent } from "@/lib/lint.ts";
 import { sanitizePath } from "@/lib/sanitize.ts";
 import { truncateText } from "@/lib/truncate-result.ts";
-import { indexFileContent, searchFileContent, removeFileIndex } from "@/db/queries/search.ts";
-import { embedAndStore, semanticSearch, deleteVectorsBySource } from "@/lib/vectors.ts";
+import { indexFileContent, removeFileIndex } from "@/db/queries/search.ts";
+import { embedAndStore, deleteVectorsBySource } from "@/lib/vectors.ts";
 import { log } from "@/lib/logger.ts";
 import { isModelMultimodal } from "@/config/models.ts";
 import { getVisionModel } from "@/lib/providers/index.ts";
+import { reconcileToContainer, sha256Hex } from "@/lib/execution/workspace-sync.ts";
 import sharp from "sharp";
 
 const MAX_READ_CHARS = 15_000;
@@ -136,7 +137,7 @@ function cleanupEmptyFolders(projectId: string, folderPath: string) {
   }
 }
 
-export function createFileTools(projectId: string, options?: { chatId?: string; modelId?: string; initialReadPaths?: string[] }) {
+export function createFileTools(projectId: string, options?: { chatId?: string; userId?: string; modelId?: string; initialReadPaths?: string[] }) {
 
   const readPaths = new Set<string>(options?.initialReadPaths);
 
@@ -300,7 +301,10 @@ export function createFileTools(projectId: string, options?: { chatId?: string; 
             mimeType,
             buffer.length,
             folderPath,
+            sha256Hex(buffer),
           );
+
+          await reconcileToContainer(projectId);
 
           // Index for FTS search (text files get content indexed, others just filename)
           indexFileContent(fileRow.id, projectId, filename, isTextMime(mimeType) ? content : "");
@@ -397,7 +401,9 @@ export function createFileTools(projectId: string, options?: { chatId?: string; 
           const mimeType = guessMimeType(filename);
           const folderPath = deriveFolder(path);
           ensureFoldersExist(projectId, folderPath);
-          const fileRow = insertFile(projectId, s3Key, filename, mimeType, buffer.length, folderPath);
+          const fileRow = insertFile(projectId, s3Key, filename, mimeType, buffer.length, folderPath, sha256Hex(buffer));
+
+          await reconcileToContainer(projectId);
 
           // Re-index for FTS search
           indexFileContent(fileRow.id, projectId, filename, isTextMime(mimeType) ? updated : "");
@@ -427,197 +433,6 @@ export function createFileTools(projectId: string, options?: { chatId?: string; 
           };
         } catch (err) {
           toolLog.error("editFile failed", err, { projectId, path });
-          throw err;
-        }
-      },
-    }),
-
-    listFiles: tool({
-      description:
-        "List files and subfolders in this project, optionally filtered by folder path. Omit folderPath to list root. Use specific paths like '/posts/' or '/posts' to list contents of subfolders.",
-      inputSchema: z.object({
-        folderPath: z
-          .string()
-          .optional()
-          .describe("Folder path to list (e.g., '/posts/' or '/posts'). Omit to list root folder."),
-      }),
-      execute: async ({ folderPath }) => {
-        // Normalize: ensure folderPath has trailing slash for DB lookup
-        let normalizedPath = folderPath ?? "/";
-        if (normalizedPath !== "/" && !normalizedPath.endsWith("/")) {
-          normalizedPath += "/";
-        }
-        if (!normalizedPath.startsWith("/")) {
-          normalizedPath = "/" + normalizedPath;
-        }
-        toolLog.debug("listFiles", { projectId, folderPath, normalizedPath });
-        const files = getFilesByFolder(projectId, normalizedPath);
-        const folders = getFoldersByParent(projectId, normalizedPath);
-        toolLog.debug("listFiles result", { projectId, fileCount: files.length, folderCount: folders.length });
-        return {
-          currentPath: normalizedPath,
-          files: files.map((f) => ({
-            filename: f.filename,
-            mimeType: f.mime_type,
-            sizeBytes: f.size_bytes,
-            folderPath: f.folder_path,
-            createdAt: f.created_at,
-          })),
-          folders: folders.map((f) => ({
-            path: f.path,
-            name: f.name,
-          })),
-        };
-      },
-    }),
-
-    searchFiles: tool({
-      description:
-        "Search for files using hybrid search (keyword + semantic). Works for both exact keyword matches and conceptual/natural language queries. Returns matching files with relevant text snippets.",
-      inputSchema: z.object({
-        query: z
-          .string()
-          .describe("Search query — can be keywords or natural language (e.g., 'quarterly revenue analysis')"),
-      }),
-      execute: async ({ query }) => {
-        toolLog.info("searchFiles", { projectId, query });
-
-        // Try hybrid vector search first (dense + sparse RRF fusion)
-        const vectorResults = await semanticSearch(projectId, "file", query, 5);
-        if (vectorResults.length > 0) {
-          const results = vectorResults.map((r) => ({
-            fileId: r.metadata.sourceId,
-            filename: r.metadata.filename,
-            snippet: r.content.slice(0, 300),
-            score: r.score,
-          }));
-          toolLog.info("searchFiles result (hybrid)", { projectId, count: results.length });
-          return results;
-        }
-
-        // Fallback to FTS when embeddings are not configured
-        const ftsResults = searchFileContent(projectId, query);
-        toolLog.info("searchFiles result (fts)", { projectId, count: ftsResults.length });
-        return ftsResults;
-      },
-    }),
-
-    moveFile: tool({
-      description:
-        "Move or rename a file, like the `mv` command. If destination ends with '/' it is treated as a folder (moves the file there, keeping the name). Otherwise it is treated as a full file path (moves and/or renames). Examples: destination '/archive/' moves the file into /archive/. destination '/archive/old-name.png' moves and renames. destination 'new-name.png' renames in the same folder.",
-      inputSchema: z.object({
-        path: z
-          .string()
-          .describe("The current file path relative to the project (e.g., 'posts/old-name.md')."),
-        destination: z
-          .string()
-          .describe("Destination folder path (e.g., '/posts/') to move, or full file path (e.g., '/posts/new-name.md' or 'new-name.md') to rename/move+rename."),
-      }),
-      execute: async ({ path, destination: rawDest }) => {
-        toolLog.info("moveFile", { projectId, path, destination: rawDest });
-        try {
-          const sanitized = sanitizePath(path);
-          const s3Key = `projects/${projectId}/${sanitized}`;
-          const file = getFileByS3Key(projectId, s3Key);
-          if (!file) {
-            throw new Error(`File not found: ${path}`);
-          }
-          const fileId = file.id;
-
-          let newFolder: string;
-          let newFilename: string;
-
-          if (rawDest.endsWith("/")) {
-            // Destination is a folder — keep original filename
-            newFolder = rawDest.startsWith("/") ? rawDest : "/" + rawDest;
-            newFilename = file.filename;
-          } else {
-            // Destination is a file path — extract folder and filename
-            const parts = rawDest.split("/");
-            newFilename = parts.pop()!;
-            if (parts.length === 0 || (parts.length === 1 && parts[0] === "")) {
-              // Just a filename, keep same folder
-              newFolder = file.folder_path;
-            } else {
-              newFolder = (rawDest.startsWith("/") ? "" : "/") + parts.join("/") + "/";
-            }
-          }
-
-          // Normalize root
-          if (newFolder === "//") newFolder = "/";
-
-          const oldS3Key = file.s3_key;
-          const newS3Key = `projects/${projectId}/${newFolder === "/" ? "" : newFolder.slice(1)}${newFilename}`;
-
-          // Check if nothing changed
-          if (file.folder_path === newFolder && file.filename === newFilename) {
-            return { message: "File already has that name and location.", path: newFolder + newFilename };
-          }
-
-          // Copy S3 object to new key if the key changed
-          if (oldS3Key !== newS3Key) {
-            const data = await readBinaryFromS3(oldS3Key);
-            await writeToS3(newS3Key, data);
-            await deleteFromS3(oldS3Key);
-          }
-
-          ensureFoldersExist(projectId, newFolder);
-          const newMimeType = guessMimeType(newFilename);
-          const updated = updateFileRecord(fileId, newFilename, newS3Key, newMimeType, newFolder);
-
-          // Update FTS index with new filename
-          indexFileContent(updated.id, projectId, newFilename, "");
-
-          // Clean up empty ancestor folders from the old location
-          if (file.folder_path !== newFolder) {
-            cleanupEmptyFolders(projectId, file.folder_path);
-          }
-
-          toolLog.info("moveFile success", { projectId, path, newFolder, newFilename });
-          return { filename: updated.filename, folder: updated.folder_path };
-        } catch (err) {
-          toolLog.error("moveFile failed", err, { projectId, path });
-          throw err;
-        }
-      },
-    }),
-
-    createFolder: tool({
-      description:
-        "Create a new folder in this project's file system.",
-      inputSchema: z.object({
-        path: z
-          .string()
-          .describe("The full folder path (e.g., '/research/competitors/' or '/research/competitors')."),
-        name: z
-          .string()
-          .describe("The folder display name (e.g., 'competitors')."),
-      }),
-      execute: async ({ path: rawPath, name }) => {
-        // Normalize trailing slash
-        let path = rawPath;
-        if (path !== "/" && !path.endsWith("/")) {
-          path += "/";
-        }
-        if (!path.startsWith("/")) {
-          path = "/" + path;
-        }
-        toolLog.info("createFolder", { projectId, path, name });
-        try {
-          const existing = getFolderByPath(projectId, path);
-          if (existing) {
-            return { id: existing.id, path: existing.path, name: existing.name, message: "Folder already exists." };
-          }
-          // Ensure ancestor folders exist first
-          const parentSegments = path.split("/").filter(Boolean).slice(0, -1);
-          if (parentSegments.length > 0) {
-            const parentPath = "/" + parentSegments.join("/") + "/";
-            ensureFoldersExist(projectId, parentPath);
-          }
-          const folder = createFolderRecord(projectId, path, name);
-          return { id: folder.id, path: folder.path, name: folder.name };
-        } catch (err) {
-          toolLog.error("createFolder failed", err, { projectId, path });
           throw err;
         }
       },
@@ -677,6 +492,8 @@ export function createFileTools(projectId: string, options?: { chatId?: string; 
           // Delete this folder and all child folders
           deleteFoldersByPathPrefix(projectId, folderPath);
 
+          await reconcileToContainer(projectId);
+
           // Clean up empty ancestor folders
           cleanupEmptyFolders(projectId, folderPath);
 
@@ -702,12 +519,45 @@ export function createFileTools(projectId: string, options?: { chatId?: string; 
         removeFileIndex(file.id);
         deleteVectorsBySource(projectId, "file", file.id);
         deleteFileRecord(file.id);
+        await reconcileToContainer(projectId);
 
         // Clean up empty ancestor folders
         cleanupEmptyFolders(projectId, file.folder_path);
 
         toolLog.info("deleteFile success", { projectId, path, fileId: file.id });
         return { path, type: "file", deleted: true };
+      },
+    }),
+
+    displayFile: tool({
+      description:
+        "Display an existing project file inline in the chat for the user to see. Use this when the user should visually see a file — supported types: images (png, jpg, gif, webp, svg), HTML pages, and text files (md, txt, code). The file must already exist. This does NOT read the file's contents — use readFile if you need the content to reason about it. Do NOT call this for .viz files; .viz files are shown automatically when written.",
+      inputSchema: z.object({
+        path: z
+          .string()
+          .describe("Path to an existing file, relative to the project (e.g. 'charts/sales.png')."),
+        caption: z
+          .string()
+          .optional()
+          .describe("Optional short caption to show under the file."),
+      }),
+      execute: async ({ path: rawPath, caption }) => {
+        const path = sanitizePath(rawPath);
+        const s3Key = `projects/${projectId}/${path}`;
+        toolLog.info("displayFile", { projectId, path });
+        const file = getFileByS3Key(projectId, s3Key);
+        if (!file) {
+          throw new Error(`File not found: ${path}`);
+        }
+        return {
+          fileId: file.id,
+          filename: file.filename,
+          folderPath: file.folder_path,
+          mimeType: file.mime_type,
+          sizeBytes: file.size_bytes,
+          path,
+          caption,
+        };
       },
     }),
   };

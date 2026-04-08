@@ -226,7 +226,7 @@ async function focusAndType(cdp: CdpClient, backendNodeId: number, text: string,
 }
 
 /** Max lines for a full snapshot before truncation. Interactive-only snapshots are not limited. */
-const MAX_SNAPSHOT_LINES = 400;
+const MAX_SNAPSHOT_LINES = 150;
 
 async function buildA11ySnapshot(
   cdp: CdpClient,
@@ -713,14 +713,45 @@ export async function executeAction(
     }
 
     case "screenshot": {
-      const result = await cdp.send("Page.captureScreenshot", { format: "jpeg", quality: 75 }, 15_000);
+      // Downscale to cap the max dimension at ~1024px and drop quality to 60.
+      // A full-res desktop viewport screenshot is ~300-800 KB base64; this
+      // brings a typical page down to ~30-80 KB and cuts vision-model image
+      // tokens roughly 4x without meaningfully hurting readability. Uses
+      // CDP's clip.scale rather than sharp so we stay dependency-free.
+      const MAX_DIM = 1024;
+      const JPEG_QUALITY = 60;
+      let captureParams: Record<string, unknown> = {
+        format: "jpeg",
+        quality: JPEG_QUALITY,
+        captureBeyondViewport: false,
+      };
+      try {
+        const metrics = await cdp.send("Page.getLayoutMetrics", {}, 5_000);
+        const vv = metrics?.cssVisualViewport ?? metrics?.visualViewport;
+        const width = Number(vv?.clientWidth ?? vv?.width ?? 0);
+        const height = Number(vv?.clientHeight ?? vv?.height ?? 0);
+        if (width > 0 && height > 0) {
+          const scale = Math.min(1, MAX_DIM / Math.max(width, height));
+          captureParams = {
+            ...captureParams,
+            clip: { x: 0, y: 0, width, height, scale },
+          };
+        }
+      } catch {
+        // If metrics fail, fall through to an unscaled capture — still JPEG@60.
+      }
+      const result = await cdp.send("Page.captureScreenshot", captureParams, 15_000);
       const info = await getPageInfo(cdp);
       return { type: "screenshot", ...info, base64: result.data };
     }
 
     case "evaluate": {
       const awaitPromise = action.awaitPromise !== false;
-      const wrapped = `(async () => { ${action.script} })()`;
+      // Pass the script directly. With replMode, CDP returns the completion
+      // value of the last expression (like a DevTools console), so wrapping
+      // in an async IIFE would discard the result unless the user wrote an
+      // explicit `return`. replMode also permits top-level await.
+      const wrapped = action.script;
 
       const logs: string[] = [];
       const onConsole = (params: any) => {
@@ -764,8 +795,11 @@ export async function executeAction(
         try { await cdp.send("Runtime.disable"); } catch {}
       }
 
-      // Cap value size to protect model context (~50 KB).
-      const MAX_VALUE_CHARS = 50_000;
+      // Cap value size hard to protect model context — 4 KB is enough for
+      // typical inspect-one-thing scripts; use `zero browser extract` for
+      // query-driven content pulls instead of dumping the page via evaluate.
+      // Internal callers (extract handler) may override via `maxChars`.
+      const MAX_VALUE_CHARS = action.maxChars ?? 4_000;
       try {
         const serialized = typeof value === "string" ? value : JSON.stringify(value);
         if (serialized && serialized.length > MAX_VALUE_CHARS) {

@@ -15,14 +15,15 @@ import { cn } from "@/lib/utils";
 
 interface FolderRowProps {
   folder: FolderItem;
-  onClick: () => void;
+  onClick: (e: React.MouseEvent) => void;
   onDelete: (folderId: string) => void;
   isDeleting?: boolean;
   onDropItem?: (itemId: string, itemType: "file" | "folder", targetPath: string) => void;
   readOnly?: boolean;
+  isSelected?: boolean;
 }
 
-export function FolderRow({ folder, onClick, onDelete, isDeleting, onDropItem, readOnly }: FolderRowProps) {
+export function FolderRow({ folder, onClick, onDelete, isDeleting, onDropItem, readOnly, isSelected }: FolderRowProps) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [dragOver, setDragOver] = useState(false);
 
@@ -71,6 +72,8 @@ export function FolderRow({ folder, onClick, onDelete, isDeleting, onDropItem, r
           readOnly ? "" : "cursor-grab active:cursor-grabbing",
           dragOver
             ? "bg-primary/10 border-primary ring-1 ring-primary/30"
+            : isSelected
+            ? "bg-accent"
             : "hover:bg-muted/50"
         )}
       >

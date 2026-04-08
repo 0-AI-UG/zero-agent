@@ -29,7 +29,7 @@ export { formatBytes };
 interface FileRowProps {
   file: FileItem;
   projectId: string;
-  onClick: () => void;
+  onClick: (e: React.MouseEvent) => void;
   onDelete: (fileId: string) => void;
   isDeleting?: boolean;
   isSelected?: boolean;

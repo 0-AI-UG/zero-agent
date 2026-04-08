@@ -6,6 +6,8 @@ export interface AdminUser {
   email: string;
   isAdmin: boolean;
   canCreateProjects: boolean;
+  tokenLimit: number | null;
+  tokensUsed: number;
   createdAt: string;
 }
 
@@ -76,13 +78,58 @@ export function useUpdateSettings() {
   });
 }
 
+// ── Codex OAuth ──
+
+export interface CodexStatus {
+  connected: boolean;
+  accountEmail?: string;
+  expiresAt?: number;
+}
+
+export function useCodexStatus() {
+  return useQuery({
+    queryKey: ["admin", "codex-status"],
+    queryFn: async () => apiFetch<CodexStatus>("/oauth/codex/status"),
+    staleTime: 10_000,
+  });
+}
+
+export function useCodexDisconnect() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () =>
+      apiFetch<{ success: boolean }>("/oauth/codex/disconnect", { method: "POST" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin", "codex-status"] });
+    },
+  });
+}
+
+export function useCodexImport() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (authJson: string) =>
+      apiFetch<{ success: boolean; accountEmail?: string }>("/oauth/codex/import", {
+        method: "POST",
+        body: JSON.stringify({ authJson }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin", "codex-status"] });
+    },
+  });
+}
+
 export function useUpdateUser() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ userId, password, canCreateProjects }: { userId: string; password?: string; canCreateProjects?: boolean }) => {
+    mutationFn: async ({ userId, password, canCreateProjects, tokenLimit }: { userId: string; password?: string; canCreateProjects?: boolean; tokenLimit?: number | null }) => {
+      const body: Record<string, unknown> = {};
+      if (password !== undefined) body.password = password;
+      if (canCreateProjects !== undefined) body.canCreateProjects = canCreateProjects;
+      if (tokenLimit !== undefined) body.tokenLimit = tokenLimit;
       return apiFetch<{ success: boolean }>(`/admin/users/${userId}`, {
         method: "PUT",
-        body: JSON.stringify({ password, canCreateProjects }),
+        body: JSON.stringify(body),
       });
     },
     onSuccess: () => {
@@ -160,6 +207,7 @@ export function useReconnectRunner() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin", "runner-status"] });
+      queryClient.invalidateQueries({ queryKey: ["admin", "runners"] });
       queryClient.invalidateQueries({ queryKey: ["admin", "settings"] });
       queryClient.invalidateQueries({ queryKey: ["capabilities"] });
     },
@@ -174,6 +222,7 @@ export interface Runner {
   url: string;
   api_key: string;
   enabled: number;
+  connected?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -240,11 +289,16 @@ export function useDeleteRunner() {
 }
 
 export function useTestRunner() {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
       return apiFetch<{ healthy: boolean; url: string }>(`/admin/runners/${id}/test`, {
         method: "POST",
       });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin", "runners"] });
+      queryClient.invalidateQueries({ queryKey: ["admin", "runner-status"] });
     },
   });
 }

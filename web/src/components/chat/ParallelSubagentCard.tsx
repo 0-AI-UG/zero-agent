@@ -1,15 +1,31 @@
-import { CheckCircleIcon, LoaderIcon, XCircleIcon } from "lucide-react";
+import { CheckIcon, XIcon } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Shimmer } from "@/components/ai/shimmer";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
 
+interface TaskProgress {
+  index: number;
+  step: number;
+  currentTools?: string[];
+  lastText?: string;
+}
+
+interface TaskResult {
+  index: number;
+  status: string;
+  text?: string;
+  error?: string;
+  steps?: number;
+}
+
 interface ParallelSubagentOutput {
   status?: "running" | "done";
   completed?: number;
   total?: number;
-  results?: Array<{ index: number; status: string; text?: string; error?: string }>;
+  results?: TaskResult[];
+  progress?: TaskProgress[];
 }
 
 interface ParallelSubagentCardProps {
@@ -21,81 +37,100 @@ interface ParallelSubagentCardProps {
   isPreliminary?: boolean;
 }
 
-function truncate(text: string, max: number) {
-  return text.length > max ? text.slice(0, max) + "\u2026" : text;
+type TaskState = "running" | "fulfilled" | "rejected";
+
+function StatusGlyph({ state }: { state: TaskState }) {
+  if (state === "fulfilled") {
+    return <CheckIcon className="size-3 text-emerald-600 dark:text-emerald-400" strokeWidth={3} />;
+  }
+  if (state === "rejected") {
+    return <XIcon className="size-3 text-destructive" strokeWidth={3} />;
+  }
+  return <span className="size-1.5 rounded-full bg-amber-500 animate-pulse" />;
 }
 
 function TaskRow({
   prompt,
   result,
-  isDone,
+  progress,
+  isCardDone,
 }: {
   prompt: string;
-  result?: { status: string; text?: string; error?: string };
-  isDone: boolean;
+  result?: TaskResult;
+  progress?: TaskProgress;
+  isCardDone: boolean;
 }) {
-  const taskDone = isDone || result?.status === "fulfilled";
-  const taskFailed = result?.status === "rejected";
-  const hasResult = taskDone || taskFailed;
-  const detailText = taskFailed ? result?.error : result?.text;
+  const state: TaskState =
+    result?.status === "fulfilled"
+      ? "fulfilled"
+      : result?.status === "rejected"
+        ? "rejected"
+        : isCardDone
+          ? "fulfilled"
+          : "running";
 
-  // Still running — show spinner
-  if (!hasResult) {
-    return (
-      <li className="flex items-start gap-2 text-xs">
-        <LoaderIcon className="size-3.5 shrink-0 mt-0.5 text-muted-foreground animate-spin" />
-        <span className="leading-snug text-foreground">
-          {truncate(prompt, 80)}
-        </span>
-      </li>
-    );
-  }
+  const isRunning = state === "running";
+  const isFailed = state === "rejected";
+  const detailText = isFailed ? result?.error : result?.text;
 
-  // Completed or failed — always show collapsible with prompt + output
+  const statusLine = isRunning
+    ? progress
+      ? `step ${progress.step}${progress.currentTools?.length ? ` · ${progress.currentTools.join(" · ")}` : ""}`
+      : "starting…"
+    : null;
+
   return (
-    <Collapsible asChild>
-      <li className="text-xs">
-        <CollapsibleTrigger className="flex items-start gap-2 w-full text-left group cursor-pointer">
-          {taskDone ? (
-            <CheckCircleIcon className="size-3.5 shrink-0 mt-0.5 text-emerald-500" />
-          ) : (
-            <XCircleIcon className="size-3.5 shrink-0 mt-0.5 text-destructive" />
+    <Collapsible>
+      <CollapsibleTrigger className="group flex w-full items-start gap-2 text-left cursor-pointer py-0.5">
+        <span className="grid place-items-center size-3 shrink-0 mt-[3px]">
+          <StatusGlyph state={state} />
+        </span>
+        <span
+          className={cn(
+            "text-xs leading-relaxed truncate group-data-[state=open]:whitespace-pre-wrap group-data-[state=open]:overflow-visible group-data-[state=open]:break-words group-hover:text-foreground",
+            isFailed ? "text-destructive" : "text-foreground/90",
           )}
-          <span className={cn(
-            "leading-snug flex-1",
-            taskDone ? "text-muted-foreground" : "text-destructive",
-          )}>
-            {truncate(prompt, 80)}
-          </span>
+        >
+          {prompt}
+        </span>
+      </CollapsibleTrigger>
 
-        </CollapsibleTrigger>
-        <CollapsibleContent className="ml-[22px] mt-1.5 overflow-hidden data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=closed]:fade-out-0">
-          <div className="rounded-md bg-muted/50 p-2 space-y-2">
-            <div>
-              <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70 mb-0.5">Prompt</p>
-              <p className="text-xs text-foreground whitespace-pre-wrap">{prompt}</p>
-            </div>
-            <div>
-              <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70 mb-0.5">
-                {taskFailed ? "Error" : "Output"}
-              </p>
-              {detailText ? (
-                taskFailed ? (
-                  <p className="text-xs whitespace-pre-wrap text-destructive">{detailText}</p>
-                ) : (
-                  <div className="text-xs text-foreground prose prose-xs dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{detailText}</ReactMarkdown>
-                  </div>
-                )
-              ) : (
-                <p className="text-xs text-foreground/60">
-                  {taskFailed ? "Unknown error" : "Completed (no text output)"}
+      {isRunning && (
+        <div className="ml-5 border-l border-border/50 pl-3 space-y-0.5">
+          {statusLine && (
+            <Shimmer className="text-[11px] font-mono text-muted-foreground" duration={1.5}>
+              {statusLine}
+            </Shimmer>
+          )}
+          {progress?.lastText && (
+            <p className="text-[11px] text-muted-foreground/70 italic whitespace-pre-wrap break-words line-clamp-3">
+              {progress.lastText}
+            </p>
+          )}
+        </div>
+      )}
+
+      {!isRunning && (
+        <CollapsibleContent>
+          <div className="ml-5 mt-1 mb-1.5 border-l border-border/50 pl-3">
+            {detailText ? (
+              isFailed ? (
+                <p className="text-xs whitespace-pre-wrap break-words text-destructive/90 font-mono">
+                  {detailText}
                 </p>
-              )}
-            </div>
+              ) : (
+                <div className="text-xs text-foreground/85 prose prose-xs dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_code]:text-[11px]">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{detailText}</ReactMarkdown>
+                </div>
+              )
+            ) : (
+              <p className="text-[11px] text-muted-foreground/60 italic">
+                {isFailed ? "unknown error" : "no output"}
+              </p>
+            )}
           </div>
         </CollapsibleContent>
-      </li>
+      )}
     </Collapsible>
   );
 }
@@ -106,34 +141,36 @@ export function ParallelSubagentCard({ input, output, isRunning, isPreliminary }
   const completed = output?.completed ?? (isDone ? tasks.length : 0);
   const total = output?.total ?? tasks.length;
   const resultMap = new Map((output?.results ?? []).map((r) => [r.index, r]));
-
-  const label = isDone
-    ? `${total} sub-agents finished`
-    : `Running ${total} sub-agents (${completed}/${total} done)`;
+  const progressMap = new Map((output?.progress ?? []).map((p) => [p.index, p]));
 
   return (
-    <div className="my-1.5 rounded-lg border bg-card p-3 max-w-md animate-in fade-in-0 slide-in-from-top-1">
-      {/* Header */}
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <span className="font-medium">
-          {isDone ? label : (
-            <Shimmer className="text-sm" duration={1.5}>{label}</Shimmer>
-          )}
+    <div className="my-2 max-w-md">
+      <div className="flex items-baseline gap-2 mb-1">
+        <span className="text-[10px] font-mono uppercase tracking-[0.14em] text-muted-foreground/70">
+          sub-agents
         </span>
+        <span className="text-[10px] font-mono tabular-nums text-muted-foreground/60">
+          {isDone ? total : `${completed}/${total}`}
+        </span>
+        {!isDone && (
+          <Shimmer className="text-[10px] font-mono text-muted-foreground" duration={1.6}>
+            running
+          </Shimmer>
+        )}
       </div>
 
-      {/* Task list */}
       {tasks.length > 0 && (
-        <ul className="mt-2 space-y-1.5">
+        <div className="space-y-0">
           {tasks.map((task, i) => (
             <TaskRow
               key={i}
               prompt={task.prompt}
               result={resultMap.get(i)}
-              isDone={isDone}
+              progress={progressMap.get(i)}
+              isCardDone={isDone}
             />
           ))}
-        </ul>
+        </div>
       )}
     </div>
   );

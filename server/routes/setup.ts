@@ -59,12 +59,8 @@ export async function handleSetupComplete(request: Request): Promise<Response> {
 
     // Store settings
     setSetting("OPENROUTER_API_KEY", openrouterApiKey);
-    if (openrouterModel) {
-      setSetting("OPENROUTER_MODEL", openrouterModel);
-    }
-    if (braveSearchApiKey) {
-      setSetting("BRAVE_SEARCH_API_KEY", braveSearchApiKey);
-    }
+    if (openrouterModel) setSetting("OPENROUTER_MODEL", openrouterModel);
+    if (braveSearchApiKey) setSetting("BRAVE_SEARCH_API_KEY", braveSearchApiKey);
 
     const isDev = process.env.NODE_ENV !== "production";
     if (isDev) {

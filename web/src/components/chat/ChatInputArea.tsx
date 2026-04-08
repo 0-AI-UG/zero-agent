@@ -188,19 +188,19 @@ export function ChatInputArea({
                   />
                   <span>
                     {containerStatus?.status === "running"
-                      ? "Container running"
+                      ? "Ready to run"
                       : capabilities?.serverDocker
-                        ? "Server execution"
-                        : "Execution unavailable"}
+                        ? "First run may be slow"
+                        : "Can't run code"}
                   </span>
                 </div>
               </TooltipTrigger>
               <TooltipContent side="top">
                 {containerStatus?.status === "running"
-                  ? "Container is running — code and browser execute on the server"
+                  ? "Your environment is warm — actions will run instantly"
                   : capabilities?.serverDocker
-                    ? "No container yet — one will be created on first action"
-                    : "Server execution not available"}
+                    ? "Your environment will spin up on the first action, then stay fast"
+                    : "Code execution isn't available in this environment"}
               </TooltipContent>
             </Tooltip>
             {(totalUsage.totalTokens ?? 0) > 0 && (

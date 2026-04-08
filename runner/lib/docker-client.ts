@@ -52,11 +52,28 @@ function unixFetch(url: string, socketPath: string, init?: RequestInit): Promise
 
 // -- Types --
 
+/**
+ * Docker `Mount` spec (modern HostConfig.Mounts entry). Supports named
+ * volumes with VolumeOptions.Subpath, which we use to give each session
+ * container its own subdirectory inside the shared runner socket volume.
+ */
+export interface DockerMount {
+  Type: "volume" | "bind" | "tmpfs";
+  Source: string;
+  Target: string;
+  ReadOnly?: boolean;
+  VolumeOptions?: {
+    Subpath?: string;
+    NoCopy?: boolean;
+  };
+}
+
 export interface ContainerCreateOptions {
   name: string;
   image: string;
   network?: string;
-  binds?: string[]; // host:container volume mounts
+  binds?: string[]; // host:container volume mounts (legacy Binds API)
+  mounts?: DockerMount[]; // modern Mounts API — required for VolumeOptions.Subpath
   env?: string[];
   memory?: number; // bytes
   cpus?: number;
@@ -217,6 +234,7 @@ export class DockerClient {
       Env: opts.env,
       HostConfig: {
         Binds: opts.binds,
+        Mounts: opts.mounts,
         NetworkMode: opts.network,
         Memory: opts.memory,
         NanoCpus: opts.cpus ? opts.cpus * 1e9 : undefined,

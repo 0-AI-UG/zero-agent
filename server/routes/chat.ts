@@ -1,4 +1,4 @@
-import { createAgentUIStreamResponse, generateId, smoothStream } from "ai";
+import { createAgentUIStreamResponse, createUIMessageStream, createUIMessageStreamResponse, generateId, smoothStream } from "ai";
 import type { UIMessage } from "ai";
 import { authenticateRequest } from "@/lib/auth.ts";
 import { corsHeaders } from "@/lib/cors.ts";
@@ -16,9 +16,10 @@ import { detectExploreItems } from "@/lib/heartbeat-explore.ts";
 import { events } from "@/lib/events.ts";
 import { semanticSearch, embedAndStore, embedValue, keywordSearch } from "@/lib/vectors.ts";
 import { log } from "@/lib/logger.ts";
-import { streamContext, setActiveStreamId, clearActiveStreamId, getActiveStreamId, requestAbort, isAbortRequested, clearAbortFlag } from "@/lib/resumable-stream.ts";
+import { streamContext, setActiveStreamId, clearActiveStreamId, getActiveStreamId, requestAbort, createAbortController, clearAbortController } from "@/lib/resumable-stream.ts";
 import { ConflictError } from "@/lib/errors.ts";
-import { insertUsageLog } from "@/db/queries/usage-logs.ts";
+import { insertUsageLog, getUserTokenTotal } from "@/db/queries/usage-logs.ts";
+import { db } from "@/db/index.ts";
 import { getModelPricing } from "@/config/models.ts";
 import { saveCheckpoint, deleteCheckpoint, loadCheckpoint } from "@/lib/durability/checkpoint.ts";
 import { isShuttingDown, registerRun, deregisterRun } from "@/lib/durability/shutdown.ts";
@@ -36,6 +37,27 @@ export async function handleChat(request: Request): Promise<Response> {
 
     const project = verifyProjectAccess(projectId, userId);
     const chat = verifyChatOwnership(chatId, projectId);
+
+    // Enforce per-user token usage limit
+    const limitRow = db.prepare("SELECT token_limit FROM users WHERE id = ?").get(userId) as { token_limit: number | null } | undefined;
+    if (limitRow?.token_limit != null) {
+      const used = getUserTokenTotal(userId);
+      if (used >= limitRow.token_limit) {
+        chatLog.warn("chat rejected — token limit reached", { userId, used, limit: limitRow.token_limit });
+        const message = `You've reached your token usage limit (${used.toLocaleString()} / ${limitRow.token_limit.toLocaleString()} tokens). Please ask an administrator to increase your usage limit to continue.`;
+        return createUIMessageStreamResponse({
+          headers: corsHeaders,
+          stream: createUIMessageStream({
+            execute({ writer }) {
+              const id = generateId();
+              writer.write({ type: "text-start", id });
+              writer.write({ type: "text-delta", id, delta: message });
+              writer.write({ type: "text-end", id });
+            },
+          }),
+        });
+      }
+    }
 
     // Reject new requests during shutdown
     if (isShuttingDown()) {
@@ -137,6 +159,7 @@ export async function handleChat(request: Request): Promise<Response> {
 
     const streamId = generateId();
     setActiveStreamId(chatId, streamId);
+    const abortController = createAbortController(chatId);
 
     // Save initial checkpoint so crash recovery knows this run was in-progress
     saveCheckpoint({
@@ -165,6 +188,7 @@ export async function handleChat(request: Request): Promise<Response> {
     return createAgentUIStreamResponse({
       agent,
       uiMessages: messages,
+      abortSignal: abortController.signal,
       headers: corsHeaders,
       generateMessageId: generateId,
       experimental_transform: smoothStream({
@@ -202,7 +226,7 @@ export async function handleChat(request: Request): Promise<Response> {
       },
       onFinish: ({ messages: finalMessages, isAborted }) => {
         clearActiveStreamId(chatId);
-        clearAbortFlag(chatId);
+        clearAbortController(chatId);
         if (runId) {
           deleteCheckpoint(runId);
           deregisterRun(runId);
@@ -322,7 +346,7 @@ export async function handleChat(request: Request): Promise<Response> {
     const { chatId } = getParams<{ chatId?: string }>(request);
     if (chatId) {
       clearActiveStreamId(chatId);
-      clearAbortFlag(chatId);
+      clearAbortController(chatId);
     }
     // Persist any accumulated agent work from checkpoint before cleaning up
     if (runId) {

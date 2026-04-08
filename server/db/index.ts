@@ -32,8 +32,7 @@ db.exec(`
     description               TEXT DEFAULT '',
     automation_enabled        INTEGER NOT NULL DEFAULT 0,
     browser_search_fallback   INTEGER NOT NULL DEFAULT 0,
-    code_execution_enabled    INTEGER NOT NULL DEFAULT 0,
-    browser_automation_enabled INTEGER NOT NULL DEFAULT 1,
+    sync_gating_enabled       INTEGER NOT NULL DEFAULT 1,
     show_skills_in_files      INTEGER NOT NULL DEFAULT 1,
     assistant_name            TEXT NOT NULL DEFAULT 'Zero Agent',
     assistant_description     TEXT NOT NULL DEFAULT 'Ask me anything — I can browse the web, manage files, run code, and automate tasks.',
@@ -159,6 +158,22 @@ db.exec(`
     responded_at  TEXT
   )
 `);
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS user_invitations (
+    id                  TEXT PRIMARY KEY,
+    token_hash          TEXT NOT NULL UNIQUE,
+    email               TEXT NOT NULL,
+    inviter_id          TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    can_create_projects INTEGER NOT NULL DEFAULT 1,
+    token_limit         INTEGER,
+    expires_at          INTEGER NOT NULL,
+    accepted_at         INTEGER,
+    accepted_user_id    TEXT REFERENCES users(id) ON DELETE SET NULL,
+    created_at          INTEGER NOT NULL
+  )
+`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_user_invitations_token ON user_invitations(token_hash)`);
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS todos (
@@ -355,10 +370,13 @@ for (const col of [
 }
 
 // Users migrations
+try { db.exec(`ALTER TABLE projects ADD COLUMN sync_gating_enabled INTEGER NOT NULL DEFAULT 1`); } catch {}
+try { db.exec(`ALTER TABLE files ADD COLUMN hash TEXT NOT NULL DEFAULT ''`); } catch {}
 try { db.exec(`ALTER TABLE users ADD COLUMN can_create_projects INTEGER NOT NULL DEFAULT 1`); } catch {}
 try { db.exec(`ALTER TABLE users ADD COLUMN companion_sharing INTEGER NOT NULL DEFAULT 0`); } catch {}
 try { db.exec(`ALTER TABLE users ADD COLUMN totp_secret TEXT`); } catch {}
 try { db.exec(`ALTER TABLE users ADD COLUMN totp_enabled INTEGER NOT NULL DEFAULT 0`); } catch {}
+try { db.exec(`ALTER TABLE users ADD COLUMN token_limit INTEGER`); } catch {}
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS totp_backup_codes (

@@ -209,6 +209,24 @@
         ],
         "allow_fallbacks": true
       }
+    },
+    {
+      "id": "gpt-5",
+      "name": "GPT-5 (ChatGPT subscription)",
+      "provider": "openai",
+      "inferenceProvider": "codex",
+      "description": "Routed via your ChatGPT Plus/Pro/Codex subscription. No per-token billing.",
+      "contextWindow": 200000,
+      "pricing": {
+        "input": 0,
+        "output": 0
+      },
+      "tags": [
+        "codex",
+        "subscription",
+        "premium"
+      ],
+      "multimodal": true
     }
   ]
 }
