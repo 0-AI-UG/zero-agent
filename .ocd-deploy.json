@@ -1,11 +1,15 @@
 {
+  "$schema": 1,
   "name": "Zero Agent",
+  "description": "AI agent platform with real-time chat, code execution, and multi-provider LLM support",
   "suggested_app_name": "zero-agent",
-  "compose_file": "docker-compose.yml",
-  "compose_web_service": "server",
+  "build": {
+    "compose_file": "docker-compose.yml",
+    "compose_web_service": "server"
+  },
   "volume": {
     "size": 10,
-    "mount_path": "/app/data"
+    "path": "/app/data"
   },
   "env": [
     {
