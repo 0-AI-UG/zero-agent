@@ -14,8 +14,8 @@ export async function handleListUsers(request: Request): Promise<Response> {
     await requireAdmin(request);
 
     const users = db.prepare(
-      "SELECT id, email, is_admin, can_create_projects, token_limit, created_at FROM users ORDER BY created_at"
-    ).all() as Pick<UserRow, "id" | "email" | "is_admin" | "can_create_projects" | "token_limit" | "created_at">[];
+      "SELECT id, username, is_admin, can_create_projects, token_limit, created_at FROM users ORDER BY created_at"
+    ).all() as Pick<UserRow, "id" | "username" | "is_admin" | "can_create_projects" | "token_limit" | "created_at">[];
 
     const tokensUsedMap = getUserTokenTotalsByIds(users.map((u) => u.id));
 
@@ -23,7 +23,7 @@ export async function handleListUsers(request: Request): Promise<Response> {
       {
         users: users.map((u) => ({
           id: u.id,
-          email: u.email,
+          username: u.username,
           isAdmin: u.is_admin === 1,
           canCreateProjects: u.can_create_projects !== 0,
           tokenLimit: u.token_limit ?? null,
@@ -42,19 +42,19 @@ export async function handleCreateUser(request: Request): Promise<Response> {
   try {
     const { userId } = await requireAdmin(request);
     const body: any = await request.json();
-    const { email, password } = body;
+    const { username, password } = body;
 
-    if (!email || !password) {
+    if (!username || !password) {
       return Response.json(
         { error: "Email and password are required" },
         { status: 400, headers: corsHeaders }
       );
     }
 
-    // Check if email already exists
+    // Check if username already exists
     const existing = db.prepare(
-      "SELECT id FROM users WHERE email = ?"
-    ).get(email);
+      "SELECT id FROM users WHERE username = ?"
+    ).get(username);
     if (existing) {
       return Response.json(
         { error: "Email already registered" },
@@ -66,13 +66,13 @@ export async function handleCreateUser(request: Request): Promise<Response> {
     const passwordHash = await bcrypt.hash(password, 10);
     const canCreate = body.canCreateProjects !== false ? 1 : 0;
     db.prepare(
-      "INSERT INTO users (id, email, password_hash, is_admin, can_create_projects) VALUES (?, ?, ?, 0, ?)"
-    ).run(id, email, passwordHash, canCreate);
+      "INSERT INTO users (id, username, password_hash, is_admin, can_create_projects) VALUES (?, ?, ?, 0, ?)"
+    ).run(id, username, passwordHash, canCreate);
 
-    adminLog.info("user created by admin", { createdBy: userId, newUser: id, email });
+    adminLog.info("user created by admin", { createdBy: userId, newUser: id, username });
 
     return Response.json(
-      { id, email, isAdmin: false, canCreateProjects: canCreate === 1, createdAt: new Date().toISOString() },
+      { id, username, isAdmin: false, canCreateProjects: canCreate === 1, createdAt: new Date().toISOString() },
       { status: 201, headers: corsHeaders }
     );
   } catch (error) {

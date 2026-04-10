@@ -6,7 +6,7 @@ export interface Invitation {
   id: string;
   projectId: string;
   projectName: string;
-  inviterEmail: string;
+  inviterUsername: string;
   createdAt: string;
 }
 

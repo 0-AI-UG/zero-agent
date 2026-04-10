@@ -5,14 +5,14 @@ import { queryKeys } from "@/lib/query-keys";
 export interface Member {
   id: string;
   userId: string;
-  email: string;
+  username: string;
   role: "owner" | "member";
   createdAt: string;
 }
 
 export interface PendingInvitation {
   id: string;
-  email: string;
+  username: string;
   createdAt: string;
 }
 
@@ -32,10 +32,10 @@ export function useMembers(projectId: string) {
 export function useInviteMember(projectId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (email: string) => {
+    mutationFn: async (username: string) => {
       return apiFetch<{ invitation: PendingInvitation }>(
         `/projects/${projectId}/members/invite`,
-        { method: "POST", body: JSON.stringify({ email }) },
+        { method: "POST", body: JSON.stringify({ username }) },
       );
     },
     onSuccess: () => {

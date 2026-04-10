@@ -25,6 +25,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useEffect } from "react";
 import { useFilesStore } from "@/stores/files-store";
+import { useRealtime } from "@/hooks/use-realtime";
 
 function getProjectColor(name: string): string {
   let hash = 0;
@@ -147,6 +148,7 @@ export function ProjectLayout() {
   const isMobile = useIsMobile();
 
   const resetFilesNavigation = useFilesStore((s) => s.resetNavigation);
+  useRealtime(projectId);
 
   useEffect(() => {
     resetFilesNavigation();

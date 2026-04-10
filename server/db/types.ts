@@ -1,6 +1,6 @@
 export interface UserRow {
   id: string;
-  email: string;
+  username: string;
   password_hash: string;
   is_admin?: number;
   can_create_projects?: number;
@@ -16,6 +16,17 @@ export interface TotpBackupCodeRow {
   user_id: string;
   code_hash: string;
   used: number;
+  created_at: string;
+}
+
+export interface UserPasskeyRow {
+  id: string;
+  user_id: string;
+  credential_id: string;
+  public_key: string;
+  counter: number;
+  transports: string | null;
+  device_name: string;
   created_at: string;
 }
 
@@ -123,7 +134,7 @@ export interface InvitationRow {
   id: string;
   project_id: string;
   inviter_id: string;
-  invitee_email: string;
+  invitee_username: string;
   invitee_id: string | null;
   status: "pending" | "accepted" | "declined";
   created_at: string;

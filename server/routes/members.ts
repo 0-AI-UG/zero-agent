@@ -5,7 +5,7 @@ import { handleError, verifyProjectAccess, verifyProjectOwnership, toUTC } from 
 import { ValidationError, ConflictError, NotFoundError } from "@/lib/errors.ts";
 import { getProjectMembers, getMemberRole, removeProjectMember, insertProjectMember } from "@/db/queries/members.ts";
 import { hasPendingInvitation, insertInvitation, getPendingByProject } from "@/db/queries/invitations.ts";
-import { getUserByEmail } from "@/db/queries/users.ts";
+import { getUserByUsername } from "@/db/queries/users.ts";
 import { isProjectMember } from "@/db/queries/members.ts";
 
 export async function handleListMembers(request: Request): Promise<Response> {
@@ -17,14 +17,14 @@ export async function handleListMembers(request: Request): Promise<Response> {
     const members = getProjectMembers(projectId).map((m) => ({
       id: m.id,
       userId: m.user_id,
-      email: m.email,
+      username: m.username,
       role: m.role,
       createdAt: toUTC(m.created_at),
     }));
 
     const pending = getPendingByProject(projectId).map((i) => ({
       id: i.id,
-      email: i.invitee_email,
+      username: i.invitee_username,
       createdAt: toUTC(i.created_at),
     }));
 
@@ -40,34 +40,34 @@ export async function handleInviteMember(request: Request): Promise<Response> {
     const projectId = (getParams<{ projectId: string }>(request)).projectId;
     verifyProjectOwnership(projectId, userId);
 
-    const { email } = (await request.json()) as { email?: string };
-    if (!email || typeof email !== "string" || !email.includes("@")) {
-      throw new ValidationError("Valid email required");
+    const { username } = (await request.json()) as { username?: string };
+    if (!username || typeof username !== "string" || !/^[a-zA-Z0-9_-]{3,32}$/.test(username.trim())) {
+      throw new ValidationError("Valid username required");
     }
 
-    const normalizedEmail = email.toLowerCase().trim();
+    const normalizedUsername = username.trim();
 
     // Check if already a member
-    const existingUser = getUserByEmail(normalizedEmail);
+    const existingUser = getUserByUsername(normalizedUsername);
     if (existingUser && isProjectMember(projectId, existingUser.id)) {
       throw new ConflictError("User is already a member of this project");
     }
 
     // Check for existing pending invitation
-    if (hasPendingInvitation(projectId, normalizedEmail)) {
-      throw new ConflictError("An invitation is already pending for this email");
+    if (hasPendingInvitation(projectId, normalizedUsername)) {
+      throw new ConflictError("An invitation is already pending for this username");
     }
 
     const invitation = insertInvitation(
       projectId,
       userId,
-      normalizedEmail,
+      normalizedUsername,
       existingUser?.id ?? null,
     );
 
 
     return Response.json(
-      { invitation: { id: invitation.id, email: normalizedEmail, createdAt: toUTC(invitation.created_at) } },
+      { invitation: { id: invitation.id, username: normalizedUsername, createdAt: toUTC(invitation.created_at) } },
       { status: 201, headers: corsHeaders },
     );
   } catch (error) {

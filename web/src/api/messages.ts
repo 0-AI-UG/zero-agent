@@ -5,16 +5,16 @@ import type { UIMessage } from "ai";
 
 interface MessagesResponse {
   messages: UIMessage[];
+  isStreaming?: boolean;
 }
 
 async function fetchMessages(
   projectId: string,
   chatId: string,
-): Promise<UIMessage[]> {
-  const data = await apiFetch<MessagesResponse>(
+): Promise<MessagesResponse> {
+  return apiFetch<MessagesResponse>(
     `/projects/${projectId}/chats/${chatId}/messages`,
   );
-  return data.messages;
 }
 
 export function useMessages(projectId: string, chatId: string) {

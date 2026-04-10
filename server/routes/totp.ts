@@ -16,6 +16,7 @@ import {
   markBackupCodeUsed,
   getUnusedBackupCodeCount,
 } from "@/db/queries/totp.ts";
+import { getPasskeyCount } from "@/db/queries/passkeys.ts";
 import { handleError } from "@/routes/utils.ts";
 import { authRateLimiter } from "@/lib/rate-limit.ts";
 import { log } from "@/lib/logger.ts";
@@ -23,10 +24,10 @@ import { nanoid } from "nanoid";
 
 const totpLog = log.child({ module: "totp" });
 
-export function createTOTP(secret: string, email: string): TOTP {
+export function createTOTP(secret: string, username: string): TOTP {
   return new TOTP({
     issuer: "ZeroAgent",
-    label: email,
+    label: username,
     algorithm: "SHA1",
     digits: 6,
     period: 30,
@@ -84,7 +85,7 @@ export async function handleTotpSetup(request: Request): Promise<Response> {
     const secret = new Secret({ size: 20 });
     const totp = new TOTP({
       issuer: "ZeroAgent",
-      label: user.email,
+      label: user.username,
       algorithm: "SHA1",
       digits: 6,
       period: 30,
@@ -129,7 +130,7 @@ export async function handleTotpConfirm(request: Request): Promise<Response> {
       );
     }
 
-    const totp = createTOTP(secret, user.email);
+    const totp = createTOTP(secret, user.username);
     const delta = totp.validate({ token: body.code, window: 1 });
     if (delta === null) {
       return Response.json(
@@ -178,14 +179,14 @@ export async function handleTotpLogin(request: Request): Promise<Response> {
     const secret = getTotpSecret(userId);
     if (!secret) throw new AuthError("TOTP not configured");
 
-    const totp = createTOTP(secret, user.email);
+    const totp = createTOTP(secret, user.username);
     const delta = totp.validate({ token: body.code, window: 1 });
 
     if (delta !== null) {
-      const token = await createToken({ userId: user.id, email: user.email });
+      const token = await createToken({ userId: user.id, username: user.username });
       totpLog.info("totp login success", { userId });
       return Response.json(
-        { token, user: { id: user.id, email: user.email } },
+        { token, user: { id: user.id, username: user.username } },
         { headers: corsHeaders },
       );
     }
@@ -233,7 +234,7 @@ export async function handleTotpSetupFromLogin(request: Request): Promise<Respon
     const secret = new Secret({ size: 20 });
     const totp = new TOTP({
       issuer: "ZeroAgent",
-      label: user.email,
+      label: user.username,
       algorithm: "SHA1",
       digits: 6,
       period: 30,
@@ -286,7 +287,7 @@ export async function handleTotpConfirmFromLogin(request: Request): Promise<Resp
       );
     }
 
-    const totp = createTOTP(secret, user.email);
+    const totp = createTOTP(secret, user.username);
     const delta = totp.validate({ token: body.code, window: 1 });
     if (delta === null) {
       return Response.json(
@@ -305,11 +306,11 @@ export async function handleTotpConfirmFromLogin(request: Request): Promise<Resp
     insertBackupCodes(userId, codeHashes);
 
     // Issue real JWT since setup is complete
-    const token = await createToken({ userId: user.id, email: user.email });
+    const token = await createToken({ userId: user.id, username: user.username });
 
     totpLog.info("totp enabled from login", { userId });
     return Response.json(
-      { token, user: { id: user.id, email: user.email }, backupCodes },
+      { token, user: { id: user.id, username: user.username }, backupCodes },
       { headers: corsHeaders },
     );
   } catch (error) {
@@ -326,9 +327,9 @@ export async function handleTotpDisable(request: Request): Promise<Response> {
 
     // Check if 2FA is required for this user
     const required = user.is_admin === 1 || getSetting("REQUIRE_2FA") === "1";
-    if (required) {
+    if (required && getPasskeyCount(userId) === 0) {
       return Response.json(
-        { error: "Two-factor authentication is required and cannot be disabled" },
+        { error: "Two-factor authentication is required and cannot be disabled without an alternative method (e.g. passkey)" },
         { status: 403, headers: corsHeaders },
       );
     }
@@ -351,7 +352,7 @@ export async function handleTotpDisable(request: Request): Promise<Response> {
     const secret = getTotpSecret(userId);
     if (!secret) throw new AuthError("TOTP not configured");
 
-    const totp = createTOTP(secret, user.email);
+    const totp = createTOTP(secret, user.username);
     const delta = totp.validate({ token: body.code, window: 1 });
     if (delta === null) {
       return Response.json(
@@ -423,9 +424,10 @@ export async function handleTotpStatus(request: Request): Promise<Response> {
     const enabled = user.totp_enabled === 1;
     const required = user.is_admin === 1 || getSetting("REQUIRE_2FA") === "1";
     const backupCodesRemaining = enabled ? getUnusedBackupCodeCount(userId) : 0;
+    const passkeyCount = getPasskeyCount(userId);
 
     return Response.json(
-      { enabled, required, backupCodesRemaining },
+      { enabled, required, backupCodesRemaining, passkeyCount },
       { headers: corsHeaders },
     );
   } catch (error) {

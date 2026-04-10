@@ -3,7 +3,7 @@ import { apiFetch } from "./client";
 
 export interface AdminInvitation {
   id: string;
-  email: string;
+  username: string;
   status: "pending" | "accepted" | "expired";
   canCreateProjects: boolean;
   tokenLimit: number | null;
@@ -13,7 +13,7 @@ export interface AdminInvitation {
 }
 
 export interface CreateInvitationInput {
-  email: string;
+  username: string;
   canCreateProjects?: boolean;
   tokenLimit?: number | null;
   expiresInDays?: number;
@@ -69,7 +69,7 @@ export function useDeleteInvitation() {
 export interface InvitationLookup {
   valid: boolean;
   reason?: "not_found" | "expired" | "already_accepted";
-  email?: string;
+  username?: string;
   expiresAt?: number;
 }
 
@@ -80,8 +80,8 @@ export async function lookupInvitation(token: string): Promise<InvitationLookup>
 }
 
 export type AcceptInvitationResponse =
-  | { token: string; user: { id: string; email: string } }
-  | { requires2FASetup: true; tempToken: string; user: { id: string; email: string } };
+  | { token: string; user: { id: string; username: string } }
+  | { requires2FASetup: true; tempToken: string; user: { id: string; username: string } };
 
 export async function acceptInvitation(
   token: string,

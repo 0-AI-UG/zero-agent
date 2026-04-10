@@ -17,7 +17,7 @@ db.exec("PRAGMA case_sensitive_like = ON");
 db.exec(`
   CREATE TABLE IF NOT EXISTS users (
     id            TEXT PRIMARY KEY,
-    email         TEXT UNIQUE NOT NULL,
+    username      TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
     is_admin      INTEGER NOT NULL DEFAULT 0,
     created_at    TEXT NOT NULL DEFAULT (datetime('now'))
@@ -151,7 +151,7 @@ db.exec(`
     id            TEXT PRIMARY KEY,
     project_id    TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     inviter_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    invitee_email TEXT NOT NULL,
+    invitee_username TEXT NOT NULL,
     invitee_id    TEXT REFERENCES users(id) ON DELETE CASCADE,
     status        TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'accepted', 'declined')),
     created_at    TEXT NOT NULL DEFAULT (datetime('now')),
@@ -163,7 +163,7 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS user_invitations (
     id                  TEXT PRIMARY KEY,
     token_hash          TEXT NOT NULL UNIQUE,
-    email               TEXT NOT NULL,
+    username            TEXT NOT NULL,
     inviter_id          TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     can_create_projects INTEGER NOT NULL DEFAULT 1,
     token_limit         INTEGER,
@@ -369,6 +369,26 @@ for (const col of [
   try { db.exec(`ALTER TABLE scheduled_tasks ADD COLUMN ${col}`); } catch {}
 }
 
+// Email -> username rename migrations (idempotent)
+try {
+  const cols = db.prepare("PRAGMA table_info(users)").all() as { name: string }[];
+  if (cols.some((c) => c.name === "email") && !cols.some((c) => c.name === "username")) {
+    db.exec("ALTER TABLE users RENAME COLUMN email TO username");
+  }
+} catch {}
+try {
+  const cols = db.prepare("PRAGMA table_info(invitations)").all() as { name: string }[];
+  if (cols.some((c) => c.name === "invitee_email") && !cols.some((c) => c.name === "invitee_username")) {
+    db.exec("ALTER TABLE invitations RENAME COLUMN invitee_email TO invitee_username");
+  }
+} catch {}
+try {
+  const cols = db.prepare("PRAGMA table_info(user_invitations)").all() as { name: string }[];
+  if (cols.some((c) => c.name === "email") && !cols.some((c) => c.name === "username")) {
+    db.exec("ALTER TABLE user_invitations RENAME COLUMN email TO username");
+  }
+} catch {}
+
 // Users migrations
 try { db.exec(`ALTER TABLE projects ADD COLUMN sync_gating_enabled INTEGER NOT NULL DEFAULT 1`); } catch {}
 try { db.exec(`ALTER TABLE files ADD COLUMN hash TEXT NOT NULL DEFAULT ''`); } catch {}
@@ -388,6 +408,23 @@ db.exec(`
   )
 `);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_totp_backup_user ON totp_backup_codes(user_id, used)`);
+
+// ── User Passkeys (WebAuthn 2FA) ──
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS user_passkeys (
+    id              TEXT PRIMARY KEY,
+    user_id         TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    credential_id   TEXT NOT NULL UNIQUE,
+    public_key      TEXT NOT NULL,
+    counter         INTEGER NOT NULL DEFAULT 0,
+    transports      TEXT,
+    device_name     TEXT NOT NULL DEFAULT 'Passkey',
+    created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+  )
+`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_user_passkeys_user ON user_passkeys(user_id)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_user_passkeys_cred ON user_passkeys(credential_id)`);
 
 // ── Runners ──
 
@@ -458,7 +495,7 @@ db.exec(`CREATE INDEX IF NOT EXISTS idx_task_runs_task ON task_runs(task_id, sta
 db.exec(`CREATE INDEX IF NOT EXISTS idx_project_members_project ON project_members(project_id)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_project_members_user ON project_members(user_id)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_invitations_project ON invitations(project_id, status)`);
-db.exec(`CREATE INDEX IF NOT EXISTS idx_invitations_email ON invitations(invitee_email, status)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_invitations_username ON invitations(invitee_username, status)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_todos_project_chat ON todos(project_id, chat_id)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_skills_project ON skills(project_id)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_companion_tokens_user ON companion_tokens(user_id)`);

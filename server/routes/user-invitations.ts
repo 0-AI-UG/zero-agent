@@ -4,10 +4,10 @@ import { z } from "zod";
 import { corsHeaders } from "@/lib/cors.ts";
 import { requireAdmin, createToken, createTempToken, isTotpRequired } from "@/lib/auth.ts";
 import { handleError } from "@/routes/utils.ts";
-import { validateBody, passwordSchema } from "@/lib/validation.ts";
+import { validateBody, passwordSchema, usernameSchema } from "@/lib/validation.ts";
 import { ValidationError, AuthError } from "@/lib/errors.ts";
 import { authRateLimiter } from "@/lib/rate-limit.ts";
-import { getUserByEmail, getUserById, insertUser } from "@/db/queries/users.ts";
+import { getUserByUsername, getUserById, insertUser } from "@/db/queries/users.ts";
 import { db } from "@/db/index.ts";
 import {
   createInvitation,
@@ -35,7 +35,7 @@ function serializeInvitation(row: UserInvitationRow) {
   const status = row.accepted_at ? "accepted" : expired ? "expired" : "pending";
   return {
     id: row.id,
-    email: row.email,
+    username: row.username,
     status,
     canCreateProjects: row.can_create_projects === 1,
     tokenLimit: row.token_limit,
@@ -46,7 +46,7 @@ function serializeInvitation(row: UserInvitationRow) {
 }
 
 const createSchema = z.object({
-  email: z.string().email("Invalid email"),
+  username: usernameSchema,
   canCreateProjects: z.boolean().optional(),
   tokenLimit: z.number().int().nonnegative().nullable().optional(),
   expiresInDays: z.number().int().positive().max(365).optional(),
@@ -73,10 +73,10 @@ export async function handleCreateInvitation(request: Request): Promise<Response
     const { userId } = await requireAdmin(request);
     const body = await validateBody(request, createSchema);
 
-    const normalizedEmail = body.email.toLowerCase().trim();
-    if (getUserByEmail(normalizedEmail)) {
+    const normalizedUsername = body.username.trim();
+    if (getUserByUsername(normalizedUsername)) {
       return Response.json(
-        { error: "A user with that email already exists" },
+        { error: "A user with that username already exists" },
         { status: 409, headers: corsHeaders },
       );
     }
@@ -87,14 +87,14 @@ export async function handleCreateInvitation(request: Request): Promise<Response
 
     const row = createInvitation({
       tokenHash: hashToken(rawToken),
-      email: normalizedEmail,
+      username: normalizedUsername,
       inviterId: userId,
       canCreateProjects: body.canCreateProjects ?? true,
       tokenLimit: body.tokenLimit ?? null,
       expiresAt,
     });
 
-    inviteLog.info("invitation created", { id: row.id, email: normalizedEmail, inviterId: userId });
+    inviteLog.info("invitation created", { id: row.id, username: normalizedUsername, inviterId: userId });
 
     return Response.json(
       { invitation: serializeInvitation(row), token: rawToken },
@@ -141,12 +141,12 @@ export async function handleLookupInvitation(request: Request): Promise<Response
       return Response.json({ valid: false, reason: "not_found" }, { headers: corsHeaders });
     }
     if (row.accepted_at) {
-      return Response.json({ valid: false, reason: "already_accepted", email: row.email }, { headers: corsHeaders });
+      return Response.json({ valid: false, reason: "already_accepted", username: row.username }, { headers: corsHeaders });
     }
     if (row.expires_at < nowSeconds()) {
-      return Response.json({ valid: false, reason: "expired", email: row.email }, { headers: corsHeaders });
+      return Response.json({ valid: false, reason: "expired", username: row.username }, { headers: corsHeaders });
     }
-    return Response.json({ valid: true, email: row.email, expiresAt: row.expires_at }, { headers: corsHeaders });
+    return Response.json({ valid: true, username: row.username, expiresAt: row.expires_at }, { headers: corsHeaders });
   } catch (error) {
     return handleError(error);
   }
@@ -172,12 +172,12 @@ export async function handleAcceptUserInvitation(request: Request): Promise<Resp
     if (row.accepted_at) throw new AuthError("Invitation already accepted");
     if (row.expires_at < nowSeconds()) throw new AuthError("Invitation expired");
 
-    if (getUserByEmail(row.email)) {
-      throw new AuthError("A user with that email already exists");
+    if (getUserByUsername(row.username)) {
+      throw new AuthError("A user with that username already exists");
     }
 
     const passwordHash = await bcrypt.hash(body.password, 10);
-    const newUser = insertUser(row.email, passwordHash);
+    const newUser = insertUser(row.username, passwordHash);
 
     // Apply invite-time settings
     db.prepare(
@@ -185,21 +185,21 @@ export async function handleAcceptUserInvitation(request: Request): Promise<Resp
     ).run(row.can_create_projects, row.token_limit, newUser.id);
 
     markInvitationAccepted(row.id, newUser.id);
-    inviteLog.info("invitation accepted", { id: row.id, userId: newUser.id, email: row.email });
+    inviteLog.info("invitation accepted", { id: row.id, userId: newUser.id, username: row.username });
 
     const fullUser = getUserById(newUser.id)!;
     const isDev = process.env.NODE_ENV !== "production";
     if (!isDev && isTotpRequired(fullUser)) {
       const tempToken = await createTempToken(newUser.id);
       return Response.json(
-        { requires2FASetup: true, tempToken, user: { id: newUser.id, email: newUser.email } },
+        { requires2FASetup: true, tempToken, user: { id: newUser.id, username: newUser.username } },
         { status: 201, headers: corsHeaders },
       );
     }
 
-    const authToken = await createToken({ userId: newUser.id, email: newUser.email });
+    const authToken = await createToken({ userId: newUser.id, username: newUser.username });
     return Response.json(
-      { token: authToken, user: { id: newUser.id, email: newUser.email } },
+      { token: authToken, user: { id: newUser.id, username: newUser.username } },
       { status: 201, headers: corsHeaders },
     );
   } catch (error) {

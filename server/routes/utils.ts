@@ -1,3 +1,4 @@
+import { ZodError } from "zod";
 import { corsHeaders } from "@/lib/cors.ts";
 import {
   NotFoundError,
@@ -14,6 +15,11 @@ import { log } from "@/lib/logger.ts";
 const routeLog = log.child({ module: "routes" });
 
 export function handleError(error: unknown): Response {
+  if (error instanceof ZodError) {
+    const msg = error.issues.map((i) => i.message).join("; ");
+    routeLog.warn("validation error", { status: 400, error: msg });
+    return Response.json({ error: msg }, { status: 400, headers: corsHeaders });
+  }
   if (error instanceof Error) {
     const name = error.constructor.name;
     if (name === "AuthError") {

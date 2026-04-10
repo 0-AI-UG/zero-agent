@@ -80,15 +80,24 @@ export const streamContext = createResumableStreamContext({
   subscriber,
 });
 
-// Track active stream IDs per chat
-const activeStreams = new Map<string, string>();
+// Track active stream IDs per chat, with timestamps for TTL-based cleanup
+const activeStreams = new Map<string, { streamId: string; createdAt: number }>();
+
+const STREAM_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 export function setActiveStreamId(chatId: string, streamId: string) {
-  activeStreams.set(chatId, streamId);
+  activeStreams.set(chatId, { streamId, createdAt: Date.now() });
 }
 
 export function getActiveStreamId(chatId: string): string | undefined {
-  return activeStreams.get(chatId);
+  const entry = activeStreams.get(chatId);
+  if (!entry) return undefined;
+  // Expire orphaned streams that were never cleaned up
+  if (Date.now() - entry.createdAt > STREAM_TTL_MS) {
+    activeStreams.delete(chatId);
+    return undefined;
+  }
+  return entry.streamId;
 }
 
 export function clearActiveStreamId(chatId: string) {

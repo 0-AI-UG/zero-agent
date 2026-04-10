@@ -10,7 +10,7 @@ export async function getSetupStatus(): Promise<SetupStatus> {
 }
 
 export interface SetupCompleteRequest {
-  email: string;
+  username: string;
   password: string;
   openrouterApiKey: string;
   openrouterModel?: string;
@@ -18,8 +18,8 @@ export interface SetupCompleteRequest {
 }
 
 export type SetupCompleteResponse =
-  | { tempToken: string; requires2FASetup: true; user: { id: string; email: string } }
-  | { token: string; user: { id: string; email: string } };
+  | { tempToken: string; requires2FASetup: true; user: { id: string; username: string } }
+  | { token: string; user: { id: string; username: string } };
 
 export async function completeSetup(data: SetupCompleteRequest): Promise<SetupCompleteResponse> {
   const res = await fetch(`${API_BASE}/setup/complete`, {

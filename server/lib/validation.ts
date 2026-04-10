@@ -9,14 +9,20 @@ export const passwordSchema = z
   .regex(/[A-Z]/, "Password must contain an uppercase letter")
   .regex(/[0-9]/, "Password must contain a number");
 
+export const usernameSchema = z
+  .string()
+  .min(3, "Username must be at least 3 characters")
+  .max(32, "Username must be at most 32 characters")
+  .regex(/^[a-zA-Z0-9_-]+$/, "Username may only contain letters, numbers, underscores and hyphens");
+
 export const registerSchema = z.object({
-  email: z.string().email("Invalid email"),
+  username: usernameSchema,
   password: passwordSchema,
   inviteToken: z.string().min(1, "Invite token is required"),
 });
 
 export const loginSchema = z.object({
-  email: z.string().email("Invalid email"),
+  username: usernameSchema,
   password: z.string().min(1, "Password is required"),
 });
 

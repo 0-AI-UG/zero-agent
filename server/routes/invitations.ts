@@ -14,7 +14,7 @@ export async function handleListInvitations(request: Request): Promise<Response>
       id: i.id,
       projectId: i.project_id,
       projectName: i.project_name,
-      inviterEmail: i.inviter_email,
+      inviterUsername: i.inviter_username,
       createdAt: toUTC(i.created_at),
     }));
 

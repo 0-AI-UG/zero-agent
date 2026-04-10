@@ -1,26 +1,9 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Node Graph</title>
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { background: var(--viz-bg); }
-  svg { display: block; }
   .node { cursor: grab; }
   .node:active { cursor: grabbing; }
-  .node rect { fill: var(--viz-card); stroke: var(--viz-border); stroke-width: 0.5; }
   .node text { font-size: 13px; fill: var(--viz-fg); text-anchor: middle; dominant-baseline: central; pointer-events: none; }
-  .edge { stroke: var(--viz-muted); stroke-width: 1.5; fill: none; }
 </style>
-</head>
-<body>
 <svg id="g" width="100%" viewBox="0 0 680 480">
-  <defs>
-    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="var(--viz-muted)"/></marker>
-    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="var(--viz-primary)"/></marker>
-  </defs>
   <g id="edges"></g><g id="nodes"></g>
 </svg>
 <script>
@@ -43,8 +26,7 @@
   const nm=Object.fromEntries(nodes.map(n=>[n.id,n]));
   const svg=document.getElementById('g'),eG=document.getElementById('edges'),nG=document.getElementById('nodes');
 
-  // Create elements
-  const eEls=edges.map(([s,t])=>{const l=document.createElementNS('http://www.w3.org/2000/svg','line');l.classList.add('edge');l.setAttribute('marker-end','url(#a)');l.dataset.s=s;l.dataset.t=t;eG.appendChild(l);return l;});
+  const eEls=edges.map(([s,t])=>{const l=document.createElementNS('http://www.w3.org/2000/svg','line');l.classList.add('viz-edge');l.setAttribute('marker-end','url(#viz-arrow)');l.dataset.s=s;l.dataset.t=t;eG.appendChild(l);return l;});
   nodes.forEach(n=>{const g=document.createElementNS('http://www.w3.org/2000/svg','g');g.classList.add('node');g.dataset.id=n.id;g.setAttribute('data-viz','node');g.innerHTML=`<rect width="${NW}" height="${NH}" rx="8"/><text></text>`;g.querySelector('text').textContent=n.label;nG.appendChild(g);n.el=g;});
 
   function render(){
@@ -52,7 +34,6 @@
     eEls.forEach(l=>{const s=nm[l.dataset.s],t=nm[l.dataset.t],dx=t.x-s.x,dy=t.y-s.y,d=Math.sqrt(dx*dx+dy*dy)||1,ux=dx/d,uy=dy/d;l.setAttribute('x1',s.x+ux*(NW/2+2));l.setAttribute('y1',s.y+uy*(NH/2+2));l.setAttribute('x2',t.x-ux*(NW/2+8));l.setAttribute('y2',t.y-uy*(NH/2+8));});
   }
 
-  // Force sim
   let cx=W/2,cy=H/2,frame=0;
   function tick(){
     for(let i=0;i<nodes.length;i++)for(let j=i+1;j<nodes.length;j++){const a=nodes[i],b=nodes[j],dx=b.x-a.x,dy=b.y-a.y,d=Math.max(Math.sqrt(dx*dx+dy*dy),1),f=1200/(d*d);a.vx-=dx/d*f;a.vy-=dy/d*f;b.vx+=dx/d*f;b.vy+=dy/d*f;}
@@ -62,15 +43,11 @@
   }
   requestAnimationFrame(tick);
 
-  // Drag
   let dn=null,off={x:0,y:0};
   svg.addEventListener('mousedown',e=>{const g=e.target.closest('[data-id]');if(!g)return;frame=200;dn=nm[g.dataset.id];const pt=svg.createSVGPoint();pt.x=e.clientX;pt.y=e.clientY;const p=pt.matrixTransform(svg.getScreenCTM().inverse());off={x:p.x-dn.x,y:p.y-dn.y};e.preventDefault();});
   svg.addEventListener('mousemove',e=>{if(!dn)return;const pt=svg.createSVGPoint();pt.x=e.clientX;pt.y=e.clientY;const p=pt.matrixTransform(svg.getScreenCTM().inverse());dn.x=Math.max(NW/2,Math.min(W-NW/2,p.x-off.x));dn.y=Math.max(NH/2,Math.min(H-NH/2,p.y-off.y));render();});
   svg.addEventListener('mouseup',()=>{dn=null;});
 
-  // Hover highlight
-  svg.addEventListener('mouseover',e=>{const g=e.target.closest('[data-id]');if(!g||dn)return;const id=g.dataset.id;g.querySelector('rect').style.stroke='var(--viz-primary)';g.querySelector('rect').style.strokeWidth='2';eEls.forEach(l=>{if(l.dataset.s===id||l.dataset.t===id){l.style.stroke='var(--viz-primary)';l.style.strokeWidth='2';l.setAttribute('marker-end','url(#ah)');}});});
-  svg.addEventListener('mouseout',e=>{const g=e.target.closest('[data-id]');if(!g)return;g.querySelector('rect').style.stroke='';g.querySelector('rect').style.strokeWidth='';eEls.forEach(l=>{l.style.stroke='';l.style.strokeWidth='';l.setAttribute('marker-end','url(#a)');});});
+  svg.addEventListener('mouseover',e=>{const g=e.target.closest('[data-id]');if(!g||dn)return;const id=g.dataset.id;eEls.forEach(l=>{if(l.dataset.s===id||l.dataset.t===id){l.style.stroke='var(--viz-primary)';l.style.strokeWidth='2';l.setAttribute('marker-end','url(#viz-arrow-hl)');}});});
+  svg.addEventListener('mouseout',e=>{const g=e.target.closest('[data-id]');if(!g)return;eEls.forEach(l=>{l.style.stroke='';l.style.strokeWidth='';l.setAttribute('marker-end','url(#viz-arrow)');});});
 </script>
-</body>
-</html>

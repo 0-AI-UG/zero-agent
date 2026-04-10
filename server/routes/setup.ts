@@ -4,6 +4,7 @@ import { db, generateId } from "@/db/index.ts";
 import { createTempToken, createToken } from "@/lib/auth.ts";
 import { setSetting } from "@/lib/settings.ts";
 import { handleError } from "@/routes/utils.ts";
+import { usernameSchema, passwordSchema } from "@/lib/validation.ts";
 import { log } from "@/lib/logger.ts";
 
 const setupLog = log.child({ module: "setup" });
@@ -24,6 +25,13 @@ export async function handleSetupStatus(_request: Request): Promise<Response> {
 
 export async function handleSetupComplete(request: Request): Promise<Response> {
   try {
+    if (isSetupComplete()) {
+      return Response.json(
+        { error: "Setup already completed" },
+        { status: 400, headers: corsHeaders }
+      );
+    }
+
     const body = await request.json() as Record<string, string>;
     const { openrouterApiKey, openrouterModel, braveSearchApiKey } = body;
 
@@ -34,28 +42,15 @@ export async function handleSetupComplete(request: Request): Promise<Response> {
       );
     }
 
-    if (isSetupComplete()) {
-      return Response.json(
-        { error: "Setup already completed" },
-        { status: 400, headers: corsHeaders }
-      );
-    }
-
-    const { email, password } = body;
-
-    if (!email || !password) {
-      return Response.json(
-        { error: "Email and password are required" },
-        { status: 400, headers: corsHeaders }
-      );
-    }
+    const username = usernameSchema.parse(body.username);
+    const password = passwordSchema.parse(body.password);
 
     // Create admin user
     const userId = generateId();
     const passwordHash = await bcrypt.hash(password, 10);
     db.prepare(
-      "INSERT INTO users (id, email, password_hash, is_admin) VALUES (?, ?, ?, 1)"
-    ).run(userId, email, passwordHash);
+      "INSERT INTO users (id, username, password_hash, is_admin) VALUES (?, ?, ?, 1)"
+    ).run(userId, username, passwordHash);
 
     // Store settings
     setSetting("OPENROUTER_API_KEY", openrouterApiKey);
@@ -64,10 +59,10 @@ export async function handleSetupComplete(request: Request): Promise<Response> {
 
     const isDev = process.env.NODE_ENV !== "production";
     if (isDev) {
-      const token = await createToken({ userId, email });
-      setupLog.info("setup completed (dev mode, skipping 2FA)", { userId, email });
+      const token = await createToken({ userId, username });
+      setupLog.info("setup completed (dev mode, skipping 2FA)", { userId, username });
       return Response.json(
-        { token, user: { id: userId, email } },
+        { token, user: { id: userId, username } },
         { status: 201, headers: corsHeaders }
       );
     }
@@ -75,10 +70,10 @@ export async function handleSetupComplete(request: Request): Promise<Response> {
     // Return temp token — full JWT is only issued after 2FA setup
     const tempToken = await createTempToken(userId);
 
-    setupLog.info("setup completed, awaiting 2FA", { userId, email });
+    setupLog.info("setup completed, awaiting 2FA", { userId, username });
 
     return Response.json(
-      { tempToken, requires2FASetup: true, user: { id: userId, email } },
+      { tempToken, requires2FASetup: true, user: { id: userId, username } },
       { status: 201, headers: corsHeaders }
     );
   } catch (error) {

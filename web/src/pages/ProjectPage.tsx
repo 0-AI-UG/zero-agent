@@ -16,7 +16,6 @@ export function ProjectPage() {
   const createChat = useCreateChat(projectId!);
   const creatingChatRef = useRef(false);
 
-  // Auto-redirect: if no chatId, redirect to most recent chat or create one
   useEffect(() => {
     if (chatId) {
       creatingChatRef.current = false;
@@ -36,11 +35,12 @@ export function ProjectPage() {
     }
   }, [chatId, chats, chatsLoading, createChat.isPending, projectId, navigate]);
 
-  // Load messages for the active chat
-  const { data: initialMessages, isLoading: messagesLoading } = useMessages(
+  const { data: messagesData, isLoading: messagesLoading } = useMessages(
     projectId!,
     chatId ?? "",
   );
+  const initialMessages = messagesData?.messages;
+  const initialIsStreaming = messagesData?.isStreaming ?? false;
 
   const isAutonomous = useMemo(
     () => chats?.find((c) => c.id === chatId)?.isAutonomous ?? false,
@@ -61,6 +61,7 @@ export function ProjectPage() {
       projectId={projectId!}
       chatId={chatId}
       initialMessages={initialMessages}
+      initialIsStreaming={initialIsStreaming}
       isAutonomous={isAutonomous}
     />
   );

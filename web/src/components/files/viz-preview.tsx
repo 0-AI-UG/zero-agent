@@ -57,7 +57,7 @@ export function VizPreview({ file, content }: VizPreviewProps) {
   return (
     <div className="p-4 flex flex-col h-full">
       <iframe
-        srcDoc={injectVizDesignSystem(content, { isDark, streaming: false })}
+        srcDoc={injectVizDesignSystem(content, { isDark })}
         sandbox="allow-scripts"
         title={file.filename}
         className="w-full flex-1 rounded-md border bg-white"

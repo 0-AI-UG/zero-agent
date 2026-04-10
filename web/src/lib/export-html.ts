@@ -8,7 +8,7 @@ export async function exportAsPng(html: string, filename: string) {
   iframe.style.width = "1920px";
   iframe.style.height = "1080px";
   iframe.style.border = "none";
-  iframe.srcdoc = injectVizDesignSystem(html, { isDark: false, streaming: false });
+  iframe.srcdoc = injectVizDesignSystem(html, { isDark: false });
   document.body.appendChild(iframe);
 
   await new Promise((resolve) => (iframe.onload = resolve));
@@ -36,7 +36,7 @@ export async function exportAsPng(html: string, filename: string) {
 }
 
 export function exportAsPdf(html: string, filename: string) {
-  const withDesignSystem = injectVizDesignSystem(html, { isDark: false, streaming: false });
+  const withDesignSystem = injectVizDesignSystem(html, { isDark: false });
   const styledHtml = withDesignSystem.replace(
     /<\/head>/i,
     `<style>

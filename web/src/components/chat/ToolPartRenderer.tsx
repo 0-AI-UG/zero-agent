@@ -21,7 +21,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { FileArtifact } from "@/components/files/file-artifact";
-import { findWriteFileRenderer, StreamingVizPreview } from "@/components/chat/write-file-renderers";
+import { findWriteFileRenderer } from "@/components/chat/write-file-renderers";
 import { DisplayFileCard } from "./DisplayFileCard";
 import { ParallelSubagentCard } from "./ParallelSubagentCard";
 import {
@@ -472,7 +472,6 @@ export const ToolCallPart = memo(function ToolCallPart({
   }
 
   // Streaming input display for content-heavy tools
-  // Streaming input display for content-heavy tools
   if (isLoading && toolName === "writeFile") {
     const inp = (part.input ?? {}) as Record<string, unknown>;
     // Check for custom loading state based on filename (e.g. .viz)
@@ -480,9 +479,20 @@ export const ToolCallPart = memo(function ToolCallPart({
       const fname = inp.path.split("/").pop() ?? "";
       const customRenderer = findWriteFileRenderer(fname);
       if (customRenderer) {
-        // Incremental rendering: show the viz iframe with partial content as it streams
+        // Render via the same component used for complete state, with
+        // isStreaming=true — it handles incremental writes internally.
         if (typeof inp.content === "string" && inp.content) {
-          return <StreamingVizPreview content={inp.content} filename={fname} />;
+          const Component = customRenderer.component;
+          return (
+            <Component
+              fileId=""
+              projectId={projectId ?? ""}
+              filename={fname}
+              output={null}
+              content={inp.content}
+              isStreaming
+            />
+          );
         }
         const CustomIcon = customRenderer.loading.icon;
         return (

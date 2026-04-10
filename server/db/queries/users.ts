@@ -1,21 +1,21 @@
 import { db, generateId } from "@/db/index.ts";
 import type { UserRow } from "@/db/types.ts";
 
-export function insertUser(email: string, passwordHash: string): UserRow {
+export function insertUser(username: string, passwordHash: string): UserRow {
   const id = generateId();
   db.prepare(
-    "INSERT INTO users (id, email, password_hash) VALUES (?, ?, ?)",
-  ).run(id, email, passwordHash);
+    "INSERT INTO users (id, username, password_hash) VALUES (?, ?, ?)",
+  ).run(id, username, passwordHash);
 
   return db.prepare(
     "SELECT * FROM users WHERE id = ?",
   ).get(id) as UserRow;
 }
 
-export function getUserByEmail(email: string): UserRow | null {
+export function getUserByUsername(username: string): UserRow | null {
   return (db.prepare(
-    "SELECT * FROM users WHERE email = ?",
-  ).get(email) as UserRow | undefined) ?? null;
+    "SELECT * FROM users WHERE username = ?",
+  ).get(username) as UserRow | undefined) ?? null;
 }
 
 export function getUserById(id: string): UserRow | null {

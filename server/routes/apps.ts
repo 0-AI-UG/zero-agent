@@ -52,7 +52,36 @@ export async function handleListServices(req: Request): Promise<Response> {
     verifyProjectAccess(projectId, userId);
 
     const ports = getPortsByProject(projectId);
-    return Response.json({ services: ports.map(formatPort) }, { headers: corsHeaders });
+
+    // Reconcile persisted status with reality: a port marked "active" may be stale
+    // if execution is unavailable or the runner has dropped the forward.
+    // Reconcile persisted status with reality. If execution itself is unavailable
+    // (no port manager), surface that distinctly rather than silently flipping
+    // ports to "stopped" — the user needs to know the backend is down.
+    // If execution itself is down, every port is unknowable — mark them all
+    // unavailable rather than trusting whatever the DB last wrote.
+    if (!_portManager) {
+      return Response.json(
+        { services: ports.map((p) => formatPort({ ...p, status: "unavailable" })) },
+        { headers: corsHeaders },
+      );
+    }
+
+    const reconciled = await Promise.all(
+      ports.map(async (p) => {
+        if (p.status !== "active") return p;
+        const reachable =
+          !!p.container_ip &&
+          (await _portManager.checkPort(p.project_id, p.port).catch(() => false));
+        if (reachable) return p;
+        const updated = updatePort(p.id, { status: "stopped" });
+        const { invalidateAppCache } = await import("@/lib/app-proxy.ts");
+        invalidateAppCache(p.slug);
+        return updated ?? { ...p, status: "stopped" };
+      }),
+    );
+
+    return Response.json({ services: reconciled.map(formatPort) }, { headers: corsHeaders });
   } catch (error) {
     return handleError(error);
   }

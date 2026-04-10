@@ -24,6 +24,7 @@ import { getModelPricing } from "@/config/models.ts";
 import { saveCheckpoint, deleteCheckpoint, loadCheckpoint } from "@/lib/durability/checkpoint.ts";
 import { isShuttingDown, registerRun, deregisterRun } from "@/lib/durability/shutdown.ts";
 import { CircuitBreakerOpenError } from "@/lib/durability/circuit-breaker.ts";
+import { notifyStreamStarted, notifyStreamEnded } from "@/lib/ws-bridge.ts";
 
 const chatLog = log.child({ module: "chat" });
 
@@ -31,7 +32,7 @@ export async function handleChat(request: Request): Promise<Response> {
   const start = Date.now();
   let runId: string | undefined;
   try {
-    const { userId } = await authenticateRequest(request);
+    const { userId, username } = await authenticateRequest(request);
     const { projectId, chatId } = getParams<{ projectId: string; chatId: string }>(request);
     chatLog.info("chat request", { userId, projectId, chatId });
 
@@ -120,18 +121,18 @@ export async function handleChat(request: Request): Promise<Response> {
     // Create the agent for this project
     const cw = model ? getModelContextWindow(model) : 128_000;
     runId = generateId();
-    const accumulatedResponseMessages: unknown[] = [];
     const agent = await createAgent(project, {
       model, language, disabledTools, chatId, userId, preActivateTools: usedToolNames,
       contextWindow: cw, initialReadPaths: readPaths, relevantMemories, relevantFiles, runId,
       onStepCheckpoint: (stepNumber, responseMessages) => {
-        accumulatedResponseMessages.push(...responseMessages);
+        // responseMessages already contains all response messages so far,
+        // so use it directly instead of accumulating (which caused duplicates).
         saveCheckpoint({
           runId: runId!,
           chatId,
           projectId,
           stepNumber,
-          messages: [...messages, ...accumulatedResponseMessages],
+          messages: [...messages, ...responseMessages],
           metadata: { userId, model, streamId },
         });
       },
@@ -159,6 +160,7 @@ export async function handleChat(request: Request): Promise<Response> {
 
     const streamId = generateId();
     setActiveStreamId(chatId, streamId);
+    notifyStreamStarted(projectId, chatId, userId, username);
     const abortController = createAbortController(chatId);
 
     // Save initial checkpoint so crash recovery knows this run was in-progress
@@ -227,6 +229,7 @@ export async function handleChat(request: Request): Promise<Response> {
       onFinish: ({ messages: finalMessages, isAborted }) => {
         clearActiveStreamId(chatId);
         clearAbortController(chatId);
+        notifyStreamEnded(projectId, chatId);
         if (runId) {
           deleteCheckpoint(runId);
           deregisterRun(runId);

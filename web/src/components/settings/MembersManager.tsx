@@ -11,8 +11,7 @@ interface MembersManagerProps {
   project: Project;
 }
 
-function getInitials(email: string) {
-  const name = email.split("@")[0] ?? email;
+function getInitials(name: string) {
   const parts = name.split(/[._-]/);
   return parts
     .slice(0, 2)
@@ -28,7 +27,7 @@ export function MembersManager({ projectId, project }: MembersManagerProps) {
   const removeMember = useRemoveMember(projectId);
   const leaveProject = useLeaveProject(projectId);
 
-  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [inviteError, setInviteError] = useState("");
   const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
   const [confirmLeave, setConfirmLeave] = useState(false);
@@ -36,15 +35,15 @@ export function MembersManager({ projectId, project }: MembersManagerProps) {
   const isOwnerOrAdmin = project.role === "owner" || project.role === "admin";
 
   const handleInvite = () => {
-    const trimmed = email.trim();
+    const trimmed = username.trim();
     if (!trimmed) return;
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
-      setInviteError("Enter a valid email address");
+    if (!/^[a-zA-Z0-9_-]{3,32}$/.test(trimmed)) {
+      setInviteError("Enter a valid username");
       return;
     }
     inviteMember.mutate(trimmed, {
       onSuccess: () => {
-        setEmail("");
+        setUsername("");
         setInviteError("");
       },
       onError: (err: Error) => setInviteError(err.message),
@@ -81,14 +80,14 @@ export function MembersManager({ projectId, project }: MembersManagerProps) {
                 >
                   <Avatar className="size-8">
                     <AvatarFallback className="text-[11px] font-medium bg-muted">
-                      {getInitials(member.email)}
+                      {getInitials(member.username)}
                     </AvatarFallback>
                   </Avatar>
 
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5">
                       <span className="text-sm font-medium truncate">
-                        {member.email}
+                        {member.username}
                       </span>
                       {isCurrentUser && (
                         <span className="text-[10px] text-muted-foreground">(you)</span>
@@ -126,7 +125,7 @@ export function MembersManager({ projectId, project }: MembersManagerProps) {
                         <button
                           onClick={() => setConfirmRemoveId(member.userId)}
                           className="text-muted-foreground hover:text-destructive p-1.5 rounded-md hover:bg-muted"
-                          aria-label={`Remove ${member.email}`}
+                          aria-label={`Remove ${member.username}`}
                         >
                           <TrashIcon className="size-3.5" />
                         </button>
@@ -154,7 +153,7 @@ export function MembersManager({ projectId, project }: MembersManagerProps) {
                   <ClockIcon className="size-3.5 text-muted-foreground" />
                 </div>
                 <span className="text-sm text-muted-foreground truncate flex-1">
-                  {inv.email}
+                  {inv.username}
                 </span>
                 <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 shrink-0">
                   Pending
@@ -169,11 +168,11 @@ export function MembersManager({ projectId, project }: MembersManagerProps) {
           <div className="border-t pt-3 space-y-2">
             <div className="flex gap-2">
               <input
-                type="email"
-                placeholder="Invite by email..."
-                value={email}
+                type="text"
+                placeholder="Invite by username..."
+                value={username}
                 onChange={(e) => {
-                  setEmail(e.target.value);
+                  setUsername(e.target.value);
                   setInviteError("");
                 }}
                 onKeyDown={(e) => e.key === "Enter" && handleInvite()}
@@ -181,7 +180,7 @@ export function MembersManager({ projectId, project }: MembersManagerProps) {
               />
               <button
                 onClick={handleInvite}
-                disabled={inviteMember.isPending || !email.trim()}
+                disabled={inviteMember.isPending || !username.trim()}
                 className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
               >
                 {inviteMember.isPending ? "Inviting..." : "Invite"}

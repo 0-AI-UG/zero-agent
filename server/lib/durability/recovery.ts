@@ -1,5 +1,5 @@
 import { generateId } from "ai";
-import { getActiveCheckpoints, deleteAllActiveCheckpoints } from "@/lib/durability/checkpoint.ts";
+import { getActiveCheckpoints, deleteCheckpoint } from "@/lib/durability/checkpoint.ts";
 import { saveChatMessages } from "@/db/queries/messages.ts";
 import { touchChat } from "@/db/queries/chats.ts";
 import { log } from "@/lib/logger.ts";
@@ -23,6 +23,7 @@ export function recoverInterruptedRuns(): void {
 
   recoveryLog.info("recovering interrupted runs", { count: checkpoints.length });
 
+  let recovered = 0;
   for (const cp of checkpoints) {
     if (!cp.chatId) {
       recoveryLog.debug("skipping checkpoint without chatId", { runId: cp.runId });
@@ -64,6 +65,9 @@ export function recoverInterruptedRuns(): void {
 
       touchChat(cp.chatId);
 
+      // Delete checkpoint only after successful persistence
+      deleteCheckpoint(cp.runId);
+
       recoveryLog.info("recovered interrupted run", {
         runId: cp.runId,
         chatId: cp.chatId,
@@ -71,8 +75,9 @@ export function recoverInterruptedRuns(): void {
         stepNumber: cp.stepNumber,
         messageCount: messages.length,
       });
+      recovered++;
     } catch (err) {
-      recoveryLog.warn("failed to recover run", {
+      recoveryLog.warn("failed to recover run — checkpoint preserved for next restart", {
         runId: cp.runId,
         chatId: cp.chatId,
         error: err instanceof Error ? err.message : String(err),
@@ -80,7 +85,5 @@ export function recoverInterruptedRuns(): void {
     }
   }
 
-  // Clean up all active checkpoints after recovery
-  deleteAllActiveCheckpoints();
-  recoveryLog.info("crash recovery complete", { recovered: checkpoints.length });
+  recoveryLog.info("crash recovery complete", { recovered, failed: checkpoints.length - recovered });
 }

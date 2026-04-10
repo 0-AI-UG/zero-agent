@@ -30,7 +30,7 @@ export function SetupPage() {
   const [loading, setLoading] = useState(false);
 
   // Step 1 fields
-  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
 
@@ -52,7 +52,7 @@ export function SetupPage() {
 
   const handleNext = () => {
     setError(null);
-    if (!email || !password || !confirmPassword) {
+    if (!username || !password || !confirmPassword) {
       setError("All fields are required.");
       return;
     }
@@ -79,7 +79,7 @@ export function SetupPage() {
     setLoading(true);
     try {
       const result = await completeSetup({
-        email,
+        username,
         password,
         openrouterApiKey,
         openrouterModel: openrouterModel || undefined,
@@ -88,6 +88,8 @@ export function SetupPage() {
       // Dev mode: server returns a full JWT, skip 2FA
       if ("token" in result) {
         useAuthStore.getState().login(result.token, result.user);
+        queryClient.setQueryData(["setup", "status"], { setupComplete: true });
+        navigate("/", { replace: true });
         return;
       }
 
@@ -181,14 +183,14 @@ export function SetupPage() {
                   <div className="text-sm text-destructive">{error}</div>
                 )}
                 <div className="space-y-2">
-                  <Label htmlFor="setup-email">Email</Label>
+                  <Label htmlFor="setup-username">Username</Label>
                   <Input
-                    id="setup-email"
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    id="setup-username"
+                    type="text"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
                     required
-                    autoComplete="email"
+                    autoComplete="username"
                   />
                 </div>
                 <div className="space-y-2">

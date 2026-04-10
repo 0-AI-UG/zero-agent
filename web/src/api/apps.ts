@@ -8,7 +8,7 @@ export interface ForwardedPort {
   slug: string;
   label: string;
   port: number;
-  status: "active" | "stopped";
+  status: "active" | "stopped" | "unavailable";
   url: string;
   pinned: boolean;
   startCommand: string | null;

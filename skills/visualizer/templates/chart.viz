@@ -1,21 +1,9 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Bar Chart</title>
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { background: var(--viz-bg); color: var(--viz-fg); }
-  svg { display: block; }
   .bar { cursor: pointer; }
   .lbl { font-size: 11px; fill: var(--viz-muted-fg); text-anchor: middle; }
-  .val { font-size: 11px; fill: var(--viz-fg); text-anchor: middle; }
-  .legend { display: flex; gap: 12px; padding: 8px 12px; font-size: 11px; color: var(--viz-muted-fg); }
+  .legend { display: flex; gap: 12px; padding: 8px 0 0; font-size: 11px; color: var(--viz-muted-fg); }
   .legend-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 4px; }
 </style>
-</head>
-<body>
 <svg id="c" width="100%" viewBox="0 0 680 300"></svg>
 <div class="legend" id="leg"></div>
 <script>
@@ -37,7 +25,6 @@
   const n = data.labels.length, ns = data.series.length;
   const gw = pW / n, bw = (gw - 8) / ns;
 
-  // Grid
   for (let i = 0; i <= 4; i++) {
     const y = P.t + pH - (pH / 4) * i;
     svg.innerHTML += `<line x1="${P.l}" x2="${W-P.r}" y1="${y}" y2="${y}" stroke="var(--viz-border)" stroke-width="0.5"/>`;
@@ -49,7 +36,7 @@
       const h = (s.values[i] / max) * pH;
       const x = gx + 4 + si * bw;
       const y = P.t + pH - h;
-      svg.innerHTML += `<rect class="bar viz-chart-${si+1}" x="${x}" y="${y}" width="${bw-2}" height="${h}" rx="3" aria-label="${s.name}: ${s.values[i]}"><title>${s.name}: ${s.values[i]}</title></rect>`;
+      svg.innerHTML += `<rect class="bar viz-chart-${si+1}" x="${x}" y="${y}" width="${bw-2}" height="${h}" rx="3"><title>${s.name}: ${s.values[i]}</title></rect>`;
     });
     svg.innerHTML += `<text class="lbl" x="${gx + gw/2}" y="${H - 8}">${l}</text>`;
   });
@@ -58,5 +45,3 @@
     document.getElementById('leg').innerHTML += `<span><span class="legend-dot" style="background:${chartColors[si]}"></span>${s.name}</span>`;
   });
 </script>
-</body>
-</html>

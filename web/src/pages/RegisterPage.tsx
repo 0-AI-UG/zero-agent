@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/card";
 
 export function RegisterPage() {
-  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [inviteToken, setInviteToken] = useState("");
@@ -36,7 +36,7 @@ export function RegisterPage() {
     setLoading(true);
 
     try {
-      const { token, user } = await registerApi(email, password, inviteToken);
+      const { token, user } = await registerApi(username, password, inviteToken);
       login(token, user);
       navigate("/", { replace: true });
     } catch (err) {
@@ -60,14 +60,14 @@ export function RegisterPage() {
             <div className="text-sm text-destructive">{error}</div>
           )}
           <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
+            <Label htmlFor="username">Username</Label>
             <Input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              id="username"
+              type="text"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
               required
-              autoComplete="email"
+              autoComplete="username"
             />
           </div>
           <div className="space-y-2">

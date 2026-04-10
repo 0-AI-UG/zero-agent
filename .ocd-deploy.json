@@ -1,0 +1,72 @@
+{
+  "name": "Zero Agent",
+  "suggested_app_name": "zero-agent",
+  "compose_file": "docker-compose.yml",
+  "compose_web_service": "server",
+  "volume": {
+    "size": 10,
+    "mount_path": "/app/data"
+  },
+  "env": [
+    {
+      "key": "RUNNER_API_KEY",
+      "description": "Shared secret between server and runner for internal API auth",
+      "required": true,
+      "secret": true
+    },
+    {
+      "key": "JWT_SECRET",
+      "description": "Secret key for signing JWT tokens. Must be set in production.",
+      "required": true,
+      "secret": true
+    },
+    {
+      "key": "CREDENTIALS_KEY",
+      "description": "Encryption key for stored secrets (API keys, tokens). Falls back to JWT_SECRET if unset.",
+      "secret": true
+    },
+    {
+      "key": "OPENROUTER_API_KEY",
+      "description": "OpenRouter API key for LLM access. Can also be set later via admin panel.",
+      "secret": true
+    },
+    {
+      "key": "BRAVE_SEARCH_API_KEY",
+      "description": "Brave Search API key for web search. Can also be set later via admin panel.",
+      "secret": true
+    },
+    {
+      "key": "APP_URL",
+      "description": "Full public URL of the app (e.g. https://zero.example.com). Used for passkey auth and webhooks."
+    },
+    {
+      "key": "RP_ID",
+      "description": "WebAuthn relying party ID — the domain without protocol (e.g. zero.example.com)",
+      "default": "localhost"
+    },
+    {
+      "key": "RP_NAME",
+      "description": "Display name shown during passkey registration",
+      "default": "ZeroAgent"
+    },
+    {
+      "key": "CORS_ORIGIN",
+      "description": "Allowed CORS origin. Set to your app URL in production.",
+      "default": "*"
+    },
+    {
+      "key": "LOG_LEVEL",
+      "description": "Logging verbosity (debug, info, warn, error)",
+      "default": "info"
+    },
+    {
+      "key": "SESSION_IMAGE",
+      "description": "Docker image for agent session containers (built by CD pipeline)",
+      "default": "ghcr.io/cero-ai/zero-session:latest"
+    }
+  ],
+  "webhook": {
+    "enabled": true,
+    "branch": "main"
+  }
+}

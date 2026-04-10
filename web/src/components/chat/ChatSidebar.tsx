@@ -17,6 +17,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { BotIcon, PlusIcon, TrashIcon, SendIcon, SearchIcon, XIcon, ChevronDownIcon, LoaderIcon } from "lucide-react";
 import { useMembers } from "@/api/members";
+import { useRealtimeStore } from "@/stores/realtime";
+import { useAuthStore } from "@/stores/auth";
 
 const SOURCE_COLORS: Record<string, string> = {
   telegram: "text-[#2AABEE]",
@@ -32,7 +34,9 @@ export function ChatSidebar({ projectId }: { projectId: string }) {
   const deleteChat = useDeleteChat(projectId);
   const { data: membersData } = useMembers(projectId);
   const isMultiMember = (membersData?.members.length ?? 0) > 1;
-  const memberMap = new Map(membersData?.members.map((m) => [m.userId, m.email]) ?? []);
+  const memberMap = new Map(membersData?.members.map((m) => [m.userId, m.username]) ?? []);
+  const presence = useRealtimeStore((s) => s.presence);
+  const currentUserId = useAuthStore((s) => s.user?.id);
 
   const handleNewChat = async () => {
     const result = await createChat.mutateAsync();
@@ -144,6 +148,11 @@ export function ChatSidebar({ projectId }: { projectId: string }) {
               {regularChats.map((chat) => {
                 const source = chat.source;
                 const iconColor = source ? SOURCE_COLORS[source] ?? "text-muted-foreground" : null;
+                const chatViewers = presence.filter(
+                  (u) => u.chatId === chat.id && u.userId !== currentUserId,
+                );
+                const hasStreaming = chatViewers.some((u) => u.isStreaming) ||
+                  presence.some((u) => u.chatId === chat.id && u.isStreaming);
 
                 return (
                   <SidebarMenuItem key={chat.id}>
@@ -156,7 +165,7 @@ export function ChatSidebar({ projectId }: { projectId: string }) {
                       {source && (
                         <SendIcon className={`size-3.5 shrink-0 ${iconColor}`} />
                       )}
-                      <div className="flex flex-col min-w-0">
+                      <div className="flex flex-col min-w-0 flex-1">
                         <span className="truncate">{chat.title}</span>
                         {isMultiMember && chat.createdBy && (
                           <span className="text-[10px] text-muted-foreground truncate">
@@ -164,6 +173,12 @@ export function ChatSidebar({ projectId }: { projectId: string }) {
                           </span>
                         )}
                       </div>
+                      {(chatViewers.length > 0 || hasStreaming) && (
+                        <span
+                          className={`w-1.5 h-1.5 rounded-full shrink-0 ${hasStreaming ? "bg-green-500 animate-pulse" : "bg-muted-foreground/40"}`}
+                          title={chatViewers.map((u) => u.username).join(", ")}
+                        />
+                      )}
                     </SidebarMenuButton>
                     <SidebarMenuAction
                       showOnHover

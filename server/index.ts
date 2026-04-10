@@ -7,7 +7,7 @@ import type { Context } from "hono";
 import { corsHeaders } from "@/lib/cors.ts";
 import { log } from "@/lib/logger.ts";
 import { handleHealth } from "@/routes/health.ts";
-import { handleLogin, handleMe, handleUpdateMe, handlePasswordResetInit, handlePasswordResetConfirm } from "@/routes/auth.ts";
+import { handleLogin, handleMe, handleUpdateMe, handlePasswordResetInit, handlePasswordResetConfirm, handlePasswordResetPasskeyOptions, handlePasswordResetPasskeyConfirm } from "@/routes/auth.ts";
 import {
   handleTotpSetup,
   handleTotpConfirm,
@@ -18,6 +18,14 @@ import {
   handleTotpConfirmFromLogin,
   handleTotpRecover,
 } from "@/routes/totp.ts";
+import {
+  handlePasskeyRegisterOptions,
+  handlePasskeyRegisterVerify,
+  handlePasskeyLoginOptions,
+  handlePasskeyLoginVerify,
+  handlePasskeyList,
+  handlePasskeyDelete,
+} from "@/routes/passkeys.ts";
 import {
   handleListProjects,
   handleCreateProject,
@@ -261,6 +269,8 @@ app.get("/api/health", h(handleHealth));
 app.post("/api/auth/login", h(handleLogin));
 app.post("/api/auth/password-reset/init", h(handlePasswordResetInit));
 app.post("/api/auth/password-reset/confirm", h(handlePasswordResetConfirm));
+app.post("/api/auth/password-reset/passkey-options", h(handlePasswordResetPasskeyOptions));
+app.post("/api/auth/password-reset/passkey-confirm", h(handlePasswordResetPasskeyConfirm));
 app.get("/api/me", h(handleMe));
 app.put("/api/me", h(handleUpdateMe));
 
@@ -273,6 +283,14 @@ app.post("/api/auth/totp/disable", h(handleTotpDisable));
 app.get("/api/auth/totp/status", h(handleTotpStatus));
 app.post("/api/auth/totp/setup-from-login", h(handleTotpSetupFromLogin));
 app.post("/api/auth/totp/confirm-from-login", h(handleTotpConfirmFromLogin));
+
+// Passkeys
+app.post("/api/auth/passkey/register-options", h(handlePasskeyRegisterOptions));
+app.post("/api/auth/passkey/register-verify", h(handlePasskeyRegisterVerify));
+app.post("/api/auth/passkey/login-options", h(handlePasskeyLoginOptions));
+app.post("/api/auth/passkey/login-verify", h(handlePasskeyLoginVerify));
+app.get("/api/auth/passkey/list", h(handlePasskeyList));
+app.delete("/api/auth/passkey/:id", h(handlePasskeyDelete));
 
 // Projects
 app.get("/api/projects", h(handleListProjects));
@@ -511,9 +529,9 @@ app.get("/api/capabilities", h((req: Request) => {
 
 // Short-lived token for /_apps/* browser navigation
 app.post("/api/app-token", h(async (req: Request) => {
-  const { userId, email } = await authenticateRequest(req);
+  const { userId, username } = await authenticateRequest(req);
   const { createAppToken } = await import("@/lib/auth.ts");
-  const appToken = await createAppToken(userId, email);
+  const appToken = await createAppToken(userId, username);
   return Response.json({ token: appToken }, { headers: corsHeaders });
 }));
 
@@ -569,6 +587,12 @@ import { getRequestListener } from "@hono/node-server";
 const honoListener = getRequestListener(app.fetch);
 const nodeServer = createHttpServer(honoListener);
 
+import { attachWebSocketServer, closeWebSocketServer } from "@/lib/ws.ts";
+import { startWsBridge } from "@/lib/ws-bridge.ts";
+
+attachWebSocketServer(nodeServer);
+startWsBridge();
+
 const server = nodeServer.listen(PORT, "0.0.0.0");
 
 export { server };
@@ -619,6 +643,7 @@ async function handleShutdown(signal: string) {
   stopAllEventTriggers();
   stopAllPollers();
   await drainActiveRuns(IS_PROD ? 30_000 : 2_000);
+  closeWebSocketServer();
   await teardownExecution();
   s3.close();
   db.close();

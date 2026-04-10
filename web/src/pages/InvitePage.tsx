@@ -47,7 +47,7 @@ export function InvitePage() {
       .catch((err) => setLookupError(err instanceof Error ? err.message : "Failed to load"));
   }, [token]);
 
-  const completeLogin = (authToken: string, user: { id: string; email: string }) => {
+  const completeLogin = (authToken: string, user: { id: string; username: string }) => {
     login(authToken, user);
     navigate("/", { replace: true });
   };
@@ -234,7 +234,7 @@ export function InvitePage() {
       <CardHeader>
         <CardTitle className="font-display">Accept Invitation</CardTitle>
         <CardDescription>
-          Create a password for <span className="font-medium text-foreground">{lookup.email}</span>.
+          Create a password for <span className="font-medium text-foreground">{lookup.username}</span>.
         </CardDescription>
       </CardHeader>
       <CardContent>

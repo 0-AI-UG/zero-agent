@@ -9,6 +9,15 @@ services:
       - NODE_ENV=production
       - RUNNER_URL=http://runner:3100
       - RUNNER_API_KEY=${RUNNER_API_KEY:-}
+      - JWT_SECRET=${JWT_SECRET:-}
+      - CREDENTIALS_KEY=${CREDENTIALS_KEY:-}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - BRAVE_SEARCH_API_KEY=${BRAVE_SEARCH_API_KEY:-}
+      - APP_URL=${APP_URL:-}
+      - RP_ID=${RP_ID:-localhost}
+      - RP_NAME=${RP_NAME:-ZeroAgent}
+      - CORS_ORIGIN=${CORS_ORIGIN:-*}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
     depends_on:
       - runner
 
@@ -16,7 +25,7 @@ services:
   # agent containers. Lives under the `build` profile so it never starts
   # as a runtime service; invoke with `docker compose build session-image`.
   session-image:
-    image: zero-session:latest
+    image: ${SESSION_IMAGE:-ghcr.io/cero-ai/zero-session:latest}
     build:
       context: ./zero
       dockerfile: ../runner/docker/session/Dockerfile
@@ -38,14 +47,9 @@ services:
       # ZERO_RUNNER_SOCKET_VOLUME below so the runner can pass it to
       # dockerd when creating session containers.
       - zero-runner-sockets:/var/run/zero-runner
-      # Dev hot-reload: mount runner source so `bun --watch` picks up edits.
-      # Anonymous volume on /app/node_modules shields the image-installed
-      # deps from being shadowed by the (possibly empty) host node_modules.
-      - ./runner:/app
-      - /app/node_modules
     environment:
       - RUNNER_API_KEY=${RUNNER_API_KEY:-}
-      - DEFAULT_IMAGE=zero-session:latest
+      - DEFAULT_IMAGE=${SESSION_IMAGE:-ghcr.io/cero-ai/zero-session:latest}
       - IDLE_TIMEOUT_SECS=600
       - ZERO_RUNNER_SOCKET_DIR=/var/run/zero-runner
       - ZERO_RUNNER_SOCKET_VOLUME=zero-runner-sockets

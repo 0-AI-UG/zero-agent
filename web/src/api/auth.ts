@@ -2,12 +2,16 @@ import { apiFetch } from "./client";
 
 interface AuthSuccess {
   token: string;
-  user: { id: string; email: string };
+  user: { id: string; username: string };
 }
 
 interface Auth2FARequired {
   requires2FA: true;
   tempToken: string;
+  methods?: {
+    totp: boolean;
+    passkey: boolean;
+  };
 }
 
 interface Auth2FASetupRequired {
@@ -18,19 +22,22 @@ interface Auth2FASetupRequired {
 export type LoginResponse = AuthSuccess | Auth2FARequired | Auth2FASetupRequired;
 
 export async function loginApi(
-  email: string,
+  username: string,
   password: string,
 ): Promise<LoginResponse> {
   return apiFetch<LoginResponse>("/auth/login", {
     method: "POST",
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ username, password }),
   });
 }
 
-export async function passwordResetInit(email: string): Promise<{ tempToken: string }> {
+export async function passwordResetInit(username: string): Promise<{
+  tempToken: string;
+  methods: { totp: boolean; passkey: boolean };
+}> {
   return apiFetch("/auth/password-reset/init", {
     method: "POST",
-    body: JSON.stringify({ email }),
+    body: JSON.stringify({ username }),
   });
 }
 
@@ -45,13 +52,33 @@ export async function passwordResetConfirm(
   });
 }
 
+export async function passwordResetPasskeyOptions(
+  tempToken: string,
+): Promise<any> {
+  return apiFetch("/auth/password-reset/passkey-options", {
+    method: "POST",
+    body: JSON.stringify({ tempToken }),
+  });
+}
+
+export async function passwordResetPasskeyConfirm(
+  tempToken: string,
+  response: any,
+  newPassword: string,
+): Promise<{ success: true }> {
+  return apiFetch("/auth/password-reset/passkey-confirm", {
+    method: "POST",
+    body: JSON.stringify({ tempToken, response, newPassword }),
+  });
+}
+
 export async function registerApi(
-  email: string,
+  username: string,
   password: string,
   inviteToken: string,
 ): Promise<AuthSuccess> {
   return apiFetch<AuthSuccess>("/auth/register", {
     method: "POST",
-    body: JSON.stringify({ email, password, inviteToken }),
+    body: JSON.stringify({ username, password, inviteToken }),
   });
 }

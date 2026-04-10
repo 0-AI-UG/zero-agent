@@ -72,7 +72,9 @@ export async function handleListFiles(request: Request): Promise<Response> {
       }
     }
 
-    const files = getFilesByFolder(projectId, folderPath);
+    const files = getFilesByFolder(projectId, folderPath).filter(
+      (f) => f.filename !== ".gitignore",
+    );
     const currentPath = folderPath ?? "/";
     const folders = getFoldersByParent(projectId, currentPath);
 

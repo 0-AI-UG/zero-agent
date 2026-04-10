@@ -17,10 +17,10 @@ export function insertProjectMember(
 
 export function getProjectMembers(
   projectId: string,
-): Array<ProjectMemberRow & { email: string }> {
+): Array<ProjectMemberRow & { username: string }> {
   return db.prepare(
-    "SELECT pm.*, u.email FROM project_members pm JOIN users u ON u.id = pm.user_id WHERE pm.project_id = ? ORDER BY pm.role ASC, pm.created_at ASC",
-  ).all(projectId) as Array<ProjectMemberRow & { email: string }>;
+    "SELECT pm.*, u.username FROM project_members pm JOIN users u ON u.id = pm.user_id WHERE pm.project_id = ? ORDER BY pm.role ASC, pm.created_at ASC",
+  ).all(projectId) as Array<ProjectMemberRow & { username: string }>;
 }
 
 export function isProjectMember(projectId: string, userId: string): boolean {

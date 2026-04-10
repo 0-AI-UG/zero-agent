@@ -10,7 +10,7 @@ export function isTotpRequired(user: { is_admin?: number }): boolean {
 
 export interface TokenPayload {
   userId: string;
-  email: string;
+  username: string;
 }
 
 // HS256 requires at least 256 bits (32 bytes). Hash the secret to guarantee length.
@@ -21,14 +21,8 @@ const JWT_SECRET = new Uint8Array(
   await crypto.subtle.digest("SHA-256", rawSecret),
 );
 
-export async function authenticateRequest(
-  request: Request,
-): Promise<TokenPayload> {
-  const header = request.headers.get("Authorization");
-  if (!header?.startsWith("Bearer ")) {
-    throw new AuthError("Unauthorized");
-  }
-  const token = header.slice(7);
+/** Verify a raw JWT string and return the payload. Throws AuthError on failure. */
+export async function verifyToken(token: string): Promise<TokenPayload> {
   try {
     const { payload } = await jwtVerify(token, JWT_SECRET);
     if ((payload as any).purpose) throw new AuthError("Unauthorized");
@@ -36,6 +30,16 @@ export async function authenticateRequest(
   } catch {
     throw new AuthError("Unauthorized");
   }
+}
+
+export async function authenticateRequest(
+  request: Request,
+): Promise<TokenPayload> {
+  const header = request.headers.get("Authorization");
+  if (!header?.startsWith("Bearer ")) {
+    throw new AuthError("Unauthorized");
+  }
+  return verifyToken(header.slice(7));
 }
 
 export async function createToken(payload: TokenPayload): Promise<string> {
@@ -79,8 +83,8 @@ export async function verifyTempToken(
   }
 }
 
-export async function createAppToken(userId: string, email: string): Promise<string> {
-  return new SignJWT({ userId, email, purpose: "app" } as unknown as Record<string, unknown>)
+export async function createAppToken(userId: string, username: string): Promise<string> {
+  return new SignJWT({ userId, username, purpose: "app" } as unknown as Record<string, unknown>)
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime("10m")
@@ -90,7 +94,7 @@ export async function createAppToken(userId: string, email: string): Promise<str
 export async function verifyAppToken(token: string): Promise<TokenPayload> {
   const { payload } = await jwtVerify(token, JWT_SECRET);
   if ((payload as any).purpose !== "app") throw new AuthError("Invalid token");
-  return { userId: (payload as any).userId, email: (payload as any).email };
+  return { userId: (payload as any).userId, username: (payload as any).username };
 }
 
 export async function createShareToken(slug: string, expiresIn: string): Promise<string> {

@@ -134,16 +134,15 @@ const AVATAR_COLORS = [
   "bg-fuchsia-500/15 text-fuchsia-700 dark:text-fuchsia-300",
 ];
 
-function getAvatarColor(email: string) {
+function getAvatarColor(name: string) {
   let hash = 0;
-  for (let i = 0; i < email.length; i++) {
-    hash = email.charCodeAt(i) + ((hash << 5) - hash);
+  for (let i = 0; i < name.length; i++) {
+    hash = name.charCodeAt(i) + ((hash << 5) - hash);
   }
   return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
 }
 
-function getInitials(email: string) {
-  const name = email.split("@")[0] ?? email;
+function getInitials(name: string) {
   const parts = name.split(/[._-]/);
   if (parts.length >= 2 && parts[0] && parts[1]) {
     return (parts[0][0]! + parts[1][0]!).toUpperCase();
@@ -1402,11 +1401,11 @@ function UsageSection() {
                   <TableCell>
                     <div className="flex items-center gap-2">
                       <Avatar size="sm">
-                        <AvatarFallback className={`text-[10px] font-bold ${getAvatarColor(row.email)}`}>
-                          {getInitials(row.email)}
+                        <AvatarFallback className={`text-[10px] font-bold ${getAvatarColor(row.username)}`}>
+                          {getInitials(row.username)}
                         </AvatarFallback>
                       </Avatar>
-                      <span className="text-xs font-medium truncate">{row.email}</span>
+                      <span className="text-xs font-medium truncate">{row.username}</span>
                     </div>
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground text-right tabular-nums">{row.totalRequests}</TableCell>
@@ -1437,7 +1436,7 @@ function UserManagementSection() {
     if (!users) return [];
     if (!search.trim()) return users;
     const q = search.toLowerCase();
-    return users.filter((u) => u.email.toLowerCase().includes(q));
+    return users.filter((u) => u.username.toLowerCase().includes(q));
   }, [users, search]);
 
   const adminCount = users?.filter((u) => u.isAdmin).length ?? 0;
@@ -1469,7 +1468,7 @@ function UserManagementSection() {
             <div className="relative">
               <SearchIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
               <Input
-                placeholder="Search by email..."
+                placeholder="Search by username..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="h-8 text-xs pl-8 bg-background"
@@ -1540,13 +1539,13 @@ function UserRow({ user, index }: { user: AdminUser; index: number }) {
         <div className="flex items-center gap-3">
           <Avatar size="sm">
             <AvatarFallback
-              className={`text-[10px] font-bold ${getAvatarColor(user.email)}`}
+              className={`text-[10px] font-bold ${getAvatarColor(user.username)}`}
             >
-              {getInitials(user.email)}
+              {getInitials(user.username)}
             </AvatarFallback>
           </Avatar>
           <div className="min-w-0">
-            <p className="text-sm font-medium truncate">{user.email}</p>
+            <p className="text-sm font-medium truncate">{user.username}</p>
             <div className="flex items-center gap-1.5 sm:hidden">
               {user.isAdmin && (
                 <Badge
@@ -1635,7 +1634,7 @@ function UserActions({ user }: { user: AdminUser }) {
             className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
           >
             <MoreHorizontalIcon className="size-4" />
-            <span className="sr-only">Actions for {user.email}</span>
+            <span className="sr-only">Actions for {user.username}</span>
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-52">
@@ -1701,7 +1700,7 @@ function UserActions({ user }: { user: AdminUser }) {
             <AlertDialogTitle>Delete user?</AlertDialogTitle>
             <AlertDialogDescription>
               This will permanently remove{" "}
-              <span className="font-medium text-foreground">{user.email}</span>{" "}
+              <span className="font-medium text-foreground">{user.username}</span>{" "}
               and all their data. This cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -1728,17 +1727,17 @@ function UserActions({ user }: { user: AdminUser }) {
 function CreateInvitationDialog() {
   const createInvite = useCreateInvitation();
   const [open, setOpen] = useState(false);
-  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [canCreateProjects, setCanCreateProjects] = useState(true);
   const [tokenLimit, setTokenLimit] = useState("");
   const [expiresInDays, setExpiresInDays] = useState("7");
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
-  const canSubmit = email.includes("@");
+  const canSubmit = /^[a-zA-Z0-9_-]{3,32}$/.test(username.trim());
 
   function reset() {
-    setEmail("");
+    setUsername("");
     setCanCreateProjects(true);
     setTokenLimit("");
     setExpiresInDays("7");
@@ -1759,7 +1758,7 @@ function CreateInvitationDialog() {
     }
     createInvite.mutate(
       {
-        email: email.trim(),
+        username: username.trim(),
         canCreateProjects,
         tokenLimit: parsedLimit,
         expiresInDays: parsedDays,
@@ -1830,12 +1829,12 @@ function CreateInvitationDialog() {
             className="space-y-4"
           >
             <div className="space-y-2">
-              <label className="text-sm font-medium">Email</label>
+              <label className="text-sm font-medium">Username</label>
               <Input
-                type="email"
-                placeholder="user@example.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                type="text"
+                placeholder="alice"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
                 autoFocus
                 autoComplete="off"
               />
@@ -1951,7 +1950,7 @@ function InvitationRow({
   return (
     <TableRow className="group">
       <TableCell>
-        <span className="text-xs font-medium">{invitation.email}</span>
+        <span className="text-xs font-medium">{invitation.username}</span>
       </TableCell>
       <TableCell>
         <Badge variant="outline" className={`text-[10px] h-5 ${statusColor}`}>
@@ -1970,7 +1969,7 @@ function InvitationRow({
             size="icon-sm"
             onClick={onDelete}
             className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
-            aria-label={`Revoke invitation for ${invitation.email}`}
+            aria-label={`Revoke invitation for ${invitation.username}`}
           >
             <TrashIcon className="size-3.5" />
           </Button>
@@ -2003,7 +2002,7 @@ function ResetPasswordDialog({
           setPassword("");
           setShowPassword(false);
           onOpenChange(false);
-          toast.success(`Password reset for ${user.email}`);
+          toast.success(`Password reset for ${user.username}`);
         },
         onError: (err) => toast.error(err.message),
       }
@@ -2026,7 +2025,7 @@ function ResetPasswordDialog({
           <DialogTitle className="font-display">Reset password</DialogTitle>
           <DialogDescription>
             Set a new password for{" "}
-            <span className="font-medium text-foreground">{user.email}</span>.
+            <span className="font-medium text-foreground">{user.username}</span>.
           </DialogDescription>
         </DialogHeader>
         <form
@@ -2126,7 +2125,7 @@ function TokenLimitDialog({
           <DialogTitle className="font-display">Set token limit</DialogTitle>
           <DialogDescription>
             Cap total input+output tokens for{" "}
-            <span className="font-medium text-foreground">{user.email}</span>.
+            <span className="font-medium text-foreground">{user.username}</span>.
             Chat requests are blocked once the cap is reached. Leave empty for unlimited.
           </DialogDescription>
         </DialogHeader>

@@ -3,9 +3,10 @@ import { Link } from "react-router";
 import { useCurrentUser } from "@/api/admin";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { ArrowLeftIcon, KeyRoundIcon, ShieldCheckIcon, CheckIcon, EyeIcon, EyeOffIcon, CopyIcon, ClipboardCheckIcon } from "lucide-react";
-import { apiFetch } from "@/api/client";
+import { ArrowLeftIcon, ShieldCheckIcon, CheckIcon, CopyIcon, ClipboardCheckIcon, FingerprintIcon, Trash2Icon } from "lucide-react";
 import { totpSetup, totpConfirm, totpDisable, totpStatus } from "@/api/totp";
+import { passkeyRegisterOptions, passkeyRegisterVerify, passkeyList, passkeyDelete } from "@/api/passkeys";
+import { startRegistration } from "@simplewebauthn/browser";
 
 export function AccountPage() {
   const { data: user } = useCurrentUser();
@@ -27,48 +28,21 @@ export function AccountPage() {
       <main className="flex-1 overflow-y-auto">
         <div className="max-w-xl mx-auto px-5 py-6 space-y-8">
           <div>
-            <p className="text-xs text-muted-foreground">{user.email}</p>
+            <p className="text-xs text-muted-foreground">{user.username}</p>
           </div>
 
-          <ChangePasswordSection />
+          <div className="space-y-2">
+            <h2 className="text-sm font-semibold">Two-Factor Authentication</h2>
+            <p className="text-sm text-muted-foreground">
+              Add a second layer of verification when signing in. You can enable one or both methods.
+            </p>
+          </div>
 
           <TwoFactorSection />
+
+          <PasskeySection />
         </div>
       </main>
-    </div>
-  );
-}
-
-function PasswordInput({
-  value,
-  onChange,
-  placeholder,
-  onKeyDown,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-  placeholder?: string;
-  onKeyDown?: (e: React.KeyboardEvent) => void;
-}) {
-  const [visible, setVisible] = useState(false);
-  return (
-    <div className="relative">
-      <Input
-        type={visible ? "text" : "password"}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        onKeyDown={onKeyDown}
-        className="pr-9"
-      />
-      <button
-        type="button"
-        onClick={() => setVisible(!visible)}
-        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-        tabIndex={-1}
-      >
-        {visible ? <EyeOffIcon className="size-4" /> : <EyeIcon className="size-4" />}
-      </button>
     </div>
   );
 }
@@ -82,7 +56,7 @@ function TwoFactorSection() {
   const [code, setCode] = useState("");
   const [backupCodes, setBackupCodes] = useState<string[]>([]);
   const [copied, setCopied] = useState(false);
-  const [status, setStatus] = useState<{ enabled: boolean; required: boolean; backupCodesRemaining: number } | null>(null);
+  const [status, setStatus] = useState<{ enabled: boolean; required: boolean; backupCodesRemaining: number; passkeyCount?: number } | null>(null);
   const [statusLoading, setStatusLoading] = useState(true);
 
   // Fetch status on mount
@@ -150,7 +124,7 @@ function TwoFactorSection() {
     <section className="space-y-4">
       <div className="flex items-center gap-2">
         <ShieldCheckIcon className="size-4 text-emerald-500" />
-        <h3 className="text-sm font-semibold">Two-Factor Authentication</h3>
+        <h3 className="text-sm font-semibold">Authenticator App</h3>
       </div>
 
       <div className="rounded-lg border p-4 space-y-4">
@@ -160,10 +134,10 @@ function TwoFactorSection() {
         {step === "idle" && !status?.enabled && (
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">
-              Add an extra layer of security by requiring a code from your authenticator app when signing in.
+              Use an authenticator app (e.g. Google Authenticator, 1Password) to generate time-based codes when signing in.
             </p>
             <Button onClick={handleSetup} disabled={loading} size="sm">
-              {loading ? "Setting up..." : "Enable 2FA"}
+              {loading ? "Setting up..." : "Set Up"}
             </Button>
           </div>
         )}
@@ -178,9 +152,9 @@ function TwoFactorSection() {
             <p className="text-xs text-muted-foreground">
               {status.backupCodesRemaining} backup code{status.backupCodesRemaining !== 1 ? "s" : ""} remaining
             </p>
-            {status.required ? (
+            {status.required && (status.passkeyCount ?? 0) === 0 ? (
               <p className="text-xs text-muted-foreground">
-                Two-factor authentication is required for your account and cannot be disabled.
+                Two-factor authentication is required for your account and cannot be disabled without an alternative method (e.g. passkey).
               </p>
             ) : (
               <Button
@@ -188,7 +162,7 @@ function TwoFactorSection() {
                 size="sm"
                 onClick={() => { setStep("disable"); setCode(""); setError(""); }}
               >
-                Disable 2FA
+                Disable
               </Button>
             )}
           </div>
@@ -293,7 +267,7 @@ function TwoFactorSection() {
                 disabled={loading || code.length !== 6}
                 size="sm"
               >
-                {loading ? "Disabling..." : "Disable 2FA"}
+                {loading ? "Disabling..." : "Disable"}
               </Button>
               <Button
                 variant="ghost"
@@ -310,96 +284,131 @@ function TwoFactorSection() {
   );
 }
 
-function ChangePasswordSection() {
-  const [currentPassword, setCurrentPassword] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
+function PasskeySection() {
+  const [passkeys, setPasskeys] = useState<{ id: string; deviceName: string; createdAt: string }[]>([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [success, setSuccess] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [deviceName, setDeviceName] = useState("");
+  const [showNameInput, setShowNameInput] = useState(false);
 
-  const clearError = () => setError("");
-
-  const handleSubmit = async () => {
-    setError("");
-    setSuccess(false);
-
-    if (!currentPassword) { setError("Enter your current password"); return; }
-    if (newPassword.length < 8) { setError("New password must be at least 8 characters"); return; }
-    if (newPassword !== confirmPassword) { setError("Passwords don't match"); return; }
-
-    setSaving(true);
+  const fetchPasskeys = async () => {
     try {
-      await apiFetch("/me", {
-        method: "PUT",
-        body: JSON.stringify({ currentPassword, newPassword }),
-      });
-      setCurrentPassword("");
-      setNewPassword("");
-      setConfirmPassword("");
-      setSuccess(true);
-      setTimeout(() => setSuccess(false), 3000);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to update password");
+      const data = await passkeyList();
+      setPasskeys(data.passkeys);
+    } catch {
     } finally {
-      setSaving(false);
+      setLoading(false);
     }
   };
+
+  useEffect(() => { fetchPasskeys(); }, []);
+
+  const handleAdd = async () => {
+    setError("");
+    setAdding(true);
+    try {
+      const options = await passkeyRegisterOptions();
+      const registration = await startRegistration({ optionsJSON: options });
+      await passkeyRegisterVerify(registration, deviceName || "Passkey");
+      setDeviceName("");
+      setShowNameInput(false);
+      await fetchPasskeys();
+    } catch (err) {
+      if (err instanceof Error && err.name === "NotAllowedError") {
+        setError("Passkey registration was cancelled");
+      } else {
+        setError(err instanceof Error ? err.message : "Failed to add passkey");
+      }
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    setError("");
+    try {
+      await passkeyDelete(id);
+      setPasskeys((prev) => prev.filter((p) => p.id !== id));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete passkey");
+    }
+  };
+
+  if (loading) return null;
 
   return (
     <section className="space-y-4">
       <div className="flex items-center gap-2">
-        <KeyRoundIcon className="size-4 text-amber-500" />
-        <h3 className="text-sm font-semibold">Password</h3>
+        <FingerprintIcon className="size-4 text-blue-500" />
+        <h3 className="text-sm font-semibold">Passkeys</h3>
       </div>
 
       <div className="rounded-lg border p-4 space-y-4">
-        <div className="space-y-1.5">
-          <label className="text-sm font-medium">Current password</label>
-          <PasswordInput
-            value={currentPassword}
-            onChange={(v) => { setCurrentPassword(v); clearError(); }}
-          />
-        </div>
-
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium">New password</label>
-            <PasswordInput
-              value={newPassword}
-              onChange={(v) => { setNewPassword(v); clearError(); }}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium">Confirm</label>
-            <PasswordInput
-              value={confirmPassword}
-              onChange={(v) => { setConfirmPassword(v); clearError(); }}
-              onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
-            />
-          </div>
-        </div>
-
         {error && <p className="text-xs text-destructive">{error}</p>}
 
-        <div className="flex items-center gap-3 pt-1 border-t">
-          <Button
-            onClick={handleSubmit}
-            disabled={saving || !currentPassword || !newPassword}
-            size="sm"
-          >
-            {success ? (
-              <>
-                <CheckIcon className="size-3.5 mr-1.5" />
-                Updated
-              </>
-            ) : saving ? "Updating..." : "Change password"}
-          </Button>
-          <p className="text-[11px] text-muted-foreground">
-            Must be at least 8 characters
+        {passkeys.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            Use biometrics (Face ID, Touch ID) or a hardware security key to verify your identity when signing in.
           </p>
-        </div>
+        ) : (
+          <div className="space-y-2">
+            {passkeys.map((p) => (
+              <div key={p.id} className="flex items-center justify-between py-2 px-3 rounded-md bg-muted/50">
+                <div className="flex items-center gap-2.5">
+                  <FingerprintIcon className="size-4 text-muted-foreground" />
+                  <div>
+                    <p className="text-sm font-medium">{p.deviceName}</p>
+                    <p className="text-xs text-muted-foreground">
+                      Added {new Date(p.createdAt + "Z").toLocaleDateString()}
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={() => handleDelete(p.id)}
+                  aria-label="Delete passkey"
+                >
+                  <Trash2Icon className="size-3.5 text-muted-foreground" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {showNameInput ? (
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Passkey name</label>
+              <Input
+                type="text"
+                value={deviceName}
+                onChange={(e) => setDeviceName(e.target.value)}
+                placeholder="e.g. MacBook Touch ID"
+                autoFocus
+              />
+            </div>
+            <div className="flex gap-2">
+              <Button onClick={handleAdd} disabled={adding} size="sm">
+                {adding ? "Registering..." : "Register Passkey"}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => { setShowNameInput(false); setDeviceName(""); setError(""); }}
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <Button onClick={() => setShowNameInput(true)} size="sm">
+            Add Passkey
+          </Button>
+        )}
       </div>
     </section>
   );
 }
+

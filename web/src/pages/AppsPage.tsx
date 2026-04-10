@@ -119,6 +119,14 @@ function StatusBadge({ status }: { status: ForwardedPort["status"] }) {
       </Badge>
     );
   }
+  if (status === "unavailable") {
+    return (
+      <Badge variant="outline" className="text-amber-600 border-amber-200 bg-amber-50 dark:bg-amber-950 dark:text-amber-400 dark:border-amber-800 gap-1">
+        <TriangleAlertIcon className="size-3" />
+        Unavailable
+      </Badge>
+    );
+  }
   return (
     <Badge variant="outline" className="text-muted-foreground gap-1">
       <CircleDotIcon className="size-3" />

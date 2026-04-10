@@ -20,7 +20,7 @@ export interface UsageByModel {
 
 export interface UsageByUser {
   userId: string;
-  email: string;
+  username: string;
   totalRequests: number;
   totalInputTokens: number;
   totalOutputTokens: number;

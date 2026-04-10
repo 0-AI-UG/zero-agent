@@ -96,6 +96,25 @@ export function getActiveCheckpoints() {
   }));
 }
 
+const activeByChatStmt = db.prepare(
+  "SELECT * FROM agent_checkpoints WHERE chat_id = ? AND status = 'active' ORDER BY updated_at DESC LIMIT 1",
+);
+
+/** Get the active checkpoint for a chat — used to serve in-progress messages */
+export function loadActiveCheckpointByChatId(chatId: string) {
+  const row = activeByChatStmt.get(chatId) as StoredCheckpoint | undefined;
+  if (!row) return null;
+  return {
+    runId: row.run_id,
+    chatId: row.chat_id,
+    projectId: row.project_id,
+    stepNumber: row.step_number,
+    messages: JSON.parse(row.messages) as unknown[],
+    metadata: row.metadata ? JSON.parse(row.metadata) as Record<string, unknown> : null,
+    status: row.status as "active" | "suspended",
+  };
+}
+
 const suspendedStmt = db.prepare(
   "SELECT * FROM agent_checkpoints WHERE status = 'suspended'",
 );
@@ -113,9 +132,3 @@ export function getSuspendedCheckpoints() {
   }));
 }
 
-const deleteAllStmt = db.prepare("DELETE FROM agent_checkpoints WHERE status = 'active'");
-
-/** Delete all active checkpoints (used after crash recovery) */
-export function deleteAllActiveCheckpoints(): void {
-  deleteAllStmt.run();
-}

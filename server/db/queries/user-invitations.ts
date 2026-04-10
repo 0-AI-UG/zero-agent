@@ -3,7 +3,7 @@ import { db, generateId } from "@/db/index.ts";
 export interface UserInvitationRow {
   id: string;
   token_hash: string;
-  email: string;
+  username: string;
   inviter_id: string;
   can_create_projects: number;
   token_limit: number | null;
@@ -15,7 +15,7 @@ export interface UserInvitationRow {
 
 export interface CreateInvitationInput {
   tokenHash: string;
-  email: string;
+  username: string;
   inviterId: string;
   canCreateProjects: boolean;
   tokenLimit: number | null;
@@ -27,12 +27,12 @@ export function createInvitation(input: CreateInvitationInput): UserInvitationRo
   const now = Math.floor(Date.now() / 1000);
   db.prepare(
     `INSERT INTO user_invitations
-      (id, token_hash, email, inviter_id, can_create_projects, token_limit, expires_at, created_at)
+      (id, token_hash, username, inviter_id, can_create_projects, token_limit, expires_at, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
     input.tokenHash,
-    input.email,
+    input.username,
     input.inviterId,
     input.canCreateProjects ? 1 : 0,
     input.tokenLimit,

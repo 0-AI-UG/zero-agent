@@ -69,7 +69,7 @@ export function getUsageByModel(opts?: { from?: string; to?: string }): UsageByM
 
 export interface UsageByUser {
   userId: string;
-  email: string;
+  username: string;
   totalRequests: number;
   totalInputTokens: number;
   totalOutputTokens: number;
@@ -96,7 +96,7 @@ export function getUserTokenTotalsByIds(userIds: string[]): Record<string, numbe
 }
 
 export function getUsageByUser(opts?: { from?: string; to?: string }): UsageByUser[] {
-  let sql = `SELECT u.user_id as userId, users.email as email, count(*) as totalRequests, coalesce(sum(u.input_tokens),0) as totalInputTokens, coalesce(sum(u.output_tokens),0) as totalOutputTokens, coalesce(sum(u.cost_input + u.cost_output),0) as totalCost FROM usage_logs u LEFT JOIN users ON u.user_id = users.id`;
+  let sql = `SELECT u.user_id as userId, users.username as username, count(*) as totalRequests, coalesce(sum(u.input_tokens),0) as totalInputTokens, coalesce(sum(u.output_tokens),0) as totalOutputTokens, coalesce(sum(u.cost_input + u.cost_output),0) as totalCost FROM usage_logs u LEFT JOIN users ON u.user_id = users.id`;
   const conditions: string[] = [];
   const params: string[] = [];
   if (opts?.from) { conditions.push("u.created_at >= ?"); params.push(opts.from); }

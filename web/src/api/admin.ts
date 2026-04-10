@@ -3,7 +3,7 @@ import { apiFetch } from "./client";
 
 export interface AdminUser {
   id: string;
-  email: string;
+  username: string;
   isAdmin: boolean;
   canCreateProjects: boolean;
   tokenLimit: number | null;
@@ -25,7 +25,7 @@ export function useAdminUsers() {
 export function useCreateUser() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (data: { email: string; password: string }) => {
+    mutationFn: async (data: { username: string; password: string }) => {
       return apiFetch<AdminUser>("/admin/users", {
         method: "POST",
         body: JSON.stringify(data),
@@ -140,7 +140,7 @@ export function useUpdateUser() {
 
 export interface CurrentUser {
   id: string;
-  email: string;
+  username: string;
   isAdmin: boolean;
   canCreateProjects: boolean;
   totpEnabled: boolean;

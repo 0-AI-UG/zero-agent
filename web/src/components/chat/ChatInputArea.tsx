@@ -39,6 +39,9 @@ import type { ServerCapabilities } from "@/api/capabilities";
 import { useChatContainerStatus } from "@/api/containers";
 
 import { BrowserPreview } from "@/components/chat/BrowserPreview";
+import { sendTyping } from "@/lib/ws";
+import type { PresenceUser, TypingUser } from "@/stores/realtime";
+import type { ReactNode } from "react";
 
 interface ChatInputAreaProps {
   projectId: string;
@@ -49,6 +52,9 @@ interface ChatInputAreaProps {
   sendMessage: (opts: { text: string; files?: Array<{ type: "file"; mediaType: string; url: string }> }) => void;
   stop: () => void;
   capabilities: ServerCapabilities | undefined;
+  spectatingUser?: PresenceUser;
+  typingUsers?: TypingUser[];
+  presenceDots?: ReactNode;
 }
 
 export function ChatInputArea({
@@ -60,10 +66,27 @@ export function ChatInputArea({
   sendMessage,
   stop,
   capabilities,
+  spectatingUser,
+  typingUsers,
+  presenceDots,
 }: ChatInputAreaProps) {
   const { data: containerStatus } = useChatContainerStatus(projectId, chatId);
   const [input, setInput] = useState("");
   const [imageAttachment, setImageAttachment] = useState<ImageAttachment | null>(null);
+  const lastTypingSentRef = useRef(0);
+
+  const handleInputChange = useCallback(
+    (value: string) => {
+      setInput(value);
+      // Debounced typing indicator — max once per 2s
+      const now = Date.now();
+      if (value && now - lastTypingSentRef.current > 2000) {
+        lastTypingSentRef.current = now;
+        sendTyping(chatId);
+      }
+    },
+    [chatId],
+  );
   const richTextareaRef = useRef<RichTextareaHandle>(null);
   const selectedModelId = useModelStore((s) => s.selectedModelId);
   const isMultimodal = useMemo(() => {
@@ -144,16 +167,34 @@ export function ChatInputArea({
       )}
       <PromptInput onSubmit={handleSubmit}>
         <PromptInputBody>
-          <RichTextarea
-            ref={richTextareaRef}
-            value={input}
-            onChange={setInput}
-            onSubmit={handleSubmit}
-            placeholder="Ask your assistant..."
-          />
+          {spectatingUser ? (
+            <div className="flex items-center gap-1.5 px-3 py-2 text-xs text-muted-foreground">
+              <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+              <span>{spectatingUser.username} is streaming</span>
+            </div>
+          ) : (
+            <RichTextarea
+              ref={richTextareaRef}
+              value={input}
+              onChange={handleInputChange}
+              onSubmit={handleSubmit}
+              placeholder="Ask your assistant..."
+            />
+          )}
         </PromptInputBody>
         <PromptInputFooter>
           <div className="flex flex-wrap items-center gap-1 min-w-0">
+            {typingUsers && typingUsers.length > 0 && !isStreaming && (
+              <span className="text-[11px] text-muted-foreground flex items-center gap-1 px-1">
+                {typingUsers.map((t) => t.username).join(", ")}
+                <span className="inline-flex gap-px">
+                  <span className="w-1 h-1 rounded-full bg-muted-foreground/50 animate-bounce [animation-delay:0ms]" />
+                  <span className="w-1 h-1 rounded-full bg-muted-foreground/50 animate-bounce [animation-delay:150ms]" />
+                  <span className="w-1 h-1 rounded-full bg-muted-foreground/50 animate-bounce [animation-delay:300ms]" />
+                </span>
+              </span>
+            )}
+            {presenceDots}
             <ToolSelector />
             <FilePickerButton
               projectId={projectId}

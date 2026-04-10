@@ -16,7 +16,7 @@ export async function totpConfirm(code: string): Promise<{ enabled: true; backup
 export async function totpLogin(
   tempToken: string,
   code: string,
-): Promise<{ token: string; user: { id: string; email: string } }> {
+): Promise<{ token: string; user: { id: string; username: string } }> {
   // No auth header — user isn't authenticated yet
   const res = await fetch(`${API_BASE}/auth/totp/login`, {
     method: "POST",
@@ -75,7 +75,7 @@ export async function totpSetupFromLogin(
 export async function totpConfirmFromLogin(
   tempToken: string,
   code: string,
-): Promise<{ token: string; user: { id: string; email: string }; backupCodes: string[] }> {
+): Promise<{ token: string; user: { id: string; username: string }; backupCodes: string[] }> {
   const res = await fetch(`${API_BASE}/auth/totp/confirm-from-login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
