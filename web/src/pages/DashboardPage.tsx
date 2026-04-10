@@ -83,7 +83,7 @@ export function DashboardPage() {
                   <div className="flex items-center gap-3 min-w-0">
                     <MailIcon className="size-4 text-primary shrink-0" />
                     <p className="text-sm truncate">
-                      <span className="text-muted-foreground">{inv.inviterEmail}</span>{" "}
+                      <span className="text-muted-foreground">{inv.inviterUsername}</span>{" "}
                       invited you to{" "}
                       <span className="font-medium">{inv.projectName}</span>
                     </p>
