@@ -67,12 +67,13 @@ export async function handleListServices(req: Request): Promise<Response> {
       );
     }
 
+    const portManager = _portManager;
     const reconciled = await Promise.all(
       ports.map(async (p) => {
         if (p.status !== "active") return p;
         const reachable =
           !!p.container_ip &&
-          (await _portManager.checkPort(p.project_id, p.port).catch(() => false));
+          (await portManager.checkPort(p.project_id, p.port).catch(() => false));
         if (reachable) return p;
         const updated = updatePort(p.id, { status: "stopped" });
         const { invalidateAppCache } = await import("@/lib/app-proxy.ts");
