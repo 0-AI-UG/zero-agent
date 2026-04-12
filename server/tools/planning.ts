@@ -115,7 +115,7 @@ export function createPlanningTools(
             id: userMsgId,
             role: "user",
             parts: [{ type: "text", text: userText }],
-            createdAt: new Date(),
+
           };
           saveChatMessages(projectId, newChat.id, [
             { id: userMsgId, role: "user", content: JSON.stringify(userMessage) },
