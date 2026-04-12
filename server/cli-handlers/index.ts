@@ -26,8 +26,6 @@ import { fail, failFromError } from "./response.ts";
 
 import { handleHealth } from "./health.ts";
 import { handleWebSearch, handleWebFetch } from "./web.ts";
-import { handleChatSearch } from "./chat.ts";
-import { handleTelegramSend } from "./telegram.ts";
 import {
   handleScheduleAdd,
   handleScheduleList,
@@ -52,13 +50,15 @@ import {
   handleBrowserSnapshot,
   handleBrowserExtract,
 } from "./browser.ts";
+import { handleLlmGenerate } from "./llm.ts";
+import { handleMessageSend, handleMessageResponse } from "./message.ts";
+import { handleEmbed } from "./embed.ts";
+import { handleSearch } from "./search.ts";
 
 import {
   HealthInput,
   WebSearchInput,
   WebFetchInput,
-  ChatSearchInput,
-  TelegramSendInput,
   ScheduleAddInput,
   ScheduleListInput,
   ScheduleUpdateInput,
@@ -77,6 +77,11 @@ import {
   BrowserSnapshotInput,
   BrowserExtractInput,
   PortsForwardInput,
+  LlmGenerateInput,
+  MessageSendInput,
+  MessageResponseInput,
+  EmbedInput,
+  SearchInput,
 } from "zero/schemas";
 
 type HonoApp = Hono<any, any, any>;
@@ -139,10 +144,6 @@ export function mountCliHandlers(app: HonoApp): void {
   app.post("/api/runner-proxy/zero/web/search", bind(WebSearchInput, handleWebSearch));
   app.post("/api/runner-proxy/zero/web/fetch", bind(WebFetchInput, handleWebFetch));
 
-  app.post("/api/runner-proxy/zero/chat/search", bind(ChatSearchInput, handleChatSearch));
-
-  app.post("/api/runner-proxy/zero/telegram/send", bind(TelegramSendInput, handleTelegramSend));
-
   app.post("/api/runner-proxy/zero/schedule/add", bind(ScheduleAddInput, handleScheduleAdd));
   app.post("/api/runner-proxy/zero/schedule/list", bind(ScheduleListInput, handleScheduleList));
   app.post("/api/runner-proxy/zero/schedule/update", bind(ScheduleUpdateInput, handleScheduleUpdate));
@@ -165,4 +166,17 @@ export function mountCliHandlers(app: HonoApp): void {
   app.post("/api/runner-proxy/zero/browser/extract", bind(BrowserExtractInput, handleBrowserExtract));
 
   app.post("/api/runner-proxy/zero/ports/forward", bind(PortsForwardInput, handlePortsForward));
+
+  // -- llm --
+  app.post("/api/runner-proxy/zero/llm/generate", bind(LlmGenerateInput, handleLlmGenerate));
+
+  // -- message --
+  app.post("/api/runner-proxy/zero/message/send", bind(MessageSendInput, handleMessageSend));
+  app.post("/api/runner-proxy/zero/message/response", bind(MessageResponseInput, handleMessageResponse));
+
+  // -- embed --
+  app.post("/api/runner-proxy/zero/embed", bind(EmbedInput, handleEmbed));
+
+  // -- search --
+  app.post("/api/runner-proxy/zero/search", bind(SearchInput, handleSearch));
 }

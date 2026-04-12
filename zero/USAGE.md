@@ -7,7 +7,7 @@ the trusted runner proxy so the container never sees credentials or API keys.
 Two equivalent forms:
 
 - **CLI**: `zero <group> <action> [flags]` — use from bash scripts and one-offs.
-- **SDK**: `import { web, ports, creds, ... } from "zero"` — use from bun scripts
+- **SDK**: `import { web, browser, creds, llm, message, ... } from "zero"` — use from bun scripts
   when you need to compose results or avoid shelling out. Types are at
   `/opt/zero/src/sdk/index.ts`; individual group modules at `/opt/zero/src/sdk/<group>.ts`.
 
@@ -86,25 +86,20 @@ and prevents event storms.
 
 ---
 
-## chat — search prior conversations in this project
+## message — send a message to the user
 
 ```
-zero chat search <query> [--limit <n>] [--json]
+zero message send <text> [--json]
 ```
 
-Returns snippets from past chats scoped to the current project. Useful before
-asking the user to re-explain context.
+Delivers to all configured channels (Telegram, push notifications, in-app
+toast). Use for long-running automations that need to reach the user.
 
----
-
-## telegram — send messages to the operator
-
+SDK:
+```ts
+import { message } from "zero";
+await message.send("Deploy finished — all checks passed");
 ```
-zero telegram send <text> [--parse-mode Markdown|HTML] [--chat-id <id>]
-```
-
-Use for long-running automations that need to notify the user. Default chat is
-the operator's configured one.
 
 ---
 
@@ -148,6 +143,36 @@ const { url } = await ports.forward({ port: 3000, label: "vite dev" });
 
 ---
 
+## llm — proxy LLM calls through the server
+
+```
+zero llm generate <prompt> [--system <s>] [--model <m>] [--max-tokens <n>] [--json]
+```
+
+Calls a model via the server's configured provider — no API key needed inside
+the container. Defaults to the enrich model (fast/cheap); pass `--model` to
+override. Reads from stdin when prompt is `-`:
+
+```bash
+cat report.txt | zero llm generate - --system "Summarize in 3 bullet points"
+```
+
+SDK:
+```ts
+import { llm } from "zero";
+const { text } = await llm.generate("Classify this text: ...", {
+  system: "Return exactly one of: positive, negative, neutral",
+  maxTokens: 10,
+});
+```
+
+Usage is tracked in the standard billing system. Use this to build tools that
+need AI without hardcoding API keys or providers.
+
+---
+
+---
+
 ## health
 
 ```
@@ -173,10 +198,23 @@ if you need to distinguish `not_found` from `unauthorized` etc.
 
 ## Tips
 
-- Prefer the CLI for one-shot commands in bash; reach for the SDK when you
-  need to loop, parallelise, or assemble a result from multiple calls.
+- **One-liners → CLI. Anything else → SDK.** Prefer the CLI for quick commands
+  in bash. For anything involving loops, composition, error handling, or reuse,
+  write a bun script and import the SDK.
+- **Scripts persist, CLI modifications don't.** Write reusable tools as `.ts`
+  files in `/project` — they sync to project storage and survive container
+  restarts. Never modify `/opt/zero/` directly; those changes are lost on restart.
+- **Build tools with `llm` + other SDK calls.** The `llm` group lets scripts
+  call any model without API keys. Combine it with `web`, `creds`, `message` etc.
+  to build self-contained tools the user can rerun:
+  ```ts
+  import { web, llm, message } from "zero";
+  const page = await web.fetch("https://...");
+  const { text } = await llm.generate(page.content!, { system: "Summarize in 3 bullets" });
+  await message.send(text);
+  ```
 - `zero <group> --help` always prints authoritative, up-to-date usage for that
   group — treat this file as an overview, and `--help` as the source of truth
   if they ever disagree.
-- The SDK source is readable at `/opt/zero/src/sdk/` — `cat /opt/zero/src/sdk/ports.ts`
+- The SDK source is readable at `/opt/zero/src/sdk/` — `cat /opt/zero/src/sdk/llm.ts`
   etc. shows exact input/output types. Use this when `--help` isn't enough.

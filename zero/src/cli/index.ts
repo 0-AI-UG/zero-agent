@@ -10,13 +10,15 @@
 import { printError, printJson } from "./format.ts";
 import { call } from "../sdk/client.ts";
 import { webCommand } from "./commands/web.ts";
-import { chatCommand } from "./commands/chat.ts";
-import { telegramCommand } from "./commands/telegram.ts";
 import { scheduleCommand } from "./commands/schedule.ts";
 import { imageCommand } from "./commands/image.ts";
 import { credsCommand } from "./commands/creds.ts";
 import { browserCommand } from "./commands/browser.ts";
 import { portsCommand } from "./commands/ports.ts";
+import { llmCommand } from "./commands/llm.ts";
+import { messageCommand } from "./commands/message.ts";
+import { embedCommand } from "./commands/embed.ts";
+import { searchCommand } from "./commands/search.ts";
 
 const HELP = `zero — agent toolkit CLI
 
@@ -28,11 +30,13 @@ Groups (added by migration steps):
   web              search, fetch
   image            generate
   schedule         add, ls, update, rm
-  chat             search
-  telegram         send
   creds            ls, get, set, rm
   browser          open, click, fill, screenshot, evaluate, wait, status
   ports            forward
+  llm              generate
+  message          send a message to the user (Telegram + push)
+  embed            generate vector embeddings
+  search           vector search over project files, memory, and messages
 
 Run 'zero <group> --help' for details. All commands support --json.
 `;
@@ -56,10 +60,6 @@ async function main(argv: string[]): Promise<number> {
       }
       case "web":
         return await webCommand(rest);
-      case "chat":
-        return await chatCommand(rest);
-      case "telegram":
-        return await telegramCommand(rest);
       case "schedule":
         return await scheduleCommand(rest);
       case "image":
@@ -70,6 +70,14 @@ async function main(argv: string[]): Promise<number> {
         return await browserCommand(rest);
       case "ports":
         return await portsCommand(rest);
+      case "llm":
+        return await llmCommand(rest);
+      case "message":
+        return await messageCommand(rest);
+      case "embed":
+        return await embedCommand(rest);
+      case "search":
+        return await searchCommand(rest);
       default:
         process.stderr.write(`zero: unknown group "${group}"\n${HELP}`);
         return 2;

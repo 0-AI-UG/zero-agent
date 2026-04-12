@@ -39,23 +39,6 @@ export const WebFetchInput = z
   })
   .strict();
 
-// -- chat --
-export const ChatSearchInput = z
-  .object({
-    query: NonEmpty(500),
-    limit: z.number().int().min(1).max(50).optional(),
-  })
-  .strict();
-
-// -- telegram --
-export const TelegramSendInput = z
-  .object({
-    text: NonEmpty(8000),
-    parseMode: z.enum(["Markdown", "HTML"]).optional(),
-    chatId: z.string().min(1).max(64).optional(),
-  })
-  .strict();
-
 // -- schedule --
 const TriggerFilter = z.record(z.string(), z.string()).optional();
 
@@ -196,11 +179,58 @@ export const BrowserExtractInput = z
   })
   .strict();
 
+// -- llm --
+export const LlmGenerateInput = z
+  .object({
+    prompt: NonEmpty(100_000),
+    system: z.string().max(20_000).optional(),
+    model: z.string().min(1).max(200).optional(),
+    maxTokens: z.number().int().min(1).max(32_000).optional(),
+  })
+  .strict();
+
+// -- message --
+// `respond` turns the send into a two-way request: the server dispatches a
+// notification to project members and waits for a reply. `timeoutMs` caps the
+// wait (min 5s, max 30min). The server returns `{delivered, groupId, respond:true}`
+// immediately; the SDK then polls `GET /zero/message/response` until resolved.
+export const MessageSendInput = z
+  .object({
+    text: NonEmpty(8000),
+    respond: z.boolean().optional(),
+    timeoutMs: z.number().int().min(5_000).max(30 * 60_000).optional(),
+  })
+  .strict();
+
+export const MessageResponseInput = z
+  .object({
+    groupId: NonEmpty(64),
+  })
+  .strict();
+
+// -- embed --
+export const EmbedInput = z
+  .object({
+    texts: z.array(z.string().min(1).max(10_000)).min(1).max(100),
+  })
+  .strict();
+
+// -- search --
+export const SearchInput = z
+  .object({
+    query: NonEmpty(2000),
+    collections: z
+      .array(z.enum(["file", "memory", "message"]))
+      .min(1)
+      .max(3)
+      .optional(),
+    topK: z.number().int().min(1).max(50).optional(),
+  })
+  .strict();
+
 // Convenience re-exports for SDK type inference.
 export type WebSearchInputT = z.infer<typeof WebSearchInput>;
 export type WebFetchInputT = z.infer<typeof WebFetchInput>;
-export type ChatSearchInputT = z.infer<typeof ChatSearchInput>;
-export type TelegramSendInputT = z.infer<typeof TelegramSendInput>;
 export type ScheduleAddInputT = z.infer<typeof ScheduleAddInput>;
 export type ScheduleUpdateInputT = z.infer<typeof ScheduleUpdateInput>;
 export type ScheduleRemoveInputT = z.infer<typeof ScheduleRemoveInput>;
@@ -216,3 +246,8 @@ export type BrowserWaitInputT = z.infer<typeof BrowserWaitInput>;
 export type BrowserSnapshotInputT = z.infer<typeof BrowserSnapshotInput>;
 export type BrowserExtractInputT = z.infer<typeof BrowserExtractInput>;
 export type PortsForwardInputT = z.infer<typeof PortsForwardInput>;
+export type LlmGenerateInputT = z.infer<typeof LlmGenerateInput>;
+export type MessageSendInputT = z.infer<typeof MessageSendInput>;
+export type MessageResponseInputT = z.infer<typeof MessageResponseInput>;
+export type EmbedInputT = z.infer<typeof EmbedInput>;
+export type SearchInputT = z.infer<typeof SearchInput>;

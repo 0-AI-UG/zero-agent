@@ -8,7 +8,7 @@
  * work with raw output.
  */
 import type { z } from "zod";
-import { getLocalBackend } from "@/lib/execution/lifecycle.ts";
+import { ensureBackend } from "@/lib/execution/lifecycle.ts";
 import type { BrowserAction } from "@/lib/browser/protocol.ts";
 import { processHtml } from "@/lib/fetch-page.ts";
 import { writeToS3 } from "@/lib/s3.ts";
@@ -47,7 +47,7 @@ async function dispatch(
   action: BrowserAction,
   stealth?: boolean,
 ): Promise<Response> {
-  const backend = getLocalBackend();
+  const backend = await ensureBackend();
   if (!backend?.isReady()) return fail("no_backend", "Code execution is not available", 503);
 
   await backend.ensureContainer(ctx.userId, ctx.projectId);
@@ -109,7 +109,7 @@ export const handleBrowserScreenshot = async (
   ctx: CliContext,
   input: z.infer<typeof BrowserScreenshotInput>,
 ): Promise<Response> => {
-  const backend = getLocalBackend();
+  const backend = await ensureBackend();
   if (!backend?.isReady()) return fail("no_backend", "Code execution is not available", 503);
   await backend.ensureContainer(ctx.userId, ctx.projectId);
 
@@ -209,7 +209,7 @@ export const handleBrowserExtract = async (
   ctx: CliContext,
   input: z.infer<typeof BrowserExtractInput>,
 ): Promise<Response> => {
-  const backend = getLocalBackend();
+  const backend = await ensureBackend();
   if (!backend?.isReady()) return fail("no_backend", "Code execution is not available", 503);
   await backend.ensureContainer(ctx.userId, ctx.projectId);
 

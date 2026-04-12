@@ -30,6 +30,11 @@ function slugify(name: string): string {
     + "-" + nanoid(4).toLowerCase();
 }
 
+function buildAppUrl(slug: string): string {
+  const base = process.env.APP_URL?.replace(/\/+$/, "");
+  return base ? `${base}/app/${slug}` : `/app/${slug}`;
+}
+
 /**
  * Auto-detect the start command for a process listening on a given port.
  * Runs netstat/ss + /proc inspection inside the container. Best-effort —
@@ -81,7 +86,7 @@ async function detectStartCommand(
     ]);
 
     const command = cmdResult.stdout.trim();
-    const cwd = cwdResult.stdout.trim() || "/workspace";
+    const cwd = cwdResult.stdout.trim() || "/project";
 
     return command ? { command, cwd } : null;
   } catch {
@@ -113,12 +118,13 @@ export async function handlePortsForward(
   // Idempotency — return the existing forward if one exists for this port.
   const existing = getPortByProjectAndPort(ctx.projectId, port);
   if (existing) {
+    const existingUrl = buildAppUrl(existing.slug);
     return ok({
       portId: existing.id,
-      url: `/app/${existing.slug}`,
+      url: existingUrl,
       slug: existing.slug,
       port,
-      message: `Port ${port} is already forwarded at /app/${existing.slug}`,
+      message: `Port ${port} is already forwarded at ${existingUrl}`,
     });
   }
 
@@ -131,16 +137,17 @@ export async function handlePortsForward(
     label: portLabel,
     containerIp: session.containerIp,
     startCommand: detected?.command,
-    workingDir: detected?.cwd ?? "/workspace",
+    workingDir: detected?.cwd ?? "/project",
   });
 
   handlerLog.info("port forwarded", { portId: record.id, slug, port, detectedCommand: detected?.command });
 
+  const url = buildAppUrl(slug);
   return ok({
     portId: record.id,
-    url: `/app/${slug}`,
+    url,
     slug,
     port,
-    message: `Port ${port} is now accessible at /app/${slug}`,
+    message: `Port ${port} is now accessible at ${url}`,
   });
 }
