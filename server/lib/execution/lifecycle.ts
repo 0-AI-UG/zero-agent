@@ -27,6 +27,23 @@ export function getLocalBackend(): ExecutionBackend | null {
   return backend;
 }
 
+/**
+ * Return the current backend, self-healing if it's not ready.
+ *
+ * Hot path: returns immediately when backend is already ready (no I/O).
+ * Otherwise triggers (or joins) an in-flight reconcile and returns the
+ * resulting state. May still return null if no runners are healthy.
+ *
+ * Use this from user-facing code paths (tools, CLI handlers) that would
+ * otherwise race against startup reconcile or a transient supervisor
+ * health-check blip.
+ */
+export async function ensureBackend(): Promise<ExecutionBackend | null> {
+  if (backend?.isReady()) return backend;
+  await reconcile();
+  return backend;
+}
+
 export function getPortManager(): PortManager | null {
   return portManager;
 }

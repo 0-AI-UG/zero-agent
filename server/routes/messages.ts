@@ -14,10 +14,16 @@ export async function handleGetMessages(request: Request): Promise<Response> {
     verifyProjectAccess(projectId, userId);
     verifyChatOwnership(chatId, projectId);
 
-    // If an agent is actively streaming, serve checkpoint messages instead of
-    // the stale DB state (messages are only persisted to DB on stream finish).
+    // If an agent is actively streaming via the web chat path, serve checkpoint
+    // messages instead of the stale DB state (messages are only persisted to
+    // DB on stream finish). Only the streaming code path stores UIMessage-
+    // shaped checkpoints with a `streamId` in metadata; batch runs (Telegram,
+    // autonomous tasks) store ModelMessage-shaped checkpoints that the web
+    // client cannot render, so fall through to the DB rows for those.
     const checkpoint = loadActiveCheckpointByChatId(chatId);
-    if (checkpoint) {
+    const activeStreamId = (checkpoint?.metadata as Record<string, unknown> | null | undefined)
+      ?.streamId as string | undefined;
+    if (checkpoint && activeStreamId) {
       const cpMessages = checkpoint.messages as Array<{
         id: string;
         role: string;
@@ -25,7 +31,6 @@ export async function handleGetMessages(request: Request): Promise<Response> {
       }>;
       if (Array.isArray(cpMessages) && cpMessages.length > 0) {
         const messages = cpMessages.filter((m) => m.id && ((m.parts as unknown[])?.length ?? 0) > 0);
-        const activeStreamId = (checkpoint.metadata as Record<string, unknown>)?.streamId as string | undefined;
         return Response.json({ messages, isStreaming: true, activeStreamId }, { headers: corsHeaders });
       }
     }

@@ -388,6 +388,12 @@ function InstanceSettingsSection() {
           currentValue={settings?.BRAVE_SEARCH_API_KEY}
           settingKey="BRAVE_SEARCH_API_KEY"
         />
+        <ApiKeyField
+          label="Telegram Bot Token"
+          placeholder="123456789:ABC-..."
+          currentValue={settings?.telegram_bot_token}
+          settingKey="telegram_bot_token"
+        />
       </div>
     </section>
   );

@@ -24,7 +24,7 @@ const SECTION_HEADERS: Record<MemorySection, string> = {
   entities: "## Entities",
 };
 
-/** Parse existing memory.md into section -> entries map */
+/** Parse existing MEMORY.md into section -> entries map */
 function parseMemory(
   raw: string,
 ): Record<MemorySection, string[]> {
@@ -57,7 +57,7 @@ function parseMemory(
   return sections;
 }
 
-/** Render sections back to memory.md format */
+/** Render sections back to MEMORY.md format */
 function renderMemory(sections: Record<MemorySection, string[]>): string {
   let out = "# Memory\n";
 
@@ -102,7 +102,7 @@ function parseMemoryResponse(text: string): { section: MemorySection; content: s
 const MAX_MEMORY_ENTRIES = 100;
 
 /**
- * Flush extracted learnings directly into memory.md.
+ * Flush extracted learnings directly into MEMORY.md.
  * Called incrementally during compaction (Phase 3) — no LLM call needed
  * since learnings are already extracted by the anchor extraction prompt.
  */
@@ -114,7 +114,7 @@ export async function flushLearnings(
 
   let existingRaw = "";
   try {
-    existingRaw = await readFromS3(`projects/${projectId}/memory.md`);
+    existingRaw = await readFromS3(`projects/${projectId}/MEMORY.md`);
   } catch {
     // No existing memory
   }
@@ -145,7 +145,7 @@ export async function flushLearnings(
   }
 
   const newMemoryMd = renderMemory(sections);
-  await writeToS3(`projects/${projectId}/memory.md`, newMemoryMd);
+  await writeToS3(`projects/${projectId}/MEMORY.md`, newMemoryMd);
 
   // Embed for semantic retrieval
   const allEntries: { id: string; text: string }[] = [];
@@ -165,7 +165,7 @@ export async function flushLearnings(
 
 /**
  * Run after a conversation finishes. Extracts key facts/preferences/decisions
- * from the recent messages and merges them into memory.md.
+ * from the recent messages and merges them into MEMORY.md.
  */
 export async function flushConversationMemory(
   projectId: string,
@@ -182,9 +182,9 @@ export async function flushConversationMemory(
   // Read existing memory
   let existingRaw = "";
   try {
-    existingRaw = await readFromS3(`projects/${projectId}/memory.md`);
+    existingRaw = await readFromS3(`projects/${projectId}/MEMORY.md`);
   } catch {
-    memLog.debug("no existing memory.md", { projectId });
+    memLog.debug("no existing MEMORY.md", { projectId });
   }
 
   const existingSections = parseMemory(existingRaw);
@@ -284,7 +284,7 @@ ${conversationText}`,
   }
 
   const newMemoryMd = renderMemory(existingSections);
-  await writeToS3(`projects/${projectId}/memory.md`, newMemoryMd);
+  await writeToS3(`projects/${projectId}/MEMORY.md`, newMemoryMd);
 
   // Embed all memory entries for semantic retrieval
   const allEntries: { id: string; text: string }[] = [];

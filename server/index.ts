@@ -96,14 +96,39 @@ import {
   handleUpdateCredential,
   handleDeleteCredential,
 } from "@/routes/credentials.ts";
+import { handleTelegramGlobalWebhook } from "@/routes/telegram-webhook.ts";
 import {
-  handleTelegramWebhook,
-  handleTelegramSetup,
-  handleTelegramTeardown,
-  handleTelegramStatus,
-  handleUpdateTelegramAllowlist,
-  handleListTelegramBindings,
-} from "@/routes/telegram.ts";
+  handleTelegramLinkCode,
+  handleTelegramUnlink,
+  handleTelegramLinkStatus,
+  handleTelegramSetActiveProject,
+} from "@/routes/me-telegram.ts";
+import { registerTelegramProvider } from "@/lib/chat-providers/telegram/provider.ts";
+import { handleGlobalUpdate } from "@/lib/chat-providers/telegram/router.ts";
+import {
+  startGlobalPoller,
+  stopGlobalPoller,
+  registerGlobalPollerHandler,
+} from "@/lib/telegram-global/poller.ts";
+import { ensureWebhookRegistered } from "@/lib/telegram-global/bot.ts";
+import { startupExpirySweep } from "@/lib/pending-responses/store.ts";
+import {
+  cancelAllPendingSyncs,
+  recoverSyncOrphansOnStartup,
+} from "@/lib/sync-approval.ts";
+import {
+  handleGetVapidKey,
+  handlePushSubscribe,
+  handlePushUnsubscribe,
+} from "@/routes/push.ts";
+import {
+  handleListNotificationSubscriptions,
+  handleUpdateNotificationSubscription,
+} from "@/routes/notification-subscriptions.ts";
+import {
+  handleGetPendingResponse,
+  handleRespondPendingResponse,
+} from "@/routes/pending-responses.ts";
 import {
   handleListServices,
   handleDeleteService,
@@ -158,7 +183,7 @@ import {
   handleDeleteModel,
 } from "@/routes/models.ts";
 import { handleUsageSummary, handleUsageByModel, handleUsageByUser } from "@/routes/usage.ts";
-import { handleSyncVerdict, handleSyncDiff } from "@/routes/sync.ts";
+import { handleSyncVerdict, handleSyncDiff, handleSyncStatus } from "@/routes/sync.ts";
 import {
   handleListRunners,
   handleCreateRunner,
@@ -166,9 +191,6 @@ import {
   handleDeleteRunner,
   handleTestRunner,
 } from "@/routes/runners.ts";
-import { startAllPollers, stopAllPollers } from "@/lib/telegram-polling.ts";
-import { processIncomingUpdate } from "@/routes/telegram.ts";
-
 import { requireAdmin, authenticateRequest } from "@/lib/auth.ts";
 import { mountCliHandlers } from "@/cli-handlers/index.ts";
 import { db } from "@/db/index.ts";
@@ -197,6 +219,7 @@ const MIME_TYPES: Record<string, string> = {
   ".jpg": "image/jpeg",
   ".ico": "image/x-icon",
   ".json": "application/json",
+  ".webmanifest": "application/manifest+json",
   ".map": "application/json",
   ".woff": "font/woff",
   ".woff2": "font/woff2",
@@ -371,15 +394,27 @@ app.post("/api/projects/:projectId/skills/install-from-github", h(handleInstallF
 app.get("/api/projects/:projectId/skills/:name", h(handleGetSkill));
 app.delete("/api/projects/:projectId/skills/:name", h(handleDeleteSkill));
 
-// Telegram webhook (unauthenticated — secret token verified)
-app.post("/api/telegram/webhook/:projectId", h(handleTelegramWebhook));
+// Telegram global webhook (unauthenticated — secret token verified)
+app.post("/api/telegram/webhook", h(handleTelegramGlobalWebhook));
 
-// Telegram management (authenticated)
-app.post("/api/projects/:projectId/telegram/setup", h(handleTelegramSetup));
-app.delete("/api/projects/:projectId/telegram/setup", h(handleTelegramTeardown));
-app.get("/api/projects/:projectId/telegram/status", h(handleTelegramStatus));
-app.put("/api/projects/:projectId/telegram/allowlist", h(handleUpdateTelegramAllowlist));
-app.get("/api/projects/:projectId/telegram/bindings", h(handleListTelegramBindings));
+// Per-user Telegram linking (authenticated)
+app.post("/api/me/telegram/link-code", h(handleTelegramLinkCode));
+app.delete("/api/me/telegram/link", h(handleTelegramUnlink));
+app.get("/api/me/telegram/status", h(handleTelegramLinkStatus));
+app.put("/api/me/telegram/active-project", h(handleTelegramSetActiveProject));
+
+// Web Push (authenticated)
+app.get("/api/push/vapid-key", h(handleGetVapidKey));
+app.post("/api/push/subscribe", h(handlePushSubscribe));
+app.delete("/api/push/subscribe", h(handlePushUnsubscribe));
+
+// Notification subscriptions (per-user kind × channel opt-out)
+app.get("/api/me/notification-subscriptions", h(handleListNotificationSubscriptions));
+app.put("/api/me/notification-subscriptions/:kind/:channel", h(handleUpdateNotificationSubscription));
+
+// Pending responses (two-way notifications — web reply toast + click-through page)
+app.get("/api/pending-responses/:id", h(handleGetPendingResponse));
+app.post("/api/pending-responses/:id/respond", h(handleRespondPendingResponse));
 
 // Setup (no auth required)
 app.get("/api/setup/status", h(handleSetupStatus));
@@ -422,6 +457,7 @@ app.get("/api/admin/usage/by-user", h(handleUsageByUser));
 // Workspace sync approval
 app.post("/api/sync/:id/verdict", h(handleSyncVerdict));
 app.get("/api/sync/:id/diff", h(handleSyncDiff));
+app.get("/api/sync/:id", h(handleSyncStatus));
 
 // Settings
 app.get("/api/settings", h(handleGetSettings));
@@ -588,10 +624,18 @@ const honoListener = getRequestListener(app.fetch);
 const nodeServer = createHttpServer(honoListener);
 
 import { attachWebSocketServer, closeWebSocketServer } from "@/lib/ws.ts";
-import { startWsBridge } from "@/lib/ws-bridge.ts";
+import { startWsBridge, startBackgroundBridge } from "@/lib/ws-bridge.ts";
+import { initBackgroundTaskListeners } from "@/lib/background-task-store.ts";
+import { initBackgroundResume } from "@/lib/background-resume.ts";
 
 attachWebSocketServer(nodeServer);
 startWsBridge();
+startBackgroundBridge();
+initBackgroundTaskListeners();
+// Must init after initBackgroundTaskListeners so the store-update listener
+// runs before the resume listener reads from it (Set iteration preserves
+// insertion order, and EventBus dispatches in that order).
+initBackgroundResume();
 
 const server = nodeServer.listen(PORT, "0.0.0.0");
 
@@ -614,10 +658,22 @@ startScheduler();
 import { startEventTriggers, stopAllEventTriggers } from "@/lib/event-trigger.ts";
 startEventTriggers();
 
-// Start Telegram polling for all configured bots (only when webhooks are not configured)
-if (!process.env.TELEGRAM_WEBHOOK_BASE_URL) {
-  startAllPollers(processIncomingUpdate);
-}
+// Register the global Telegram provider + wire webhook or start the long-poller.
+registerTelegramProvider();
+registerGlobalPollerHandler(handleGlobalUpdate);
+(async () => {
+  const webhookRegistered = await ensureWebhookRegistered();
+  if (!webhookRegistered) {
+    await startGlobalPoller();
+  }
+})();
+
+// Sweep pending-responses that expired while the server was down.
+startupExpirySweep();
+// Reject any still-pending sync approvals from a prior process — their
+// owning runs are gone, so auto-reject and broadcast so any reconnecting
+// UI flips the card.
+recoverSyncOrphansOnStartup();
 
 // ── Local Docker Backend ──
 // Only initialize Docker if admin has explicitly enabled server execution
@@ -641,7 +697,15 @@ async function handleShutdown(signal: string) {
   requestShutdown();
   stopScheduler();
   stopAllEventTriggers();
-  stopAllPollers();
+  stopGlobalPoller();
+  // Unblock any tool calls waiting on a sync approval so their runs can
+  // finish instead of timing out at the drain deadline.
+  const cancelledSyncs = cancelAllPendingSyncs("shutdown");
+  if (cancelledSyncs > 0) {
+    log.info("cancelled pending sync approvals on shutdown", {
+      count: cancelledSyncs,
+    });
+  }
   await drainActiveRuns(IS_PROD ? 30_000 : 2_000);
   closeWebSocketServer();
   await teardownExecution();

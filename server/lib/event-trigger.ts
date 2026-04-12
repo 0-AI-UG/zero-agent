@@ -13,9 +13,6 @@ const triggerLog = log.child({ module: "event-trigger" });
 const DEFAULT_COOLDOWN_SECONDS = 30;
 const MIN_COOLDOWN_SECONDS = 5;
 
-// Events too noisy to allow as triggers
-const BLOCKED_EVENTS: Set<string> = new Set(["tool.called", "tool.result"]);
-
 // Per-task state
 const unsubscribers = new Map<string, () => void>();
 const pendingTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -32,10 +29,6 @@ export function startEventTriggers() {
 
 export function registerEventTask(task: ScheduledTaskRow) {
   if (task.trigger_type !== "event" || !task.trigger_event) return;
-  if (BLOCKED_EVENTS.has(task.trigger_event)) {
-    triggerLog.warn("blocked event type", { taskId: task.id, event: task.trigger_event });
-    return;
-  }
 
   // Clean up any existing subscription
   unregisterEventTask(task.id);

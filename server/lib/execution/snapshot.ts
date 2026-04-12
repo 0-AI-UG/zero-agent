@@ -2,7 +2,7 @@
  * System snapshot scheduler.
  *
  * Tracks per-project bash activity and periodically asks the active backend
- * to persist `/` (minus /workspace and the noisy mount points) to S3 so that
+ * to persist `/` (minus /project and the noisy mount points) to S3 so that
  * apt packages, caches, and other system layer state survive container reaps.
  *
  * Also exposes `persistOnDestroy` for callers that want to flush before

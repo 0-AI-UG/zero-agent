@@ -8,6 +8,20 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
+import { registerServiceWorker } from "@/lib/service-worker";
+
+// PWA links injected via JS because Bun's HTML bundler resolves <link> hrefs
+for (const [rel, href] of [
+  ["manifest", "/manifest.webmanifest"],
+  ["apple-touch-icon", "/icons/icon-192.png"],
+] as const) {
+  const link = document.createElement("link");
+  link.rel = rel;
+  link.href = href;
+  document.head.appendChild(link);
+}
+
+registerServiceWorker();
 
 const elem = document.getElementById("root")!;
 const app = (

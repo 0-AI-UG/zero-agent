@@ -43,7 +43,7 @@ export interface ExecutionBackend {
   destroyContainer(projectId: string): Promise<void>;
   pushFile(projectId: string, relativePath: string, buffer: Buffer): Promise<void>;
   deleteFile(projectId: string, relativePath: string): Promise<void>;
-  /** Fetch a sha256 manifest of files under `subpath` (default /workspace) inside the container. */
+  /** Fetch a sha256 manifest of files under `subpath` (default /project) inside the container. */
   getContainerManifest(projectId: string, subpath?: string): Promise<Record<string, string>>;
 
   listBlobDirs(projectId: string): Promise<string[]>;

@@ -7,8 +7,6 @@ services:
       - data:/app/data
     environment:
       - NODE_ENV=production
-      - RUNNER_URL=http://runner:3100
-      - RUNNER_API_KEY=${RUNNER_API_KEY:-}
       - JWT_SECRET=${JWT_SECRET:-}
       - CREDENTIALS_KEY=${CREDENTIALS_KEY:-}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}

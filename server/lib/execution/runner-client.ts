@@ -270,7 +270,7 @@ export class RunnerClient implements ExecutionBackend {
     });
   }
 
-  async getContainerManifest(projectId: string, subpath = "/workspace"): Promise<Record<string, string>> {
+  async getContainerManifest(projectId: string, subpath = "/project"): Promise<Record<string, string>> {
     const name = this.containerName(projectId);
     const res = await this.json<{ files: Record<string, string> }>(
       `/containers/${encodeURIComponent(name)}/files/manifest?dir=${encodeURIComponent(subpath)}`,
@@ -350,8 +350,8 @@ export class RunnerClient implements ExecutionBackend {
     clientLog.debug("runBash response", { name, exitCode: result.exitCode, stdoutLen: rawStdout.length, stderrLen: rawStderr.length });
 
     // Strip workspace paths
-    const stdout = rawStdout.replaceAll("/workspace/", "").replaceAll("/workspace", ".");
-    const stderr = rawStderr.replaceAll("/workspace/", "").replaceAll("/workspace", ".");
+    const stdout = rawStdout.replaceAll("/project/", "").replaceAll("/project", ".");
+    const stderr = rawStderr.replaceAll("/project/", "").replaceAll("/project", ".");
 
     // Detect changes
     const changes = await this.json<{ changed: string[]; deleted: string[] }>(`/containers/${encodeURIComponent(name)}/files/changes`, {

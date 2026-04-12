@@ -16,11 +16,16 @@ db.exec("PRAGMA case_sensitive_like = ON");
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS users (
-    id            TEXT PRIMARY KEY,
-    username      TEXT UNIQUE NOT NULL,
-    password_hash TEXT NOT NULL,
-    is_admin      INTEGER NOT NULL DEFAULT 0,
-    created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    id                  TEXT PRIMARY KEY,
+    username            TEXT UNIQUE NOT NULL,
+    password_hash       TEXT NOT NULL,
+    is_admin            INTEGER NOT NULL DEFAULT 0,
+    can_create_projects INTEGER NOT NULL DEFAULT 1,
+    companion_sharing   INTEGER NOT NULL DEFAULT 0,
+    totp_secret         TEXT,
+    totp_enabled        INTEGER NOT NULL DEFAULT 0,
+    token_limit         INTEGER,
+    created_at          TEXT NOT NULL DEFAULT (datetime('now'))
   )
 `);
 
@@ -31,7 +36,6 @@ db.exec(`
     name                      TEXT NOT NULL,
     description               TEXT DEFAULT '',
     automation_enabled        INTEGER NOT NULL DEFAULT 0,
-    browser_search_fallback   INTEGER NOT NULL DEFAULT 0,
     sync_gating_enabled       INTEGER NOT NULL DEFAULT 1,
     show_skills_in_files      INTEGER NOT NULL DEFAULT 1,
     assistant_name            TEXT NOT NULL DEFAULT 'Zero Agent',
@@ -69,15 +73,16 @@ db.exec(`
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS files (
-    id              TEXT PRIMARY KEY,
-    project_id      TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    s3_key          TEXT NOT NULL,
-    filename        TEXT NOT NULL,
-    mime_type       TEXT NOT NULL DEFAULT 'application/octet-stream',
-    size_bytes      INTEGER DEFAULT 0,
-    folder_path     TEXT NOT NULL DEFAULT '/',
+    id               TEXT PRIMARY KEY,
+    project_id       TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    s3_key           TEXT NOT NULL,
+    filename         TEXT NOT NULL,
+    mime_type        TEXT NOT NULL DEFAULT 'application/octet-stream',
+    size_bytes       INTEGER DEFAULT 0,
+    folder_path      TEXT NOT NULL DEFAULT '/',
     thumbnail_s3_key TEXT,
-    created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+    hash             TEXT NOT NULL DEFAULT '',
+    created_at       TEXT NOT NULL DEFAULT (datetime('now'))
   )
 `);
 
@@ -94,20 +99,24 @@ db.exec(`
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS scheduled_tasks (
-    id              TEXT PRIMARY KEY,
-    project_id      TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    user_id         TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    name            TEXT NOT NULL,
-    prompt          TEXT NOT NULL,
-    schedule        TEXT NOT NULL,
-    enabled         INTEGER NOT NULL DEFAULT 1,
-    last_run_at     TEXT,
-    next_run_at     TEXT NOT NULL,
-    run_count       INTEGER NOT NULL DEFAULT 0,
-    required_tools  TEXT,
-    required_skills TEXT,
-    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+    id               TEXT PRIMARY KEY,
+    project_id       TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    user_id          TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name             TEXT NOT NULL,
+    prompt           TEXT NOT NULL,
+    schedule         TEXT NOT NULL,
+    enabled          INTEGER NOT NULL DEFAULT 1,
+    last_run_at      TEXT,
+    next_run_at      TEXT NOT NULL,
+    run_count        INTEGER NOT NULL DEFAULT 0,
+    required_tools   TEXT,
+    required_skills  TEXT,
+    trigger_type     TEXT NOT NULL DEFAULT 'schedule',
+    trigger_event    TEXT,
+    trigger_filter   TEXT,
+    cooldown_seconds INTEGER NOT NULL DEFAULT 0,
+    created_at       TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at       TEXT NOT NULL DEFAULT (datetime('now'))
   )
 `);
 
@@ -231,17 +240,19 @@ db.exec(`
   )
 `);
 
+// The legacy per-project `telegram_bindings` table has been removed as of
+// Stage 5 (Telegram rescope). Drop it if a prior install created it — zero-
+// agent is not yet deployed, so no data needs preserving.
+db.exec(`DROP TABLE IF EXISTS telegram_bindings`);
+
 db.exec(`
-  CREATE TABLE IF NOT EXISTS telegram_bindings (
-    id               TEXT PRIMARY KEY,
-    project_id       TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    telegram_chat_id TEXT NOT NULL,
-    chat_id          TEXT REFERENCES chats(id) ON DELETE SET NULL,
-    chat_title       TEXT DEFAULT '',
-    enabled          INTEGER NOT NULL DEFAULT 1,
-    created_at       TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at       TEXT NOT NULL DEFAULT (datetime('now')),
-    UNIQUE(project_id, telegram_chat_id)
+  CREATE TABLE IF NOT EXISTS push_subscriptions (
+    id         TEXT PRIMARY KEY,
+    user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    endpoint   TEXT NOT NULL UNIQUE,
+    p256dh     TEXT NOT NULL,
+    auth       TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
   )
 `);
 
@@ -273,18 +284,6 @@ db.exec(`
     updated_at         TEXT NOT NULL DEFAULT (datetime('now'))
   )
 `);
-
-// Idempotent migrations for older installs
-{
-  const cols = db.prepare("PRAGMA table_info(models)").all() as { name: string }[];
-  const names = new Set(cols.map((c) => c.name));
-  if (names.has("provider_routing") && !names.has("provider_config")) {
-    db.exec("ALTER TABLE models RENAME COLUMN provider_routing TO provider_config");
-  }
-  if (!names.has("inference_provider")) {
-    db.exec("ALTER TABLE models ADD COLUMN inference_provider TEXT NOT NULL DEFAULT 'openrouter'");
-  }
-}
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS credentials (
@@ -326,22 +325,7 @@ db.exec(`
   )
 `);
 
-// ── Durability: event log & checkpoints ──
-
-db.exec(`
-  CREATE TABLE IF NOT EXISTS agent_events (
-    id          TEXT PRIMARY KEY,
-    run_id      TEXT NOT NULL,
-    chat_id     TEXT,
-    project_id  TEXT NOT NULL,
-    step_number INTEGER NOT NULL,
-    event_type  TEXT NOT NULL,
-    tool_names  TEXT,
-    data        TEXT NOT NULL,
-    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
-  )
-`);
-db.exec(`CREATE INDEX IF NOT EXISTS idx_agent_events_run ON agent_events(run_id, step_number)`);
+// ── Durability: agent checkpoints ──
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS agent_checkpoints (
@@ -351,52 +335,10 @@ db.exec(`
     step_number INTEGER NOT NULL,
     messages    TEXT NOT NULL,
     metadata    TEXT,
-    status      TEXT NOT NULL DEFAULT 'active',
     created_at  TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
   )
 `);
-
-// ── Migrations (idempotent column additions) ──
-
-for (const col of [
-  "trigger_type TEXT NOT NULL DEFAULT 'schedule'",
-  "trigger_event TEXT",
-  "trigger_filter TEXT",
-  "cooldown_seconds INTEGER NOT NULL DEFAULT 0",
-  "decompose INTEGER NOT NULL DEFAULT 0",
-]) {
-  try { db.exec(`ALTER TABLE scheduled_tasks ADD COLUMN ${col}`); } catch {}
-}
-
-// Email -> username rename migrations (idempotent)
-try {
-  const cols = db.prepare("PRAGMA table_info(users)").all() as { name: string }[];
-  if (cols.some((c) => c.name === "email") && !cols.some((c) => c.name === "username")) {
-    db.exec("ALTER TABLE users RENAME COLUMN email TO username");
-  }
-} catch {}
-try {
-  const cols = db.prepare("PRAGMA table_info(invitations)").all() as { name: string }[];
-  if (cols.some((c) => c.name === "invitee_email") && !cols.some((c) => c.name === "invitee_username")) {
-    db.exec("ALTER TABLE invitations RENAME COLUMN invitee_email TO invitee_username");
-  }
-} catch {}
-try {
-  const cols = db.prepare("PRAGMA table_info(user_invitations)").all() as { name: string }[];
-  if (cols.some((c) => c.name === "email") && !cols.some((c) => c.name === "username")) {
-    db.exec("ALTER TABLE user_invitations RENAME COLUMN email TO username");
-  }
-} catch {}
-
-// Users migrations
-try { db.exec(`ALTER TABLE projects ADD COLUMN sync_gating_enabled INTEGER NOT NULL DEFAULT 1`); } catch {}
-try { db.exec(`ALTER TABLE files ADD COLUMN hash TEXT NOT NULL DEFAULT ''`); } catch {}
-try { db.exec(`ALTER TABLE users ADD COLUMN can_create_projects INTEGER NOT NULL DEFAULT 1`); } catch {}
-try { db.exec(`ALTER TABLE users ADD COLUMN companion_sharing INTEGER NOT NULL DEFAULT 0`); } catch {}
-try { db.exec(`ALTER TABLE users ADD COLUMN totp_secret TEXT`); } catch {}
-try { db.exec(`ALTER TABLE users ADD COLUMN totp_enabled INTEGER NOT NULL DEFAULT 0`); } catch {}
-try { db.exec(`ALTER TABLE users ADD COLUMN token_limit INTEGER`); } catch {}
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS totp_backup_codes (
@@ -455,7 +397,7 @@ db.exec(`
       CHECK (status IN ('active', 'stopped')),
     pinned        INTEGER NOT NULL DEFAULT 0,
     start_command TEXT,
-    working_dir   TEXT DEFAULT '/workspace',
+    working_dir   TEXT DEFAULT '/project',
     env_vars      TEXT DEFAULT '{}',
     error         TEXT,
     created_at    TEXT NOT NULL DEFAULT (datetime('now')),
@@ -463,23 +405,97 @@ db.exec(`
   )
 `);
 
-// Migrate from deployed_apps if it exists
-try {
-  const hasOld = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='deployed_apps'").get();
-  if (hasOld) {
-    db.exec(`
-      INSERT OR IGNORE INTO forwarded_ports (id, project_id, user_id, slug, label, port, container_ip, status, pinned, start_command, working_dir, env_vars, error, created_at, updated_at)
-      SELECT id, project_id, user_id, slug, name, internal_port, container_ip,
-        CASE WHEN status = 'running' THEN 'active' ELSE 'stopped' END,
-        published, start_command, working_dir, env_vars, error, created_at, updated_at
-      FROM deployed_apps
-    `);
-    db.exec("DROP TABLE IF EXISTS app_deploy_logs");
-    db.exec("DROP TABLE IF EXISTS deployed_apps");
+// ── User ↔ Telegram links (one linked identity per user) ──
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS user_telegram_links (
+    id                TEXT PRIMARY KEY,
+    user_id           TEXT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+    telegram_user_id  TEXT NOT NULL UNIQUE,
+    telegram_chat_id  TEXT NOT NULL,
+    telegram_username TEXT,
+    active_chat_id    TEXT REFERENCES chats(id) ON DELETE SET NULL,
+    active_project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,
+    linked_at         TEXT NOT NULL DEFAULT (datetime('now'))
+  )
+`);
+
+// Idempotently add active_project_id for installs that pre-date the column.
+{
+  const cols = db
+    .prepare("PRAGMA table_info(user_telegram_links)")
+    .all() as { name: string }[];
+  if (!cols.some((c) => c.name === "active_project_id")) {
+    db.exec(
+      "ALTER TABLE user_telegram_links ADD COLUMN active_project_id TEXT REFERENCES projects(id) ON DELETE SET NULL",
+    );
   }
-} catch {
-  // Migration already done or table doesn't exist
 }
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS user_telegram_link_codes (
+    code       TEXT PRIMARY KEY,
+    user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    expires_at TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )
+`);
+
+// ── Notification subscriptions (delta rows; default-on) ──
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS user_notification_subscriptions (
+    id         TEXT PRIMARY KEY,
+    user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    kind       TEXT NOT NULL,
+    channel    TEXT NOT NULL,
+    enabled    INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(user_id, kind, channel)
+  )
+`);
+
+// ── Pending responses (generic two-way request plumbing) ──
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS pending_responses (
+    id                TEXT PRIMARY KEY,
+    group_id          TEXT,
+    requester_kind    TEXT NOT NULL,
+    requester_context TEXT NOT NULL,
+    target_user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    project_id        TEXT REFERENCES projects(id) ON DELETE CASCADE,
+    kind              TEXT NOT NULL,
+    prompt            TEXT NOT NULL,
+    payload           TEXT,
+    status            TEXT NOT NULL DEFAULT 'pending'
+                      CHECK (status IN ('pending','resolved','expired','cancelled')),
+    response_text     TEXT,
+    response_via      TEXT,
+    expires_at        TEXT NOT NULL,
+    created_at        TEXT NOT NULL DEFAULT (datetime('now')),
+    resolved_at       TEXT
+  )
+`);
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS sync_approval_blobs (
+    pending_response_id TEXT PRIMARY KEY REFERENCES pending_responses(id) ON DELETE CASCADE,
+    changes_json        TEXT NOT NULL,
+    created_at          TEXT NOT NULL DEFAULT (datetime('now'))
+  )
+`);
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS telegram_notification_messages (
+    id                  TEXT PRIMARY KEY,
+    pending_response_id TEXT NOT NULL REFERENCES pending_responses(id) ON DELETE CASCADE,
+    telegram_chat_id    TEXT NOT NULL,
+    telegram_message_id INTEGER NOT NULL,
+    created_at          TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(telegram_chat_id, telegram_message_id)
+  )
+`);
 
 // ── Indexes ──
 
@@ -502,7 +518,7 @@ db.exec(`CREATE INDEX IF NOT EXISTS idx_companion_tokens_user ON companion_token
 db.exec(`CREATE INDEX IF NOT EXISTS idx_companion_tokens_project ON companion_tokens(project_id)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_companion_tokens_token ON companion_tokens(token)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_quick_actions_project ON quick_actions(project_id, sort_order)`);
-db.exec(`CREATE INDEX IF NOT EXISTS idx_tg_bind_chat ON telegram_bindings(telegram_chat_id)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_push_subs_user ON push_subscriptions(user_id)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_trigger ON scheduled_tasks(trigger_type, trigger_event, enabled)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_models_provider ON models(provider)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_usage_logs_user ON usage_logs(user_id, created_at)`);
@@ -513,6 +529,13 @@ db.exec(`CREATE INDEX IF NOT EXISTS idx_credentials_project ON credentials(proje
 db.exec(`CREATE INDEX IF NOT EXISTS idx_credentials_domain ON credentials(project_id, domain)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_forwarded_ports_project ON forwarded_ports(project_id)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_forwarded_ports_slug ON forwarded_ports(slug)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_user_tg_links_tg_user ON user_telegram_links(telegram_user_id)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_user_tg_link_codes_expires ON user_telegram_link_codes(expires_at)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_user_notif_subs_user ON user_notification_subscriptions(user_id)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_pending_responses_target ON pending_responses(target_user_id, status)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_pending_responses_expires ON pending_responses(status, expires_at)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_pending_responses_group ON pending_responses(group_id, status)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_tg_notif_msgs_pending ON telegram_notification_messages(pending_response_id)`);
 
 // ── Seed models from JSON if table is empty ──
 
@@ -535,9 +558,7 @@ if (modelCount.count === 0) {
       JSON.stringify(m.tags ?? []),
       m.default ? 1 : 0,
       m.multimodal ? 1 : 0,
-      m.providerConfig ? JSON.stringify(m.providerConfig)
-        : m.providerRouting ? JSON.stringify(m.providerRouting)
-        : null,
+      m.providerConfig ? JSON.stringify(m.providerConfig) : null,
       i,
     );
   }

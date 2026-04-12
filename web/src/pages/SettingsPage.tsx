@@ -15,7 +15,6 @@ import {
   AlertCircleIcon,
 } from "lucide-react";
 import { MembersManager } from "@/components/settings/MembersManager";
-import { TelegramManager } from "@/components/settings/TelegramManager";
 
 export function SettingsPage() {
   const { projectId } = useParams<{ projectId: string }>();
@@ -37,9 +36,6 @@ export function SettingsPage() {
 
         {/* Members section */}
         <MembersManager projectId={projectId!} project={project} />
-
-        {/* Telegram section */}
-        <TelegramManager projectId={projectId!} />
 
         {/* Automation section */}
         <section className="space-y-4">

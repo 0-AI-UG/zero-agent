@@ -18,7 +18,9 @@ import { AccountPage } from "@/pages/AccountPage";
 import { AdminPage } from "@/pages/AdminPage";
 import { AppGatePage } from "@/pages/AppGatePage";
 import { SetupPage } from "@/pages/SetupPage";
+import { PendingResponsePage } from "@/pages/PendingResponsePage";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { Toaster } from "@/components/ui/sonner";
 import { ThemeApplier } from "@/components/ThemeApplier";
 import "./index.css";
 
@@ -26,6 +28,7 @@ export function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeApplier />
+      <Toaster />
       <TooltipProvider delayDuration={0}>
       <BrowserRouter>
         <Routes>
@@ -43,6 +46,7 @@ export function App() {
           {/* Protected routes */}
           <Route element={<ProtectedRoute />}>
             <Route path="/" element={<DashboardPage />} />
+            <Route path="/pending/:id" element={<PendingResponsePage />} />
             <Route path="/account" element={<AccountPage />} />
             <Route path="/help" element={<HelpPage />} />
             <Route path="/admin" element={<AdminPage />} />

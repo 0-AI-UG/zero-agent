@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CircleHelpIcon, LogOutIcon, MailIcon, SearchIcon, ShieldIcon, UserIcon } from "lucide-react";
 import { EmptyProjectsIllustration } from "@/components/ui/illustrations";
+import { InstallBanner } from "@/components/InstallBanner";
 
 export function DashboardPage() {
   const { data: projects, isLoading, error } = useProjects();
@@ -69,6 +70,8 @@ export function DashboardPage() {
           </div>
         </div>
       </header>
+
+      <InstallBanner />
 
       <main className="flex-1 overflow-y-auto">
         <div className="max-w-5xl mx-auto px-6 py-8 space-y-6">

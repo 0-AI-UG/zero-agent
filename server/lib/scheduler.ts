@@ -6,7 +6,6 @@ import { runAutonomousTask } from "@/lib/autonomous-agent.ts";
 import { formatDateForSQLite } from "@/lib/schedule-parser.ts";
 import { events } from "@/lib/events.ts";
 import { isShuttingDown } from "@/lib/durability/shutdown.ts";
-import { getSuspendedCheckpoints, deleteCheckpoint } from "@/lib/durability/checkpoint.ts";
 import { log } from "@/lib/logger.ts";
 
 const schedLog = log.child({ module: "scheduler" });
@@ -24,52 +23,6 @@ async function tick() {
   isRunning = true;
   try {
     if (isShuttingDown()) return;
-
-    // Resume any suspended autonomous tasks first
-    const suspended = getSuspendedCheckpoints();
-    for (const cp of suspended) {
-      if (isShuttingDown()) break;
-
-      const meta = cp.metadata as { taskName?: string; continuationNumber?: number; anchorRunId?: string } | null;
-      const taskName = meta?.taskName ?? "continuation";
-      const continuationNumber = meta?.continuationNumber ?? 1;
-      const anchorRunId = meta?.anchorRunId;
-
-      const project = getProjectById(cp.projectId);
-      if (!project) {
-        deleteCheckpoint(cp.runId);
-        continue;
-      }
-
-      schedLog.info("resuming suspended task", {
-        runId: cp.runId,
-        projectId: cp.projectId,
-        taskName,
-        continuationNumber,
-      });
-
-      try {
-        // Extract original prompt from checkpoint messages
-        const messages = cp.messages as Array<{ role: string; content: string }>;
-        const originalPrompt = messages.find((m) => m.role === "user")?.content ?? "";
-
-        // Delete the suspended checkpoint before resuming (the new run creates its own)
-        deleteCheckpoint(cp.runId);
-
-        await runAutonomousTask(
-          { id: project.id, name: project.name },
-          taskName,
-          originalPrompt,
-          { continuationNumber, anchorRunId },
-        );
-      } catch (err) {
-        schedLog.error("failed to resume suspended task", err, {
-          runId: cp.runId,
-          projectId: cp.projectId,
-        });
-        deleteCheckpoint(cp.runId);
-      }
-    }
 
     const dueTasks = getDueTasks();
     if (dueTasks.length === 0) return;
@@ -102,11 +55,13 @@ async function tick() {
 
         const onlyTools = task.required_tools ? JSON.parse(task.required_tools) : undefined;
 
+        const prompt = `${task.prompt} Current time: ${new Date().toISOString()}`;
+
         const result = await runAutonomousTask(
           { id: project.id, name: project.name },
           task.name,
-          task.prompt,
-          { onlyTools, userId, decompose: task.decompose === 1 },
+          prompt,
+          { onlyTools, userId },
         );
 
         updateTaskRun(run.id, {

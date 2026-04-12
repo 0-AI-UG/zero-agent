@@ -11,8 +11,7 @@ import type {
   ExecutionBackend, BashResult, ExecResult, SessionInfo, ContainerListEntry,
 } from "./backend-interface.ts";
 import { RunnerClient } from "./runner-client.ts";
-import { listEnabledRunners, insertRunner } from "@/db/queries/runners.ts";
-import { getSetting } from "@/lib/settings.ts";
+import { listEnabledRunners } from "@/db/queries/runners.ts";
 import { log } from "@/lib/logger.ts";
 
 const poolLog = log.child({ module: "runner-pool" });
@@ -34,22 +33,9 @@ export class RunnerPool implements ExecutionBackend {
    * re-health-checks every one, and converges the client map:
    *   - removes runners no longer in DB / no longer healthy
    *   - adds runners now in DB / newly healthy
-   * Migrates legacy RUNNER_URL setting on first call. Idempotent.
    */
   async sync(): Promise<{ healthy: number; total: number }> {
-    let runners = listEnabledRunners();
-
-    // Backward compat: migrate legacy single-runner settings
-    if (runners.length === 0 && this.clients.size === 0) {
-      const url = getSetting("RUNNER_URL");
-      const key = getSetting("RUNNER_API_KEY") ?? "";
-      if (url) {
-        insertRunner({ name: "Default", url, apiKey: key });
-        runners = listEnabledRunners();
-        poolLog.info("migrated legacy RUNNER_URL to runners table");
-      }
-    }
-
+    const runners = listEnabledRunners();
     const dbIds = new Set(runners.map(r => r.id));
 
     // Drop runners no longer in DB

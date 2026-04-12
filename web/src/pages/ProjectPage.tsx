@@ -42,10 +42,12 @@ export function ProjectPage() {
   const initialMessages = messagesData?.messages;
   const initialIsStreaming = messagesData?.isStreaming ?? false;
 
-  const isAutonomous = useMemo(
-    () => chats?.find((c) => c.id === chatId)?.isAutonomous ?? false,
+  const activeChat = useMemo(
+    () => chats?.find((c) => c.id === chatId),
     [chats, chatId],
   );
+  const isAutonomous = activeChat?.isAutonomous ?? false;
+  const chatSource = activeChat?.source ?? null;
 
   if (!chatId || chatsLoading || messagesLoading) {
     return (
@@ -63,6 +65,7 @@ export function ProjectPage() {
       initialMessages={initialMessages}
       initialIsStreaming={initialIsStreaming}
       isAutonomous={isAutonomous}
+      source={chatSource}
     />
   );
 }

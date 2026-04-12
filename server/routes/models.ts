@@ -70,7 +70,7 @@ export async function handleCreateModel(request: Request): Promise<Response> {
       tags: body.tags,
       isDefault: body.default ?? body.isDefault,
       multimodal: body.multimodal,
-      providerConfig: body.providerConfig ?? body.providerRouting,
+      providerConfig: body.providerConfig,
       enabled: body.enabled,
       sortOrder: body.sortOrder,
     };
@@ -106,7 +106,6 @@ export async function handleUpdateModel(request: Request): Promise<Response> {
     if (body.isDefault !== undefined) data.isDefault = body.isDefault;
     if (body.multimodal !== undefined) data.multimodal = body.multimodal;
     if (body.providerConfig !== undefined) data.providerConfig = body.providerConfig;
-    else if (body.providerRouting !== undefined) data.providerConfig = body.providerRouting;
     if (body.enabled !== undefined) data.enabled = body.enabled;
     if (body.sortOrder !== undefined) data.sortOrder = body.sortOrder;
 

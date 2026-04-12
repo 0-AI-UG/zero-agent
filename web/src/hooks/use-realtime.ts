@@ -4,6 +4,18 @@ import { useRealtimeStore } from "@/stores/realtime";
 import { useAuthStore } from "@/stores/auth";
 import { queryClient } from "@/lib/query-client";
 import { queryKeys } from "@/lib/query-keys";
+import { toast } from "sonner";
+import {
+  NotificationToast,
+  type NotificationAction,
+} from "@/components/notifications/NotificationToast";
+import { createElement } from "react";
+import {
+  usePendingApprovalsStore,
+  type SyncUiStatus,
+} from "@/stores/pending-approvals";
+
+const toastIdForResponse = (responseId: string) => `pending-${responseId}`;
 
 /**
  * Initializes the WebSocket connection and routes incoming messages
@@ -93,6 +105,135 @@ export function useRealtime(projectId: string | undefined) {
             queryClient.invalidateQueries({ queryKey: queryKeys.files.byProject(pid) });
           }
           break;
+
+        case "sync.resolved": {
+          // Authoritative update: flip any open SyncApproval card to its
+          // terminal state regardless of which channel resolved it.
+          //
+          // Multi-user (autonomous) fan-outs include sibling row ids in
+          // `ids[]` so the canonical card flips even when a remote member
+          // resolved a non-canonical row. Also dismiss any open toast for
+          // the same response ids so a stale "Approve / Discard" toast
+          // doesn't sit there after the sync was decided elsewhere.
+          if (typeof msg.status === "string") {
+            const status = msg.status as SyncUiStatus;
+            const ids = Array.isArray(msg.ids)
+              ? (msg.ids as unknown[]).filter(
+                  (x): x is string => typeof x === "string",
+                )
+              : typeof msg.id === "string"
+              ? [msg.id]
+              : [];
+            const store = usePendingApprovalsStore.getState();
+            for (const id of ids) {
+              store.setStatus(id, status);
+              toast.dismiss(toastIdForResponse(id));
+            }
+          }
+          break;
+        }
+
+        case "sync.created":
+          // Nothing to hydrate at the store level — the inline tool part
+          // will carry the awaiting card once the message streams in. This
+          // case exists so the switch doesn't toast-spam "unknown event".
+          break;
+
+        case "notification": {
+          // Two shapes live on this channel:
+          //   - Legacy: { level, message }               — simple toast
+          //   - Dispatcher (Stage 2+): { kind, title, body, url, actions?, requiresReply?, responseId? }
+          //
+          // Every dispatcher-shaped notification renders through the unified
+          // NotificationToast custom component so action buttons (sync
+          // approval), reply input (cli_request), and plain notifications
+          // all share the same styled surface. Sticky duration when the
+          // toast hosts an interactive control; auto-dismiss otherwise.
+          if (msg.title || msg.body || msg.kind) {
+            const title = msg.title ?? "Zero Agent";
+            const body = (msg.body as string | undefined) ?? "";
+            const actions = Array.isArray(msg.actions)
+              ? (msg.actions as NotificationAction[])
+              : undefined;
+            const requiresReply = msg.requiresReply === true;
+            const responseId = msg.responseId as string | undefined;
+            const interactive = (actions && actions.length > 0) || requiresReply;
+            const id = responseId
+              ? toastIdForResponse(responseId)
+              : `notif-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+            toast.custom(
+              (t: string | number) =>
+                createElement(NotificationToast, {
+                  toastId: t,
+                  title,
+                  body,
+                  kind: msg.kind as string | undefined,
+                  actions,
+                  requiresReply,
+                  responseId,
+                  url: msg.url as string | undefined,
+                }),
+              {
+                id,
+                duration: interactive ? Infinity : 6000,
+              },
+            );
+            break;
+          }
+
+          // Legacy `{level, message}` shape — pre-dispatcher callers.
+          const level = msg.level ?? "info";
+          const text = msg.message as string;
+          if (level === "error") toast.error(text);
+          else if (level === "warning") toast.warning(text);
+          else if (level === "success") toast.success(text);
+          else toast.info(text);
+          break;
+        }
+
+        case "background.completed": {
+          if (pid) {
+            queryClient.invalidateQueries({ queryKey: queryKeys.chats.byProject(pid) });
+          }
+          const taskName = (msg.taskName as string | undefined) ?? "Background task";
+          const summary = (msg.summary as string | undefined)?.slice(0, 240) ?? "";
+          const chatId = msg.chatId as string | undefined;
+          const url = chatId && pid ? `/projects/${pid}/c/${chatId}` : undefined;
+          toast.custom(
+            (t: string | number) =>
+              createElement(NotificationToast, {
+                toastId: t,
+                title: `Background task completed: ${taskName}`,
+                body: summary,
+                kind: "task_completed",
+                url,
+              }),
+            {
+              id: `bg-completed-${chatId ?? taskName}-${Date.now()}`,
+              duration: 8000,
+            },
+          );
+          break;
+        }
+
+        case "background.failed": {
+          const taskName = (msg.taskName as string | undefined) ?? "Background task";
+          const error = (msg.error as string | undefined)?.slice(0, 240) ?? "";
+          toast.custom(
+            (t: string | number) =>
+              createElement(NotificationToast, {
+                toastId: t,
+                title: `Background task failed: ${taskName}`,
+                body: error,
+                kind: "task_failed",
+              }),
+            {
+              id: `bg-failed-${taskName}-${Date.now()}`,
+              duration: 10000,
+            },
+          );
+          break;
+        }
       }
     });
   }, [setConnected, setPresence, addTyping, bumpStreamGeneration]);

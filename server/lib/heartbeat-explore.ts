@@ -41,7 +41,7 @@ function renderHeartbeat(before: string, items: string[]): string {
 
 /**
  * Post-conversation hook: detect knowledge gaps and append them
- * as explore items to heartbeat.md for autonomous investigation.
+ * as explore items to HEARTBEAT.md for autonomous investigation.
  */
 export async function detectExploreItems(
   projectId: string,
@@ -57,9 +57,9 @@ export async function detectExploreItems(
   // Read existing heartbeat
   let existingRaw = "";
   try {
-    existingRaw = await readFromS3(`projects/${projectId}/heartbeat.md`);
+    existingRaw = await readFromS3(`projects/${projectId}/HEARTBEAT.md`);
   } catch {
-    hbLog.debug("no existing heartbeat.md", { projectId });
+    hbLog.debug("no existing HEARTBEAT.md", { projectId });
   }
 
   const { before, items: existingItems } = parseExploreItems(existingRaw);
@@ -145,7 +145,7 @@ ${conversationText}`,
   const allItems = [...existingItems, ...newItems].slice(-MAX_EXPLORE_ITEMS);
 
   const newHeartbeat = renderHeartbeat(before, allItems);
-  await writeToS3(`projects/${projectId}/heartbeat.md`, newHeartbeat);
+  await writeToS3(`projects/${projectId}/HEARTBEAT.md`, newHeartbeat);
 
   hbLog.info("explore items added to heartbeat", {
     projectId,

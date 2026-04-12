@@ -1,5 +1,4 @@
 import { toPng } from "html-to-image";
-import { injectVizDesignSystem } from "./viz-design-system";
 
 export async function exportAsPng(html: string, filename: string) {
   const iframe = document.createElement("iframe");
@@ -8,11 +7,10 @@ export async function exportAsPng(html: string, filename: string) {
   iframe.style.width = "1920px";
   iframe.style.height = "1080px";
   iframe.style.border = "none";
-  iframe.srcdoc = injectVizDesignSystem(html, { isDark: false });
+  iframe.srcdoc = html;
   document.body.appendChild(iframe);
 
   await new Promise((resolve) => (iframe.onload = resolve));
-  // Give scripts time to render (charts, D3, etc.)
   await new Promise((resolve) => setTimeout(resolve, 800));
 
   try {
@@ -36,8 +34,7 @@ export async function exportAsPng(html: string, filename: string) {
 }
 
 export function exportAsPdf(html: string, filename: string) {
-  const withDesignSystem = injectVizDesignSystem(html, { isDark: false });
-  const styledHtml = withDesignSystem.replace(
+  const styledHtml = html.replace(
     /<\/head>/i,
     `<style>
       @media print {

@@ -34,14 +34,21 @@ const chatViewers = new Map<string, Set<WebSocket>>();
 const streamingUsers = new Map<string, { userId: string; username: string }>(); // chatId -> user
 
 let wss: WebSocketServer | null = null;
+let attachedServer: HttpServer | null = null;
+let upgradeHandler: ((req: IncomingMessage, socket: import("node:stream").Duplex, head: Buffer) => void) | null = null;
 
 // ── Public API ──
 
 export function attachWebSocketServer(server: HttpServer) {
   wss = new WebSocketServer({ noServer: true });
+  attachedServer = server;
 
-  server.on("upgrade", async (req, socket, head) => {
+  upgradeHandler = async (req, socket, head) => {
     wsLog.info("upgrade request", { url: req.url, headers: req.headers.upgrade });
+    if (!wss) {
+      socket.destroy();
+      return;
+    }
     const url = new URL(req.url ?? "/", `http://${req.headers.host}`);
     if (url.pathname !== "/ws") {
       wsLog.info("upgrade rejected — wrong path", { pathname: url.pathname });
@@ -65,10 +72,18 @@ export function attachWebSocketServer(server: HttpServer) {
       return;
     }
 
-    wss!.handleUpgrade(req, socket, head, (ws) => {
-      wss!.emit("connection", ws, req, payload);
+    // wss may have been nulled out during the await above (shutdown race)
+    if (!wss) {
+      socket.destroy();
+      return;
+    }
+
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      wss?.emit("connection", ws, req, payload);
     });
-  });
+  };
+
+  server.on("upgrade", upgradeHandler);
 
   wss.on("connection", (ws: WebSocket, _req: IncomingMessage, payload: TokenPayload) => {
     const meta: ConnectionMeta = {
@@ -128,6 +143,11 @@ export function attachWebSocketServer(server: HttpServer) {
 
 export function closeWebSocketServer() {
   if (!wss) return;
+  if (attachedServer && upgradeHandler) {
+    attachedServer.off("upgrade", upgradeHandler);
+  }
+  upgradeHandler = null;
+  attachedServer = null;
   for (const ws of connections.keys()) {
     ws.close(1001, "Server shutting down");
   }
@@ -144,6 +164,25 @@ export function broadcastToProject(projectId: string, message: WsBroadcastMessag
       ws.send(data);
     }
   }
+}
+
+export function broadcastToUser(userId: string, message: WsBroadcastMessage): number {
+  const data = JSON.stringify(message);
+  let sent = 0;
+  for (const [ws, meta] of connections) {
+    if (meta.userId !== userId) continue;
+    if (ws.readyState !== WebSocket.OPEN) continue;
+    ws.send(data);
+    sent++;
+  }
+  return sent;
+}
+
+export function isUserConnected(userId: string): boolean {
+  for (const meta of connections.values()) {
+    if (meta.userId === userId) return true;
+  }
+  return false;
 }
 
 export function broadcastToChat(chatId: string, message: WsBroadcastMessage) {

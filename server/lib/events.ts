@@ -25,8 +25,9 @@ export type AgentEvents = {
   "task.failed": { taskId: string; projectId: string; error: string };
 
   // Tools
-  "tool.called": { toolName: string; chatId: string; projectId: string; params: unknown };
-  "tool.result": { toolName: string; chatId: string; projectId: string; result: unknown };
+  // Background agents
+  "background.completed": { runId: string; projectId: string; chatId: string; taskName: string; summary: string };
+  "background.failed": { runId: string; projectId: string; chatId: string; taskName: string; error: string };
 
   // Skills
   "skill.loaded": { projectId: string; skillName: string; chatId: string };

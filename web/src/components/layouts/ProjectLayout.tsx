@@ -26,6 +26,7 @@ import { cn } from "@/lib/utils";
 import { useEffect } from "react";
 import { useFilesStore } from "@/stores/files-store";
 import { useRealtime } from "@/hooks/use-realtime";
+import { InstallBanner } from "@/components/InstallBanner";
 
 function getProjectColor(name: string): string {
   let hash = 0;
@@ -266,6 +267,9 @@ export function ProjectLayout() {
             <LogOutIcon className="size-4" />
           </Button>
         </header>
+
+        {/* Install / notification prompt */}
+        <InstallBanner />
 
         {/* Content */}
         <main className="flex-1 overflow-hidden min-h-0">

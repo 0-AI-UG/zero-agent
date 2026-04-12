@@ -59,7 +59,7 @@ export function CsvPreview({ file, content, projectId }: CsvPreviewProps) {
     updateFile.mutate(
       { fileId: file.id, content: csv },
       {
-        onSuccess: () => toast("File saved"),
+        onSuccess: () => toast.success("File saved"),
         onError: () => toast.error("Failed to save file"),
       },
     );
@@ -91,7 +91,7 @@ export function CsvPreview({ file, content, projectId }: CsvPreviewProps) {
       ws["!cols"] = cols;
       XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
       XLSX.writeFile(wb, file.filename.replace(/\.csv$/i, ".xlsx"));
-      toast("Exported as Excel");
+      toast.success("Exported as Excel");
     } catch {
       toast.error("Failed to export as Excel");
     }

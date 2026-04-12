@@ -21,14 +21,23 @@ export function sanitizePath(path: string): string {
   // Normalize backslashes
   let normalized = path.replace(/\\/g, "/");
 
+  // Accept container-absolute paths under /project/ by stripping the prefix
+  // (the agent often copies these from bash output verbatim).
+  if (/^\/project(\/|$)/.test(normalized)) {
+    normalized = normalized.replace(/^\/project\/?/, "");
+  } else if (normalized.startsWith("/")) {
+    // Any other absolute path is a container filesystem path — not readable
+    // via this tool. Tell the agent to use bash/cat instead.
+    throw new Error(
+      `Invalid path "${path}": this tool only reads project files. To read files outside the project directory, use bash with cat.`,
+    );
+  }
+
   // Reject directory traversal and current-dir segments
   const segments = normalized.split("/");
   if (segments.some((s) => s === ".." || s === ".")) {
     throw new Error("Invalid path: '.' and '..' segments are not allowed");
   }
-
-  // Strip leading slashes
-  normalized = normalized.replace(/^\/+/, "");
 
   if (!normalized) {
     throw new Error("Invalid path: path must not be empty");

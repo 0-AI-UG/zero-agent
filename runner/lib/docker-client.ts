@@ -377,7 +377,7 @@ export class DockerClient {
           Cmd: cmd,
           AttachStdout: true,
           AttachStderr: true,
-          WorkingDir: opts?.workingDir ?? "/workspace",
+          WorkingDir: opts?.workingDir ?? "/project",
         }),
       },
     );

@@ -1,5 +1,6 @@
 import { db, generateId } from "@/db/index.ts";
 import type { ProjectRow } from "@/db/types.ts";
+import { getUserById } from "@/db/queries/users.ts";
 
 export function insertProject(
   userId: string,
@@ -26,6 +27,19 @@ export function getAllProjects(): ProjectRow[] {
   return db.prepare(
     "SELECT * FROM projects ORDER BY updated_at DESC",
   ).all() as ProjectRow[];
+}
+
+/**
+ * Projects this user can actually see — admins get every project, regular
+ * users get the ones they're a member of via project_members.
+ *
+ * Use this anywhere a UI/API needs to show "the user's projects" without
+ * having to repeat the admin-vs-member branch (see /api/projects, the
+ * Telegram provider, etc.).
+ */
+export function getVisibleProjectsForUser(userId: string): ProjectRow[] {
+  const user = getUserById(userId);
+  return user?.is_admin === 1 ? getAllProjects() : getProjectsByUser(userId);
 }
 
 export function getProjectById(id: string): ProjectRow | null {

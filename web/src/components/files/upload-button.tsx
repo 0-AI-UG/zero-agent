@@ -62,7 +62,7 @@ export function UploadButton({ projectId, currentPath }: UploadButtonProps) {
       queryClient.invalidateQueries({
         queryKey: queryKeys.files.byProject(projectId),
       });
-      toast("File uploaded.");
+      toast.success("File uploaded.");
     },
     onError: () => {
       toast.error("Upload failed. Please try again.");

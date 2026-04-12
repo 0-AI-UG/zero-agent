@@ -140,7 +140,7 @@ export function XlsxPreview({ file, url, projectId }: XlsxPreviewProps) {
         headers: [...s.headers],
         rows: s.rows.map((r) => [...r]),
       })));
-      toast("File saved");
+      toast.success("File saved");
     } catch {
       toast.error("Failed to save file");
     }
@@ -171,7 +171,7 @@ export function XlsxPreview({ file, url, projectId }: XlsxPreviewProps) {
           folderPath: file.folderPath ?? "/",
         },
         {
-          onSuccess: () => toast(`Imported "${sheet.name}" as ${filename}`),
+          onSuccess: () => toast.success(`Imported "${sheet.name}" as ${filename}`),
           onError: () => toast.error(`Failed to import "${sheet.name}"`),
         },
       );

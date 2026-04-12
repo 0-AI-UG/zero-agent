@@ -42,7 +42,7 @@ export const queryKeys = {
       ["templates", "community", search ?? "", category ?? ""] as const,
   },
   telegram: {
-    status: (projectId: string) => ["telegram", "status", projectId] as const,
+    linkStatus: ["telegram", "link-status"] as const,
   },
   quickActions: {
     byProject: (projectId: string) => ["quick-actions", projectId] as const,

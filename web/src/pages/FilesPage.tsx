@@ -164,7 +164,7 @@ export function FilesPage() {
       });
       setFolderDialogOpen(false);
       setNewFolderName("");
-      toast(`Folder "${newFolderName.trim()}" created.`);
+      toast.success(`Folder "${newFolderName.trim()}" created.`);
     },
     onError: () => {
       toast.error("Failed to create folder.");
@@ -181,7 +181,7 @@ export function FilesPage() {
       queryClient.invalidateQueries({
         queryKey: queryKeys.files.byProject(projectId!, currentPath),
       });
-      toast("Folder deleted.");
+      toast.success("Folder deleted.");
     },
     onError: () => {
       toast.error("Failed to delete folder.");
@@ -255,7 +255,7 @@ export function FilesPage() {
         queryKey: queryKeys.files.byProject(projectId!, currentPath),
       });
       if (failed === 0) {
-        toast(`Deleted ${succeeded} item${succeeded !== 1 ? "s" : ""}.`);
+        toast.success(`Deleted ${succeeded} item${succeeded !== 1 ? "s" : ""}.`);
       } else {
         toast.error(`Deleted ${succeeded}, failed ${failed}.`);
       }
@@ -582,7 +582,7 @@ export function FilesPage() {
                     setFileDialogOpen(false);
                     setNewFileName("");
                     selectSingleFile(file.id);
-                    toast(`File "${name}" created.`);
+                    toast.success(`File "${name}" created.`);
                   },
                   onError: () => {
                     toast.error("Failed to create file.");

@@ -326,7 +326,7 @@ list(): ContainerInfo[] {
       try {
         result = await docker.exec(name, ["bash", "-c", command], {
           timeout,
-          workingDir: opts?.workingDir ?? "/workspace",
+          workingDir: opts?.workingDir ?? "/project",
         });
       } catch (err) {
         const errMsg = String(err);
@@ -369,7 +369,7 @@ list(): ContainerInfo[] {
     this.containers.get(name)!.lastUsedAt = Date.now();
     await touchMarker(name);
     const blobDirs = await this.getBlobDirs(name);
-    this.containers.get(name)!.fileList = await listFiles(name, "/workspace", blobDirs);
+    this.containers.get(name)!.fileList = await listFiles(name, "/project", blobDirs);
   }
 
   async getChanges(name: string): Promise<{ changed: string[]; deleted: string[] }> {
@@ -377,8 +377,8 @@ list(): ContainerInfo[] {
     if (!state) throw new Error(`Container "${name}" not found`);
     state.lastUsedAt = Date.now();
     const blobDirs = await this.getBlobDirs(name);
-    const result = await detectChanges(name, state.fileList, "/workspace", blobDirs);
-    state.fileList = await listFiles(name, "/workspace", blobDirs);
+    const result = await detectChanges(name, state.fileList, "/project", blobDirs);
+    state.fileList = await listFiles(name, "/project", blobDirs);
     return result;
   }
 
@@ -422,7 +422,7 @@ list(): ContainerInfo[] {
     if (!state) throw new Error(`Container "${name}" not found`);
     state.lastUsedAt = Date.now();
     const blobDirs = await this.getBlobDirs(name);
-    return filesManifest(name, dir ?? "/workspace", blobDirs);
+    return filesManifest(name, dir ?? "/project", blobDirs);
   }
 
   async listFiles(name: string, dir?: string): Promise<string[]> {

@@ -292,9 +292,9 @@ function MockupFiles() {
 
       {/* File list */}
       {[
-        { icon: "📄", name: "soul.md", size: "2.1 KB", selected: false },
-        { icon: "📄", name: "memory.md", size: "1.8 KB", selected: false },
-        { icon: "📄", name: "heartbeat.md", size: "0.9 KB", selected: true },
+        { icon: "📄", name: "SOUL.md", size: "2.1 KB", selected: false },
+        { icon: "📄", name: "MEMORY.md", size: "1.8 KB", selected: false },
+        { icon: "📄", name: "HEARTBEAT.md", size: "0.9 KB", selected: true },
         { icon: "📁", name: "research/", size: "3 files", selected: false },
         { icon: "🖼", name: "cover.png", size: "340 KB", selected: false },
       ].map((file, i) => {
@@ -312,7 +312,7 @@ function MockupFiles() {
       })}
 
       {/* Right panel - preview */}
-      <text x={256} y={28} className="t-base t-fg">heartbeat.md</text>
+      <text x={256} y={28} className="t-base t-fg">HEARTBEAT.md</text>
       <line x1={240} y1={40} x2={520} y2={40} stroke={C.border} strokeWidth={0.5} />
       {/* Markdown preview content */}
       {[
@@ -452,17 +452,17 @@ function MockupKnowledge() {
       {/* Three file cards side by side */}
       {[
         {
-          name: "soul.md",
+          name: "SOUL.md",
           desc: "Identity & personality",
           lines: ["# My Assistant", "Tone: professional", "Style: concise"],
         },
         {
-          name: "memory.md",
+          name: "MEMORY.md",
           desc: "Facts & preferences",
           lines: ["Timezone: PST", "Focus: AI tools", "Prefers: dark mode"],
         },
         {
-          name: "heartbeat.md",
+          name: "HEARTBEAT.md",
           desc: "Monitoring checklist",
           lines: ["Check tasks daily", "Alert if overdue", "Track mentions"],
         },

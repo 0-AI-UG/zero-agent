@@ -60,7 +60,7 @@ export function insertPort(
     port,
     opts?.containerIp ?? null,
     opts?.startCommand ?? null,
-    opts?.workingDir ?? "/workspace",
+    opts?.workingDir ?? "/project",
     JSON.stringify(opts?.envVars ?? {}),
   ) as ForwardedPortRow;
 }

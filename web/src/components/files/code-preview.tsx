@@ -90,7 +90,7 @@ export function CodePreview({ file, content, projectId }: CodePreviewProps) {
     updateFile.mutate(
       { fileId: file.id, content: editContent },
       {
-        onSuccess: () => toast("File saved"),
+        onSuccess: () => toast.success("File saved"),
         onError: () => toast.error("Failed to save file"),
       },
     );
@@ -113,7 +113,7 @@ export function CodePreview({ file, content, projectId }: CodePreviewProps) {
           size="icon-sm"
           onClick={() => {
             navigator.clipboard.writeText(editContent).then(() => {
-              toast("Copied to clipboard");
+              toast.success("Copied to clipboard");
             });
           }}
         >

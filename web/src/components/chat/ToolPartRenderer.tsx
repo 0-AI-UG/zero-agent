@@ -4,35 +4,26 @@ import { memo, useState } from "react";
 import { ChevronRightIcon } from "lucide-react";
 import { Shimmer } from "@/components/ai/shimmer";
 import {
-  CheckCircleIcon,
   DownloadIcon,
   ExternalLinkIcon,
   FileTextIcon,
   ImageIcon,
   NetworkIcon,
   PencilIcon,
-  PlugIcon,
   TerminalSquareIcon,
   SearchIcon,
   SparklesIcon,
-  Trash2Icon,
-  XCircleIcon,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { FileArtifact } from "@/components/files/file-artifact";
-import { findWriteFileRenderer } from "@/components/chat/write-file-renderers";
 import { DisplayFileCard } from "./DisplayFileCard";
 import { ParallelSubagentCard } from "./ParallelSubagentCard";
 import {
-  Confirmation,
-  ConfirmationRequest,
-  ConfirmationAccepted,
-  ConfirmationRejected,
-  ConfirmationActions,
-  ConfirmationAction,
-  ConfirmationTitle,
-} from "@/components/ai/confirmation";
+  SyncChangesHover,
+  SyncInlineControls,
+  type SyncProposal,
+} from "@/components/ai/sync-approval";
 
 const TOOL_CONFIG: Record<
   string,
@@ -62,16 +53,6 @@ const TOOL_CONFIG: Record<
     label: "Agents completed",
     activeLabel: "Running agents",
     icon: SparklesIcon,
-  },
-  loadTools: {
-    label: "Loaded tools",
-    activeLabel: "Loading tools",
-    icon: PlugIcon,
-  },
-  delete: {
-    label: "Deleted",
-    activeLabel: "Deleting",
-    icon: Trash2Icon,
   },
   loadSkill: {
     label: "Loaded skill",
@@ -113,12 +94,13 @@ function getToolDetail(toolName: string, input: unknown): string | null {
     case "readFile":
     case "writeFile":
     case "editFile":
-    case "delete":
     case "displayFile":
       return typeof inp.path === "string" ? inp.path : null;
     case "agent": {
       const tasks = inp.tasks as any[];
-      return tasks ? `${tasks.length} parallel tasks` : null;
+      const bg = inp.background === true;
+      if (!tasks) return null;
+      return bg ? `${tasks.length} background task${tasks.length !== 1 ? "s" : ""}` : `${tasks.length} parallel tasks`;
     }
     case "loadSkill":
       return typeof inp.name === "string" ? inp.name : null;
@@ -133,10 +115,6 @@ function getToolDetail(toolName: string, input: unknown): string | null {
       const label = inp.label;
       if (typeof label === "string") return `${label} (:${port})`;
       return typeof port === "number" ? `Port ${port}` : null;
-    }
-    case "loadTools": {
-      const names = inp.names as string[] | undefined;
-      return names ? names.join(", ") : null;
     }
     default:
       return null;
@@ -161,13 +139,6 @@ function WriteFileCard({ output, projectId }: { output: any; projectId?: string 
     );
   }
 
-  // Check registry for custom renderer (e.g. .viz)
-  const renderer = findWriteFileRenderer(filename);
-  if (renderer) {
-    const Component = renderer.component;
-    return <Component fileId={output.fileId} projectId={projectId} filename={filename} output={output} />;
-  }
-
   return (
     <FileArtifact
       fileId={output.fileId}
@@ -175,70 +146,6 @@ function WriteFileCard({ output, projectId }: { output: any; projectId?: string 
       mimeType={mimeType}
       projectId={projectId}
     />
-  );
-}
-
-function DeleteFileCard({
-  part,
-  addToolApprovalResponse,
-}: {
-  part: any;
-  addToolApprovalResponse?: (response: { id: string; approved: boolean }) => void;
-}) {
-  const filename = (part.input as any)?.path ?? "file";
-  return (
-    <Confirmation approval={part.approval} state={part.state} className="max-w-md">
-      <ConfirmationRequest>
-        <ConfirmationTitle>
-          <div className="flex items-center gap-1.5">
-            <Trash2Icon className="size-3.5 text-destructive" />
-            <span>Delete <span className="font-medium font-mono text-xs">{filename}</span>?</span>
-          </div>
-        </ConfirmationTitle>
-        <ConfirmationActions>
-          <ConfirmationAction
-            variant="outline"
-            onClick={() =>
-              addToolApprovalResponse?.({
-                id: part.approval.id,
-                approved: false,
-              })
-            }
-          >
-            <XCircleIcon className="size-3.5 mr-1" />
-            Deny
-          </ConfirmationAction>
-          <ConfirmationAction
-            variant="destructive"
-            onClick={() =>
-              addToolApprovalResponse?.({
-                id: part.approval.id,
-                approved: true,
-              })
-            }
-          >
-            <Trash2Icon className="size-3.5 mr-1" />
-            Delete
-          </ConfirmationAction>
-        </ConfirmationActions>
-      </ConfirmationRequest>
-      <ConfirmationAccepted>
-        <ConfirmationTitle>
-          <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
-            <CheckCircleIcon className="size-3.5" />
-            <span>Deleted <span className="font-medium font-mono text-xs">{filename}</span></span>
-          </div>
-        </ConfirmationTitle>
-      </ConfirmationAccepted>
-      <ConfirmationRejected>
-        <ConfirmationTitle>
-          <div className="flex items-center gap-1.5 text-muted-foreground">
-            <XCircleIcon className="size-3.5" />
-            <span>Deletion of <span className="font-medium font-mono text-xs">{filename}</span> cancelled</span>
-          </div>
-        </ConfirmationTitle>
-      </ConfirmationRejected>
-    </Confirmation>
   );
 }
 
@@ -280,7 +187,15 @@ function formatBytes(n: number): string {
   return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
 
-function BashResultCard({ output, command }: { output: any; command?: string }) {
+function BashResultCard({
+  output,
+  command,
+  sync,
+}: {
+  output: any;
+  command?: string;
+  sync?: SyncProposal;
+}) {
   const exitCode = output.exitCode ?? output.exit_code;
   const redactCreds = shouldRedactCredsOutput(command);
   const rawStdout = output.stdout ?? "";
@@ -303,34 +218,58 @@ function BashResultCard({ output, command }: { output: any; command?: string }) 
   const errorLineCount = error ? (error as string).split("\n").length : 0;
   const stderrLineCount = stderr ? stderr.split("\n").length : 0;
 
-  const summary =
-    outputLines.length > 0
-      ? `${outputLines.length} line${outputLines.length === 1 ? "" : "s"} · ${formatBytes(outputContent.length)}`
-      : "no output";
+  const hasOutput = outputLines.length > 0;
+  const isCollapsible = hasOutput || (redactCreds && rawStdout);
+  const summary = hasOutput
+    ? `${outputLines.length} line${outputLines.length === 1 ? "" : "s"} · ${formatBytes(outputContent.length)}`
+    : "no output";
+
+  const headerLeft = (
+    <>
+      {isCollapsible && (
+        <ChevronRightIcon className={cn("size-3 shrink-0 transition-transform", expanded && "rotate-90")} />
+      )}
+      <TerminalSquareIcon className="size-3 shrink-0" />
+      <span className="font-medium font-mono truncate">{command ? `$ ${command}` : "Terminal"}</span>
+    </>
+  );
 
   return (
     <div className="rounded-lg border bg-card max-w-2xl w-full my-1 overflow-hidden">
-      <button
-        type="button"
-        onClick={() => setExpanded((v) => !v)}
-        className="w-full flex items-center justify-between text-xs text-muted-foreground px-3 py-2 border-b bg-muted/50 hover:bg-muted text-left"
+      <div
+        className={cn(
+          "flex items-stretch text-xs text-muted-foreground bg-muted/50",
+          isCollapsible && expanded && "border-b",
+        )}
       >
-        <div className="flex items-center gap-1.5 min-w-0">
-          <ChevronRightIcon className={cn("size-3 shrink-0 transition-transform", expanded && "rotate-90")} />
-          <TerminalSquareIcon className="size-3 shrink-0" />
-          <span className="font-medium font-mono truncate">{command ? `$ ${command}` : "Terminal"}</span>
-        </div>
-        <div className="flex items-center gap-2 ml-2 shrink-0">
-          {!expanded && outputLines.length > 0 && (
+        {isCollapsible ? (
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            className="flex items-center gap-1.5 min-w-0 flex-1 px-3 py-2 hover:bg-muted text-left"
+          >
+            {headerLeft}
+          </button>
+        ) : (
+          <div className="flex items-center gap-1.5 min-w-0 flex-1 px-3 py-2">
+            {headerLeft}
+          </div>
+        )}
+        <div className="flex items-center gap-2 px-3 py-2 shrink-0">
+          {isCollapsible && !expanded && hasOutput && (
             <span className="text-xs text-muted-foreground/70">{summary}</span>
           )}
+          {sync && sync.changes && (
+            <SyncChangesHover syncId={sync.id} changes={sync.changes} />
+          )}
+          {sync && <SyncInlineControls proposal={sync} />}
           {exitCode != null && (
             <span className={cn("text-xs px-1.5 py-0.5 rounded-full font-medium", exitBadgeColor)}>
               {exitCode === -1 ? "timeout" : `exit ${exitCode}`}
             </span>
           )}
         </div>
-      </button>
+      </div>
       {expanded && redactCreds && rawStdout && (
         <div className="px-3 py-2 text-xs text-amber-700 dark:text-amber-400 border-b bg-amber-50/50 dark:bg-amber-950/20">
           Output redacted: contains credential value from <span className="font-mono">zero creds get</span>.
@@ -427,11 +366,9 @@ type MessagePart = UIMessage["parts"][number];
 export const ToolCallPart = memo(function ToolCallPart({
   part,
   projectId,
-  addToolApprovalResponse,
 }: {
   part: MessagePart;
   projectId?: string;
-  addToolApprovalResponse?: (response: { id: string; approved: boolean }) => void;
 }) {
   if (!isToolUIPart(part)) return null;
 
@@ -461,49 +398,9 @@ export const ToolCallPart = memo(function ToolCallPart({
     );
   }
 
-  // Approval-based tools
-  if (toolName === "delete" && (part as any).approval) {
-    return (
-      <DeleteFileCard
-        part={part}
-        addToolApprovalResponse={addToolApprovalResponse}
-      />
-    );
-  }
-
   // Streaming input display for content-heavy tools
   if (isLoading && toolName === "writeFile") {
     const inp = (part.input ?? {}) as Record<string, unknown>;
-    // Check for custom loading state based on filename (e.g. .viz)
-    if (typeof inp.path === "string") {
-      const fname = inp.path.split("/").pop() ?? "";
-      const customRenderer = findWriteFileRenderer(fname);
-      if (customRenderer) {
-        // Render via the same component used for complete state, with
-        // isStreaming=true — it handles incremental writes internally.
-        if (typeof inp.content === "string" && inp.content) {
-          const Component = customRenderer.component;
-          return (
-            <Component
-              fileId=""
-              projectId={projectId ?? ""}
-              filename={fname}
-              output={null}
-              content={inp.content}
-              isStreaming
-            />
-          );
-        }
-        const CustomIcon = customRenderer.loading.icon;
-        return (
-          <div className="flex items-center gap-2 text-sm py-1 text-muted-foreground animate-in fade-in-0 slide-in-from-top-1">
-            <CustomIcon className="size-4" />
-            <Shimmer className="text-sm" duration={1.5}>{customRenderer.loading.activeLabel}</Shimmer>
-            <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{fname}</span>
-          </div>
-        );
-      }
-    }
     if (typeof inp.content === "string" && inp.content) {
       const filename = typeof inp.path === "string" ? inp.path.split("/").pop() : "file";
       const ext = filename?.split(".").pop() ?? "";
@@ -532,16 +429,6 @@ export const ToolCallPart = memo(function ToolCallPart({
     // readFile: fall through to default status line for both text and image
     if (toolName === "writeFile") {
       const output = part.output as any;
-      // For custom-rendered files (e.g. .viz), render from input content
-      const inp = (part.input ?? {}) as Record<string, unknown>;
-      if (typeof inp.path === "string") {
-        const fname = inp.path.split("/").pop() ?? "";
-        const customRenderer = findWriteFileRenderer(fname);
-        if (customRenderer && typeof inp.content === "string" && inp.content) {
-          const Component = customRenderer.component;
-          return <Component fileId={output?.fileId ?? ""} projectId={projectId ?? ""} filename={fname} output={output} content={inp.content} />;
-        }
-      }
       if (output?.fileId) return <WriteFileCard output={output} projectId={projectId} />;
     }
     // Other tools
@@ -551,7 +438,14 @@ export const ToolCallPart = memo(function ToolCallPart({
     if (toolName === "bash") {
       const output = part.output as any;
       if (output) {
-        return <BashResultCard output={output} command={(part.input as any)?.command} />;
+        const command = (part.input as any)?.command as string | undefined;
+        return (
+          <BashResultCard
+            output={output}
+            command={command}
+            sync={output.sync as SyncProposal | undefined}
+          />
+        );
       }
     }
   }

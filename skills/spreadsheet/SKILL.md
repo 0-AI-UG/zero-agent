@@ -127,7 +127,7 @@ The user has data and wants insights, summaries, or statistics.
 - **Step 2**: Propose which stats/insights to compute
 - **Step 3**: Process via `bash` with pandas, print results — no output file needed
 - Respond with: key stats, distributions, anomalies, top/bottom values
-- Suggest loading the **visualizer** skill if charts would help
+- Suggest creating a chart if visual analysis would help
 
 ### Transform — "Clean this up" / "Filter rows" / "Pivot this"
 The user wants to reshape, clean, or restructure existing data.
@@ -252,7 +252,7 @@ After any spreadsheet operation, respond with:
 2. **Column summary**: List column names if the user hasn't seen them
 3. **Sample data**: Show first 3–5 rows as a markdown table if the data is new or transformed
 4. **Key stats** (for analysis): min, max, mean, distribution highlights
-5. **Next steps**: Suggest follow-up actions ("I can visualize this data" or "Want me to export this as Excel?")
+5. **Next steps**: Suggest follow-up actions ("Want me to export this as Excel?" or "I can filter/pivot this data")
 
 **Never dump an entire dataset into chat** — this will overflow the agent's context window and break the conversation. The user can browse full data in the inline preview. Only show samples (up to 20 rows max) via markdown tables.
 

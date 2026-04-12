@@ -111,9 +111,9 @@ target/
 `;
 
   const files: Array<{ path: string; content: string; mime: string }> = [
-    { path: "soul.md", content: soulMd, mime: "text/markdown" },
-    { path: "memory.md", content: memoryMd, mime: "text/markdown" },
-    { path: "heartbeat.md", content: heartbeatMd, mime: "text/markdown" },
+    { path: "SOUL.md", content: soulMd, mime: "text/markdown" },
+    { path: "MEMORY.md", content: memoryMd, mime: "text/markdown" },
+    { path: "HEARTBEAT.md", content: heartbeatMd, mime: "text/markdown" },
     { path: ".gitignore", content: defaultGitignore, mime: "text/plain" },
   ];
 
@@ -260,7 +260,7 @@ export async function handleGetSoul(request: Request): Promise<Response> {
 
     let content: string;
     try {
-      content = await readFromS3(`projects/${projectId}/soul.md`);
+      content = await readFromS3(`projects/${projectId}/SOUL.md`);
     } catch {
       content = DEFAULT_SOUL;
     }
@@ -278,7 +278,7 @@ export async function handleUpdateSoul(request: Request): Promise<Response> {
     verifyProjectOwnership(projectId, userId);
 
     const body = await validateBody(request, updateSoulSchema);
-    const s3Key = `projects/${projectId}/soul.md`;
+    const s3Key = `projects/${projectId}/SOUL.md`;
     const buffer = Buffer.from(body.content, "utf-8");
     await writeToS3(s3Key, buffer);
 
@@ -287,8 +287,8 @@ export async function handleUpdateSoul(request: Request): Promise<Response> {
     if (existing) {
       updateFileSize(existing.id, buffer.length);
     } else {
-      const fileRow = insertFile(projectId, s3Key, "soul.md", "text/markdown", buffer.length, "/");
-      indexFileContent(fileRow.id, projectId, "soul.md", body.content);
+      const fileRow = insertFile(projectId, s3Key, "SOUL.md", "text/markdown", buffer.length, "/");
+      indexFileContent(fileRow.id, projectId, "SOUL.md", body.content);
     }
 
     return Response.json({ success: true }, { headers: corsHeaders });

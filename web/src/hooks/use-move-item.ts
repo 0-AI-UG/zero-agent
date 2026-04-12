@@ -22,7 +22,7 @@ export function useMoveFile(projectId: string) {
       queryClient.invalidateQueries({
         queryKey: queryKeys.files.byProject(projectId),
       });
-      toast("File moved.");
+      toast.success("File moved.");
     },
     onError: (err: Error) => {
       toast.error(err.message || "Failed to move file.");
@@ -49,7 +49,7 @@ export function useMoveFolder(projectId: string) {
       queryClient.invalidateQueries({
         queryKey: queryKeys.files.byProject(projectId),
       });
-      toast("Folder moved.");
+      toast.success("Folder moved.");
     },
     onError: (err: Error) => {
       toast.error(err.message || "Failed to move folder.");

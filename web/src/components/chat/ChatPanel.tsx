@@ -18,30 +18,12 @@ import { useModelStore } from "@/stores/model";
 import { useToolsStore } from "@/stores/tools";
 import { useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { ChatMessage } from "@/components/chat/ChatMessageItem";
-import { SyncApproval, type SyncProposal } from "@/components/ai/sync-approval";
 import { useSpectatingUser, useTypingUsers, PresenceDots } from "@/components/chat/PresenceBar";
 import { useViewChat } from "@/hooks/use-realtime";
 import { useRealtimeStore } from "@/stores/realtime";
 import { apiFetch } from "@/api/client";
-
-/** Find the most recent bash tool output with an awaiting sync proposal. */
-function findPendingSync(messages: ChatMessage[]): SyncProposal | null {
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const msg = messages[i];
-    if (!msg || msg.role !== "assistant") continue;
-    for (let j = msg.parts.length - 1; j >= 0; j--) {
-      const part: any = msg.parts[j];
-      if (part?.type === "tool-bash" && part?.output?.sync) {
-        const sync = part.output.sync as SyncProposal;
-        if (sync.status === "awaiting") return sync;
-        return null; // most recent sync is already resolved
-      }
-    }
-  }
-  return null;
-}
 
 /** Deduplicate text parts within a single message (streaming can cause duplicates) */
 function deduplicateTextParts(messages: ChatMessage[]): ChatMessage[] {
@@ -65,9 +47,20 @@ interface ChatPanelProps {
   initialMessages?: UIMessage[];
   initialIsStreaming?: boolean;
   isAutonomous?: boolean;
+  source?: string | null;
 }
 
-export function ChatPanel({ projectId, chatId, initialMessages, initialIsStreaming, isAutonomous }: ChatPanelProps) {
+const SOURCE_LABELS: Record<string, string> = {
+  telegram: "Telegram",
+  whatsapp: "WhatsApp",
+  signal: "Signal",
+};
+
+function sourceLabel(source: string): string {
+  return SOURCE_LABELS[source] ?? source.charAt(0).toUpperCase() + source.slice(1);
+}
+
+export function ChatPanel({ projectId, chatId, initialMessages, initialIsStreaming, isAutonomous, source }: ChatPanelProps) {
   const queryClient = useQueryClient();
   const { data: capabilities } = useServerCapabilities();
   const { data: project } = useProject(projectId);
@@ -102,7 +95,7 @@ export function ChatPanel({ projectId, chatId, initialMessages, initialIsStreami
     [projectId, chatId],
   );
 
-  const { messages: rawMessages, sendMessage, status, error, regenerate, addToolApprovalResponse, stop, setMessages, resumeStream } = useChat<ChatMessage>({
+  const { messages: rawMessages, sendMessage, status, error, regenerate, stop, setMessages, resumeStream } = useChat<ChatMessage>({
     id: chatId,
     transport,
     messages: initialMessages as ChatMessage[] | undefined,
@@ -152,6 +145,13 @@ export function ChatPanel({ projectId, chatId, initialMessages, initialIsStreami
       lastStreamStartUserId === currentUserId
     ) return;
 
+    // Server-initiated streams (e.g. a background sub-agent finished and
+    // the server woke the parent chat) emit `stream.started` with this
+    // sentinel as the user id. They APPEND a brand-new assistant message
+    // on top of the already-persisted history, so we must NOT strip prior
+    // assistant messages like we do for human-initiated streams.
+    const isServerResume = lastStreamStartUserId === "__background_resume__";
+
     let cancelled = false;
     (async () => {
       try {
@@ -160,12 +160,18 @@ export function ChatPanel({ projectId, chatId, initialMessages, initialIsStreami
         );
         if (cancelled || !data.isStreaming) return;
 
-        // Strip trailing assistant messages — the resumed stream rebuilds them
         const msgs = data.messages;
-        let end = msgs.length;
-        while (end > 0 && msgs[end - 1]?.role === "assistant") end--;
-
-        setMessages(msgs.slice(0, end) as ChatMessage[]);
+        if (isServerResume) {
+          // Keep the full persisted history; the new assistant message
+          // will stream in as an addition.
+          setMessages(msgs as ChatMessage[]);
+        } else {
+          // Human-initiated: strip trailing assistant messages — the
+          // resumed stream rebuilds the single reply from scratch.
+          let end = msgs.length;
+          while (end > 0 && msgs[end - 1]?.role === "assistant") end--;
+          setMessages(msgs.slice(0, end) as ChatMessage[]);
+        }
         await resumeStream();
       } catch {
         // Silently ignore — the user can still reload manually
@@ -209,7 +215,6 @@ export function ChatPanel({ projectId, chatId, initialMessages, initialIsStreami
             error={error}
             memberMap={memberMap}
             isMultiMember={isMultiMember}
-            addToolApprovalResponse={addToolApprovalResponse}
             regenerate={regenerate}
             project={project}
             starterSuggestions={starterSuggestions}
@@ -228,16 +233,14 @@ export function ChatPanel({ projectId, chatId, initialMessages, initialIsStreami
             This is an automation log. Messages cannot be sent here.
           </p>
         </div>
+      ) : source ? (
+        <div className="px-6 py-4 md:px-10">
+          <p className="text-xs text-muted-foreground text-center">
+            This chat is connected to {sourceLabel(source)}. Reply from the {sourceLabel(source)} app.
+          </p>
+        </div>
       ) : (
         <>
-          {(() => {
-            const pendingSync = findPendingSync(messages);
-            return pendingSync ? (
-              <div className="px-6 md:px-10 pt-2">
-                <SyncApproval proposal={pendingSync} title="Review file changes" />
-              </div>
-            ) : null;
-          })()}
           <ChatInputArea
             projectId={projectId}
             chatId={chatId}

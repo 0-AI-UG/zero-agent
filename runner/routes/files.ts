@@ -46,7 +46,7 @@ export function fileRoutes(mgr: ContainerManager) {
 
     async list(req: Request, name: string): Promise<Response> {
       const url = new URL(req.url);
-      const dir = url.searchParams.get("dir") ?? "/workspace";
+      const dir = url.searchParams.get("dir") ?? "/project";
 
       try {
         const files = await mgr.listFiles(name, dir);
@@ -58,7 +58,7 @@ export function fileRoutes(mgr: ContainerManager) {
 
     async manifest(req: Request, name: string): Promise<Response> {
       const url = new URL(req.url);
-      const dir = url.searchParams.get("dir") ?? "/workspace";
+      const dir = url.searchParams.get("dir") ?? "/project";
       try {
         const files = await mgr.manifest(name, dir);
         return Response.json({ files });

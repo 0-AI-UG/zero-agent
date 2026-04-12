@@ -36,7 +36,6 @@ export interface ProjectRow {
   name: string;
   description: string;
   automation_enabled: number;
-  browser_search_fallback: number;
   sync_gating_enabled: number;
   show_skills_in_files: number;
   assistant_name: string;
@@ -105,7 +104,6 @@ export interface ScheduledTaskRow {
   trigger_event: string | null;
   trigger_filter: string | null;
   cooldown_seconds: number;
-  decompose: number;
   created_at: string;
   updated_at: string;
 }
@@ -179,17 +177,6 @@ export interface QuickActionRow {
 export interface SettingRow {
   key: string;
   value: string;
-  updated_at: string;
-}
-
-export interface TelegramBindingRow {
-  id: string;
-  project_id: string;
-  telegram_chat_id: string;
-  chat_id: string | null;
-  chat_title: string;
-  enabled: number;
-  created_at: string;
   updated_at: string;
 }
 
@@ -273,6 +260,71 @@ export interface UsageLogRow {
   cost_input: number;
   cost_output: number;
   duration_ms: number | null;
+  created_at: string;
+}
+
+export interface UserTelegramLinkRow {
+  id: string;
+  user_id: string;
+  telegram_user_id: string;
+  telegram_chat_id: string;
+  telegram_username: string | null;
+  active_chat_id: string | null;
+  active_project_id: string | null;
+  linked_at: string;
+}
+
+export interface UserTelegramLinkCodeRow {
+  code: string;
+  user_id: string;
+  expires_at: string;
+  created_at: string;
+}
+
+export interface UserNotificationSubscriptionRow {
+  id: string;
+  user_id: string;
+  kind: string;
+  channel: "ws" | "push" | "telegram";
+  enabled: number;
+  created_at: string;
+}
+
+export type PendingResponseStatus =
+  | "pending"
+  | "resolved"
+  | "expired"
+  | "cancelled";
+
+export interface PendingResponseRow {
+  id: string;
+  group_id: string | null;
+  requester_kind: string;
+  requester_context: string;
+  target_user_id: string;
+  project_id: string | null;
+  kind: string;
+  prompt: string;
+  payload: string | null;
+  status: PendingResponseStatus;
+  response_text: string | null;
+  response_via: string | null;
+  expires_at: string;
+  created_at: string;
+  resolved_at: string | null;
+}
+
+export interface SyncApprovalBlobRow {
+  pending_response_id: string;
+  changes_json: string;
+  created_at: string;
+}
+
+export interface TelegramNotificationMessageRow {
+  id: string;
+  pending_response_id: string;
+  telegram_chat_id: string;
+  telegram_message_id: number;
   created_at: string;
 }
 

@@ -6,7 +6,7 @@
  *
  * Pass --watch to rebuild on file change.
  */
-import { rmSync, watch } from "node:fs";
+import { rmSync, cpSync, watch } from "node:fs";
 import tailwind from "bun-plugin-tailwind";
 
 const WATCH = process.argv.includes("--watch");
@@ -33,7 +33,24 @@ async function build() {
     if (!WATCH) process.exit(1);
     return;
   }
-  console.log(`Built ${result.outputs.length} files → web/dist/ (${Date.now() - start}ms)`);
+  // Build service worker separately (fixed name, no hash)
+  const swResult = await Bun.build({
+    entrypoints: ["./src/sw.ts"],
+    outdir: "./dist",
+    minify: !WATCH,
+    target: "browser",
+    naming: { entry: "sw.js" },
+  });
+  if (!swResult.success) {
+    for (const log of swResult.logs) console.error(log);
+    if (!WATCH) process.exit(1);
+    return;
+  }
+
+  // Copy static assets (manifest, icons)
+  cpSync("./public", "./dist", { recursive: true, force: true });
+
+  console.log(`Built ${result.outputs.length + swResult.outputs.length} files → web/dist/ (${Date.now() - start}ms)`);
 }
 
 rmSync("./dist", { recursive: true, force: true });

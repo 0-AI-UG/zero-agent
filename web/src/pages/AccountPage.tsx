@@ -7,6 +7,7 @@ import { ArrowLeftIcon, ShieldCheckIcon, CheckIcon, CopyIcon, ClipboardCheckIcon
 import { totpSetup, totpConfirm, totpDisable, totpStatus } from "@/api/totp";
 import { passkeyRegisterOptions, passkeyRegisterVerify, passkeyList, passkeyDelete } from "@/api/passkeys";
 import { startRegistration } from "@simplewebauthn/browser";
+import { NotificationsCenter } from "@/components/settings/NotificationsCenter";
 
 export function AccountPage() {
   const { data: user } = useCurrentUser();
@@ -41,6 +42,8 @@ export function AccountPage() {
           <TwoFactorSection />
 
           <PasskeySection />
+
+          <NotificationsCenter />
         </div>
       </main>
     </div>

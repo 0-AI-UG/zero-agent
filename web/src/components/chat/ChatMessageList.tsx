@@ -17,7 +17,7 @@ import { AlertCircleIcon, RefreshCcwIcon, PackageIcon, SearchIcon, TargetIcon } 
 import { useCallback, useRef, type ReactNode } from "react";
 import logoSvg from "@/logo.svg";
 
-const HIDDEN_TOOLS = new Set(["loadTools", "progressCreate", "progressUpdate", "progressList", "searchFiles", "readFile", "loadSkill"]);
+const HIDDEN_TOOLS = new Set(["progressCreate", "progressUpdate", "progressList", "searchFiles", "readFile", "loadSkill"]);
 
 const ONBOARDING_SUGGESTIONS = [
   {
@@ -45,7 +45,6 @@ interface ChatMessageListProps {
   error: Error | undefined;
   memberMap: Map<string, string>;
   isMultiMember: boolean;
-  addToolApprovalResponse: (response: { id: string; approved: boolean }) => void;
   regenerate: () => void;
   project: { assistantName?: string; assistantDescription?: string } | undefined;
   starterSuggestions: Array<{ text: string; icon: ReactNode; description: string }>;
@@ -60,7 +59,6 @@ export function ChatMessageList({
   error,
   memberMap,
   isMultiMember,
-  addToolApprovalResponse,
   regenerate,
   project,
   starterSuggestions,
@@ -70,14 +68,6 @@ export function ChatMessageList({
   const handleCopy = useCallback((text: string) => {
     navigator.clipboard.writeText(text);
   }, []);
-
-  // Stabilize addToolApprovalResponse and regenerate via refs
-  const addToolApprovalResponseRef = useRef(addToolApprovalResponse);
-  addToolApprovalResponseRef.current = addToolApprovalResponse;
-  const stableAddToolApprovalResponse = useCallback(
-    (response: { id: string; approved: boolean }) => addToolApprovalResponseRef.current(response),
-    [],
-  );
 
   const regenerateRef = useRef(regenerate);
   regenerateRef.current = regenerate;
@@ -166,7 +156,6 @@ export function ChatMessageList({
           isStreaming={isStreaming}
           memberMap={memberMap}
           isMultiMember={isMultiMember}
-          addToolApprovalResponse={stableAddToolApprovalResponse}
           onCopy={handleCopy}
           onRegenerate={stableRegenerate}
         />

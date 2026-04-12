@@ -55,13 +55,6 @@ const STALENESS_RULES: Record<string, StalenessRule> = {
       return `[screenshot: ${val?.url ?? "unknown page"}]`;
     },
   },
-  fetchUrl: {
-    maxAge: 2,
-    summary: (output) => {
-      const val = getResultValue(output);
-      return `[fetched ${val?.url ?? "?"} — ${val?.title ?? "untitled"}]`;
-    },
-  },
   readFile: {
     maxAge: 2,
     summary: (output) => {
@@ -76,22 +69,6 @@ const STALENESS_RULES: Record<string, StalenessRule> = {
     summary: (output) => {
       const val = getResultValue(output);
       return `[read image: ${val?.path ?? "?"}]`;
-    },
-  },
-  searchWeb: {
-    maxAge: 2,
-    summary: (output) => {
-      const val = getResultValue(output);
-      const count = Array.isArray(val?.results) ? val.results.length : "?";
-      return `[searched "${val?.query ?? "?"}" → ${count} results]`;
-    },
-  },
-  listFiles: {
-    maxAge: 1,
-    summary: (output) => {
-      const val = getResultValue(output);
-      const files = Array.isArray(val?.files) ? val.files.length : "?";
-      return `[listed ${files} files in ${val?.currentPath ?? "/"}]`;
     },
   },
   loadSkill: {
@@ -113,13 +90,6 @@ const STALENESS_RULES: Record<string, StalenessRule> = {
     summary: (output) => {
       const val = getResultValue(output);
       return `[edited ${val?.path ?? "?"}]`;
-    },
-  },
-  generateImage: {
-    maxAge: 0,
-    summary: (output) => {
-      const val = getResultValue(output);
-      return `[generated image: ${val?.path ?? val?.url ?? "?"}]`;
     },
   },
 };

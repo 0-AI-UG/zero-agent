@@ -80,7 +80,6 @@ interface ChatMessageItemProps {
   isStreaming: boolean;
   memberMap: Map<string, string>;
   isMultiMember: boolean;
-  addToolApprovalResponse: (response: { id: string; approved: boolean }) => void;
   onCopy: (text: string) => void;
   onRegenerate: () => void;
 }
@@ -92,7 +91,6 @@ function ChatMessageItemInner({
   isStreaming,
   memberMap,
   isMultiMember,
-  addToolApprovalResponse,
   onCopy,
   onRegenerate,
 }: ChatMessageItemProps) {
@@ -122,7 +120,6 @@ function ChatMessageItemInner({
           key={`${message.id}-${i}`}
           part={part}
           projectId={projectId}
-          addToolApprovalResponse={addToolApprovalResponse}
         />
       );
       i++;

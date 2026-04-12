@@ -176,7 +176,7 @@ async function doReindex(projectId: string, overallSignal: AbortSignal): Promise
   // Phase 2: Memory
   emitProgress(projectId, { phase: "memories", current: 0, total: 0 });
   try {
-    const memoryRaw = await readFromS3(`projects/${projectId}/memory.md`);
+    const memoryRaw = await readFromS3(`projects/${projectId}/MEMORY.md`);
     const entries = parseMemoryEntries(memoryRaw);
 
     if (entries.length > 0) {
@@ -198,7 +198,7 @@ async function doReindex(projectId: string, overallSignal: AbortSignal): Promise
       emitProgress(projectId, { phase: "memories", current: memoryCount, total: memoryCount });
     }
   } catch {
-    // No memory.md or failed — not fatal
+    // No MEMORY.md or failed — not fatal
   }
 
   if (overallSignal.aborted) throw new Error("Reindex aborted (overall timeout)");

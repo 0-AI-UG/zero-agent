@@ -8,13 +8,9 @@ export interface ToolGroup {
   tools: string[];
 }
 
-// NOTE: Many tools (searchWeb, fetchUrl, generateImage, scheduling, browser,
-// credentials, telegram, chat-history, listFiles, searchFiles) have moved out
-// of the in-process tool registry and into the `zero` CLI/SDK that the agent
-// invokes from inside the runner sandbox via `bash`. They are no longer
-// toggleable from this UI — toggling them would do nothing — so they have
-// been removed from TOOL_GROUPS. See server/tools/registry.ts and
-// server/cli-handlers/ for the new mount points.
+// Only in-process tools are toggleable here. On-demand tools (web, image,
+// scheduling, browser, credentials, message, search, etc.) live in the `zero`
+// CLI and the agent reaches them via `bash`, so they're not user-toggleable.
 export const TOOL_GROUPS: ToolGroup[] = [
   {
     id: "agent",
@@ -26,7 +22,7 @@ export const TOOL_GROUPS: ToolGroup[] = [
     id: "files",
     label: "File Operations",
     icon: "FolderOpen",
-    tools: ["readFile", "writeFile", "editFile", "delete"],
+    tools: ["readFile", "writeFile", "editFile"],
   },
   {
     id: "code",

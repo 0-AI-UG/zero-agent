@@ -56,7 +56,7 @@ function PackageJsonStructured({
         size="icon-sm"
         onClick={() => {
           navigator.clipboard.writeText(content).then(() => {
-            toast("Copied to clipboard");
+            toast.success("Copied to clipboard");
           });
         }}
       >

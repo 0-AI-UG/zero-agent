@@ -1,4 +1,4 @@
-import { CheckIcon, XIcon } from "lucide-react";
+import { CheckIcon, XIcon, CloudIcon } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Shimmer } from "@/components/ai/shimmer";
@@ -20,12 +20,20 @@ interface TaskResult {
   steps?: number;
 }
 
+interface BackgroundRun {
+  index: number;
+  runId: string;
+  taskName: string;
+}
+
 interface ParallelSubagentOutput {
-  status?: "running" | "done";
+  status?: "running" | "done" | "background";
   completed?: number;
   total?: number;
   results?: TaskResult[];
   progress?: TaskProgress[];
+  message?: string;
+  runs?: BackgroundRun[];
 }
 
 interface ParallelSubagentCardProps {
@@ -137,6 +145,40 @@ function TaskRow({
 
 export function ParallelSubagentCard({ input, output, isRunning, isPreliminary }: ParallelSubagentCardProps) {
   const tasks = input?.tasks ?? [];
+
+  // Background mode: show a compact card with task names
+  if (output?.status === "background") {
+    const runs = output.runs ?? [];
+    return (
+      <div className="my-2 max-w-md">
+        <div className="flex items-center gap-2 mb-1.5">
+          <CloudIcon className="size-3.5 text-muted-foreground/70" />
+          <span className="text-[10px] font-mono uppercase tracking-[0.14em] text-muted-foreground/70">
+            background
+          </span>
+          <span className="text-[10px] font-mono tabular-nums text-muted-foreground/60">
+            {runs.length} task{runs.length !== 1 ? "s" : ""}
+          </span>
+        </div>
+        <div className="space-y-0.5">
+          {tasks.map((task, i) => (
+            <div key={i} className="flex items-start gap-2 py-0.5">
+              <span className="grid place-items-center size-3 shrink-0 mt-[3px]">
+                <span className="size-1.5 rounded-full bg-blue-500 animate-pulse" />
+              </span>
+              <span className="text-xs leading-relaxed text-foreground/90 truncate">
+                {task.prompt}
+              </span>
+            </div>
+          ))}
+        </div>
+        <p className="text-[11px] text-muted-foreground/60 mt-1.5">
+          Running in background — you'll be notified when done.
+        </p>
+      </div>
+    );
+  }
+
   const isDone = output?.status === "done" || (!isRunning && !isPreliminary && output != null);
   const completed = output?.completed ?? (isDone ? tasks.length : 0);
   const total = output?.total ?? tasks.length;
