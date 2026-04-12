@@ -2,67 +2,69 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "./client";
 import { queryKeys } from "@/lib/query-keys";
 
-export interface TelegramStatus {
-  connected: boolean;
+export interface TelegramLinkProject {
+  id: string;
+  name: string;
+}
+
+export interface TelegramLinkStatus {
+  configured: boolean;
+  linked: boolean;
   botUsername: string | null;
-  allowedUserIds: string[];
+  telegramUsername: string | null;
+  linkedAt: string | null;
+  activeProjectId: string | null;
+  projects: TelegramLinkProject[];
 }
 
-export function useTelegramStatus(projectId: string) {
+export interface TelegramLinkCodeResult {
+  code: string;
+  botUsername: string | null;
+  instructions: string;
+  expiresIn: number;
+}
+
+export function useTelegramLinkStatus() {
   return useQuery({
-    queryKey: queryKeys.telegram.status(projectId),
-    queryFn: async () => {
-      const res = await apiFetch<TelegramStatus>(`/projects/${projectId}/telegram/status`);
-      return res;
-    },
+    queryKey: queryKeys.telegram.linkStatus,
+    queryFn: () => apiFetch<TelegramLinkStatus>("/me/telegram/status"),
     staleTime: 30_000,
-    enabled: !!projectId,
   });
 }
 
-export function useSetupTelegram(projectId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (params: { botToken: string; allowedUserIds?: string[] }) =>
-      apiFetch<{ connected: boolean; botUsername: string }>(`/projects/${projectId}/telegram/setup`, {
-        method: "POST",
-        body: JSON.stringify(params),
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.telegram.status(projectId),
-      });
-    },
-  });
-}
-
-export function useRemoveTelegram(projectId: string) {
-  const queryClient = useQueryClient();
+export function useCreateTelegramLinkCode() {
   return useMutation({
     mutationFn: () =>
-      apiFetch<{ success: true }>(`/projects/${projectId}/telegram/setup`, {
-        method: "DELETE",
+      apiFetch<TelegramLinkCodeResult>("/me/telegram/link-code", {
+        method: "POST",
       }),
+  });
+}
+
+export function useUnlinkTelegram() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      apiFetch<{ ok: true }>("/me/telegram/link", { method: "DELETE" }),
     onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.telegram.status(projectId),
-      });
+      qc.invalidateQueries({ queryKey: queryKeys.telegram.linkStatus });
     },
   });
 }
 
-export function useUpdateTelegramAllowlist(projectId: string) {
-  const queryClient = useQueryClient();
+export function useSetTelegramActiveProject() {
+  const qc = useQueryClient();
   return useMutation({
-    mutationFn: (allowedUserIds: string[]) =>
-      apiFetch<{ allowedUserIds: string[] }>(`/projects/${projectId}/telegram/allowlist`, {
-        method: "PUT",
-        body: JSON.stringify({ allowedUserIds }),
-      }),
+    mutationFn: (projectId: string | null) =>
+      apiFetch<{ ok: true; activeProjectId: string | null }>(
+        "/me/telegram/active-project",
+        {
+          method: "PUT",
+          body: JSON.stringify({ projectId }),
+        },
+      ),
     onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.telegram.status(projectId),
-      });
+      qc.invalidateQueries({ queryKey: queryKeys.telegram.linkStatus });
     },
   });
 }
