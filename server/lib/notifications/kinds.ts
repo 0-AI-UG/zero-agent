@@ -12,6 +12,7 @@ export const NOTIFICATION_KINDS = {
   CLI_REQUEST: "cli_request",
   TASK_COMPLETED: "task_completed",
   TASK_FAILED: "task_failed",
+  PLAN_REVIEW: "plan_review",
   AGENT_MESSAGE: "agent_message",
 } as const;
 

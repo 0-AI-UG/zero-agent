@@ -76,6 +76,7 @@ function getModelDisplayName(id: string): string {
 interface ChatMessageItemProps {
   message: ChatMessage;
   projectId: string;
+  chatId: string;
   isLastMessage: boolean;
   isStreaming: boolean;
   memberMap: Map<string, string>;
@@ -87,6 +88,7 @@ interface ChatMessageItemProps {
 function ChatMessageItemInner({
   message,
   projectId,
+  chatId,
   isLastMessage,
   isStreaming,
   memberMap,
@@ -120,6 +122,7 @@ function ChatMessageItemInner({
           key={`${message.id}-${i}`}
           part={part}
           projectId={projectId}
+          chatId={chatId}
         />
       );
       i++;
@@ -251,6 +254,7 @@ export const ChatMessageItem = memo(ChatMessageItemInner, (prev, next) => {
     prev.isLastMessage === next.isLastMessage &&
     prev.isStreaming === next.isStreaming &&
     prev.projectId === next.projectId &&
+    prev.chatId === next.chatId &&
     prev.isMultiMember === next.isMultiMember
   );
 });

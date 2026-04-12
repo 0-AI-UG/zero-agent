@@ -40,6 +40,7 @@ const ONBOARDING_SUGGESTIONS = [
 interface ChatMessageListProps {
   messages: ChatMessage[];
   projectId: string;
+  chatId: string;
   isStreaming: boolean;
   status: string;
   error: Error | undefined;
@@ -55,6 +56,7 @@ interface ChatMessageListProps {
 export function ChatMessageList({
   messages,
   projectId,
+  chatId,
   isStreaming,
   error,
   memberMap,
@@ -152,6 +154,7 @@ export function ChatMessageList({
           key={message.id}
           message={message}
           projectId={projectId}
+          chatId={chatId}
           isLastMessage={index === messages.length - 1}
           isStreaming={isStreaming}
           memberMap={memberMap}

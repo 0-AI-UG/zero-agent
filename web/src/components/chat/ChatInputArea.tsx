@@ -39,6 +39,7 @@ import type { ServerCapabilities } from "@/api/capabilities";
 import { useChatContainerStatus } from "@/api/containers";
 
 import { BrowserPreview } from "@/components/chat/BrowserPreview";
+import { PlanModeToggle } from "@/components/chat/PlanModeToggle";
 import { sendTyping } from "@/lib/ws";
 import type { PresenceUser, TypingUser } from "@/stores/realtime";
 import type { ReactNode } from "react";
@@ -195,6 +196,7 @@ export function ChatInputArea({
               </span>
             )}
             {presenceDots}
+            <PlanModeToggle chatId={chatId} />
             <ToolSelector />
             <FilePickerButton
               projectId={projectId}

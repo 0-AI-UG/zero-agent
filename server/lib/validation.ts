@@ -148,6 +148,7 @@ export const chatRequestSchema = z.object({
   model: z.string().optional(),
   language: z.enum(["en", "zh"]).optional(),
   disabledTools: z.array(z.string()).optional(),
+  planMode: z.boolean().optional(),
   pinnedContext: z.array(z.object({
     key: z.string(),
     content: z.string(),

@@ -16,6 +16,7 @@ import { useMembers } from "@/api/members";
 import { useAuthStore } from "@/stores/auth";
 import { useModelStore } from "@/stores/model";
 import { useToolsStore } from "@/stores/tools";
+import { usePlanModeStore } from "@/stores/plan-mode";
 import { useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
 import { useCallback, useEffect, useMemo, useRef } from "react";
@@ -85,6 +86,7 @@ export function ChatPanel({ projectId, chatId, initialMessages, initialIsStreami
           model: useModelStore.getState().selectedModelId,
           language: useModelStore.getState().language,
           disabledTools: useToolsStore.getState().getDisabledToolsList(),
+          planMode: usePlanModeStore.getState().enabledChats[chatId] || undefined,
         }),
         prepareReconnectToStreamRequest: ({ headers, credentials }) => ({
           api: `/api/projects/${projectId}/chats/${chatId}/stream`,
@@ -150,7 +152,7 @@ export function ChatPanel({ projectId, chatId, initialMessages, initialIsStreami
     // sentinel as the user id. They APPEND a brand-new assistant message
     // on top of the already-persisted history, so we must NOT strip prior
     // assistant messages like we do for human-initiated streams.
-    const isServerResume = lastStreamStartUserId === "__background_resume__";
+    const isServerResume = lastStreamStartUserId?.startsWith("__") ?? false;
 
     let cancelled = false;
     (async () => {
@@ -179,6 +181,17 @@ export function ChatPanel({ projectId, chatId, initialMessages, initialIsStreami
     })();
     return () => { cancelled = true; };
   }, [streamGeneration, lastStreamStartChatId, lastStreamStartUserId, chatId, currentUserId, projectId, setMessages, resumeStream]);
+
+  // Auto-send: server can queue a message via WS (e.g. plan implement).
+  // The server aborts the active stream before broadcasting, so we just
+  // wait for status === "ready" and then send.
+  const autoSendMsg = useRealtimeStore((s) => s.autoSendQueue[chatId]);
+  useEffect(() => {
+    if (autoSendMsg && status === "ready") {
+      useRealtimeStore.getState().consumeAutoSend(chatId);
+      sendMessage({ text: autoSendMsg });
+    }
+  }, [autoSendMsg, status, chatId, sendMessage]);
 
   const spectatingUser = useSpectatingUser(chatId);
   const typingUsers = useTypingUsers(chatId);
@@ -210,6 +223,7 @@ export function ChatPanel({ projectId, chatId, initialMessages, initialIsStreami
           <ChatMessageList
             messages={messages}
             projectId={projectId}
+            chatId={chatId}
             isStreaming={isStreaming}
             status={status}
             error={error}

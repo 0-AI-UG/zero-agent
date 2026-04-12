@@ -13,6 +13,19 @@ import { runAgentStepStreaming } from "@/lib/agent-step/index.ts";
 
 const chatLog = log.child({ module: "chat" });
 
+/** Remove finishPlanning tool-invocation and tool-result parts from message history. */
+function stripPlanToolParts(messages: UIMessage[]): UIMessage[] {
+  return messages.map((msg) => {
+    if (!msg.parts) return msg;
+    const filtered = msg.parts.filter((p: any) => {
+      if (p.type === "tool-invocation" && p.toolName === "finishPlanning") return false;
+      return true;
+    });
+    if (filtered.length === msg.parts.length) return msg;
+    return { ...msg, parts: filtered };
+  });
+}
+
 export async function handleChat(request: Request): Promise<Response> {
   const start = Date.now();
   try {
@@ -23,7 +36,7 @@ export async function handleChat(request: Request): Promise<Response> {
     const project = verifyProjectAccess(projectId, userId);
     verifyChatOwnership(chatId, projectId);
 
-    const { messages, model, language, disabledTools } = await validateBody(
+    const { messages, model, language, disabledTools, planMode } = await validateBody(
       request,
       chatRequestSchema,
     ) as {
@@ -31,7 +44,12 @@ export async function handleChat(request: Request): Promise<Response> {
       model?: string;
       language?: "en" | "zh";
       disabledTools?: string[];
+      planMode?: boolean;
     };
+
+    // Strip finishPlanning tool parts from history when plan mode is off,
+    // so the AI SDK doesn't fail validation for an unregistered tool schema.
+    const cleanedMessages = planMode ? messages : stripPlanToolParts(messages);
 
     const streamId = generateId();
     const abortController = createAbortController(chatId);
@@ -44,7 +62,8 @@ export async function handleChat(request: Request): Promise<Response> {
       model,
       language,
       disabledTools,
-      messages,
+      planMode,
+      messages: cleanedMessages,
       abortSignal: abortController.signal,
       streamId,
     });

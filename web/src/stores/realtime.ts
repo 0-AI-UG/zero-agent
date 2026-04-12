@@ -22,22 +22,27 @@ interface RealtimeState {
   streamGeneration: number;
   lastStreamStartChatId: string | null;
   lastStreamStartUserId: string | null;
+  /** Messages queued by the server to be sent in a chat (chatId → message text). */
+  autoSendQueue: Record<string, string>;
   setConnected: (connected: boolean) => void;
   setPresence: (users: PresenceUser[]) => void;
   addTyping: (user: TypingUser) => void;
   clearExpiredTyping: () => void;
   bumpStreamGeneration: (chatId: string, userId: string) => void;
+  queueAutoSend: (chatId: string, message: string) => void;
+  consumeAutoSend: (chatId: string) => string | undefined;
 }
 
 const TYPING_TTL_MS = 3000;
 
-export const useRealtimeStore = create<RealtimeState>((set) => ({
+export const useRealtimeStore = create<RealtimeState>((set, get) => ({
   connected: false,
   presence: [],
   typing: [],
   streamGeneration: 0,
   lastStreamStartChatId: null,
   lastStreamStartUserId: null,
+  autoSendQueue: {},
   setConnected: (connected) => set({ connected }),
   setPresence: (users) => set({ presence: users }),
   addTyping: (user) =>
@@ -57,4 +62,19 @@ export const useRealtimeStore = create<RealtimeState>((set) => ({
       lastStreamStartChatId: chatId,
       lastStreamStartUserId: userId,
     })),
+  queueAutoSend: (chatId, message) =>
+    set((s) => ({
+      autoSendQueue: { ...s.autoSendQueue, [chatId]: message },
+    })),
+  consumeAutoSend: (chatId) => {
+    const message = get().autoSendQueue[chatId];
+    if (message) {
+      set((s) => {
+        const next = { ...s.autoSendQueue };
+        delete next[chatId];
+        return { autoSendQueue: next };
+      });
+    }
+    return message;
+  },
 }));

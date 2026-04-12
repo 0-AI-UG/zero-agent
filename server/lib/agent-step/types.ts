@@ -11,6 +11,8 @@ export interface AgentStepBase {
   onlySkills?: string[];
   /** Use the fast/enrich model instead of the default chat model. */
   fast?: boolean;
+  /** Plan mode — agent explores, writes a plan file, then calls finishPlanning for user review. */
+  planMode?: boolean;
   /** Sub-agent spawns opt out of HEARTBEAT.md injection (autonomous only). */
   skipHeartbeat?: boolean;
   /** Override the runId (otherwise one is generated). */

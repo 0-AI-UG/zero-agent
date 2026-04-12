@@ -14,6 +14,7 @@ import {
   usePendingApprovalsStore,
   type SyncUiStatus,
 } from "@/stores/pending-approvals";
+import { usePlanModeStore } from "@/stores/plan-mode";
 
 const toastIdForResponse = (responseId: string) => `pending-${responseId}`;
 
@@ -138,6 +139,42 @@ export function useRealtime(projectId: string | undefined) {
           // will carry the awaiting card once the message streams in. This
           // case exists so the switch doesn't toast-spam "unknown event".
           break;
+
+        case "plan.ready": {
+          const chatId = msg.chatId as string | undefined;
+          const responseId = msg.responseId as string | undefined;
+          const planFilePath = msg.planFilePath as string | undefined;
+          const planContent = msg.planContent as string | undefined;
+          const summary = msg.summary as string | undefined;
+          if (chatId && responseId) {
+            usePlanModeStore.getState().setPlanReview(chatId, {
+              responseId,
+              planFilePath: planFilePath ?? "",
+              planContent: planContent ?? "",
+              summary: summary ?? "",
+              status: "pending",
+            });
+          }
+          break;
+        }
+
+        case "plan.new_chat_created": {
+          const sourceChatId = msg.sourceChatId as string | undefined;
+          const newChatId = msg.newChatId as string | undefined;
+          if (sourceChatId && newChatId) {
+            usePlanModeStore.getState().setNewChatRedirect(sourceChatId, newChatId);
+          }
+          break;
+        }
+
+        case "chat.autoSend": {
+          const chatId = msg.chatId as string | undefined;
+          const message = msg.message as string | undefined;
+          if (chatId && message) {
+            useRealtimeStore.getState().queueAutoSend(chatId, message);
+          }
+          break;
+        }
 
         case "notification": {
           // Two shapes live on this channel:

@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils";
 import { FileArtifact } from "@/components/files/file-artifact";
 import { DisplayFileCard } from "./DisplayFileCard";
 import { ParallelSubagentCard } from "./ParallelSubagentCard";
+import { PlanReviewCard } from "./PlanReviewCard";
 import {
   SyncChangesHover,
   SyncInlineControls,
@@ -68,6 +69,11 @@ const TOOL_CONFIG: Record<
     label: "Forwarded port",
     activeLabel: "Forwarding port",
     icon: NetworkIcon,
+  },
+  finishPlanning: {
+    label: "Plan ready",
+    activeLabel: "Preparing plan",
+    icon: FileTextIcon,
   },
 };
 
@@ -366,9 +372,11 @@ type MessagePart = UIMessage["parts"][number];
 export const ToolCallPart = memo(function ToolCallPart({
   part,
   projectId,
+  chatId,
 }: {
   part: MessagePart;
   projectId?: string;
+  chatId?: string;
 }) {
   if (!isToolUIPart(part)) return null;
 
@@ -394,6 +402,21 @@ export const ToolCallPart = memo(function ToolCallPart({
         output={hasOutput ? (part.output as any) : null}
         isRunning={isLoading}
         isPreliminary={(part as any).preliminary === true}
+      />
+    );
+  }
+
+  // PlanReviewCard: render the plan review UI
+  if (toolName === "finishPlanning" && projectId && chatId) {
+    const inp = (part.input ?? {}) as Record<string, unknown>;
+    const isPending = isLoading;
+    return (
+      <PlanReviewCard
+        planFilePath={(inp.planFilePath as string) ?? ""}
+        summary={(inp.summary as string) ?? ""}
+        chatId={chatId}
+        projectId={projectId}
+        isPending={isPending}
       />
     );
   }
@@ -487,5 +510,5 @@ export const ToolCallPart = memo(function ToolCallPart({
   const n = next.part as any;
   if (p === n) return true;
   return p.state === n.state && p.output === n.output && p.input === n.input
-    && prev.projectId === next.projectId;
+    && prev.projectId === next.projectId && prev.chatId === next.chatId;
 });

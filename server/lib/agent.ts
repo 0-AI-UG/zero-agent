@@ -5,6 +5,7 @@ import { getSkillSummaries } from "@/lib/skills/loader.ts";
 import { buildSkillsIndex } from "@/lib/skills/injector.ts";
 import { createAgentTool } from "@/tools/agent.ts";
 import { createCompactPrepareStep } from "@/lib/compact-conversation.ts";
+import { createPlanningTools } from "@/tools/planning.ts";
 import { readFromS3 } from "@/lib/s3.ts";
 import { log } from "@/lib/logger.ts";
 
@@ -52,6 +53,8 @@ export interface AgentOptions {
    * just the triggering user.
    */
   autonomous?: boolean;
+  /** Plan mode — agent explores, writes a plan, then calls finishPlanning for user review. */
+  planMode?: boolean;
 }
 
 async function buildSystemPrompt(project: {
@@ -97,6 +100,26 @@ async function buildSystemPrompt(project: {
   // ── Response Style ──
   sections.push(`Never expose internal thinking. Just act and respond concisely. Never print credentials — use shell substitution.`);
 
+  // ── Plan Mode ──
+  if (options.planMode) {
+    sections.push(`## Plan Mode
+
+You are in planning mode. Design a thorough plan before any implementation.
+
+1. **Explore**: Use subagents to read files, understand architecture, gather context.
+2. **Ask questions**: If anything is unclear, ask the user before proceeding.
+3. **Write a plan**: Use writeFile to save the plan at \`plans/{descriptive-name}.md\` covering:
+   - Summary of what will be built
+   - Step-by-step implementation approach
+   - Files to create or modify
+   - Potential risks or trade-offs
+4. **Finish**: Call finishPlanning with the plan file path and a brief summary. The user will then choose to implement or alter the plan.
+
+If the user asks to revise the plan and no specific feedback is provided (empty feedback), ask the user what they'd like changed before making revisions. Once you understand their feedback, revise the plan file and call finishPlanning again.
+
+Do NOT implement anything. Focus only on exploration and planning.`);
+  }
+
   // ── RAG sections (last — they change every turn, keep the prefix cacheable) ──
   if (options.relevantMemories?.length) {
     const memLines = options.relevantMemories.map((m) => `- ${m.content}`).join("\n");
@@ -135,6 +158,16 @@ export async function createAgent(project: ProjectForAgent, options: AgentOption
     runId: options.runId,
     autonomous: options.autonomous,
   });
+
+  // Plan mode — inject finishPlanning tool
+  if (options.planMode && options.chatId && options.userId) {
+    const planningTools = createPlanningTools(project.id, {
+      chatId: options.chatId,
+      userId: options.userId,
+      projectName: project.name,
+    });
+    Object.assign(tools, planningTools);
+  }
 
   // Sub-agent spawner — also gets the full toolset via createToolset internally
   tools.agent = createAgentTool(project.id, {
