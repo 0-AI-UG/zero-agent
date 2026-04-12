@@ -11,7 +11,7 @@ export interface AgentStepBase {
   onlySkills?: string[];
   /** Use the fast/enrich model instead of the default chat model. */
   fast?: boolean;
-  /** Plan mode — agent explores, writes a plan file, then calls finishPlanning for user review. */
+  /** Plan mode - agent explores, writes a plan file, then calls finishPlanning for user review. */
   planMode?: boolean;
   /** Sub-agent spawns opt out of HEARTBEAT.md injection (autonomous only). */
   skipHeartbeat?: boolean;
@@ -20,11 +20,13 @@ export interface AgentStepBase {
   /** Auxiliary metadata carried into the checkpoint for crash recovery. */
   checkpointMetadata?: Record<string, unknown>;
   /**
-   * Autonomous (non-interactive) run — sync approvals raised by tools fan
+   * Autonomous (non-interactive) run - sync approvals raised by tools fan
    * out to every project member instead of only the triggering user. The
    * streaming web-chat path leaves this unset.
    */
   autonomous?: boolean;
+  /** Maximum number of agent steps before stopping. Defaults to 100. */
+  maxSteps?: number;
 }
 
 /**
@@ -73,7 +75,7 @@ export interface BatchStepInput extends AgentStepBase {
 export interface BatchStepResult {
   runId: string;
   text: string;
-  /** UIMessagePart[] shape — suitable for chat message persistence. */
+  /** UIMessagePart[] shape - suitable for chat message persistence. */
   assistantParts: any[];
   totalUsage: {
     inputTokens: number;
@@ -81,7 +83,7 @@ export interface BatchStepResult {
     reasoningTokens: number;
     cachedInputTokens: number;
   };
-  /** Full result.response.messages from agent.generate — mainly for debug/recovery. */
+  /** Full result.response.messages from agent.generate - mainly for debug/recovery. */
   responseMessages: Array<{ role: string; content: unknown }>;
   steps: any[];
   chatId: string;

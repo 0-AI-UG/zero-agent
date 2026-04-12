@@ -1,5 +1,5 @@
 /**
- * LLM handler — proxy text generation through the server's configured
+ * LLM handler - proxy text generation through the server's configured
  * inference provider. Allows scripts inside containers to call models
  * without needing direct API key access.
  */

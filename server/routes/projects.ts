@@ -145,7 +145,7 @@ export async function handleCreateProject(request: Request): Promise<Response> {
       parts: [
         {
           type: "text",
-          text: `Welcome to ${body.name}! I'm your AI assistant — I can browse the web, manage files, run code, and automate tasks for you.\n\nTo help me be most useful, tell me a bit about this project:\n\n1. **What are you working on?** A brief description of the project or goal.\n2. **How can I help?** What kind of tasks do you see me handling — research, writing, coding, organizing, something else?\n3. **Any preferences?** For example: keep responses short, always cite sources, be proactive with suggestions, etc.\n\nYou can answer all at once or just start with what matters most — I'll learn as we go.`,
+          text: `Welcome to ${body.name}! I'm your AI assistant - I can browse the web, manage files, run code, and automate tasks for you.\n\nTo help me be most useful, tell me a bit about this project:\n\n1. **What are you working on?** A brief description of the project or goal.\n2. **How can I help?** What kind of tasks do you see me handling - research, writing, coding, organizing, something else?\n3. **Any preferences?** For example: keep responses short, always cite sources, be proactive with suggestions, etc.\n\nYou can answer all at once or just start with what matters most - I'll learn as we go.`,
         },
       ],
       metadata: {

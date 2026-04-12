@@ -46,6 +46,7 @@ function formatTask(row: ScheduledTaskRow) {
     triggerEvent: row.trigger_event,
     triggerFilter: row.trigger_filter ? JSON.parse(row.trigger_filter) : null,
     cooldownSeconds: row.cooldown_seconds,
+    maxSteps: row.max_steps,
     createdAt: toUTC(row.created_at),
     updatedAt: toUTC(row.updated_at),
   };
@@ -105,6 +106,7 @@ export async function handleCreateTask(request: Request): Promise<Response> {
       triggerEvent?: string;
       triggerFilter?: Record<string, string>;
       cooldownSeconds?: number;
+      maxSteps?: number;
     };
 
     const triggerType = body.triggerType || "schedule";
@@ -144,6 +146,7 @@ export async function handleCreateTask(request: Request): Promise<Response> {
       projectId, userId, body.name, body.prompt, schedule, true,
       requiredTools, requiredSkills,
       triggerType, body.triggerEvent, body.triggerFilter, body.cooldownSeconds ?? 0,
+      body.maxSteps,
     );
 
     if (triggerType === "event") {
@@ -177,6 +180,7 @@ export async function handleUpdateTask(request: Request): Promise<Response> {
       triggerEvent?: string;
       triggerFilter?: Record<string, string> | null;
       cooldownSeconds?: number;
+      maxSteps?: number | null;
     };
 
     if (body.schedule !== undefined) {
@@ -213,6 +217,7 @@ export async function handleUpdateTask(request: Request): Promise<Response> {
         ? (body.triggerFilter ? JSON.stringify(body.triggerFilter) : null)
         : undefined,
       cooldown_seconds: body.cooldownSeconds,
+      max_steps: body.maxSteps,
     });
 
     // Re-register event listener if trigger config changed
@@ -261,7 +266,7 @@ export async function handleRunTaskNow(request: Request): Promise<Response> {
           { id: project.id, name: project.name },
           task.name,
           task.prompt,
-          { onlyTools },
+          { onlyTools, maxSteps: task.max_steps ?? undefined },
         );
         updateTaskRun(run.id, {
           status: "completed",

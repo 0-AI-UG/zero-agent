@@ -21,7 +21,7 @@ export function dbMessagesToModelMessages(dbMessages: MessageRow[]): ModelMessag
     try {
       parsed = JSON.parse(m.content) as { parts?: unknown[] };
     } catch {
-      // Plain string content — legacy rows
+      // Plain string content - legacy rows
       messages.push({ role: m.role as "user" | "assistant", content: m.content });
       continue;
     }

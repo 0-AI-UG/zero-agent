@@ -173,7 +173,7 @@ export function ParallelSubagentCard({ input, output, isRunning, isPreliminary }
           ))}
         </div>
         <p className="text-[11px] text-muted-foreground/60 mt-1.5">
-          Running in background — you'll be notified when done.
+          Running in background - you'll be notified when done.
         </p>
       </div>
     );

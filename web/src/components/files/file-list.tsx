@@ -150,7 +150,7 @@ export function FileList({
     f.path === "/skills/" || (isSkillsRoot && f.path.startsWith("/skills/"));
   const isFileReadOnly = (f: FileItem) => isSkillFolder && f.filename === "SKILL.md";
 
-  // Ordered selectable items — folders first, then files (matches render order)
+  // Ordered selectable items - folders first, then files (matches render order)
   type SelectableItem =
     | { type: "folder"; id: string }
     | { type: "file"; id: string };

@@ -33,10 +33,12 @@ export async function runAutonomousTask(
     onlyTools?: string[];
     onlySkills?: string[];
     userId?: string;
-    /** Skip HEARTBEAT.md injection — use for delegated subagent tasks that shouldn't inherit the project's heartbeat checklist. */
+    /** Skip HEARTBEAT.md injection - use for delegated subagent tasks that shouldn't inherit the project's heartbeat checklist. */
     skipHeartbeat?: boolean;
     /** Use the fast/enrich model instead of the default chat model. */
     fast?: boolean;
+    /** Override the maximum number of agent steps (default 100). */
+    maxSteps?: number;
   },
 ): Promise<RunResult> {
   const chat = createAutonomousChat(project.id, taskName);
@@ -71,6 +73,7 @@ export async function runAutonomousTask(
         onlyTools: options?.onlyTools,
         onlySkills: options?.onlySkills,
         fast: options?.fast,
+        maxSteps: options?.maxSteps,
         prompt,
         contextBlock,
         taskName,

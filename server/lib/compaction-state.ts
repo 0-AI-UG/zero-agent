@@ -61,7 +61,7 @@ const EXTRACTION_PROMPT = `You are extracting structured state from a conversati
 }
 
 Rules:
-- Be extremely concise — each item should be one line
+- Be extremely concise - each item should be one line
 - Only include items that would be important for continuing this work
 - completedWork: what was actually done, not planned
 - activeDecisions: include WHY the decision was made
@@ -222,7 +222,7 @@ export function renderCompactionState(state: CompactionState): string {
         : item.status === "failed" ? "!"
         : item.status === "in_progress" ? "~"
         : " ";
-      const suffix = item.notes ? ` — ${item.notes}` : "";
+      const suffix = item.notes ? ` - ${item.notes}` : "";
       sections.push(`- [${mark}] ${item.title}${suffix}`);
     }
   }
@@ -261,6 +261,6 @@ export async function deleteCompactionState(
     await deleteFromS3(s3Key(projectId, runId));
     csLog.debug("deleted compaction state", { projectId, runId });
   } catch {
-    // Ignore — state may not exist
+    // Ignore - state may not exist
   }
 }

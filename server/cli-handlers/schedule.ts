@@ -1,5 +1,5 @@
 /**
- * Scheduled task handlers — wrap server/db/queries/scheduled-tasks.ts
+ * Scheduled task handlers - wrap server/db/queries/scheduled-tasks.ts
  * plus the event-trigger registration helpers. Mirrors the four
  * in-process tools in server/tools/scheduling.ts: scheduleTask,
  * listScheduledTasks, updateScheduledTask, removeScheduledTask.
@@ -34,6 +34,7 @@ function summarize(t: any) {
     triggerEvent: t.trigger_event,
     triggerFilter: t.trigger_filter ? JSON.parse(t.trigger_filter) : undefined,
     cooldownSeconds: t.cooldown_seconds || undefined,
+    maxSteps: t.max_steps || undefined,
     enabled: t.enabled === 1,
     nextRunAt: t.trigger_type === "schedule" ? t.next_run_at : undefined,
     lastRunAt: t.last_run_at,
@@ -52,7 +53,7 @@ export async function handleScheduleAdd(
     const task = insertTask(
       ctx.projectId, AGENT_USER_ID, input.name, input.prompt, "event", true,
       undefined, undefined,
-      "event", input.triggerEvent, input.triggerFilter, input.cooldownSeconds ?? 0,
+      "event", input.triggerEvent, input.triggerFilter, input.cooldownSeconds ?? 0, input.maxSteps,
     );
     registerEventTask(task);
     return ok(summarize(task));
@@ -61,7 +62,10 @@ export async function handleScheduleAdd(
   if (!input.schedule) return fail("invalid", "schedule is required for schedule tasks");
   const validation = parseSchedule(input.schedule);
   if (!validation.valid) return fail("invalid", validation.error ?? "invalid schedule");
-  const task = insertTask(ctx.projectId, AGENT_USER_ID, input.name, input.prompt, input.schedule);
+  const task = insertTask(
+    ctx.projectId, AGENT_USER_ID, input.name, input.prompt, input.schedule,
+    true, undefined, undefined, "schedule", undefined, undefined, 0, input.maxSteps,
+  );
   return ok(summarize(task));
 }
 
@@ -90,6 +94,7 @@ export async function handleScheduleUpdate(
     trigger_event: input.triggerEvent,
     trigger_filter: input.triggerFilter ? JSON.stringify(input.triggerFilter) : undefined,
     cooldown_seconds: input.cooldownSeconds,
+    max_steps: input.maxSteps,
   });
 
   if (input.triggerEvent !== undefined || input.enabled !== undefined) {

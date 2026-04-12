@@ -1,9 +1,9 @@
-/** `zero embed` — generate vector embeddings through the server. */
+/** `zero embed` - generate vector embeddings through the server. */
 import { readFileSync } from "node:fs";
 import { embed } from "../../sdk/embed.ts";
 import { hasFlag, getOption, printJson } from "../format.ts";
 
-const HELP = `zero embed — generate vector embeddings
+const HELP = `zero embed - generate vector embeddings
 
 Usage:
   zero embed <text>                  Embed a single text

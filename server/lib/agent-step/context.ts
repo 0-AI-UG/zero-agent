@@ -75,7 +75,7 @@ export interface RagContext {
 
 /**
  * Retrieve semantic context (memories + files) for a query.
- * Tolerates embedding failures — returns empty arrays so the caller can
+ * Tolerates embedding failures - returns empty arrays so the caller can
  * proceed without RAG context.
  */
 export async function retrieveRagContext(

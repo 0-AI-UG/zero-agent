@@ -1,5 +1,5 @@
 /**
- * Embed group — generate vector embeddings through the server's configured
+ * Embed group - generate vector embeddings through the server's configured
  * provider. Lets scripts build custom search, clustering, dedup, or
  * classification pipelines without needing direct API key access.
  */

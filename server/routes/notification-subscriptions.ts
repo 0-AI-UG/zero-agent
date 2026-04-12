@@ -1,5 +1,5 @@
 /**
- * Notification subscription routes — per-user kind × channel opt-out.
+ * Notification subscription routes - per-user kind × channel opt-out.
  *
  * Model: default-on with explicit opt-out rows. GET returns the user's
  * explicit rules plus the current channel availability so the UI can

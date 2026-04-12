@@ -1,5 +1,5 @@
 /**
- * Web tools — search and fetch — for the in-container `zero` CLI/SDK.
+ * Web tools - search and fetch - for the in-container `zero` CLI/SDK.
  * Thin wrappers over the existing in-process implementations in
  * server/lib/{search,fetch-page}.ts. Auth and input validation happen
  * in the bind() helper in cli-handlers/index.ts; this file only contains

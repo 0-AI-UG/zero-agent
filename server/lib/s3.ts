@@ -1,3 +1,4 @@
+import { unlinkSync } from "node:fs";
 import { S3Client, PresignHandler } from "@0-ai/s3lite";
 import { corsHeaders } from "@/lib/cors.ts";
 import { log } from "@/lib/logger.ts";
@@ -10,9 +11,14 @@ if (prev) {
   try { prev.close(); } catch {}
 }
 
+// Remove stale lock file left by a previous process (e.g. crashed container).
+// At module-init time we are the only process that should hold this lock.
+const s3DbPath = process.env.S3_DB_PATH ?? "./data/storage.s3db";
+try { unlinkSync(s3DbPath + ".lock"); } catch {}
+
 export const s3 = new S3Client({
   bucket: process.env.S3_BUCKET ?? "zero-agent",
-  path: process.env.S3_DB_PATH ?? "./data/storage.s3db",
+  path: s3DbPath,
 });
 
 (globalThis as any).__s3Client = s3;

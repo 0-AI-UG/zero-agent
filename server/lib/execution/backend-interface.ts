@@ -1,5 +1,5 @@
 /**
- * ExecutionBackend — interface for the execution backend (RunnerClient).
+ * ExecutionBackend - interface for the execution backend (RunnerClient).
  * Tools and lifecycle code depend on this interface, not concrete implementations.
  */
 import type { BrowserAction, BrowserResult } from "@/lib/browser/protocol.ts";

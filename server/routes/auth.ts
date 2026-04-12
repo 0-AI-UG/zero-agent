@@ -8,7 +8,7 @@ import { getPasskeyCount, getPasskeysByUserId, getPasskeyByCredentialId, updateP
 import { getTotpSecret } from "@/db/queries/totp.ts";
 import { createTOTP } from "@/routes/totp.ts";
 import { handleError } from "@/routes/utils.ts";
-import { authRateLimiter } from "@/lib/rate-limit.ts";
+import { authRateLimiter, recordAuthFailure } from "@/lib/rate-limit.ts";
 import { log } from "@/lib/logger.ts";
 const authLog = log.child({ module: "auth" });
 
@@ -49,12 +49,14 @@ export async function handleLogin(request: Request): Promise<Response> {
     const user = getUserByUsername(body.username);
     if (!user) {
       authLog.warn("login failed - unknown username", { username: body.username });
+      recordAuthFailure(request);
       throw new AuthError("Invalid username or password");
     }
 
     const valid = await bcrypt.compare(body.password, user.password_hash);
     if (!valid) {
       authLog.warn("login failed - wrong password", { username: body.username });
+      recordAuthFailure(request);
       throw new AuthError("Invalid username or password");
     }
 
@@ -193,6 +195,7 @@ export async function handlePasswordResetConfirm(request: Request): Promise<Resp
     const delta = totp.validate({ token: body.code, window: 1 });
     if (delta === null) {
       authLog.warn("password reset failed - invalid totp", { userId });
+      recordAuthFailure(request);
       return Response.json(
         { error: "Invalid code" },
         { status: 400, headers: corsHeaders },
@@ -310,6 +313,7 @@ export async function handlePasswordResetPasskeyConfirm(request: Request): Promi
 
     if (!verification.verified) {
       authLog.warn("password reset failed - passkey verification failed", { userId });
+      recordAuthFailure(request);
       return Response.json(
         { error: "Passkey verification failed" },
         { status: 400, headers: corsHeaders },

@@ -1,5 +1,5 @@
 /**
- * Message group — send a message to the user across all configured
+ * Message group - send a message to the user across all configured
  * channels (Telegram, Web Push, WebSocket toast). The server decides
  * which channels are active for each project member and fans out.
  *
@@ -8,7 +8,7 @@
  * creates a pending-responses group row per project member, and returns
  * immediately with `{ groupId, respond: true, timeoutMs }`. The SDK then
  * polls `message.response(groupId)` until the group resolves, expires,
- * or is cancelled — returning `{ text, via }` on success.
+ * or is cancelled - returning `{ text, via }` on success.
  *
  * Polling is intentionally client-side so the held-request deadline (60s
  * by default) doesn't collide with the user's reply timeout (default 5m).
@@ -35,7 +35,7 @@ export interface MessageSendResult {
   groupId: string | null;
   timeoutMs?: number;
   /**
-   * Per-user breakdown returned by the server when nothing was delivered —
+   * Per-user breakdown returned by the server when nothing was delivered -
    * lists each member's channel availability, the channels we skipped, and
    * the reason for each skip. Undefined when at least one delivery
    * succeeded.

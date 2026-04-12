@@ -1,10 +1,10 @@
-// Codex inference provider — routes chat through the user's ChatGPT subscription
+// Codex inference provider - routes chat through the user's ChatGPT subscription
 // using OAuth tokens issued by the official `openai/codex` PKCE flow.
 //
 // References (openai/codex on GitHub, codex-rs/):
 //   - login/src/auth/manager.rs:779   pub const CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
 //   - login/src/auth/manager.rs:85    REFRESH_TOKEN_URL = "https://auth.openai.com/oauth/token"
-//   - login/src/server.rs:468         build_authorize_url() — issuer + scopes + PKCE
+//   - login/src/server.rs:468         build_authorize_url() - issuer + scopes + PKCE
 //   - core/src/config/mod.rs          base URL "https://chatgpt.com/backend-api/"
 //   - response-debug-context/src/lib.rs   "https://chatgpt.com/backend-api/codex/responses"
 //   - backend-client/src/client.rs    sends ChatGPT-Account-Id and originator headers

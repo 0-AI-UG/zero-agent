@@ -1,15 +1,15 @@
 /**
- * Shared entry points for running a single "agent step" — one turn of
+ * Shared entry points for running a single "agent step" - one turn of
  * ToolLoopAgent execution with all of zero-agent's RAG, checkpointing,
  * usage-logging, and post-run hooks wired up.
  *
  * Two variants are exposed:
  *
- *  - `runAgentStepStreaming` — SSE/UIStream response, used by the web chat
+ *  - `runAgentStepStreaming` - SSE/UIStream response, used by the web chat
  *    route. Takes a `UIMessage[]` history + abort signal and returns a
  *    fetch `Response`.
  *
- *  - `runAgentStepBatch` — non-streaming `agent.generate(...)` run, used
+ *  - `runAgentStepBatch` - non-streaming `agent.generate(...)` run, used
  *    by autonomous tasks, Telegram, and any future chat provider. Returns
  *    a plain result object; the caller decides how to persist it.
  */
@@ -98,7 +98,7 @@ export async function runAgentStepStreaming(input: StreamingStepInput): Promise<
   try {
     // Reject new requests during shutdown.
     if (isShuttingDown()) {
-      stepLog.warn("rejecting chat request — server shutting down", {
+      stepLog.warn("rejecting chat request - server shutting down", {
         projectId: project.id,
         chatId,
       });
@@ -116,7 +116,7 @@ export async function runAgentStepStreaming(input: StreamingStepInput): Promise<
     // Per-user token limit.
     const rejection = checkUserTokenLimit(userId);
     if (rejection) {
-      stepLog.warn("chat rejected — token limit reached", {
+      stepLog.warn("chat rejected - token limit reached", {
         userId,
         used: rejection.used,
         limit: rejection.limit,
@@ -124,7 +124,7 @@ export async function runAgentStepStreaming(input: StreamingStepInput): Promise<
       return oneShotSystemMessage(rejection.message);
     }
 
-    // Drop empty-parts messages — the frontend sometimes leaves behind an
+    // Drop empty-parts messages - the frontend sometimes leaves behind an
     // empty assistant placeholder when a stream is aborted before any
     // deltas arrive, and validateUIMessages would reject it.
     const messages = rawMessages.filter((m) => (m.parts?.length ?? 0) > 0);
@@ -336,6 +336,7 @@ export async function runAgentStepBatch(input: BatchStepInput): Promise<BatchSte
     taskName,
     checkpointMetadata,
     autonomous,
+    maxSteps,
   } = input;
 
   if (prompt == null && (priorMessages == null || priorMessages.length === 0)) {
@@ -370,6 +371,7 @@ export async function runAgentStepBatch(input: BatchStepInput): Promise<BatchSte
     chatId,
     contextWindow: cw,
     autonomous,
+    maxSteps,
     onStepCheckpoint: (stepNumber, responseMessages) => {
       latestResponseMessages = responseMessages;
       saveCheckpoint({

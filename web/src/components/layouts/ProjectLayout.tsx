@@ -296,7 +296,7 @@ export function ProjectLayout() {
             <button
               onClick={() => navigate("/")}
               className="group relative flex size-9 items-center justify-center rounded-lg mb-3 text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent/50 transition-colors"
-              aria-label={`Back to projects — ${project.name}`}
+              aria-label={`Back to projects - ${project.name}`}
             >
               <ArrowLeftIcon className="size-4" />
             </button>

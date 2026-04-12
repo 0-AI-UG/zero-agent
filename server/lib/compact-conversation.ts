@@ -44,7 +44,7 @@ function estimateTokensFromMessages(messages: ModelMessage[]): number {
 }
 
 /**
- * Format a tool result message for the summarizer — strip bloated content,
+ * Format a tool result message for the summarizer - strip bloated content,
  * keep only tool name and call ID to save summarizer budget.
  */
 function formatToolMessageForSummary(msg: ModelMessage): string {
@@ -58,7 +58,7 @@ function formatToolMessageForSummary(msg: ModelMessage): string {
 }
 
 /**
- * Patch orphaned tool calls — when a stream is aborted mid-tool-call, the
+ * Patch orphaned tool calls - when a stream is aborted mid-tool-call, the
  * assistant message contains a tool call but no corresponding tool result
  * message follows. The AI SDK throws MissingToolResultsError when it
  * encounters this. Fix by injecting a synthetic tool result for any orphaned
@@ -97,7 +97,7 @@ function patchOrphanedToolCalls(messages: ModelMessage[]): ModelMessage[] {
         type: "tool-result" as const,
         toolCallId: p.toolCallId!,
         toolName: p.toolName ?? "unknown",
-        output: { type: "text" as const, value: "[interrupted — tool call was aborted before completing]" },
+        output: { type: "text" as const, value: "[interrupted - tool call was aborted before completing]" },
       })),
     } as ModelMessage);
 
@@ -132,9 +132,9 @@ export function createCompactPrepareStep(options: CompactOptions): PrepareStepFu
       if (completed.length > 0) {
         const lines = completed.map((t) => {
           if (t.status === "completed") {
-            return `- "${t.taskName}" (${t.runId}): completed — ${t.summary?.slice(0, 500) ?? "no summary"}${t.resultChatId ? ` [result chat: ${t.resultChatId}]` : ""}`;
+            return `- "${t.taskName}" (${t.runId}): completed - ${t.summary?.slice(0, 500) ?? "no summary"}${t.resultChatId ? ` [result chat: ${t.resultChatId}]` : ""}`;
           }
-          return `- "${t.taskName}" (${t.runId}): failed — ${t.error ?? "unknown error"}`;
+          return `- "${t.taskName}" (${t.runId}): failed - ${t.error ?? "unknown error"}`;
         });
         const notification: ModelMessage = {
           role: "user" as const,

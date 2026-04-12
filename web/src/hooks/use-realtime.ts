@@ -135,7 +135,7 @@ export function useRealtime(projectId: string | undefined) {
         }
 
         case "sync.created":
-          // Nothing to hydrate at the store level — the inline tool part
+          // Nothing to hydrate at the store level - the inline tool part
           // will carry the awaiting card once the message streams in. This
           // case exists so the switch doesn't toast-spam "unknown event".
           break;
@@ -178,7 +178,7 @@ export function useRealtime(projectId: string | undefined) {
 
         case "notification": {
           // Two shapes live on this channel:
-          //   - Legacy: { level, message }               — simple toast
+          //   - Legacy: { level, message }               - simple toast
           //   - Dispatcher (Stage 2+): { kind, title, body, url, actions?, requiresReply?, responseId? }
           //
           // Every dispatcher-shaped notification renders through the unified
@@ -218,7 +218,7 @@ export function useRealtime(projectId: string | undefined) {
             break;
           }
 
-          // Legacy `{level, message}` shape — pre-dispatcher callers.
+          // Legacy `{level, message}` shape - pre-dispatcher callers.
           const level = msg.level ?? "info";
           const text = msg.message as string;
           if (level === "error") toast.error(text);

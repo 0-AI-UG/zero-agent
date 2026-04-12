@@ -1,5 +1,5 @@
 /**
- * PendingResponsePage — full-screen click-through target for a pending
+ * PendingResponsePage - full-screen click-through target for a pending
  * response. Opened from a PWA push notification (Stage 4) and, later,
  * from the Telegram `url` deeplink in Stage 5.
  *

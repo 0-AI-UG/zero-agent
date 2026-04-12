@@ -1,7 +1,7 @@
 /**
  * Notification message formatting for Telegram.
  *
- * Plain text only — Telegram's HTML/Markdown parse modes are finicky (one bad
+ * Plain text only - Telegram's HTML/Markdown parse modes are finicky (one bad
  * tag fails the whole message with a 400) and Telegram auto-linkifies bare
  * URLs in plain text anyway, so we get clickable links for free.
  */

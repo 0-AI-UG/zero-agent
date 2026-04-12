@@ -158,7 +158,7 @@ export function InvitePage() {
         <CardHeader>
           <CardTitle className="font-display">Save Your Backup Codes</CardTitle>
           <CardDescription>
-            Two-factor authentication is now enabled. Save these backup codes — each can only be used once.
+            Two-factor authentication is now enabled. Save these backup codes - each can only be used once.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">

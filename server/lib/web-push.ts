@@ -1,4 +1,4 @@
-// @ts-ignore — web-push has no type declarations
+// @ts-ignore - web-push has no type declarations
 import webpush from "web-push";
 import { getVapidKeys } from "@/lib/vapid.ts";
 import { getSetting } from "@/lib/settings.ts";

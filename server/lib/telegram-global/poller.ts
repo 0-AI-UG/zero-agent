@@ -35,7 +35,7 @@ export function registerGlobalPollerHandler(handler: Handler): void {
 export async function startGlobalPoller(): Promise<void> {
   if (state.running) return;
   if (process.env.TELEGRAM_WEBHOOK_BASE_URL) {
-    pollLog.info("webhook mode — skipping poller");
+    pollLog.info("webhook mode - skipping poller");
     return;
   }
 
@@ -48,7 +48,7 @@ export async function startGlobalPoller(): Promise<void> {
     while (state.running) {
       const currentToken = getBotToken();
       if (!currentToken) {
-        // No token configured (yet) — idle and re-check.
+        // No token configured (yet) - idle and re-check.
         lastSeenToken = null;
         await new Promise((r) => setTimeout(r, 5000));
         continue;

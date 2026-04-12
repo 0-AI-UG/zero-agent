@@ -35,7 +35,7 @@ export const useModelStore = create<ModelState>()(
   ),
 );
 
-// Global models cache — populated by useModels() hook, readable synchronously
+// Global models cache - populated by useModels() hook, readable synchronously
 let _modelsCache: ModelConfig[] = [];
 
 export function setModelsCache(models: ModelConfig[]) {

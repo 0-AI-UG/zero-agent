@@ -1,5 +1,5 @@
 /**
- * Stale tool result clearing — replaces old tool results with compact
+ * Stale tool result clearing - replaces old tool results with compact
  * summaries before each model step. Inspired by Anthropic's "context editing"
  * pattern (clear_tool_uses).
  *

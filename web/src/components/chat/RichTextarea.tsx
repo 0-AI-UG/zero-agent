@@ -95,7 +95,7 @@ export const RichTextarea = forwardRef<RichTextareaHandle, RichTextareaProps>(
         const space = document.createTextNode("\u00A0");
 
         if (sel.rangeCount === 0) {
-          // No cursor — append at end
+          // No cursor - append at end
           el.appendChild(chip);
           el.appendChild(space);
         } else {

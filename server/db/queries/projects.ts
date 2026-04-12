@@ -30,7 +30,7 @@ export function getAllProjects(): ProjectRow[] {
 }
 
 /**
- * Projects this user can actually see — admins get every project, regular
+ * Projects this user can actually see - admins get every project, regular
  * users get the ones they're a member of via project_members.
  *
  * Use this anywhere a UI/API needs to show "the user's projects" without

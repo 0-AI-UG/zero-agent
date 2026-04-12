@@ -1,7 +1,7 @@
 /**
  * Central workspace ↔ container syncing.
  *
- * One function — `reconcileToContainer` — diffs the database (source of truth)
+ * One function - `reconcileToContainer` - diffs the database (source of truth)
  * against the live container's sha256 manifest and applies the minimum set of
  * pushes/deletes to make the container match. Every caller (agent tools, file
  * explorer routes, workspace bootstrap, sandbox-revert) goes through this so
@@ -36,7 +36,7 @@ function buildDesiredManifest(projectId: string, subpath: string): Map<string, D
   const files = getAllProjectFiles(projectId);
   const out = new Map<string, DesiredEntry>();
   // subpath is a runner-side absolute path (e.g. /project). DB paths are
-  // workspace-relative — we only filter when the caller asked for a sub-tree.
+  // workspace-relative - we only filter when the caller asked for a sub-tree.
   const wantPrefix = stripWorkspacePrefix(subpath);
 
   for (const f of files) {

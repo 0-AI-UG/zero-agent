@@ -1,24 +1,24 @@
 /**
- * NotificationToast — unified custom-content toast for every server-sent
+ * NotificationToast - unified custom-content toast for every server-sent
  * notification on the WebSocket. Replaces the old NotificationReplyToast.
  *
  * Three render modes derived from the dispatcher payload:
  *
- *   1. **Action buttons** (`actions[]` present) — clicking a button POSTs
+ *   1. **Action buttons** (`actions[]` present) - clicking a button POSTs
  *      that action's `id` as the response text. Used by sync_approval
  *      ([{id:"approve",label:"Keep"},{id:"reject",label:"Discard"}]) so the
  *      user no longer has to type "approve" / "reject" by hand.
  *
- *   2. **Free-text reply** (`requiresReply` and no actions) — renders an
+ *   2. **Free-text reply** (`requiresReply` and no actions) - renders an
  *      inline input. Used by `zero message send --respond`.
  *
- *   3. **Plain notification** (no reply requested) — title + body, with an
+ *   3. **Plain notification** (no reply requested) - title + body, with an
  *      optional "Open" link if a URL was provided. Auto-dismisses on the
  *      sonner-default duration.
  *
  * Visual style is intentionally minimal: flat text on the popover surface,
  * no kind accent. A small "X" in the top-right always lets the user dismiss
- * the toast locally — important for sticky interactive variants that
+ * the toast locally - important for sticky interactive variants that
  * otherwise wait forever for an action. Per project preference, no animations.
  */
 import { useState, type FormEvent } from "react";
@@ -39,7 +39,7 @@ export interface NotificationToastProps {
   title: string;
   body: string;
   /** Notification kind (e.g. "sync_approval", "cli_request"). Currently unused
-   *  visually — kept on the interface so the dispatcher payload can pass it. */
+   *  visually - kept on the interface so the dispatcher payload can pass it. */
   kind?: string;
   /** When present, render as buttons. The button id is POSTed as the response text. */
   actions?: NotificationAction[];

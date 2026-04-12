@@ -22,7 +22,7 @@ import {
   deletePasskey,
 } from "@/db/queries/passkeys.ts";
 import { handleError } from "@/routes/utils.ts";
-import { authRateLimiter } from "@/lib/rate-limit.ts";
+import { authRateLimiter, recordAuthFailure } from "@/lib/rate-limit.ts";
 import { log } from "@/lib/logger.ts";
 import { isTotpRequired } from "@/lib/auth.ts";
 
@@ -87,7 +87,7 @@ function checkRateLimit(request: Request): Response | null {
 
 // ── Handlers ──
 
-/** POST /api/auth/passkey/register-options — generate registration options (authenticated) */
+/** POST /api/auth/passkey/register-options - generate registration options (authenticated) */
 export async function handlePasskeyRegisterOptions(request: Request): Promise<Response> {
   try {
     const { userId } = await authenticateRequest(request);
@@ -121,7 +121,7 @@ export async function handlePasskeyRegisterOptions(request: Request): Promise<Re
   }
 }
 
-/** POST /api/auth/passkey/register-verify — verify registration response (authenticated) */
+/** POST /api/auth/passkey/register-verify - verify registration response (authenticated) */
 export async function handlePasskeyRegisterVerify(request: Request): Promise<Response> {
   try {
     const { userId } = await authenticateRequest(request);
@@ -185,7 +185,7 @@ export async function handlePasskeyRegisterVerify(request: Request): Promise<Res
   }
 }
 
-/** POST /api/auth/passkey/login-options — generate authentication options (unauthenticated, uses tempToken) */
+/** POST /api/auth/passkey/login-options - generate authentication options (unauthenticated, uses tempToken) */
 export async function handlePasskeyLoginOptions(request: Request): Promise<Response> {
   const rateLimitResponse = checkRateLimit(request);
   if (rateLimitResponse) return rateLimitResponse;
@@ -229,7 +229,7 @@ export async function handlePasskeyLoginOptions(request: Request): Promise<Respo
   }
 }
 
-/** POST /api/auth/passkey/login-verify — verify authentication response (unauthenticated, uses tempToken) */
+/** POST /api/auth/passkey/login-verify - verify authentication response (unauthenticated, uses tempToken) */
 export async function handlePasskeyLoginVerify(request: Request): Promise<Response> {
   const rateLimitResponse = checkRateLimit(request);
   if (rateLimitResponse) return rateLimitResponse;
@@ -283,6 +283,7 @@ export async function handlePasskeyLoginVerify(request: Request): Promise<Respon
 
     if (!verification.verified) {
       passkeyLog.warn("passkey login failed - verification failed", { userId });
+      recordAuthFailure(request);
       return Response.json(
         { error: "Passkey verification failed" },
         { status: 400, headers: corsHeaders },
@@ -302,7 +303,7 @@ export async function handlePasskeyLoginVerify(request: Request): Promise<Respon
   }
 }
 
-/** GET /api/auth/passkey/list — list user's passkeys (authenticated) */
+/** GET /api/auth/passkey/list - list user's passkeys (authenticated) */
 export async function handlePasskeyList(request: Request): Promise<Response> {
   try {
     const { userId } = await authenticateRequest(request);
@@ -319,7 +320,7 @@ export async function handlePasskeyList(request: Request): Promise<Response> {
   }
 }
 
-/** DELETE /api/auth/passkey/:id — delete a passkey (authenticated) */
+/** DELETE /api/auth/passkey/:id - delete a passkey (authenticated) */
 export async function handlePasskeyDelete(request: Request): Promise<Response> {
   try {
     const { userId } = await authenticateRequest(request);

@@ -26,7 +26,7 @@ export function sanitizePath(path: string): string {
   if (/^\/project(\/|$)/.test(normalized)) {
     normalized = normalized.replace(/^\/project\/?/, "");
   } else if (normalized.startsWith("/")) {
-    // Any other absolute path is a container filesystem path — not readable
+    // Any other absolute path is a container filesystem path - not readable
     // via this tool. Tell the agent to use bash/cat instead.
     throw new Error(
       `Invalid path "${path}": this tool only reads project files. To read files outside the project directory, use bash with cat.`,

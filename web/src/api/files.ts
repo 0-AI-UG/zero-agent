@@ -82,7 +82,7 @@ export function useReindexProject(projectId: string) {
         const status = await res.json() as { running: boolean; progress?: ReindexProgress };
         if (!status.running || cancelled) return;
 
-        // Reindex is running — show last known progress and reconnect to stream
+        // Reindex is running - show last known progress and reconnect to stream
         setIsRunning(true);
         if (status.progress) setProgress(status.progress);
 
@@ -112,7 +112,7 @@ export function useReindexProject(projectId: string) {
 
         if (!cancelled) setIsRunning(false);
       } catch {
-        // Ignore — page may have unmounted
+        // Ignore - page may have unmounted
       }
     }
 

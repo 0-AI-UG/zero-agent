@@ -18,8 +18,8 @@ const toolLog = log.child({ module: "tool:code" });
 
 const MAX_OUTPUT_CHARS = 8_000;
 /**
- * Browser commands go through bash (`zero browser ...`) but their stdout —
- * page snapshots, screenshots, HTML dumps — bloats context much faster than
+ * Browser commands go through bash (`zero browser ...`) but their stdout -
+ * page snapshots, screenshots, HTML dumps - bloats context much faster than
  * ordinary shell output. Cap them harder, and rely on clear-stale-results to
  * stub all-but-latest browser results across turns.
  */
@@ -31,7 +31,7 @@ function isBrowserCommand(command: string): boolean {
 }
 
 /**
- * Prevent path traversal — reject paths with `..` or leading `/`. Per-dir
+ * Prevent path traversal - reject paths with `..` or leading `/`. Per-dir
  * filtering of "blob dirs" (node_modules, .venv, etc.) now happens in the
  * runner via gitignore-driven detection, so it's no longer needed here.
  */
@@ -132,7 +132,7 @@ async function buildSyncChanges(
       let after: string | undefined;
 
       if (isBinary) {
-        // Store the runner-supplied base64 verbatim — used at commit time
+        // Store the runner-supplied base64 verbatim - used at commit time
         after = file.data;
       } else {
         const buffer = Buffer.from(file.data, "base64");
@@ -165,7 +165,7 @@ async function buildSyncChanges(
       const sanitized = sanitizePath(filePath);
       const s3Key = `projects/${projectId}/${sanitized}`;
       const existing = getFileByS3Key(projectId, s3Key);
-      // Skip files the project never tracked — they were sandbox-only
+      // Skip files the project never tracked - they were sandbox-only
       if (!existing) continue;
 
       const filename = path.basename(sanitized);
@@ -204,7 +204,7 @@ async function buildSyncChanges(
  *
  * Note that for `modify`/`create` we store the *post* content. For `create`
  * we re-decode the runner-supplied base64 (faster than re-fetching) by
- * looking it up from the original `changedFiles` list — but the registry
+ * looking it up from the original `changedFiles` list - but the registry
  * only has `after` text for text files, so for binary files we have to re-
  * pull from the runner. To keep things simple, this function takes the
  * already-built blobs PLUS the original raw `changedFiles` list when called
@@ -279,7 +279,7 @@ function formatErrors(errors: Array<{ path: string; error: string }>): string {
 /**
  * Revert sandbox changes by reconciling the container against the database.
  * The DB is the source of truth, so a single reconcile rolls back any creates,
- * modifies, or deletes the bash command made — pushing original content back
+ * modifies, or deletes the bash command made - pushing original content back
  * and removing sandbox-only files in one shot.
  */
 async function revertSandboxChanges(
@@ -317,7 +317,7 @@ function persistBlobsAsync(
     try {
       const dirs = await backend.listBlobDirs(projectId);
       for (const dir of dirs) {
-        if (dir === ".git") continue; // skip git history — too noisy, low value
+        if (dir === ".git") continue; // skip git history - too noisy, low value
         const key = `${projectId}:${dir}`;
         const now = Date.now();
         const last = lastBlobUploadAt.get(key) ?? 0;
@@ -376,7 +376,7 @@ export function createCodeTools(
   return {
     bash: tool({
       description:
-        "Run a bash command in the project workspace. The `zero` CLI is preinstalled — run `zero --help` to discover commands. Changed files auto-sync back. Output truncated to ~8KB.",
+        "Run a bash command in the project workspace. The `zero` CLI is preinstalled - run `zero --help` to discover commands. Changed files auto-sync back. Output truncated to ~8KB.",
       inputSchema: z.object({
         command: z.string().describe("The bash command to execute"),
         timeout: z.number().optional().describe("Timeout in ms (default 120000, max 300000)"),
@@ -500,8 +500,8 @@ export function createCodeTools(
             return;
           }
 
-          // Rejected — revert the sandbox so it matches project storage again
-          toolLog.info("sync discarded — reverting sandbox", { userId, projectId, syncId, changeCount: changes.length });
+          // Rejected - revert the sandbox so it matches project storage again
+          toolLog.info("sync discarded - reverting sandbox", { userId, projectId, syncId, changeCount: changes.length });
           const revertErrors = await revertSandboxChanges(projectId);
           yield {
             ...baseOutput,
@@ -509,7 +509,7 @@ export function createCodeTools(
               id: syncId,
               status: "rejected" as const,
             },
-            warning: `User discarded the workspace sync — ${changes.length} file change(s) were reverted in the sandbox.${
+            warning: `User discarded the workspace sync - ${changes.length} file change(s) were reverted in the sandbox.${
               revertErrors.length > 0 ? ` ${formatErrors(revertErrors)}` : ""
             }`,
           };

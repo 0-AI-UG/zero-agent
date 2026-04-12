@@ -10,7 +10,7 @@ import { createCodeTools } from "@/tools/code.ts";
 
 export type ToolRegistry = Record<string, Tool<any, any>>;
 
-// Core tools that survive an `onlyTools` allowlist — the agent can't function
+// Core tools that survive an `onlyTools` allowlist - the agent can't function
 // without file/bash/skill access.
 const CORE_TOOLS = new Set(["readFile", "writeFile", "editFile", "loadSkill", "bash"]);
 
@@ -24,7 +24,7 @@ export function createToolRegistry(
     onlySkills?: string[];
     initialReadPaths?: string[];
     runId?: string;
-    /** Autonomous run — sync approvals fan out to every project member. */
+    /** Autonomous run - sync approvals fan out to every project member. */
     autonomous?: boolean;
   },
 ): ToolRegistry {
@@ -51,7 +51,7 @@ export function createToolRegistry(
 
 /**
  * Build a tool index string for the system prompt. All tools are loaded
- * up front — there is no on-demand loading step.
+ * up front - there is no on-demand loading step.
  */
 export function buildToolIndex(registry: ToolRegistry): string {
   const names = Object.keys(registry).sort();
@@ -61,7 +61,7 @@ export function buildToolIndex(registry: ToolRegistry): string {
 
 /**
  * Build the full toolset for an agent. Callers pass the result directly to
- * the ToolLoopAgent. Subagent discrimination is done by the caller — subagents
+ * the ToolLoopAgent. Subagent discrimination is done by the caller - subagents
  * are constructed via the separate path in `server/tools/agent.ts` which
  * deliberately does not inject the `agent` spawner (no recursive fan-out).
  */
@@ -76,7 +76,7 @@ export function createToolset(
     onlySkills?: string[];
     initialReadPaths?: string[];
     runId?: string;
-    /** Autonomous run — sync approvals fan out to every project member. */
+    /** Autonomous run - sync approvals fan out to every project member. */
     autonomous?: boolean;
   },
 ): { tools: ToolRegistry; toolIndex: string } {

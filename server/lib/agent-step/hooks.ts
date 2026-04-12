@@ -1,7 +1,7 @@
 /**
  * Post-step hooks shared by every runAgentStep caller.
  *
- * All hooks are best-effort and log on failure rather than throwing — a
+ * All hooks are best-effort and log on failure rather than throwing - a
  * failed memory flush must never cause a chat reply to fail.
  */
 import type { UIMessage } from "ai";

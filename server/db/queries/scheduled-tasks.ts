@@ -3,7 +3,7 @@ import type { ScheduledTaskRow } from "@/db/types.ts";
 import { computeNextRun, formatDateForSQLite } from "@/lib/schedule-parser.ts";
 
 const insertStmt = db.prepare(
-  "INSERT INTO scheduled_tasks (id, project_id, user_id, name, prompt, schedule, next_run_at, enabled, required_tools, required_skills, trigger_type, trigger_event, trigger_filter, cooldown_seconds) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *",
+  "INSERT INTO scheduled_tasks (id, project_id, user_id, name, prompt, schedule, next_run_at, enabled, required_tools, required_skills, trigger_type, trigger_event, trigger_filter, cooldown_seconds, max_steps) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *",
 );
 
 const byProjectStmt = db.prepare(
@@ -51,6 +51,7 @@ export function insertTask(
   triggerEvent?: string,
   triggerFilter?: Record<string, string>,
   cooldownSeconds: number = 0,
+  maxSteps?: number,
 ): ScheduledTaskRow {
   const id = generateId();
   const nextRunAt = triggerType === "event"
@@ -64,6 +65,7 @@ export function insertTask(
     triggerEvent ?? null,
     triggerFilter ? JSON.stringify(triggerFilter) : null,
     cooldownSeconds,
+    maxSteps ?? null,
   ) as ScheduledTaskRow;
 }
 
@@ -77,7 +79,7 @@ export function getTaskById(id: string): ScheduledTaskRow | null {
 
 export function updateTask(
   id: string,
-  fields: Partial<Pick<ScheduledTaskRow, "name" | "prompt" | "schedule" | "enabled" | "required_tools" | "required_skills" | "trigger_type" | "trigger_event" | "trigger_filter" | "cooldown_seconds">>,
+  fields: Partial<Pick<ScheduledTaskRow, "name" | "prompt" | "schedule" | "enabled" | "required_tools" | "required_skills" | "trigger_type" | "trigger_event" | "trigger_filter" | "cooldown_seconds" | "max_steps">>,
 ): ScheduledTaskRow {
   const task = byIdStmt.get(id) as ScheduledTaskRow | undefined;
   if (!task) throw new Error("Task not found");
@@ -143,6 +145,14 @@ export function updateTask(
   if (fields.cooldown_seconds !== undefined) {
     sets.push("cooldown_seconds = ?");
     values.push(fields.cooldown_seconds);
+  }
+  if (fields.max_steps !== undefined) {
+    if (fields.max_steps === null) {
+      sets.push("max_steps = NULL");
+    } else {
+      sets.push("max_steps = ?");
+      values.push(fields.max_steps);
+    }
   }
 
   if (sets.length === 0) return task;

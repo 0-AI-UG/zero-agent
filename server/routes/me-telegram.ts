@@ -1,10 +1,10 @@
 /**
  * Per-user Telegram linking routes.
  *
- *  - POST   /api/me/telegram/link-code      — generate a short-lived code
- *  - DELETE /api/me/telegram/link           — unlink the current user
- *  - GET    /api/me/telegram/status         — current link state
- *  - PUT    /api/me/telegram/active-project — set active project for inbound messages
+ *  - POST   /api/me/telegram/link-code      - generate a short-lived code
+ *  - DELETE /api/me/telegram/link           - unlink the current user
+ *  - GET    /api/me/telegram/status         - current link state
+ *  - PUT    /api/me/telegram/active-project - set active project for inbound messages
  */
 import { authenticateRequest } from "@/lib/auth.ts";
 import { handleError } from "@/routes/utils.ts";

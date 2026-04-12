@@ -1,16 +1,16 @@
 /**
- * `zero creds {ls,get,set,rm}` — credential management.
+ * `zero creds {ls,get,set,rm}` - credential management.
  *
  * SECURITY: `zero creds get` writes ONLY the secret value to stdout
  * (no JSON envelope, no extra text). This is what makes
- * `$(zero creds get foo)` shell substitution safe — the secret never
+ * `$(zero creds get foo)` shell substitution safe - the secret never
  * appears in any other tool result. We exit non-zero on miss so silent
  * empty interpolation can never happen.
  */
 import { creds } from "../../sdk/creds.ts";
 import { hasFlag, getOption, printJson } from "../format.ts";
 
-const HELP = `zero creds — manage saved credentials
+const HELP = `zero creds - manage saved credentials
 
 Usage:
   zero creds ls [--json]
@@ -50,7 +50,7 @@ export async function credsCommand(args: string[]): Promise<number> {
       try {
         data = await creds.get({ siteUrl: key, field });
       } catch (err) {
-        // Re-throw — main() will print and exit non-zero
+        // Re-throw - main() will print and exit non-zero
         throw err;
       }
     }

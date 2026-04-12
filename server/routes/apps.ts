@@ -57,8 +57,8 @@ export async function handleListServices(req: Request): Promise<Response> {
     // if execution is unavailable or the runner has dropped the forward.
     // Reconcile persisted status with reality. If execution itself is unavailable
     // (no port manager), surface that distinctly rather than silently flipping
-    // ports to "stopped" — the user needs to know the backend is down.
-    // If execution itself is down, every port is unknowable — mark them all
+    // ports to "stopped" - the user needs to know the backend is down.
+    // If execution itself is down, every port is unknowable - mark them all
     // unavailable rather than trusting whatever the DB last wrote.
     if (!_portManager) {
       return Response.json(
@@ -128,7 +128,7 @@ export async function handlePinService(req: Request): Promise<Response> {
 }
 
 /**
- * GET /api/apps/:slug/status — check port status, trigger cold-start if pinned & stopped.
+ * GET /api/apps/:slug/status - check port status, trigger cold-start if pinned & stopped.
  * Used by the gate page to wait for readiness before redirecting.
  */
 const coldStartInflight = new Map<string, Promise<{ success: boolean; error?: string }>>();
@@ -158,7 +158,7 @@ export async function handleAppStatus(req: Request): Promise<Response> {
       if (_portManager && await _portManager.checkPort(port.project_id, port.port)) {
         return Response.json({ status: "ready" }, { headers: corsHeaders });
       }
-      // Port not reachable — mark as stopped and fall through to cold-start if pinned
+      // Port not reachable - mark as stopped and fall through to cold-start if pinned
       updatePort(port.id, { status: "stopped" });
       const { invalidateAppCache } = await import("@/lib/app-proxy.ts");
       invalidateAppCache(port.slug);
@@ -191,7 +191,7 @@ export async function handleAppStatus(req: Request): Promise<Response> {
   }
 }
 
-// Allowed durations for shareable links — keep these short.
+// Allowed durations for shareable links - keep these short.
 const SHARE_DURATIONS: Record<string, { label: string; value: string }> = {
   "5m": { label: "5 minutes", value: "5m" },
   "15m": { label: "15 minutes", value: "15m" },

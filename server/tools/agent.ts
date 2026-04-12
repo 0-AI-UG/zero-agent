@@ -13,7 +13,7 @@ import { log } from "@/lib/logger.ts";
 const toolLog = log.child({ module: "tool:agent" });
 
 // Tools subagents don't get (on top of the `agent` spawner itself, which is
-// not injected here — only by the main-agent path in server/lib/agent.ts).
+// not injected here - only by the main-agent path in server/lib/agent.ts).
 const AGENT_EXCLUDED_TOOLS: string[] = [];
 
 /** Derive a short chat/task name from the first line of the task prompt. */
@@ -35,7 +35,7 @@ export interface AgentToolOptions {
 export function createAgentTool(projectId: string, toolOptions: AgentToolOptions) {
   return tool({
     description:
-      "Spawn agents for autonomous tasks. Pass multiple tasks to run in parallel. Set background=true for long-running work. Agents have no conversation history — make prompts self-contained.",
+      "Spawn agents for autonomous tasks. Pass multiple tasks to run in parallel. Set background=true for long-running work. Agents have no conversation history - make prompts self-contained.",
     inputSchema: z.object({
       background: z
         .boolean()
@@ -44,11 +44,11 @@ export function createAgentTool(projectId: string, toolOptions: AgentToolOptions
       tasks: z
         .array(
           z.object({
-            prompt: z.string().describe("Task description for this agent. Be specific and self-contained — agents have no conversation history."),
+            prompt: z.string().describe("Task description for this agent. Be specific and self-contained - agents have no conversation history."),
             model: z
               .enum(["default", "fast"])
               .default("fast")
-              .describe("'default' (main model) or 'fast' (Qwen). Use fast for research/scraping. IMPORTANT: tasks that need the browser tool MUST use 'default' — the fast model cannot handle the browser tool's input schema."),
+              .describe("'default' (main model) or 'fast' (Qwen). Use fast for research/scraping. IMPORTANT: tasks that need the browser tool MUST use 'default' - the fast model cannot handle the browser tool's input schema."),
           }),
         )
         .min(1),
@@ -69,7 +69,7 @@ export function createAgentTool(projectId: string, toolOptions: AgentToolOptions
             task.prompt,
             {
               userId: toolOptions.userId,
-              // Delegated tasks carry a specific goal — don't inherit the
+              // Delegated tasks carry a specific goal - don't inherit the
               // project's HEARTBEAT.md checklist on top of it.
               skipHeartbeat: true,
               // Honor the parent's `model` hint (default vs fast).

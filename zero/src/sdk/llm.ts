@@ -1,5 +1,5 @@
 /**
- * LLM group — proxy LLM calls through the server's configured provider.
+ * LLM group - proxy LLM calls through the server's configured provider.
  * Lets local tools call a model for summarization, extraction, classification
  * etc. without needing direct API key access.
  */

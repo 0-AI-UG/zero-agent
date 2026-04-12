@@ -1,5 +1,5 @@
 /**
- * Ports handler — forward a workspace port to a browser-accessible URL.
+ * Ports handler - forward a workspace port to a browser-accessible URL.
  *
  * Migrated from the old in-process `forwardPort` AI tool in
  * server/tools/apps.ts. The agent now invokes this via
@@ -37,7 +37,7 @@ function buildAppUrl(slug: string): string {
 
 /**
  * Auto-detect the start command for a process listening on a given port.
- * Runs netstat/ss + /proc inspection inside the container. Best-effort —
+ * Runs netstat/ss + /proc inspection inside the container. Best-effort -
  * returns null if nothing is listening or the container lacks the tools.
  */
 async function detectStartCommand(
@@ -115,7 +115,7 @@ export async function handlePortsForward(
     session = await backend.ensureSessionForProject(ctx.projectId, ctx.userId);
   }
 
-  // Idempotency — return the existing forward if one exists for this port.
+  // Idempotency - return the existing forward if one exists for this port.
   const existing = getPortByProjectAndPort(ctx.projectId, port);
   if (existing) {
     const existingUrl = buildAppUrl(existing.slug);

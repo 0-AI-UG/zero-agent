@@ -1,5 +1,5 @@
 /**
- * `zero ports forward` — expose a workspace port to a browser-accessible URL.
+ * `zero ports forward` - expose a workspace port to a browser-accessible URL.
  *
  * Call this after starting a server with e.g. `zero bash ... &` or any
  * background process that listens on the given port. The handler
@@ -8,7 +8,7 @@
 import { ports } from "../../sdk/ports.ts";
 import { hasFlag, getOption, printJson } from "../format.ts";
 
-const HELP = `zero ports — manage forwarded ports
+const HELP = `zero ports - manage forwarded ports
 
 Usage:
   zero ports forward <port> [--label <label>] [--json]

@@ -18,7 +18,7 @@ import {
 } from "@/db/queries/totp.ts";
 import { getPasskeyCount } from "@/db/queries/passkeys.ts";
 import { handleError } from "@/routes/utils.ts";
-import { authRateLimiter } from "@/lib/rate-limit.ts";
+import { authRateLimiter, recordAuthFailure } from "@/lib/rate-limit.ts";
 import { log } from "@/lib/logger.ts";
 import { nanoid } from "nanoid";
 
@@ -68,7 +68,7 @@ function checkRateLimit(request: Request): Response | null {
   return null;
 }
 
-/** POST /api/auth/totp/setup — start TOTP setup (authenticated) */
+/** POST /api/auth/totp/setup - start TOTP setup (authenticated) */
 export async function handleTotpSetup(request: Request): Promise<Response> {
   try {
     const { userId } = await authenticateRequest(request);
@@ -107,7 +107,7 @@ export async function handleTotpSetup(request: Request): Promise<Response> {
   }
 }
 
-/** POST /api/auth/totp/confirm — confirm setup with a code (authenticated) */
+/** POST /api/auth/totp/confirm - confirm setup with a code (authenticated) */
 export async function handleTotpConfirm(request: Request): Promise<Response> {
   try {
     const { userId } = await authenticateRequest(request);
@@ -158,7 +158,7 @@ export async function handleTotpConfirm(request: Request): Promise<Response> {
   }
 }
 
-/** POST /api/auth/totp/login — verify 2FA code during login (unauthenticated) */
+/** POST /api/auth/totp/login - verify 2FA code during login (unauthenticated) */
 export async function handleTotpLogin(request: Request): Promise<Response> {
   const rateLimitResponse = checkRateLimit(request);
   if (rateLimitResponse) return rateLimitResponse;
@@ -192,6 +192,7 @@ export async function handleTotpLogin(request: Request): Promise<Response> {
     }
 
     totpLog.warn("totp login failed - invalid code", { userId });
+    recordAuthFailure(request);
     return Response.json(
       { error: "Invalid code" },
       { status: 400, headers: corsHeaders },
@@ -201,7 +202,7 @@ export async function handleTotpLogin(request: Request): Promise<Response> {
   }
 }
 
-/** POST /api/auth/totp/setup-from-login — setup TOTP during login (unauthenticated, uses temp token) */
+/** POST /api/auth/totp/setup-from-login - setup TOTP during login (unauthenticated, uses temp token) */
 export async function handleTotpSetupFromLogin(request: Request): Promise<Response> {
   const rateLimitResponse = checkRateLimit(request);
   if (rateLimitResponse) return rateLimitResponse;
@@ -256,7 +257,7 @@ export async function handleTotpSetupFromLogin(request: Request): Promise<Respon
   }
 }
 
-/** POST /api/auth/totp/confirm-from-login — confirm TOTP setup during login (unauthenticated, uses temp token) */
+/** POST /api/auth/totp/confirm-from-login - confirm TOTP setup during login (unauthenticated, uses temp token) */
 export async function handleTotpConfirmFromLogin(request: Request): Promise<Response> {
   const rateLimitResponse = checkRateLimit(request);
   if (rateLimitResponse) return rateLimitResponse;
@@ -318,7 +319,7 @@ export async function handleTotpConfirmFromLogin(request: Request): Promise<Resp
   }
 }
 
-/** POST /api/auth/totp/disable — disable TOTP (authenticated) */
+/** POST /api/auth/totp/disable - disable TOTP (authenticated) */
 export async function handleTotpDisable(request: Request): Promise<Response> {
   try {
     const { userId } = await authenticateRequest(request);
@@ -369,7 +370,7 @@ export async function handleTotpDisable(request: Request): Promise<Response> {
   }
 }
 
-/** POST /api/auth/totp/recover — consume a backup code to wipe 2FA and get a re-enroll token */
+/** POST /api/auth/totp/recover - consume a backup code to wipe 2FA and get a re-enroll token */
 export async function handleTotpRecover(request: Request): Promise<Response> {
   const rateLimitResponse = checkRateLimit(request);
   if (rateLimitResponse) return rateLimitResponse;
@@ -405,6 +406,7 @@ export async function handleTotpRecover(request: Request): Promise<Response> {
     }
 
     totpLog.warn("totp recovery failed - invalid backup code", { userId });
+    recordAuthFailure(request);
     return Response.json(
       { error: "Invalid recovery code" },
       { status: 400, headers: corsHeaders },
@@ -414,7 +416,7 @@ export async function handleTotpRecover(request: Request): Promise<Response> {
   }
 }
 
-/** GET /api/auth/totp/status — check TOTP status (authenticated) */
+/** GET /api/auth/totp/status - check TOTP status (authenticated) */
 export async function handleTotpStatus(request: Request): Promise<Response> {
   try {
     const { userId } = await authenticateRequest(request);

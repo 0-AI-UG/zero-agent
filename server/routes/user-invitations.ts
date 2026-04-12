@@ -6,7 +6,7 @@ import { requireAdmin, createToken, createTempToken, isTotpRequired } from "@/li
 import { handleError } from "@/routes/utils.ts";
 import { validateBody, passwordSchema, usernameSchema } from "@/lib/validation.ts";
 import { ValidationError, AuthError } from "@/lib/errors.ts";
-import { authRateLimiter } from "@/lib/rate-limit.ts";
+import { authRateLimiter, recordAuthFailure } from "@/lib/rate-limit.ts";
 import { getUserByUsername, getUserById, insertUser } from "@/db/queries/users.ts";
 import { db } from "@/db/index.ts";
 import {
@@ -168,7 +168,7 @@ export async function handleAcceptUserInvitation(request: Request): Promise<Resp
     }
 
     const row = getInvitationByTokenHash(hashToken(token));
-    if (!row) throw new AuthError("Invalid invitation");
+    if (!row) { recordAuthFailure(request); throw new AuthError("Invalid invitation"); }
     if (row.accepted_at) throw new AuthError("Invitation already accepted");
     if (row.expires_at < nowSeconds()) throw new AuthError("Invitation expired");
 

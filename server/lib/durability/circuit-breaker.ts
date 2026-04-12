@@ -69,7 +69,7 @@ export const llmCircuitBreaker = new CircuitBreaker();
 
 export class CircuitBreakerOpenError extends Error {
   constructor() {
-    super("Circuit breaker is open — LLM API is temporarily unavailable");
+    super("Circuit breaker is open - LLM API is temporarily unavailable");
     this.name = "CircuitBreakerOpenError";
   }
 }

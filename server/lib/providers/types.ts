@@ -10,7 +10,7 @@ export interface ProviderCapabilities {
 }
 
 export interface InferenceProvider {
-  /** Stable identifier — must match the `inference_provider` column on model rows. */
+  /** Stable identifier - must match the `inference_provider` column on model rows. */
   id: string;
   displayName: string;
   capabilities: ProviderCapabilities;

@@ -1,5 +1,5 @@
 /**
- * Credentials handlers — list/get/set/remove. Wraps the existing
+ * Credentials handlers - list/get/set/remove. Wraps the existing
  * server/db/queries/credentials.ts and server/lib/crypto.ts.
  *
  * SECURITY:

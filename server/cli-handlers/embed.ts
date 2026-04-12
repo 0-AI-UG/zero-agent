@@ -1,5 +1,5 @@
 /**
- * Embed handler — generate vector embeddings through the server's
+ * Embed handler - generate vector embeddings through the server's
  * configured provider. Allows scripts inside containers to compute
  * embeddings without needing direct API key access.
  */

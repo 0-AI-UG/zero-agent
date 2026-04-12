@@ -23,7 +23,7 @@ export function connectWs() {
   mountCount++;
   const { token } = useAuthStore.getState();
   if (!token) return;
-  // Already have a socket (connecting or open) — don't create another
+  // Already have a socket (connecting or open) - don't create another
   if (socket && (socket.readyState === WebSocket.CONNECTING || socket.readyState === WebSocket.OPEN)) return;
   // Clean up any dead socket
   if (socket) {

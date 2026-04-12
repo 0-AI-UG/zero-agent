@@ -1,12 +1,12 @@
 /**
- * Workspace-sync approval primitives — designed to be embedded into the
+ * Workspace-sync approval primitives - designed to be embedded into the
  * tool-call card that produced the sync (e.g. the bash result card) rather
  * than rendered as a separate sibling card.
  *
  * Exports:
- *   - useSyncApproval(proposal)  — status hydration + verdict actions
- *   - SyncInlineControls         — Discard/Keep buttons or post-resolution badge
- *   - SyncChangesHover           — "N changes" pill that opens a hovercard
+ *   - useSyncApproval(proposal)  - status hydration + verdict actions
+ *   - SyncInlineControls         - Discard/Keep buttons or post-resolution badge
+ *   - SyncChangesHover           - "N changes" pill that opens a hovercard
  *                                  containing the file list and inline diffs
  */
 import { useCallback, useEffect, useState } from "react";
@@ -41,7 +41,7 @@ export interface SyncProposal {
 /**
  * Reads the authoritative status for a sync proposal and exposes a verdict
  * action. Hydrates from the server on mount when the persisted status is
- * still "awaiting" — covers the case where another tab already resolved it.
+ * still "awaiting" - covers the case where another tab already resolved it.
  */
 export function useSyncApproval(proposal: SyncProposal) {
   const [busy, setBusy] = useState<null | "approve" | "reject">(null);
@@ -61,7 +61,7 @@ export function useSyncApproval(proposal: SyncProposal) {
           setStoreStatus(proposal.id, live.status as SyncUiStatus);
         }
       } catch {
-        // Best-effort — 404 is expected when the row has been garbage-collected.
+        // Best-effort - 404 is expected when the row has been garbage-collected.
       }
     })();
     return () => {
@@ -216,7 +216,7 @@ function DiffPreview({ syncId, change }: { syncId: string; change: SyncChangeMet
   if (data.isBinary) {
     return (
       <div className="px-3 py-2 text-xs text-muted-foreground">
-        Binary file ({formatBytes(change.sizeBytes)}) — diff not shown.
+        Binary file ({formatBytes(change.sizeBytes)}) - diff not shown.
       </div>
     );
   }
@@ -287,7 +287,7 @@ function formatBytes(n: number): string {
 }
 
 /**
- * Tiny line-level unified diff. Not Myers — for short files we just show
+ * Tiny line-level unified diff. Not Myers - for short files we just show
  * the full before+after; for longer ones we collapse identical leading /
  * trailing lines and only render the changed window with a few lines of
  * context. The full file is always one click away in the project file tree.

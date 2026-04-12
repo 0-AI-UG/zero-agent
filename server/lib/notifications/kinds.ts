@@ -3,7 +3,7 @@
  *  - the logical event being announced
  *  - a subscription axis users can opt out of
  *
- * Note: `agent_message` is never dispatched as a notification — it's a normal
+ * Note: `agent_message` is never dispatched as a notification - it's a normal
  * reply from the agent in the user's chat surface. It lives here only as a
  * stable identifier for subscription-grid UIs that may want to surface it.
  */
@@ -27,7 +27,7 @@ export const DEFAULT_NOTIFIABLE_KINDS: ReadonlySet<string> = new Set([
 ]);
 
 export function isDispatchableKind(kind: string): boolean {
-  // agent_message is explicitly not a notification — regular chat delivery
+  // agent_message is explicitly not a notification - regular chat delivery
   // handles it.
   return kind !== NOTIFICATION_KINDS.AGENT_MESSAGE;
 }

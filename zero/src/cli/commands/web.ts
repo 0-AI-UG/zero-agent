@@ -1,8 +1,8 @@
-/** `zero web {search,fetch}` — thin shell over sdk/web.ts. */
+/** `zero web {search,fetch}` - thin shell over sdk/web.ts. */
 import { web } from "../../sdk/web.ts";
 import { hasFlag, printJson } from "../format.ts";
 
-const HELP = `zero web — search and fetch web pages
+const HELP = `zero web - search and fetch web pages
 
 Usage:
   zero web search <query> [--json]

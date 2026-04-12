@@ -15,8 +15,8 @@ export class RateLimiter {
   }
 
   /**
-   * Check if a request is allowed. Returns the number of seconds until
-   * the window resets, or 0 if the request is allowed.
+   * Check if a key is currently blocked. Does NOT record an attempt -
+   * call `record()` separately on auth failure.
    */
   check(key: string): { allowed: boolean; retryAfterSeconds: number } {
     const now = Date.now();
@@ -38,8 +38,15 @@ export class RateLimiter {
       return { allowed: false, retryAfterSeconds };
     }
 
-    timestamps.push(now);
     return { allowed: true, retryAfterSeconds: 0 };
+  }
+
+  /** Record a failed attempt for the given key. */
+  record(key: string): void {
+    const now = Date.now();
+    const timestamps = this.windows.get(key) ?? [];
+    timestamps.push(now);
+    this.windows.set(key, timestamps);
   }
 
   private cleanup() {
@@ -60,5 +67,14 @@ export class RateLimiter {
   }
 }
 
-/** 10 attempts per 15 minutes for auth endpoints */
+/** 10 failed attempts per 15 minutes for auth endpoints */
 export const authRateLimiter = new RateLimiter(10, 15 * 60 * 1000);
+
+/** Record a failed auth attempt for the request's client IP. */
+export function recordAuthFailure(request: Request): void {
+  const ip =
+    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
+    request.headers.get("x-real-ip") ??
+    "unknown";
+  authRateLimiter.record(ip);
+}

@@ -202,7 +202,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Embedded assets (populated at compile time, null in dev/normal prod)
 let embeddedAssets: Record<string, { data: Buffer; mime: string; immutable: boolean }> | null = null;
-// @ts-ignore — _generated/assets.ts only exists at compile time
+// @ts-ignore - _generated/assets.ts only exists at compile time
 try { embeddedAssets = (await import("./_generated/assets.ts")).assets; } catch {}
 
 const IS_PROD = process.env.NODE_ENV === "production" || !!embeddedAssets;
@@ -394,7 +394,7 @@ app.post("/api/projects/:projectId/skills/install-from-github", h(handleInstallF
 app.get("/api/projects/:projectId/skills/:name", h(handleGetSkill));
 app.delete("/api/projects/:projectId/skills/:name", h(handleDeleteSkill));
 
-// Telegram global webhook (unauthenticated — secret token verified)
+// Telegram global webhook (unauthenticated - secret token verified)
 app.post("/api/telegram/webhook", h(handleTelegramGlobalWebhook));
 
 // Per-user Telegram linking (authenticated)
@@ -412,7 +412,7 @@ app.delete("/api/push/subscribe", h(handlePushUnsubscribe));
 app.get("/api/me/notification-subscriptions", h(handleListNotificationSubscriptions));
 app.put("/api/me/notification-subscriptions/:kind/:channel", h(handleUpdateNotificationSubscription));
 
-// Pending responses (two-way notifications — web reply toast + click-through page)
+// Pending responses (two-way notifications - web reply toast + click-through page)
 app.get("/api/pending-responses/:id", h(handleGetPendingResponse));
 app.post("/api/pending-responses/:id/respond", h(handleRespondPendingResponse));
 
@@ -463,7 +463,7 @@ app.get("/api/sync/:id", h(handleSyncStatus));
 app.get("/api/settings", h(handleGetSettings));
 app.put("/api/settings/:key", h(handleUpdateSettings));
 
-// OAuth — Codex inference provider
+// OAuth - Codex inference provider
 app.get("/api/oauth/codex/status", h(handleCodexStatus));
 app.post("/api/oauth/codex/import", h(handleCodexImport));
 app.post("/api/oauth/codex/disconnect", h(handleCodexDisconnect));
@@ -581,7 +581,7 @@ app.all("/_apps/:slug/*", (c) => {
   return new Response("Not found", { status: 404 });
 });
 
-// Runner-proxy CLI handlers — only reachable via the trusted runner
+// Runner-proxy CLI handlers - only reachable via the trusted runner
 // proxy on behalf of an in-container `zero` CLI/SDK call. See
 // server/cli-handlers/middleware.ts for the auth model.
 mountCliHandlers(app);
@@ -592,7 +592,7 @@ app.all("/api/*", (c) => {
   return Response.json({ error: "Not found" }, { status: 404, headers: corsHeaders });
 });
 
-// Frontend serving — same path for dev and prod.
+// Frontend serving - same path for dev and prod.
 // In dev: served from web/dist/ on disk (rebuilt by `bun build.ts --watch`).
 // In compiled prod: served from embedded assets, with disk fallback.
 app.get("*", async (c) => {
@@ -670,7 +670,7 @@ registerGlobalPollerHandler(handleGlobalUpdate);
 
 // Sweep pending-responses that expired while the server was down.
 startupExpirySweep();
-// Reject any still-pending sync approvals from a prior process — their
+// Reject any still-pending sync approvals from a prior process - their
 // owning runs are gone, so auto-reject and broadcast so any reconnecting
 // UI flips the card.
 recoverSyncOrphansOnStartup();
@@ -679,7 +679,7 @@ recoverSyncOrphansOnStartup();
 // Only initialize Docker if admin has explicitly enabled server execution
 (async () => {
   if (getSetting("SERVER_EXECUTION_ENABLED") !== "true") {
-    log.info("server execution not enabled — skipping Docker initialization");
+    log.info("server execution not enabled - skipping Docker initialization");
     return;
   }
 

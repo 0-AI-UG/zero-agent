@@ -59,7 +59,7 @@ export function getPendingResponsesByGroup(
   return byGroupStmt.all(groupId) as PendingResponseRow[];
 }
 
-// Idempotent transition to `resolved` — only affects rows still `pending`.
+// Idempotent transition to `resolved` - only affects rows still `pending`.
 // Returns the updated row when this call performed the resolution.
 const resolveStmt = db.prepare(
   `UPDATE pending_responses
@@ -80,7 +80,7 @@ export function resolvePendingResponseRow(
   return getPendingResponseById(id);
 }
 
-// Cancel all siblings in a group still pending — used when one sibling resolves first.
+// Cancel all siblings in a group still pending - used when one sibling resolves first.
 const cancelGroupStmt = db.prepare(
   `UPDATE pending_responses
    SET status = 'cancelled', resolved_at = datetime('now')
@@ -128,7 +128,7 @@ export function expirePendingResponses(): string[] {
   return rows.map((r) => r.id);
 }
 
-// Mark a single row as expired if still pending — used by per-row timers.
+// Mark a single row as expired if still pending - used by per-row timers.
 const expireOneStmt = db.prepare(
   `UPDATE pending_responses
    SET status = 'expired', resolved_at = datetime('now')
@@ -139,7 +139,7 @@ export function expirePendingResponseRow(id: string): boolean {
   return expireOneStmt.run(id).changes > 0;
 }
 
-// Read all rows matching a (kind, status) pair — used by the sync-approval
+// Read all rows matching a (kind, status) pair - used by the sync-approval
 // orphan sweep that runs on startup.
 const byKindStatusStmt = db.prepare(
   "SELECT * FROM pending_responses WHERE kind = ? AND status = ? ORDER BY created_at ASC"

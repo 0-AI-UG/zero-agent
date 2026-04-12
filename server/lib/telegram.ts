@@ -244,7 +244,7 @@ export async function sendTelegramMarkdown(
 
 /**
  * Send pre-built Telegram HTML. Unlike `sendTelegramMarkdown`, the input is
- * sent as-is (no markdown conversion, no entity escaping) — callers must use
+ * sent as-is (no markdown conversion, no entity escaping) - callers must use
  * `escapeTelegramHtml` for any interpolated user data. If Telegram rejects
  * the HTML (400), the same string is retried as plain text so the user still
  * sees something instead of nothing.
@@ -301,7 +301,7 @@ export type TelegramInlineKeyboard = TelegramInlineKeyboardButton[][];
 
 /**
  * Send a message with an inline keyboard (for approval-style notifications
- * and the project picker). Single-chunk only — callers must make sure the
+ * and the project picker). Single-chunk only - callers must make sure the
  * body fits. Pass `{ parseMode: "HTML" }` if `text` contains HTML tags;
  * otherwise it's sent as plain text. Returns the sent message id on success.
  */
@@ -327,7 +327,7 @@ export async function sendTelegramWithInlineKeyboard(
 
 /**
  * Disable buttons on a previously-sent message (called after a callback
- * query is handled). Best-effort — ignores 400s.
+ * query is handled). Best-effort - ignores 400s.
  */
 export async function editTelegramReplyMarkup(
   botToken: string,

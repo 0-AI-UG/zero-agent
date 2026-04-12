@@ -39,7 +39,7 @@ export function App() {
             <Route path="/setup" element={<SetupPage />} />
           </Route>
 
-          {/* App gate — public so share links work without auth; the page itself
+          {/* App gate - public so share links work without auth; the page itself
               uses an auth token or share token to talk to the API. */}
           <Route path="/app/:slug/*" element={<AppGatePage />} />
 

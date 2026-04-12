@@ -79,7 +79,7 @@ export function ChatInputArea({
   const handleInputChange = useCallback(
     (value: string) => {
       setInput(value);
-      // Debounced typing indicator — max once per 2s
+      // Debounced typing indicator - max once per 2s
       const now = Date.now();
       if (value && now - lastTypingSentRef.current > 2000) {
         lastTypingSentRef.current = now;
@@ -240,7 +240,7 @@ export function ChatInputArea({
               </TooltipTrigger>
               <TooltipContent side="top">
                 {containerStatus?.status === "running"
-                  ? "Your environment is warm — actions will run instantly"
+                  ? "Your environment is warm - actions will run instantly"
                   : capabilities?.serverDocker
                     ? "Your environment will spin up on the first action, then stay fast"
                     : "Code execution isn't available in this environment"}

@@ -1,5 +1,5 @@
 /**
- * RunnerPool — routes execution calls across multiple runner instances.
+ * RunnerPool - routes execution calls across multiple runner instances.
  * Implements ExecutionBackend so it's a drop-in replacement for RunnerClient.
  *
  * Project-to-runner mapping is ephemeral (in-memory only). When a container

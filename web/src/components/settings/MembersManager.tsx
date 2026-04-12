@@ -108,7 +108,7 @@ export function MembersManager({ projectId, project }: MembersManagerProps) {
                     {member.role === "owner" ? "Owner" : "Member"}
                   </span>
 
-                  {/* Remove button — owner/admin only, can't remove self */}
+                  {/* Remove button - owner/admin only, can't remove self */}
                   {isOwnerOrAdmin && !isCurrentUser && member.role !== "owner" && (
                     <div className="shrink-0 opacity-0 group-hover:opacity-100">
                       {confirmRemoveId === member.userId ? (
@@ -163,7 +163,7 @@ export function MembersManager({ projectId, project }: MembersManagerProps) {
           </div>
         )}
 
-        {/* Invite form — owner/admin only */}
+        {/* Invite form - owner/admin only */}
         {isOwnerOrAdmin && (
           <div className="border-t pt-3 space-y-2">
             <div className="flex gap-2">
@@ -192,7 +192,7 @@ export function MembersManager({ projectId, project }: MembersManagerProps) {
           </div>
         )}
 
-        {/* Leave project — non-owner members only */}
+        {/* Leave project - non-owner members only */}
         {project.role === "member" && (
           <div className="border-t pt-3">
             {confirmLeave ? (

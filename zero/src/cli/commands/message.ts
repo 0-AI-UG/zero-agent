@@ -1,8 +1,8 @@
-/** `zero message send <text>` — send a message to the user across all channels. */
+/** `zero message send <text>` - send a message to the user across all channels. */
 import { message } from "../../sdk/message.ts";
 import { hasFlag, printJson } from "../format.ts";
 
-const HELP = `zero message — send a message to the user
+const HELP = `zero message - send a message to the user
 
 Usage:
   zero message send <text> [--respond] [--timeout <duration>] [--json]

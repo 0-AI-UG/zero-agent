@@ -1,5 +1,5 @@
 /**
- * Global Telegram bot — single bot per zero-agent instance.
+ * Global Telegram bot - single bot per zero-agent instance.
  *
  * Reads credentials from the `settings` table (see `getSetting`). The token
  * is resolved lazily per call so admin-side toggles take effect without a
@@ -58,7 +58,7 @@ export async function refreshBotInfo(): Promise<BotInfo | null> {
   }
   const info = await getTelegramBotInfo(token);
   if (!info) {
-    botLog.warn("getMe failed — invalid bot token?");
+    botLog.warn("getMe failed - invalid bot token?");
     return null;
   }
   setSetting("telegram_bot_id", String(info.id));

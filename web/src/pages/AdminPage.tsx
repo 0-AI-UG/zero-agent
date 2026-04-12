@@ -770,7 +770,7 @@ function ServerExecutionSection() {
                     {c.sessionId.replace("chat-", "")}
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground">
-                    {c.runnerName ?? "—"}
+                    {c.runnerName ?? "-"}
                   </TableCell>
                   <TableCell>
                     <Badge variant={c.status === "running" ? "default" : "secondary"} className="text-[10px]">
@@ -1805,7 +1805,7 @@ function CreateInvitationDialog() {
         <DialogHeader>
           <DialogTitle className="font-display">Invite user</DialogTitle>
           <DialogDescription>
-            Generates a single-use signup link. Share it with the recipient — they'll set their own password.
+            Generates a single-use signup link. Share it with the recipient - they'll set their own password.
           </DialogDescription>
         </DialogHeader>
         {inviteUrl ? (

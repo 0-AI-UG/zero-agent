@@ -215,7 +215,7 @@ function ReindexStatus({
   return (
     <div className="space-y-1.5">
       <div className="flex items-center justify-between text-xs text-muted-foreground">
-        <span>{labels[phase] ?? phase}{detail ? ` — ${detail}` : ""}</span>
+        <span>{labels[phase] ?? phase}{detail ? ` - ${detail}` : ""}</span>
         {total > 0 && <span className="tabular-nums">{current}/{total}</span>}
       </div>
       {total > 0 && <Progress value={percent} className="h-1" />}

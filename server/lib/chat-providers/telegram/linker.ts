@@ -1,5 +1,5 @@
 /**
- * Telegram linking — mint short-lived codes on the web side and redeem
+ * Telegram linking - mint short-lived codes on the web side and redeem
  * them via `/start <code>` in the bot.
  */
 import { customAlphabet } from "nanoid";

@@ -33,7 +33,7 @@ export function PlanModeToggle({ chatId }: { chatId: string }) {
         </Button>
       </TooltipTrigger>
       <TooltipContent side="top" sideOffset={8}>
-        {isPlanMode ? "Plan mode on — click to disable" : "Enable plan mode"}
+        {isPlanMode ? "Plan mode on - click to disable" : "Enable plan mode"}
       </TooltipContent>
     </Tooltip>
   );

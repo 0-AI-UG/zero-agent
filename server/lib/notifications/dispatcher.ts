@@ -1,12 +1,12 @@
 /**
- * Notification dispatcher — fans a single logical notification out across
+ * Notification dispatcher - fans a single logical notification out across
  * per-user channels (ws/push/telegram), honoring subscription opt-out.
  *
  * When `requestResponse` is provided, the dispatcher also creates a
  * pending_responses group (one row per target user) and returns a handle
  * whose promise resolves when any user responds on any channel.
  *
- * Telegram delivery is a no-op stub in Stage 2 — the real implementation
+ * Telegram delivery is a no-op stub in Stage 2 - the real implementation
  * lands with `TelegramProvider.sendNotification` in Stage 5. The Stage 2
  * dispatcher leaves `telegram` out of `delivered` until the provider is
  * registered.
@@ -50,14 +50,14 @@ export interface DispatchInput {
   body: string;
   url?: string;
   actions?: DispatchAction[];
-  /** Project scope — used for pending response rows + push click-through context. */
+  /** Project scope - used for pending response rows + push click-through context. */
   projectId?: string | null;
   /** Arbitrary metadata attached to the WS payload + pending row. */
   payload?: Record<string, unknown>;
   /** When present, creates a pending_responses group and returns a handle. */
   requestResponse?: DispatchRequestResponse;
   /**
-   * Internal — when the caller has already created a pending_responses group
+   * Internal - when the caller has already created a pending_responses group
    * (e.g. sync-approval creates its own so it can track waiters), reuse it
    * instead of making a new one. Mutually exclusive with `requestResponse`.
    */
@@ -82,7 +82,7 @@ export interface PerUserDispatch {
 export interface DispatchResult {
   /** Channels successfully delivered to (aggregated, deduped across users). */
   delivered: DispatchChannel[];
-  /** Per-user channel breakdown — useful for surfacing "why nothing fired" to the caller. */
+  /** Per-user channel breakdown - useful for surfacing "why nothing fired" to the caller. */
   perUser: Record<string, PerUserDispatch>;
   /** Present iff `requestResponse` was set. */
   pending?: {

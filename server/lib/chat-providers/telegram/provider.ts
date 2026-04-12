@@ -1,5 +1,5 @@
 /**
- * TelegramProvider — ChatProvider implementation backed by the global
+ * TelegramProvider - ChatProvider implementation backed by the global
  * Telegram bot.
  *
  * Responsibilities:
@@ -168,7 +168,7 @@ export const TelegramProvider: ChatProvider = {
     const token = getBotToken();
     if (!link || !token) return { ok: false, error: "not linked" };
     try {
-      // Chat content is markdown — convert to Telegram HTML so bold, links,
+      // Chat content is markdown - convert to Telegram HTML so bold, links,
       // code, etc. render.
       const { ok, messageId } = await sendTelegramMarkdown(
         token,
@@ -257,7 +257,7 @@ async function handleMessage(message: TelegramMessage): Promise<void> {
 
   const text = (message.text || message.caption || "").trim();
 
-  // Link code redemption — allow before linking check.
+  // Link code redemption - allow before linking check.
   if (/^\/start(\s+\S+)?$/i.test(text)) {
     const codeMatch = text.match(/^\/start\s+(\S+)$/i);
     const code = codeMatch?.[1];
@@ -272,7 +272,7 @@ async function handleMessage(message: TelegramMessage): Promise<void> {
         const project = projectId ? getProjectById(projectId) : null;
         const projectLine = project
           ? `\n\nActive project: <b>${escapeTelegramHtml(project.name)}</b>. Use /project to switch.`
-          : "\n\nYou're not a member of any project yet — create one in zero-agent first.";
+          : "\n\nYou're not a member of any project yet - create one in zero-agent first.";
         await sendTelegramHtml(
           token,
           telegramChatId,
@@ -316,7 +316,7 @@ async function handleMessage(message: TelegramMessage): Promise<void> {
     if (pending) {
       const resolved = resolvePendingResponse(pending.pending_response_id, text, "telegram");
       if (resolved) {
-        await sendTelegramText(token, telegramChatId, "Got it — thanks!");
+        await sendTelegramText(token, telegramChatId, "Got it - thanks!");
       } else {
         await sendTelegramText(
           token,
@@ -328,13 +328,13 @@ async function handleMessage(message: TelegramMessage): Promise<void> {
     }
   }
 
-  // /project or /projects — show or pick the active project.
+  // /project or /projects - show or pick the active project.
   if (/^\/projects?(\s|$)/i.test(text)) {
     await handleProjectCommand(link, telegramChatId);
     return;
   }
 
-  // /new — fresh conversation.
+  // /new - fresh conversation.
   if (text === "/new") {
     const projectId = resolveUserProjectId(link);
     if (!projectId) {
@@ -388,7 +388,7 @@ async function runAgentTurn(
       return;
     }
 
-    // Resolve active chat — create one if the user has none.
+    // Resolve active chat - create one if the user has none.
     let chatId: string | null = link.active_chat_id;
     if (chatId) {
       const row = getChatStmt.get(chatId) as ChatRow | undefined;
@@ -421,7 +421,7 @@ async function runAgentTurn(
     }
 
     // Telegram has no UI to pick a model, so resolve the active provider's
-    // default once and pass it explicitly to the agent — that way the image
+    // default once and pass it explicitly to the agent - that way the image
     // capability check below and the actual run share one source of truth.
     const chatModelId = getActiveProvider().getDefaultChatModelId();
 
@@ -461,7 +461,7 @@ async function runAgentTurn(
 
     const userText = (() => {
       if (imageCaption) {
-        const prefix = `[Image attached — described below]\n${imageCaption}`;
+        const prefix = `[Image attached - described below]\n${imageCaption}`;
         return text ? `${prefix}\n\n${text}` : prefix;
       }
       if (text) return text;
@@ -529,7 +529,7 @@ async function runAgentTurn(
     touchChatStmt.run(chatId);
 
     try {
-      // Agent response is markdown — convert to Telegram HTML so formatting
+      // Agent response is markdown - convert to Telegram HTML so formatting
       // (bold, code, links, lists) renders properly.
       await sendTelegramMarkdown(token, telegramChatId, responseText);
     } catch (err) {
@@ -607,7 +607,7 @@ async function handleCallbackQuery(cb: TelegramCallbackQuery): Promise<void> {
   const token = getBotToken();
   if (!token || !cb.data) return;
 
-  // `proj:<projectId>` — set the user's active Telegram project.
+  // `proj:<projectId>` - set the user's active Telegram project.
   if (cb.data.startsWith("proj:")) {
     const projectId = cb.data.slice("proj:".length);
     if (!projectId) {
@@ -620,7 +620,7 @@ async function handleCallbackQuery(cb: TelegramCallbackQuery): Promise<void> {
       await answerTelegramCallbackQuery(token, cb.id, "Not linked");
       return;
     }
-    // Membership check — don't trust the callback id.
+    // Membership check - don't trust the callback id.
     const projects = getVisibleProjectsForUser(link.user_id);
     const project = projects.find((p) => p.id === projectId);
     if (!project) {
@@ -650,7 +650,7 @@ async function handleCallbackQuery(cb: TelegramCallbackQuery): Promise<void> {
     return;
   }
 
-  // `syncv:<pendingResponseId>:<actionId>` — workspace sync approval.
+  // `syncv:<pendingResponseId>:<actionId>` - workspace sync approval.
   if (cb.data.startsWith("syncv:")) {
     const [, pendingId, actionId] = cb.data.split(":");
     if (!pendingId || !actionId) {
@@ -666,7 +666,7 @@ async function handleCallbackQuery(cb: TelegramCallbackQuery): Promise<void> {
 
     // Verify the row exists and that this telegram user is its target. The
     // row's target_user_id matches the linked user_id (sync approvals are
-    // single-target per Stage 6 — project-wide fanout is deferred).
+    // single-target per Stage 6 - project-wide fanout is deferred).
     const row = getSyncRow(pendingId);
     if (!row) {
       await answerTelegramCallbackQuery(token, cb.id, "Sync not found");

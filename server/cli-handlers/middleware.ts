@@ -1,5 +1,5 @@
 /**
- * `requireRunner` — middleware for the /api/runner-proxy/* mount.
+ * `requireRunner` - middleware for the /api/runner-proxy/* mount.
  *
  * Validates the runner bearer (the existing server↔runner trust channel)
  * and resolves the X-Runner-Container header into a CliContext. Anything
@@ -9,7 +9,7 @@
  * SECURITY: this middleware is the ONLY way for code in
  * server/cli-handlers/ to obtain a principal. Do not authenticate by
  * any other means here, and do not import authenticateRequest from
- * server/lib/auth.ts inside cli-handlers/ — the trust model is different.
+ * server/lib/auth.ts inside cli-handlers/ - the trust model is different.
  */
 import { AuthError } from "@/lib/errors.ts";
 import { getLocalBackend } from "@/lib/execution/lifecycle.ts";
@@ -18,7 +18,7 @@ import type { CliContext } from "./context.ts";
 
 export async function requireRunner(req: Request): Promise<CliContext> {
   // The bearer presented here is the same key the server uses to authenticate
-  // *to* the runner (runners.api_key). We accept any enabled runner's key —
+  // *to* the runner (runners.api_key). We accept any enabled runner's key -
   // there is one shared trust channel per runner, used in both directions.
   const validKeys = listEnabledRunners()
     .map((r) => r.api_key)
@@ -51,7 +51,7 @@ export async function requireRunner(req: Request): Promise<CliContext> {
   const userId = session?.userId ?? "";
   if (!userId) {
     // No active session record means we can't tie this container to a
-    // user. Refuse rather than guess — the in-process tools that this
+    // user. Refuse rather than guess - the in-process tools that this
     // is replacing always run with a known user.
     throw new AuthError("No active session for container");
   }

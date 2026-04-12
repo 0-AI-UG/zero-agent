@@ -1,11 +1,11 @@
 /**
  * Web-facing pending-responses routes (authenticated via user session).
  *
- * - GET  /api/pending-responses/:id           — fetch a single row (reply toast hydration)
- * - POST /api/pending-responses/:id/respond   — resolve a row with free-text reply
+ * - GET  /api/pending-responses/:id           - fetch a single row (reply toast hydration)
+ * - POST /api/pending-responses/:id/respond   - resolve a row with free-text reply
  *
  * Both endpoints enforce that the row targets the calling user. A row that
- * belongs to a different member of the project is not visible here — each
+ * belongs to a different member of the project is not visible here - each
  * member has their own row under the shared `group_id`, and the dispatcher
  * is the one that decides which user sees which row.
  */
@@ -74,7 +74,7 @@ export async function handleRespondPendingResponse(request: Request): Promise<Re
       throw new NotFoundError("pending response not found");
     }
     if (row.status !== "pending") {
-      // Idempotent return — the caller likely raced with another channel.
+      // Idempotent return - the caller likely raced with another channel.
       return Response.json(
         { ok: false, status: row.status, row: serializeRow(row) },
         { headers: corsHeaders }

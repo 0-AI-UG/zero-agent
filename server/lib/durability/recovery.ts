@@ -77,7 +77,7 @@ export function recoverInterruptedRuns(): void {
       });
       recovered++;
     } catch (err) {
-      recoveryLog.warn("failed to recover run — checkpoint preserved for next restart", {
+      recoveryLog.warn("failed to recover run - checkpoint preserved for next restart", {
         runId: cp.runId,
         chatId: cp.chatId,
         error: err instanceof Error ? err.message : String(err),

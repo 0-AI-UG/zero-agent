@@ -18,14 +18,14 @@ const toolLog = log.child({ module: "tool:progress" });
 interface ProgressToolsOptions {
   projectId: string;
   chatId: string;
-  /** Run ID — when set, progress items also sync into the compaction state's
+  /** Run ID - when set, progress items also sync into the compaction state's
    *  plan field so they survive in-band compaction. */
   runId?: string;
 }
 
 /**
  * Sync a progress update into the compaction state's plan field so it
- * survives in-band compaction. Fire-and-forget — does not block the tool
+ * survives in-band compaction. Fire-and-forget - does not block the tool
  * response. Returns without writing if no compaction state exists yet
  * (compaction hasn't fired).
  */

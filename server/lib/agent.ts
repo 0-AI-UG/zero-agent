@@ -27,33 +27,33 @@ export interface AgentOptions {
   contextWindow?: number;
   /** Allowlist for tools (core file/bash/skill tools always included). */
   onlyTools?: string[];
-  /** Allowlist for skills — only these skills appear in the index and can be loaded. */
+  /** Allowlist for skills - only these skills appear in the index and can be loaded. */
   onlySkills?: string[];
   /** Pre-loaded project files injected into system prompt. */
   preloadedFiles?: {
     soulMd?: string;
   };
-  /** File paths already read/written in prior turns — seeds the read guard so the agent doesn't need to re-read. */
+  /** File paths already read/written in prior turns - seeds the read guard so the agent doesn't need to re-read. */
   initialReadPaths?: string[];
   /** Semantically relevant memory entries retrieved via RAG for this conversation. */
   relevantMemories?: { content: string; score: number }[];
   /** Semantically relevant files retrieved via RAG for this conversation (paths only). */
   relevantFiles?: { path: string }[];
-  /** Unique ID for this agent run — used for event logging and checkpointing. */
+  /** Unique ID for this agent run - used for event logging and checkpointing. */
   runId?: string;
-  /** Callback fired after each step with the current step number and response messages — used for checkpointing. */
+  /** Callback fired after each step with the current step number and response messages - used for checkpointing. */
   onStepCheckpoint?: (stepNumber: number, responseMessages: Array<{ role: string; content: unknown }>) => void;
   /** Maximum number of agent steps before stopping. Defaults to 100. */
   maxSteps?: number;
   /** Use the fast/enrich model instead of the default chat model. Overrides `model`. */
   fast?: boolean;
   /**
-   * Autonomous (non-interactive) run — propagates to tool construction so
+   * Autonomous (non-interactive) run - propagates to tool construction so
    * the bash sync-approval flow fans out to every project member instead of
    * just the triggering user.
    */
   autonomous?: boolean;
-  /** Plan mode — agent explores, writes a plan, then calls finishPlanning for user review. */
+  /** Plan mode - agent explores, writes a plan, then calls finishPlanning for user review. */
   planMode?: boolean;
 }
 
@@ -98,7 +98,7 @@ async function buildSystemPrompt(project: {
   }
 
   // ── Response Style ──
-  sections.push(`Never expose internal thinking. Just act and respond concisely. Never print credentials — use shell substitution.`);
+  sections.push(`Never expose internal thinking. Just act and respond concisely. Never print credentials - use shell substitution.`);
 
   // ── Plan Mode ──
   if (options.planMode) {
@@ -120,7 +120,7 @@ If the user asks to revise the plan and no specific feedback is provided (empty 
 Do NOT implement anything. Focus only on exploration and planning.`);
   }
 
-  // ── RAG sections (last — they change every turn, keep the prefix cacheable) ──
+  // ── RAG sections (last - they change every turn, keep the prefix cacheable) ──
   if (options.relevantMemories?.length) {
     const memLines = options.relevantMemories.map((m) => `- ${m.content}`).join("\n");
     sections.push(`## Relevant Memories (auto-retrieved)\n\n${memLines}`);
@@ -159,7 +159,7 @@ export async function createAgent(project: ProjectForAgent, options: AgentOption
     autonomous: options.autonomous,
   });
 
-  // Plan mode — inject finishPlanning tool
+  // Plan mode - inject finishPlanning tool
   if (options.planMode && options.chatId && options.userId) {
     const planningTools = createPlanningTools(project.id, {
       chatId: options.chatId,
@@ -169,7 +169,7 @@ export async function createAgent(project: ProjectForAgent, options: AgentOption
     Object.assign(tools, planningTools);
   }
 
-  // Sub-agent spawner — also gets the full toolset via createToolset internally
+  // Sub-agent spawner - also gets the full toolset via createToolset internally
   tools.agent = createAgentTool(project.id, {
     userId: options.userId,
     projectId: project.id,

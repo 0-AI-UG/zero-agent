@@ -30,7 +30,7 @@ export function upsertUserSubscription(
 
 // Resolve whether a given kind×channel is enabled for a user.
 // Precedence: explicit (kind, channel) row → wildcard '*' row → default-on (null = caller decides).
-// Returns true/false when a rule exists; null when no rule — caller applies the default.
+// Returns true/false when a rule exists; null when no rule - caller applies the default.
 export function isKindChannelEnabled(
   userId: string,
   kind: string,

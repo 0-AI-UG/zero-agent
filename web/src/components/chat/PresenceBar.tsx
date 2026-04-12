@@ -2,7 +2,7 @@ import { useRealtimeStore, type PresenceUser } from "@/stores/realtime";
 import { useAuthStore } from "@/stores/auth";
 
 /**
- * Minimal presence dots — shown inline, not as a bar.
+ * Minimal presence dots - shown inline, not as a bar.
  * Shows small colored dots for users viewing this chat.
  */
 export function PresenceDots({ chatId }: { chatId: string }) {

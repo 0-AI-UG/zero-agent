@@ -86,7 +86,7 @@ export async function installSkillFiles(
       metadata: JSON.stringify(frontmatter.metadata),
     });
   } catch {
-    // UNIQUE constraint — skill already exists
+    // UNIQUE constraint - skill already exists
   }
 
   invalidateSummaryCache(projectId);

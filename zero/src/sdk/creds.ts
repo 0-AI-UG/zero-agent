@@ -34,7 +34,7 @@ export const creds = {
   },
   /**
    * Returns the raw secret in `value`. The agent should NOT call this
-   * directly from a script that prints the result — use the CLI form
+   * directly from a script that prints the result - use the CLI form
    * inside shell substitution: `$(zero creds get foo)`.
    */
   get(opts: CredsGetInputT, options?: CallOptions): Promise<CredGetResult> {

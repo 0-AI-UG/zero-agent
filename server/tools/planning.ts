@@ -1,5 +1,5 @@
 /**
- * Plan mode tool — `finishPlanning` blocks the agent until the user
+ * Plan mode tool - `finishPlanning` blocks the agent until the user
  * chooses to implement, alter, or start a new chat with the plan.
  *
  * Uses the pending-responses system so the blocking semantics, timeout,
@@ -101,7 +101,7 @@ export function createPlanningTools(
           };
         }
 
-        // "implement_new_chat" — create a new chat, insert the user message,
+        // "implement_new_chat" - create a new chat, insert the user message,
         // start a backend-driven streaming run, and tell the frontend to
         // navigate there. The frontend spectates the already-running stream.
         if (responseText === "implement_new_chat") {
@@ -152,7 +152,7 @@ export function createPlanningTools(
             newChatId: newChat.id,
           });
 
-          // Don't abort the planning chat — let the agent finish its turn
+          // Don't abort the planning chat - let the agent finish its turn
           // naturally so the tool result is persisted. The agent will see
           // the decision and can respond accordingly.
           return {
@@ -163,7 +163,7 @@ export function createPlanningTools(
           };
         }
 
-        // "implement" — abort this stream, then tell the frontend to send
+        // "implement" - abort this stream, then tell the frontend to send
         // a fresh implementation message without plan mode.
         broadcastToProject(projectId, {
           type: "chat.autoSend",

@@ -168,7 +168,7 @@ export function ChatPanel({ projectId, chatId, initialMessages, initialIsStreami
           // will stream in as an addition.
           setMessages(msgs as ChatMessage[]);
         } else {
-          // Human-initiated: strip trailing assistant messages — the
+          // Human-initiated: strip trailing assistant messages - the
           // resumed stream rebuilds the single reply from scratch.
           let end = msgs.length;
           while (end > 0 && msgs[end - 1]?.role === "assistant") end--;
@@ -176,7 +176,7 @@ export function ChatPanel({ projectId, chatId, initialMessages, initialIsStreami
         }
         await resumeStream();
       } catch {
-        // Silently ignore — the user can still reload manually
+        // Silently ignore - the user can still reload manually
       }
     })();
     return () => { cancelled = true; };

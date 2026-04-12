@@ -77,7 +77,7 @@ export function deleteCheckpoint(runId: string): void {
 
 const allStmt = db.prepare("SELECT * FROM agent_checkpoints");
 
-/** Get all in-progress checkpoints — used for crash recovery on startup. */
+/** Get all in-progress checkpoints - used for crash recovery on startup. */
 export function getActiveCheckpoints() {
   return (allStmt.all() as StoredCheckpoint[]).map(hydrate);
 }
@@ -86,7 +86,7 @@ const byChatStmt = db.prepare(
   "SELECT * FROM agent_checkpoints WHERE chat_id = ? ORDER BY updated_at DESC LIMIT 1",
 );
 
-/** Get the latest checkpoint for a chat — used to serve in-progress messages. */
+/** Get the latest checkpoint for a chat - used to serve in-progress messages. */
 export function loadActiveCheckpointByChatId(chatId: string) {
   const row = byChatStmt.get(chatId) as StoredCheckpoint | undefined;
   return row ? hydrate(row) : null;

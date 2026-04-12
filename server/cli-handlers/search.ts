@@ -1,5 +1,5 @@
 /**
- * Search handler — hybrid vector search over project files, memory, and
+ * Search handler - hybrid vector search over project files, memory, and
  * messages. Gives container scripts the same semantic retrieval the agent
  * uses internally for RAG.
  */

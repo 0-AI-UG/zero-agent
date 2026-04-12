@@ -18,7 +18,7 @@ interface RealtimeState {
   connected: boolean;
   presence: PresenceUser[];
   typing: TypingUser[];
-  /** Increments when a stream starts in any chat — used to force remount */
+  /** Increments when a stream starts in any chat - used to force remount */
   streamGeneration: number;
   lastStreamStartChatId: string | null;
   lastStreamStartUserId: string | null;

@@ -100,7 +100,7 @@ function handleEvent(taskId: string, projectId: string, eventName: EventName, ev
     const lastRun = new Date(task.last_run_at + "Z").getTime();
     const elapsed = (Date.now() - lastRun) / 1000;
     if (elapsed < cooldown && !pendingTimers.has(taskId)) {
-      // Still in cooldown and no pending timer — buffer silently
+      // Still in cooldown and no pending timer - buffer silently
       bufferEvent(taskId, eventData, cooldown - elapsed);
       return;
     }

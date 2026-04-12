@@ -18,7 +18,7 @@ export function createDefaultTasks(projectId: string, userId: string): void {
 
 /**
  * Update existing default tasks to match the latest prompt and required_tools.
- * Matches by task name — only updates tasks that still have default names.
+ * Matches by task name - only updates tasks that still have default names.
  */
 function updateDefaultTasks(projectId: string): void {
   const existing = getTasksByProject(projectId);

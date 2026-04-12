@@ -129,7 +129,7 @@ export function ChatMessageList({
         <ConversationEmptyState
           icon={<img src={logoSvg} alt="Zero Agent" className="size-10" />}
           title={project?.assistantName ?? "Zero Agent"}
-          description={project?.assistantDescription ?? "Ask me anything — I can browse the web, manage files, run code, and automate tasks."}
+          description={project?.assistantDescription ?? "Ask me anything - I can browse the web, manage files, run code, and automate tasks."}
         />
       )}
       {messages.length === 0 && (

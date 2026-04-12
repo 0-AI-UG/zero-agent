@@ -17,7 +17,7 @@ export async function totpLogin(
   tempToken: string,
   code: string,
 ): Promise<{ token: string; user: { id: string; username: string } }> {
-  // No auth header — user isn't authenticated yet
+  // No auth header - user isn't authenticated yet
   const res = await fetch(`${API_BASE}/auth/totp/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

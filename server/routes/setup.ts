@@ -67,7 +67,7 @@ export async function handleSetupComplete(request: Request): Promise<Response> {
       );
     }
 
-    // Return temp token — full JWT is only issued after 2FA setup
+    // Return temp token - full JWT is only issued after 2FA setup
     const tempToken = await createTempToken(userId);
 
     setupLog.info("setup completed, awaiting 2FA", { userId, username });

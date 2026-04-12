@@ -3,13 +3,13 @@
  * `background: true`) finishes, the parent chat should "react" even if
  * the main agent has already stopped its turn. Two paths cover this:
  *
- *  1. In-flight path — the main agent is still taking steps. The existing
+ *  1. In-flight path - the main agent is still taking steps. The existing
  *     injection in `compact-conversation.ts` pulls undelivered results on
  *     the next `prepareStep` and adds them as a user-role system
  *     notification. Handled entirely by the prepareStep hook; this module
  *     stays out of the way (the `getActiveStreamId` guard short-circuits).
  *
- *  2. Out-of-flight path — the main agent already finished (or the
+ *  2. Out-of-flight path - the main agent already finished (or the
  *     background completion landed after its final prepareStep, so the
  *     in-flight prepareStep never got a chance to consume it). We wake a
  *     fresh streaming turn on the parent chat by calling
@@ -21,7 +21,7 @@
  *  - `background.completed` / `background.failed` arriving while the
  *    parent chat is not currently streaming.
  *  - `message.sent` firing at the end of any streaming turn while
- *    undelivered results are still pending — i.e. the just-finished turn
+ *    undelivered results are still pending - i.e. the just-finished turn
  *    didn't consume them on its final step, so path (1) missed them.
  *
  * The single decision point is `maybeResume`: it checks the active-stream
@@ -83,7 +83,7 @@ export function initBackgroundResume() {
 function maybeResume(chatId: string) {
   if (isShuttingDown()) return;
 
-  // In-flight run owns this chat — its prepareStep will inject the
+  // In-flight run owns this chat - its prepareStep will inject the
   // notification on its next step. Don't interfere.
   if (getActiveStreamId(chatId)) return;
 
@@ -91,7 +91,7 @@ function maybeResume(chatId: string) {
   if (!hasUndeliveredResults(chatId)) return;
 
   if (runningChats.has(chatId)) {
-    // A resume is already running — queue a follow-up so completions
+    // A resume is already running - queue a follow-up so completions
     // that land after its final prepareStep still get seen.
     queuedChats.add(chatId);
     return;
@@ -131,12 +131,12 @@ async function runResume(chatId: string): Promise<void> {
       .map((row) => JSON.parse(row.content) as UIMessage)
       .filter((m) => (m.parts?.length ?? 0) > 0);
     if (messages.length === 0) {
-      resumeLog.debug("no persisted messages — skipping resume", { chatId });
+      resumeLog.debug("no persisted messages - skipping resume", { chatId });
       return;
     }
 
     // The agent needs a userId for tool gating and sync-approval routing.
-    // Use the most recent human sender — that's who was interacting with
+    // Use the most recent human sender - that's who was interacting with
     // this chat when the background task was spawned.
     const lastUserRow = [...rows].reverse().find((r) => r.user_id);
     const userId = lastUserRow?.user_id ?? undefined;

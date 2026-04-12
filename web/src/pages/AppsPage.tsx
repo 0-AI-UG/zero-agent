@@ -272,7 +272,7 @@ export function AppsPage() {
             <NetworkIcon className="size-10 text-muted-foreground/40 mb-3" />
             <p className="text-sm font-medium mb-1">Nothing running yet</p>
             <p className="text-xs text-muted-foreground max-w-[280px]">
-              Ask the agent to build or start an app — it will show up here so you can open it.
+              Ask the agent to build or start an app - it will show up here so you can open it.
             </p>
           </div>
         ) : (

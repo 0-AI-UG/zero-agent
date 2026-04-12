@@ -175,7 +175,7 @@ function CodeTable({ lines, lineOffset = 0, className }: { lines: string[]; line
 /**
  * True when the command runs `zero creds get` as a top-level invocation
  * (i.e. its stdout is the secret). We deliberately do NOT match occurrences
- * inside `$(…)` or backticks — those interpolate the secret into another
+ * inside `$(…)` or backticks - those interpolate the secret into another
  * command and the secret never reaches stdout.
  */
 function shouldRedactCredsOutput(command: string | undefined): boolean {
@@ -366,7 +366,7 @@ type MessagePart = UIMessage["parts"][number];
 
 /**
  * Renders a single tool call as an inline status line.
- * Memoized to prevent re-renders when the parent streams new parts —
+ * Memoized to prevent re-renders when the parent streams new parts -
  * only re-renders when this specific tool part's state changes.
  */
 export const ToolCallPart = memo(function ToolCallPart({

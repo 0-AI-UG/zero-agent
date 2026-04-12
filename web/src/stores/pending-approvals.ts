@@ -7,7 +7,7 @@
  *
  *  - SyncApproval mount: if a tool-part carries `status: "awaiting"`, the
  *    component fetches the live status via `GET /api/sync/:id` and seeds
- *    the store — fixes stale-on-reload for syncs resolved in a prior tab.
+ *    the store - fixes stale-on-reload for syncs resolved in a prior tab.
  *  - `postSyncVerdict` response: echoes the resolved state.
  *  - WS `sync.resolved` events from the realtime hook.
  *

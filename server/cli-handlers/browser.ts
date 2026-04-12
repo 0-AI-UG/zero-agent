@@ -1,5 +1,5 @@
 /**
- * Browser handler — wraps the existing runner browser API by calling
+ * Browser handler - wraps the existing runner browser API by calling
  * the same `backend.execute` path the in-process `browser` tool uses.
  *
  * Note: the captioning fallback for non-multimodal models that lives in
@@ -97,7 +97,7 @@ export const handleBrowserFill = (
  * Screenshot handler. Captures via the runner (which already downscales to
  * ≤1024px JPEG@60), then writes the image directly to project storage and
  * reconciles into the container so the agent can immediately `readFile` it
- * by its project-relative path. The base64 payload never leaves the server —
+ * by its project-relative path. The base64 payload never leaves the server -
  * the CLI only ever sees a compact `{path, fileId, sizeBytes, ...}` reference,
  * which keeps the bash tool result tiny.
  *
@@ -195,7 +195,7 @@ export const handleBrowserSnapshot = (
 );
 
 /**
- * `zero browser extract` — query-driven content extraction.
+ * `zero browser extract` - query-driven content extraction.
  *
  * Pulls the page's outerHTML from the live browser session, runs it through
  * the same Readability + keyword-ranking pipeline used by `zero web fetch`,
@@ -214,7 +214,7 @@ export const handleBrowserExtract = async (
   await backend.ensureContainer(ctx.userId, ctx.projectId);
 
   // Grab outerHTML via an in-page evaluate. Cap the value hard on the runner
-  // side is fine here — we just need the HTML string end-to-end.
+  // side is fine here - we just need the HTML string end-to-end.
   let html = "";
   let url = "";
   let pageTitle = "";
@@ -226,7 +226,7 @@ export const handleBrowserExtract = async (
         type: "evaluate",
         script: "document.documentElement.outerHTML",
         awaitPromise: false,
-        // Override the default 4KB evaluate cap — we need full HTML so the
+        // Override the default 4KB evaluate cap - we need full HTML so the
         // server-side Readability pass has real content to work with.
         maxChars: 500_000,
       } as BrowserAction,
@@ -246,11 +246,11 @@ export const handleBrowserExtract = async (
       title: pageTitle,
       query: input.query,
       excerpts: [],
-      note: "page returned no HTML — is a page loaded? try `zero browser open <url>` first",
+      note: "page returned no HTML - is a page loaded? try `zero browser open <url>` first",
     });
   }
 
-  // The runner evaluate cap is now 4KB — too small for full-page outerHTML,
+  // The runner evaluate cap is now 4KB - too small for full-page outerHTML,
   // so the runner would truncate before we see it. Detect the truncation
   // marker and warn; the extract result is still useful on what we did get.
   const truncated = /\[\.\.\.truncated, \d+ chars omitted\]$/.test(html);

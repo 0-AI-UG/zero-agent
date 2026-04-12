@@ -156,7 +156,7 @@ export function SpreadsheetTable({
     return count;
   }, [search, processedRows]);
 
-  // Row virtualizer — only renders visible rows + overscan
+  // Row virtualizer - only renders visible rows + overscan
   const rowVirtualizer = useVirtualizer({
     count: processedRows.length + (editable ? 1 : 0), // +1 for add-row button
     getScrollElement: () => scrollContainerRef.current,

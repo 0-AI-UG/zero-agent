@@ -1,5 +1,5 @@
 /**
- * RunnerClient — connects to a remote runner service over HTTP.
+ * RunnerClient - connects to a remote runner service over HTTP.
  * Implements ExecutionBackend so tools don't need to know whether
  * execution is local or remote.
  */
@@ -118,7 +118,7 @@ export class RunnerClient implements ExecutionBackend {
       expiresAt: Date.now() + RunnerClient.SESSION_CACHE_TTL,
     });
 
-    // First time seeing this container in this process — try to restore the
+    // First time seeing this container in this process - try to restore the
     // system snapshot + workspace blob dirs from S3.
     if (!existed) {
       try {
@@ -133,7 +133,7 @@ export class RunnerClient implements ExecutionBackend {
           clientLog.info("system snapshot restored from S3", { projectId, sizeBytes: buffer.byteLength });
         }
       } catch {
-        // First-time projects have no snapshot — silently skip.
+        // First-time projects have no snapshot - silently skip.
       }
 
       // Restore workspace blob dirs in parallel
@@ -154,7 +154,7 @@ export class RunnerClient implements ExecutionBackend {
           }
         }));
       } catch {
-        // No blob dirs in S3 yet — fine.
+        // No blob dirs in S3 yet - fine.
       }
     }
   }
@@ -457,7 +457,7 @@ export class RunnerClient implements ExecutionBackend {
   }
 
   listContainers(): ContainerListEntry[] {
-    // Synchronous — return empty. Use async version if needed.
+    // Synchronous - return empty. Use async version if needed.
     return [];
   }
 

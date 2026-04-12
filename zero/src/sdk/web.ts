@@ -1,5 +1,5 @@
 /**
- * Web group — search the web and fetch URLs. The agent typically uses
+ * Web group - search the web and fetch URLs. The agent typically uses
  * the CLI form (`zero web search`) inside a bash heredoc; the SDK form
  * is for scripted compositions like map-reduce over result sets.
  */

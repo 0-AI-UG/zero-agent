@@ -47,7 +47,7 @@ type ModelId = string
 interface ContextSchema {
   usedTokens: number
   maxTokens: number
-  /** Cumulative usage across all messages — for breakdown display and cost */
+  /** Cumulative usage across all messages - for breakdown display and cost */
   usage?: LanguageModelUsage
   modelId?: ModelId
 }
@@ -382,7 +382,7 @@ export const ContextCacheUsage = ({ className, children, ...props }: ContextCach
 const TokensWithCost = ({ tokens, costText }: { tokens?: number; costText?: string }) => (
   <span>
     {tokens === undefined
-      ? "—"
+      ? "-"
       : new Intl.NumberFormat("en-US", {
           notation: "compact",
         }).format(tokens)}

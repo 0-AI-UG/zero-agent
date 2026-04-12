@@ -57,7 +57,7 @@ export function setActiveProjectId(
   userId: string,
   projectId: string | null
 ): void {
-  // Switching projects implicitly resets the active chat — chats are
+  // Switching projects implicitly resets the active chat - chats are
   // project-scoped, so the previous active chat doesn't belong to the
   // new project.
   db.prepare(
@@ -76,7 +76,7 @@ export function createLinkCode(
   code: string,
   expiresAt: string
 ): UserTelegramLinkCodeRow {
-  // one code per user at a time — replace any existing
+  // one code per user at a time - replace any existing
   db.prepare("DELETE FROM user_telegram_link_codes WHERE user_id = ?").run(
     userId
   );

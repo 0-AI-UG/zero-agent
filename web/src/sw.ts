@@ -32,7 +32,7 @@ self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const data = event.notification.data ?? {};
 
-  // Sync approval action buttons — open the chat URL with an action hint
+  // Sync approval action buttons - open the chat URL with an action hint
   // the page can pick up. We don't POST directly from the service worker
   // because auth tokens live in localStorage (not accessible here), so the
   // page handles the verdict once focused.

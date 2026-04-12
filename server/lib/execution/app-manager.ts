@@ -1,5 +1,5 @@
 /**
- * Port Manager — handles cold-start restart of pinned ports and reconciliation.
+ * Port Manager - handles cold-start restart of pinned ports and reconciliation.
  * Processes are started by the bash tool; this only manages restart for pinned services.
  */
 import { log } from "@/lib/logger.ts";
@@ -133,7 +133,7 @@ export class PortManager {
         return { success: false, error: "Process started but port not listening within timeout" };
       }
     } else {
-      // No start command — just ensure session is up, check if port is already listening
+      // No start command - just ensure session is up, check if port is already listening
       const ready = await this.waitForPort(projectId, port.port, 5_000);
       if (!ready) {
         return { success: false, error: "No start command saved and port is not listening. Start the server from chat." };
@@ -214,7 +214,7 @@ export class PortManager {
   }
 
   /**
-   * Periodic health check — verify active ports still have reachable sessions
+   * Periodic health check - verify active ports still have reachable sessions
    * and that the port is actually listening.
    */
   private async healthCheck(): Promise<void> {

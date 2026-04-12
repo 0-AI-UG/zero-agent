@@ -27,7 +27,7 @@ const MODEL_IMAGE_QUALITY = 60;
  */
 async function resizeImageForModel(imageData: Buffer, mediaType: string): Promise<{ buffer: Buffer; mediaType: string }> {
   try {
-    // SVGs are text-based and small — skip resizing
+    // SVGs are text-based and small - skip resizing
     if (mediaType === "image/svg+xml") {
       return { buffer: imageData, mediaType };
     }
@@ -259,7 +259,7 @@ export function createFileTools(projectId: string, options?: { chatId?: string; 
             const exists = await s3.file(s3Key).exists();
             if (exists) {
               throw new Error(
-                `Cannot overwrite "${path}" — you must readFile first.`,
+                `Cannot overwrite "${path}" - you must readFile first.`,
               );
             }
           }
@@ -365,7 +365,7 @@ export function createFileTools(projectId: string, options?: { chatId?: string; 
         try {
           if (!readPaths.has(path)) {
             throw new Error(
-              `Cannot edit "${path}" — you must readFile first.`,
+              `Cannot edit "${path}" - you must readFile first.`,
             );
           }
 
@@ -419,7 +419,7 @@ export function createFileTools(projectId: string, options?: { chatId?: string; 
 
     displayFile: tool({
       description:
-        "Display a file inline in chat for the user to see. Does not read contents — use readFile for that.",
+        "Display a file inline in chat for the user to see. Does not read contents - use readFile for that.",
       inputSchema: z.object({
         path: z
           .string()

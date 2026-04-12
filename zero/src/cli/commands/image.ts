@@ -1,7 +1,7 @@
 import { image } from "../../sdk/image.ts";
 import { hasFlag, getOption, printJson } from "../format.ts";
 
-const HELP = `zero image — generate images and save them to the project
+const HELP = `zero image - generate images and save them to the project
 
 Usage:
   zero image generate <prompt> [--path <p>] [--json]

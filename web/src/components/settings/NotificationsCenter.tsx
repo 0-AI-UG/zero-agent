@@ -200,7 +200,7 @@ export function NotificationsCenter() {
 
   return (
     <section className="space-y-4">
-      {/* Section header — matches sibling settings sections */}
+      {/* Section header - matches sibling settings sections */}
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <BellIcon className="size-4 text-violet-500" />
@@ -489,7 +489,7 @@ export function NotificationsCenter() {
       {/* Footnote + non-fatal errors */}
       <p className="text-[11px] text-muted-foreground leading-relaxed">
         Default-on: events fire on every configured channel. Toggle a chip off
-        to silence that event on that channel — even if the channel isn&apos;t
+        to silence that event on that channel - even if the channel isn&apos;t
         set up yet, your preference is remembered for when it is.
       </p>
       {error && data && <p className="text-xs text-destructive">{error}</p>}
@@ -498,7 +498,7 @@ export function NotificationsCenter() {
 }
 
 // ─────────────────────────────────────────────
-// Channel module — one column of the top strip
+// Channel module - one column of the top strip
 // ─────────────────────────────────────────────
 function ChannelModule({
   channel,
@@ -552,7 +552,7 @@ function ChannelModule({
 }
 
 // ─────────────────────────────────────────────
-// Module action — small uppercase text button
+// Module action - small uppercase text button
 // ─────────────────────────────────────────────
 function ModuleAction({
   onClick,
@@ -582,7 +582,7 @@ function ModuleAction({
 }
 
 // ─────────────────────────────────────────────
-// Channel chip — square icon toggle (event row)
+// Channel chip - square icon toggle (event row)
 // ─────────────────────────────────────────────
 function ChannelChip({
   channel,
@@ -608,7 +608,7 @@ function ChannelChip({
       onClick={() => onChange(!checked)}
       title={
         !available
-          ? `${meta.label} channel is not configured — your preference is saved for when it is.`
+          ? `${meta.label} channel is not configured - your preference is saved for when it is.`
           : `${meta.label}: ${checked ? "on" : "off"}`
       }
       className={`relative size-7 rounded-md border flex items-center justify-center disabled:opacity-50 ${

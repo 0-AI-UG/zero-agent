@@ -105,7 +105,7 @@ function fuzzyFind(content: string, oldText: string): { index: number; length: n
     if (i < endLineIdx) {
       origEnd += contentLines[i]!.length + 1;
     } else {
-      // Last line of the match — find the column
+      // Last line of the match - find the column
       const origLine = contentLines[i]!;
       let oCol = 0;
       let nCol = 0;

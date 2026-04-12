@@ -1,5 +1,5 @@
 /**
- * Message handler — send a message to the user.
+ * Message handler - send a message to the user.
  *
  * All channels (WS, push, Telegram) are routed through the notification
  * dispatcher, which honours per-user opt-out subscriptions. Telegram
@@ -71,7 +71,7 @@ export async function handleMessageSend(
     groupId = result.pending?.groupId ?? null;
     lastDispatchPerUser = result.perUser;
 
-    // We don't `await` the group handle here — CLI polls `message/response`.
+    // We don't `await` the group handle here - CLI polls `message/response`.
     // Detach the promise so Node doesn't whine about an unhandled rejection
     // when the group expires/cancels before the CLI next polls.
     result.pending?.handle.wait().catch(() => {});
@@ -122,7 +122,7 @@ export async function handleMessageResponse(
   const rows = getPendingResponsesByGroup(input.groupId);
   if (rows.length === 0) return fail("not_found", "pending response not found", 404);
 
-  // Only the caller's project is allowed to poll — containers are already
+  // Only the caller's project is allowed to poll - containers are already
   // scoped to a single project via CliContext, so this is a hard invariant.
   if (rows[0]!.project_id && rows[0]!.project_id !== ctx.projectId) {
     return fail("forbidden", "pending response belongs to another project", 403);

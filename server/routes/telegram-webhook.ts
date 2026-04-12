@@ -1,5 +1,5 @@
 /**
- * Global Telegram webhook. Unauthenticated — verified via secret header.
+ * Global Telegram webhook. Unauthenticated - verified via secret header.
  *
  *   POST /api/telegram/webhook
  *

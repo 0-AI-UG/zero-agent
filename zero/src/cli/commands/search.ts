@@ -1,8 +1,8 @@
-/** `zero search` — vector search over project files and memory. */
+/** `zero search` - vector search over project files and memory. */
 import { search } from "../../sdk/search.ts";
 import { hasFlag, getOption, printJson } from "../format.ts";
 
-const HELP = `zero search — vector search over project files, memory, and messages
+const HELP = `zero search - vector search over project files, memory, and messages
 
 Usage:
   zero search <query> [--collection file|memory|message] [--top-k 10] [--json]

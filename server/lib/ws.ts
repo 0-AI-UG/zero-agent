@@ -51,7 +51,7 @@ export function attachWebSocketServer(server: HttpServer) {
     }
     const url = new URL(req.url ?? "/", `http://${req.headers.host}`);
     if (url.pathname !== "/ws") {
-      wsLog.info("upgrade rejected — wrong path", { pathname: url.pathname });
+      wsLog.info("upgrade rejected - wrong path", { pathname: url.pathname });
       socket.destroy();
       return;
     }

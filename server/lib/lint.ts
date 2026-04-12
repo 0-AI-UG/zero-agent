@@ -58,7 +58,7 @@ function lintMarkdown(content: string): LintDiagnostic[] {
     if (headingMatch) {
       diagnostics.push({
         line: lineNum,
-        message: `Heading missing space after "${headingMatch[1]}" — did you mean "${headingMatch[1]} ${headingMatch[2]}..."?`,
+        message: `Heading missing space after "${headingMatch[1]}" - did you mean "${headingMatch[1]} ${headingMatch[2]}..."?`,
         severity: "warning",
       });
     }

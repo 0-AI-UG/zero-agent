@@ -30,7 +30,7 @@ export function LanguageToggle() {
         </Button>
       </TooltipTrigger>
       <TooltipContent side="top" sideOffset={8}>
-        Model responds in {labels[language].full} — click to switch to {labels[next].full}
+        Model responds in {labels[language].full} - click to switch to {labels[next].full}
       </TooltipContent>
     </Tooltip>
   );

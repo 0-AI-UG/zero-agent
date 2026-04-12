@@ -106,7 +106,7 @@ export function clearActiveStreamId(chatId: string) {
 
 // Track AbortControllers per chat so streams can be cancelled out-of-band.
 // Resumable streams keep generating after the client SSE connection drops, so
-// the official `useChat.stop()` (which only aborts the fetch) is not enough —
+// the official `useChat.stop()` (which only aborts the fetch) is not enough -
 // we need a side channel that calls controller.abort() on the in-flight model
 // call. The signal is passed into createAgentUIStreamResponse, which forwards
 // it to streamText for native, token-level cancellation.

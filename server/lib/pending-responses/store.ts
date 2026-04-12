@@ -1,5 +1,5 @@
 /**
- * Pending responses — DB-backed two-way request plumbing.
+ * Pending responses - DB-backed two-way request plumbing.
  *
  * The DB row is the source of truth for status/expiry. The in-memory
  * `Map<groupId, GroupState>` mirrors live awaiters so that resolving a row
@@ -47,7 +47,7 @@ const groups = new Map<string, GroupState>();
 export interface CreatePendingGroupInput {
   targetUserIds: string[];
   projectId: string | null;
-  kind: string; // notification kind — 'sync_approval' | 'cli_request' | ...
+  kind: string; // notification kind - 'sync_approval' | 'cli_request' | ...
   requesterKind: PendingRequesterKind;
   requesterContext: PendingRequesterContext;
   prompt: string;
@@ -66,7 +66,7 @@ export interface CreatedPendingGroup {
  * Returns a handle whose `wait()` resolves when any row in the group is
  * resolved (or rejects on timeout/cancel).
  *
- * The caller is expected to fan out notifications after creation — this
+ * The caller is expected to fan out notifications after creation - this
  * function only sets up state; it does not invoke the dispatcher itself
  * (to avoid a circular dependency between store ⇄ dispatcher).
  */
@@ -116,7 +116,7 @@ export function createPendingGroup(
     expiryTimer: null,
   };
 
-  // Per-group expiry timer (the DB also backs this — startup sweep handles
+  // Per-group expiry timer (the DB also backs this - startup sweep handles
   // server restarts).
   state.expiryTimer = setTimeout(() => {
     if (state.settled) return;
@@ -131,7 +131,7 @@ export function createPendingGroup(
   groups.set(groupId, state);
 
   // Avoid unhandled-rejection warnings if the caller doesn't await wait()
-  // immediately — the caller is expected to attach a handler, but the
+  // immediately - the caller is expected to attach a handler, but the
   // promise may settle before that (e.g. instant test fakes).
   promise.catch(() => {});
 
@@ -230,7 +230,7 @@ export function cancelGroup(groupId: string, reason?: string): void {
     settleGroupError(state, new PendingResponseCancelledError(groupId, reason));
     return;
   }
-  // No in-memory waiter — may still have DB rows (e.g. post-restart sweep).
+  // No in-memory waiter - may still have DB rows (e.g. post-restart sweep).
   // Best-effort cancel by group.
   for (const row of getPendingResponsesByGroup(groupId)) {
     if (row.status === "pending") cancelPendingResponseRow(row.id);
@@ -238,7 +238,7 @@ export function cancelGroup(groupId: string, reason?: string): void {
 }
 
 /**
- * Startup sweep — mark any rows whose expires_at has already passed as
+ * Startup sweep - mark any rows whose expires_at has already passed as
  * 'expired'. Live groups reinstate their own timers on boot (we don't do
  * that here; those in-memory awaiters are gone after restart anyway).
  */
@@ -252,7 +252,7 @@ export function startupExpirySweep(): number {
   return ids.length;
 }
 
-/** Test helper — lookup the live group state. Exported for server introspection. */
+/** Test helper - lookup the live group state. Exported for server introspection. */
 export function getGroupState(groupId: string): {
   settled: boolean;
   rowIds: string[];

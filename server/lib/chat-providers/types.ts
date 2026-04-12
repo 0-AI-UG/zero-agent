@@ -1,5 +1,5 @@
 /**
- * ChatProvider abstraction — a channel that can receive incoming user
+ * ChatProvider abstraction - a channel that can receive incoming user
  * messages, run them through `runAgentStepBatch`, and send replies plus
  * out-of-band notifications.
  *
@@ -51,7 +51,7 @@ export interface ChatProvider {
   /** Whether a given user has linked their account on this provider. */
   isLinkedForUser(userId: string): boolean;
 
-  /** Webhook/poller entry point — resolve user, route commands, run agent, reply. */
+  /** Webhook/poller entry point - resolve user, route commands, run agent, reply. */
   handleIncoming(msg: ProviderIncomingMessage): Promise<void>;
 
   /** Regular agent reply. */

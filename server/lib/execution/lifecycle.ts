@@ -1,5 +1,5 @@
 /**
- * Execution lifecycle manager — handles runtime enable/disable of
+ * Execution lifecycle manager - handles runtime enable/disable of
  * execution via a pool of remote runner services.
  */
 import { RunnerPool } from "./runner-pool.ts";
@@ -52,7 +52,7 @@ export const getAppProcessManager = getPortManager;
 
 /**
  * The single source of truth for execution state. Idempotent and safe to call
- * from anywhere — startup, admin actions, or the background supervisor.
+ * from anywhere - startup, admin actions, or the background supervisor.
  *
  * Behavior:
  *   - If SERVER_EXECUTION_ENABLED is "false" → tears everything down.
@@ -76,7 +76,7 @@ export async function reconcile(): Promise<{ healthy: number; total: number }> {
 
       if (result.healthy === 0) {
         if (backend) {
-          lifecycleLog.warn("no healthy runners — disabling execution backend");
+          lifecycleLog.warn("no healthy runners - disabling execution backend");
         }
         await teardownInternal();
       } else {

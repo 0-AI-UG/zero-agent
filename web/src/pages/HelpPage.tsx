@@ -180,9 +180,9 @@ function MockupChat() {
       {[0, 1, 2].map((i) => {
         const y = 120 + i * 34;
         const items = [
-          { name: "MedAI Corp", desc: "AI diagnostics — Series B" },
-          { name: "HealthBot", desc: "Patient triage assistant — Seed" },
-          { name: "CareStack", desc: "Clinical workflow AI — Series A" },
+          { name: "MedAI Corp", desc: "AI diagnostics - Series B" },
+          { name: "HealthBot", desc: "Patient triage assistant - Seed" },
+          { name: "CareStack", desc: "Clinical workflow AI - Series A" },
         ];
         const item = items[i]!;
         return (
@@ -378,7 +378,7 @@ function MockupAutomation() {
 
       {/* Run history hint */}
       <rect x={20} y={234} width={440} height={44} rx={8} fill={C.muted} opacity={0.5} />
-      <text x={36} y={256} className="t-xs t-muted">▶ Run history — view past results, errors, and chat links</text>
+      <text x={36} y={256} className="t-xs t-muted">▶ Run history - view past results, errors, and chat links</text>
       <text x={36} y={270} className="t-xs t-muted">Use cron expressions or presets: 30m, 1h, 2h, 6h, 12h, 1d</text>
     </MockupFrame>
   );
@@ -534,7 +534,7 @@ function MockupGettingStarted() {
       </defs>
 
       <text x={260} y={130} textAnchor="middle" className="t-xs t-muted">
-        Set up your project profile early — it shapes all content and actions
+        Set up your project profile early - it shapes all content and actions
       </text>
     </MockupFrame>
   );
@@ -621,9 +621,9 @@ function MockupProjectStructure() {
         <text x={30} y={30} fill={C.fg} style={{ fontWeight: 700 }}>zero-agent/</text>
 
         {[
-          { indent: 1, name: "api/", desc: "Backend — Bun server, SQLite, routes", color: "oklch(0.65 0.18 250)" },
-          { indent: 1, name: "web/", desc: "Frontend — React, Tailwind, shadcn/ui", color: "oklch(0.65 0.18 140)" },
-          { indent: 1, name: "skills/", desc: "Extensions — add your own here", color: "oklch(0.65 0.18 300)" },
+          { indent: 1, name: "api/", desc: "Backend - Bun server, SQLite, routes", color: "oklch(0.65 0.18 250)" },
+          { indent: 1, name: "web/", desc: "Frontend - React, Tailwind, shadcn/ui", color: "oklch(0.65 0.18 140)" },
+          { indent: 1, name: "skills/", desc: "Extensions - add your own here", color: "oklch(0.65 0.18 300)" },
           { indent: 1, name: ".env", desc: "Your API keys (from .env.example)", color: "oklch(0.5 0 0)" },
           { indent: 1, name: "CLAUDE.md", desc: "Instructions for Claude Code", color: "oklch(0.5 0 0)" },
         ].map((item, i) => {
@@ -673,14 +673,14 @@ const CLAUDE_CODE_PROMPT = `Clone the zero-agent repo from https://github.com/0-
 
 1. git clone https://github.com/0-AI-UG/zero-agent.git && cd zero-agent
 2. Run bun install to install all dependencies (this is a monorepo with api/ and web/ workspaces)
-3. Copy .env.example to .env — the only required key is OPENROUTER_API_KEY from https://openrouter.ai
+3. Copy .env.example to .env - the only required key is OPENROUTER_API_KEY from https://openrouter.ai
 4. Start the dev server with bun run dev (this runs the API on :3001 and the web app on :3000 concurrently with HMR)
 5. Open http://localhost:3000/setup in the browser to create an admin account and configure the LLM
 
 The project structure:
-- api/ — Backend server (Bun, SQLite, S3-compatible file storage, all API routes and AI tool definitions)
-- web/ — Frontend (React 19, Tailwind, shadcn/ui components, React Router)
-- skills/ — Installable extensions that add platform-specific capabilities (each skill is a self-contained module)
+- api/ - Backend server (Bun, SQLite, S3-compatible file storage, all API routes and AI tool definitions)
+- web/ - Frontend (React 19, Tailwind, shadcn/ui components, React Router)
+- skills/ - Installable extensions that add platform-specific capabilities (each skill is a self-contained module)
 Once setup is complete, read through the CLAUDE.md files in the root, api/, and web/ directories to understand the project conventions (Bun over Node, no Express, HTML imports, etc.).
 
 Then ask me what I'd like to customize, add, or change about the agent. Wait for my response before making any changes.`;
@@ -793,7 +793,7 @@ export function HelpPage() {
           {/* Chat */}
           <Section
             title="Chat"
-            subtitle="Your primary interface — ask the agent to research, create, and act"
+            subtitle="Your primary interface - ask the agent to research, create, and act"
           >
             <MockupChat />
           </Section>
@@ -848,7 +848,7 @@ export function HelpPage() {
           {/* Make it yours */}
           <Section
             title="Make It Yours"
-            subtitle="Zero Agent is open source — clone, customize, and add the features you need"
+            subtitle="Zero Agent is open source - clone, customize, and add the features you need"
           >
             <MockupMakeItYours />
           </Section>

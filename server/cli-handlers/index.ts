@@ -1,5 +1,5 @@
 /**
- * Mount point for /api/runner-proxy/zero/* — the server-side handlers
+ * Mount point for /api/runner-proxy/zero/* - the server-side handlers
  * for the in-container `zero` CLI/SDK.
  *
  * IMPORTANT: this directory is the ONLY place CLI-originated handlers
@@ -54,6 +54,14 @@ import { handleLlmGenerate } from "./llm.ts";
 import { handleMessageSend, handleMessageResponse } from "./message.ts";
 import { handleEmbed } from "./embed.ts";
 import { handleSearch } from "./search.ts";
+import {
+  handleExperimentCreate,
+  handleExperimentStart,
+  handleExperimentEvaluate,
+  handleExperimentStatus,
+  handleExperimentStop,
+  handleExperimentList,
+} from "./experiment.ts";
 
 import {
   HealthInput,
@@ -82,6 +90,12 @@ import {
   MessageResponseInput,
   EmbedInput,
   SearchInput,
+  ExperimentCreateInput,
+  ExperimentStartInput,
+  ExperimentEvaluateInput,
+  ExperimentStatusInput,
+  ExperimentStopInput,
+  ExperimentListInput,
 } from "zero/schemas";
 
 type HonoApp = Hono<any, any, any>;
@@ -179,4 +193,12 @@ export function mountCliHandlers(app: HonoApp): void {
 
   // -- search --
   app.post("/api/runner-proxy/zero/search", bind(SearchInput, handleSearch));
+
+  // -- experiment --
+  app.post("/api/runner-proxy/zero/experiment/create", bind(ExperimentCreateInput, handleExperimentCreate));
+  app.post("/api/runner-proxy/zero/experiment/start", bind(ExperimentStartInput, handleExperimentStart));
+  app.post("/api/runner-proxy/zero/experiment/evaluate", bind(ExperimentEvaluateInput, handleExperimentEvaluate));
+  app.post("/api/runner-proxy/zero/experiment/status", bind(ExperimentStatusInput, handleExperimentStatus));
+  app.post("/api/runner-proxy/zero/experiment/stop", bind(ExperimentStopInput, handleExperimentStop));
+  app.post("/api/runner-proxy/zero/experiment/list", bind(ExperimentListInput, handleExperimentList));
 }

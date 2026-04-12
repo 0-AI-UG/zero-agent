@@ -352,7 +352,7 @@ export function LoginPage() {
     );
   }
 
-  // 2FA recovery screen — consume a backup code to re-enroll
+  // 2FA recovery screen - consume a backup code to re-enroll
   if (tempToken && recoverMode) {
     return (
       <Card className="w-full max-w-sm">

@@ -77,7 +77,7 @@ export async function handleChat(request: Request): Promise<Response> {
 
     // Return 503 for circuit breaker instead of generic error.
     if (error instanceof CircuitBreakerOpenError) {
-      chatLog.warn("circuit breaker open — returning 503", { chatId });
+      chatLog.warn("circuit breaker open - returning 503", { chatId });
       return Response.json(
         { error: "AI service is temporarily unavailable. Please try again in a moment." },
         { status: 503, headers: corsHeaders },

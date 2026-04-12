@@ -67,7 +67,7 @@ export const browser = {
       { ...BROWSER_DEFAULT, ...options },
     );
   },
-  /** status() is an alias for snapshot() — returns current page state. */
+  /** status() is an alias for snapshot() - returns current page state. */
   status(options?: CallOptions): Promise<BrowserResult> {
     return call("/zero/browser/snapshot", BrowserSnapshotInput.parse({}), { ...BROWSER_DEFAULT, ...options });
   },

@@ -1,5 +1,5 @@
 /**
- * Search group — hybrid vector search over project files, memory, and
+ * Search group - hybrid vector search over project files, memory, and
  * messages. Lets scripts find relevant content without direct access to
  * the vector index.
  */

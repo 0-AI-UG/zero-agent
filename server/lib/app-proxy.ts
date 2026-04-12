@@ -68,7 +68,7 @@ export async function proxyAppRequest(slug: string, request: Request): Promise<R
     return Response.json({ error: "Invalid or expired token" }, { status: 401, headers: corsHeaders });
   }
 
-  // Build upstream URL — strip /_apps/{slug} prefix and token param
+  // Build upstream URL - strip /_apps/{slug} prefix and token param
   const prefixLen = `/_apps/${slug}`.length;
   const upstreamPath = url.pathname.slice(prefixLen) || "/";
   url.searchParams.delete("token");

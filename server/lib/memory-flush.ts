@@ -103,7 +103,7 @@ const MAX_MEMORY_ENTRIES = 100;
 
 /**
  * Flush extracted learnings directly into MEMORY.md.
- * Called incrementally during compaction (Phase 3) — no LLM call needed
+ * Called incrementally during compaction (Phase 3) - no LLM call needed
  * since learnings are already extracted by the anchor extraction prompt.
  */
 export async function flushLearnings(

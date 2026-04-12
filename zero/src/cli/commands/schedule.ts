@@ -1,7 +1,7 @@
 import { schedule } from "../../sdk/schedule.ts";
 import { hasFlag, getOption, printJson } from "../format.ts";
 
-const HELP = `zero schedule — manage scheduled / event-triggered tasks
+const HELP = `zero schedule - manage scheduled / event-triggered tasks
 
 Usage:
   zero schedule add --name <n> --prompt <p> [--schedule <expr> | --event <name>] [--cooldown N] [--json]

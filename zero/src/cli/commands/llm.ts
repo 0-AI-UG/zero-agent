@@ -1,8 +1,8 @@
-/** `zero llm generate` — proxy LLM calls through the server. */
+/** `zero llm generate` - proxy LLM calls through the server. */
 import { llm } from "../../sdk/llm.ts";
 import { hasFlag, getOption, printJson } from "../format.ts";
 
-const HELP = `zero llm — proxy LLM calls through the server
+const HELP = `zero llm - proxy LLM calls through the server
 
 Usage:
   zero llm generate <prompt> [--system <s>] [--model <m>] [--max-tokens <n>] [--json]

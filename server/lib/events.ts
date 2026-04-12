@@ -11,7 +11,7 @@ export type AgentEvents = {
   "message.received": { chatId: string; projectId: string; content: string; userId: string };
   "message.sent": { chatId: string; projectId: string; content: string };
 
-  // Files — full lifecycle
+  // Files - full lifecycle
   "file.created": { projectId: string; path: string; filename: string; mimeType: string; sizeBytes: number };
   "file.updated": { projectId: string; path: string; filename: string; mimeType: string };
   "file.deleted": { projectId: string; path: string; filename: string };
@@ -59,7 +59,7 @@ class EventBus {
     }
     const set = this.handlers.get(event)!;
     if (set.size >= MAX_LISTENERS_PER_EVENT) {
-      eventLog.warn("possible listener leak — too many handlers", { event, count: set.size });
+      eventLog.warn("possible listener leak - too many handlers", { event, count: set.size });
     }
     set.add(handler);
 

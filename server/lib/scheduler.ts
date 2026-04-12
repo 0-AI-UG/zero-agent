@@ -61,7 +61,7 @@ async function tick() {
           { id: project.id, name: project.name },
           task.name,
           prompt,
-          { onlyTools, userId },
+          { onlyTools, userId, maxSteps: task.max_steps ?? undefined },
         );
 
         updateTaskRun(run.id, {

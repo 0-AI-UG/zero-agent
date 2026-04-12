@@ -198,7 +198,7 @@ async function doReindex(projectId: string, overallSignal: AbortSignal): Promise
       emitProgress(projectId, { phase: "memories", current: memoryCount, total: memoryCount });
     }
   } catch {
-    // No MEMORY.md or failed — not fatal
+    // No MEMORY.md or failed - not fatal
   }
 
   if (overallSignal.aborted) throw new Error("Reindex aborted (overall timeout)");
@@ -262,7 +262,7 @@ export async function reindexProject(
   onProgress?: (progress: ReindexProgress) => void,
 ): Promise<{ files: number; memories: number; messages: number }> {
   if (!isEmbeddingConfigured()) {
-    throw new Error("Embedding not configured — set OPENROUTER_API_KEY first");
+    throw new Error("Embedding not configured - set OPENROUTER_API_KEY first");
   }
 
   if (isReindexRunning(projectId)) {

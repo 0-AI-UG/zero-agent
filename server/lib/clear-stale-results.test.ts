@@ -36,7 +36,7 @@ describe("clearStaleToolResults", () => {
       makeUserMsg(),
       makeAssistantMsg(),
       makeToolMsg("fetchUrl", { url: "https://example.com", title: "Example" }),
-      makeAssistantMsg(), // age 1 for fetchUrl — maxAge is 2, so it should be kept
+      makeAssistantMsg(), // age 1 for fetchUrl - maxAge is 2, so it should be kept
     ];
 
     const result = clearStaleToolResults(messages);
@@ -52,7 +52,7 @@ describe("clearStaleToolResults", () => {
       makeUserMsg(),
       makeAssistantMsg(),
       makeUserMsg(),
-      makeAssistantMsg(), // 3 assistant turns — fetchUrl maxAge is 2
+      makeAssistantMsg(), // 3 assistant turns - fetchUrl maxAge is 2
     ];
 
     const result = clearStaleToolResults(messages);
@@ -61,7 +61,7 @@ describe("clearStaleToolResults", () => {
     const output = getOutput(result[1]);
     expect(output).toEqual({
       type: "text",
-      value: "[fetched https://example.com — Example]",
+      value: "[fetched https://example.com - Example]",
     });
   });
 
@@ -119,7 +119,7 @@ describe("clearStaleToolResults", () => {
     expect(out1).toEqual({ type: "text", value: "[listed 2 files in /]" });
 
     const out2 = getOutput(result[2]);
-    expect(out2).toEqual({ type: "text", value: "[fetched https://example.com — Example]" });
+    expect(out2).toEqual({ type: "text", value: "[fetched https://example.com - Example]" });
   });
 
   test("handles mixed tool types correctly", () => {
@@ -128,11 +128,11 @@ describe("clearStaleToolResults", () => {
       makeToolMsg("readFile", { path: "test.md", content: "hello world" }),
       makeAssistantMsg(),
       makeAssistantMsg(),
-      makeAssistantMsg(), // age 3 for both — fetchUrl maxAge 2, readFile maxAge 2
+      makeAssistantMsg(), // age 3 for both - fetchUrl maxAge 2, readFile maxAge 2
     ];
 
     const result = clearStaleToolResults(messages);
-    expect(getOutput(result[0])).toEqual({ type: "text", value: "[fetched https://a.com — A]" });
+    expect(getOutput(result[0])).toEqual({ type: "text", value: "[fetched https://a.com - A]" });
     expect(getOutput(result[1])).toEqual({ type: "text", value: "[read test.md (11 chars)]" });
   });
 

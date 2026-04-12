@@ -1,5 +1,5 @@
 /**
- * Workspace sync approvals — persisted via `pending_responses` + the
+ * Workspace sync approvals - persisted via `pending_responses` + the
  * `sync_approval_blobs` side table and fanned out through the notification
  * dispatcher.
  *
@@ -68,7 +68,7 @@ const EXPIRY_MS = 30 * 60 * 1000;
 
 /** Track active group ids keyed by canonical (primary) sync id. */
 const activeGroupBySyncId = new Map<string, string>();
-/** Reverse map — canonical sync id keyed by group id, used by resolve paths
+/** Reverse map - canonical sync id keyed by group id, used by resolve paths
  * (Telegram callbacks, push action buttons) that arrive with a non-canonical
  * row id and still need to broadcast on the canonical id so the inline card
  * in the chat flips. */
@@ -106,7 +106,7 @@ export function registerPendingSync(
   // any of them can approve/reject; the first response wins via the group's
   // sibling cancellation. Interactive runs target the triggering user only.
   // The triggering user is always included even when they aren't in
-  // project_members — admins can run sessions in projects they don't own,
+  // project_members - admins can run sessions in projects they don't own,
   // and they should still see their own approval prompts.
   let targetUserIds: string[];
   if (opts.autonomous) {
@@ -201,7 +201,7 @@ export function registerPendingSync(
     changes: metaChanges,
   });
 
-  // All sibling row ids — included in resolved/rejected broadcasts so any
+  // All sibling row ids - included in resolved/rejected broadcasts so any
   // UI keyed off a non-canonical id (push click, Telegram action) still
   // flips, and so the chat's inline card (canonical id) flips when a remote
   // member resolves.
@@ -274,7 +274,7 @@ export function resolvePendingSync(
 }
 
 /**
- * Cancel a pending sync — used by shutdown hooks and chat deletion. The
+ * Cancel a pending sync - used by shutdown hooks and chat deletion. The
  * bash tool's `await verdict` will unblock with `"reject"` via the group's
  * cancel path, so any in-flight run can finish cleanly instead of hanging.
  */
@@ -284,7 +284,7 @@ export function cancelPendingSync(id: string, reason?: string): void {
   cancelGroup(groupId, reason ?? "cancelled");
 }
 
-/** Cancel every still-active in-memory pending sync — used at shutdown. */
+/** Cancel every still-active in-memory pending sync - used at shutdown. */
 export function cancelAllPendingSyncs(reason = "shutdown"): number {
   const ids = [...activeGroupBySyncId.keys()];
   for (const id of ids) cancelPendingSync(id, reason);
@@ -314,7 +314,7 @@ export function cancelSyncsForChat(chatId: string, reason = "chat deleted"): num
 }
 
 /**
- * Startup recovery — every pending sync_approval row at boot is an orphan
+ * Startup recovery - every pending sync_approval row at boot is an orphan
  * (its owning run is gone), so mark them rejected and broadcast so any
  * already-open tab flips its card.
  *

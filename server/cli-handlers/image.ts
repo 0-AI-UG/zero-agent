@@ -1,5 +1,5 @@
 /**
- * Image generation handler — wraps generateImageViaOpenRouter, writes
+ * Image generation handler - wraps generateImageViaOpenRouter, writes
  * to S3 and the project's file table, creates a thumbnail, and
  * reconciles the file into the runner container so the agent can
  * immediately read/display it by its project-relative path.

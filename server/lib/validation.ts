@@ -134,7 +134,7 @@ export const updateSoulSchema = z.object({
   content: z.string().min(1).max(10000),
 });
 
-// Chat – keep permissive; the AI SDK controls part shapes and may add new types.
+// Chat - keep permissive; the AI SDK controls part shapes and may add new types.
 const messagePartSchema = z.object({ type: z.string() }).passthrough();
 
 const uiMessageSchema = z.object({

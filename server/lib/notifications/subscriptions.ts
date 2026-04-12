@@ -2,8 +2,8 @@
  * Subscription resolution.
  *
  * Default-on with explicit opt-out: if no row exists in
- * user_notification_subscriptions for (user, kind, channel) — and the
- * channel is currently available — the notification fires. An explicit
+ * user_notification_subscriptions for (user, kind, channel) - and the
+ * channel is currently available - the notification fires. An explicit
  * `enabled = 0` row silences the kind×channel.
  *
  * Precedence: exact (kind, channel) → wildcard (kind='*', channel) → default.
@@ -54,7 +54,7 @@ export interface ResolvedChannels {
 
 /**
  * Same as `resolveDispatchChannels` but also returns the per-channel skip
- * reasons and the raw availability snapshot — used by the dispatcher to
+ * reasons and the raw availability snapshot - used by the dispatcher to
  * surface "why was nothing delivered?" diagnostics back to callers (CLI
  * `zero message send` prints these so users can see when a channel was
  * silenced because it isn't configured / connected).

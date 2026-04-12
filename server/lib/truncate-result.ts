@@ -7,7 +7,7 @@
 /**
  * Strip long base64 runs from text. Browser screenshots, image downloads, etc.
  * often land in tool stdout as giant base64 blobs that serve no purpose to the
- * model — replace them with a short placeholder noting the original size.
+ * model - replace them with a short placeholder noting the original size.
  *
  * Matches runs of base64 alphabet chars at least 400 long (ordinary tokens and
  * hashes stay under that), optionally followed by padding.

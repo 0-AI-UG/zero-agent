@@ -24,10 +24,10 @@ function rowToUiStatus(
 }
 
 /**
- * POST /api/sync/:id/verdict — body: { approved: boolean }
+ * POST /api/sync/:id/verdict - body: { approved: boolean }
  *
  * Resolves the pending sync approval row. Returns the (new) terminal state
- * so the caller can update the UI authoritatively — idempotent: re-POSTing
+ * so the caller can update the UI authoritatively - idempotent: re-POSTing
  * after somebody else already resolved the row returns their verdict.
  */
 export async function handleSyncVerdict(request: Request): Promise<Response> {
@@ -73,7 +73,7 @@ export async function handleSyncVerdict(request: Request): Promise<Response> {
 }
 
 /**
- * GET /api/sync/:id — returns `{id, status, source, changes}` so clients
+ * GET /api/sync/:id - returns `{id, status, source, changes}` so clients
  * can hydrate on reload or after a push-click navigation.
  */
 export async function handleSyncStatus(request: Request): Promise<Response> {
@@ -103,7 +103,7 @@ export async function handleSyncStatus(request: Request): Promise<Response> {
 }
 
 /**
- * GET /api/sync/:id/diff?path=... — returns { kind, before, after, isBinary }
+ * GET /api/sync/:id/diff?path=... - returns { kind, before, after, isBinary }
  * for a single file in the pending sync. Backed by `sync_approval_blobs`.
  */
 export async function handleSyncDiff(request: Request): Promise<Response> {

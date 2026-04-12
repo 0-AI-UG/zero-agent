@@ -1,5 +1,5 @@
 /**
- * `zero browser ...` — drive the per-project Chromium session.
+ * `zero browser ...` - drive the per-project Chromium session.
  *
  * The whole reason this command exists: a 15-action browser flow used to
  * cost 15 agent steps. Now the agent can do the entire flow in a single
@@ -15,7 +15,7 @@ import { browser } from "../../sdk/browser.ts";
 import * as fs from "node:fs/promises";
 import { hasFlag, getOption, printJson } from "../format.ts";
 
-const HELP = `zero browser — drive the per-project browser session
+const HELP = `zero browser - drive the per-project browser session
 
 Usage:
   zero browser open <url>
@@ -75,13 +75,13 @@ export async function browserCommand(args: string[]): Promise<number> {
     case "screenshot": {
       // Screenshots are captured + downscaled on the runner (~1024px JPEG@60),
       // then the server writes them directly to project storage and returns
-      // only a compact `{path, fileId, ...}` reference — no base64 on the wire.
+      // only a compact `{path, fileId, ...}` reference - no base64 on the wire.
       // Read the image back with `zero` / the in-process readFile tool using
       // the returned path when you actually need to look at it.
       const result = await browser.screenshot();
       const outFile = getOption(rest, "-o") ?? getOption(rest, "--out");
       if (outFile && result?.path) {
-        // Caller asked for a local copy too — pull it via fs by project path.
+        // Caller asked for a local copy too - pull it via fs by project path.
         // The server-returned `path` is project-relative and the container's
         // workspace root is the project root, so a plain copy works.
         try {

@@ -2,7 +2,7 @@
  * HTTP client used by both the SDK and the CLI. Auth resolution happens
  * here exactly once: the client reads ZERO_PROXY_URL from the environment.
  * The runner injects this env var at container create time. Containers
- * never hold a server credential — the runner stamps the verified
+ * never hold a server credential - the runner stamps the verified
  * (projectId, userId) onto the request before forwarding to the server.
  *
  * Transport: ZERO_PROXY_URL is `unix:<path>` (e.g. `unix:/run/zero/sock`).
@@ -27,7 +27,7 @@ const PROXY_PATH_PREFIX = "/v1/proxy";
 export interface CallOptions {
   /** Hard deadline for the entire request, in ms. */
   timeoutMs?: number;
-  /** External signal — if it aborts, so does the request. */
+  /** External signal - if it aborts, so does the request. */
   signal?: AbortSignal;
 }
 

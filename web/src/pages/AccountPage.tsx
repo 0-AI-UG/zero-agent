@@ -133,7 +133,7 @@ function TwoFactorSection() {
       <div className="rounded-lg border p-4 space-y-4">
         {error && <p className="text-xs text-destructive">{error}</p>}
 
-        {/* Idle — not enabled */}
+        {/* Idle - not enabled */}
         {step === "idle" && !status?.enabled && (
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">
@@ -145,7 +145,7 @@ function TwoFactorSection() {
           </div>
         )}
 
-        {/* Idle — enabled */}
+        {/* Idle - enabled */}
         {step === "idle" && status?.enabled && (
           <div className="space-y-3">
             <div className="flex items-center gap-2">
@@ -171,7 +171,7 @@ function TwoFactorSection() {
           </div>
         )}
 
-        {/* Setup — show QR */}
+        {/* Setup - show QR */}
         {step === "setup" && (
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
@@ -244,7 +244,7 @@ function TwoFactorSection() {
           </div>
         )}
 
-        {/* Disable — confirm with code */}
+        {/* Disable - confirm with code */}
         {step === "disable" && (
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">

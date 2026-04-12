@@ -63,7 +63,7 @@ export function PlanReviewCard({
         }
       }
     } catch {
-      // Ignore — user can retry
+      // Ignore - user can retry
     } finally {
       setSubmitting(null);
     }
@@ -81,7 +81,7 @@ export function PlanReviewCard({
         <span className="text-muted-foreground/60">{planFilePath}</span>
       </div>
 
-      {/* Plan content — rendered as markdown */}
+      {/* Plan content - rendered as markdown */}
       {planContent ? (
         <div className="text-sm prose prose-sm dark:prose-invert max-w-none mb-3 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 border-l-2 border-muted-foreground/20 pl-4">
           <ReactMarkdown remarkPlugins={[remarkGfm]}>{planContent}</ReactMarkdown>
@@ -97,7 +97,7 @@ export function PlanReviewCard({
         </div>
       )}
 
-      {/* Action buttons — vertical, uniform style */}
+      {/* Action buttons - vertical, uniform style */}
       {isPending && responseId && !isResolved && (
         <div className="flex flex-col gap-1 items-start">
           <ActionButton
