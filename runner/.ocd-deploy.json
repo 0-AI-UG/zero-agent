@@ -1,5 +1,6 @@
 {
   "$schema": 1,
+  "$llm": "https://ocd.cero-ai.com/llm.txt",
   "name": "Zero Agent — Runner",
   "description": "Container execution service that manages Docker session containers for agent workloads",
   "suggested_app_name": "zero-runner",

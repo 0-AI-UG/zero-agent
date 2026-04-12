@@ -1,23 +1,18 @@
 {
   "$schema": 1,
-  "name": "Zero Agent",
-  "description": "AI agent platform with real-time chat, code execution, and multi-provider LLM support",
-  "suggested_app_name": "zero-agent",
+  "$llm": "https://ocd.cero-ai.com/llm.txt",
+  "name": "Zero Agent — Server",
+  "description": "API server with real-time chat, agent orchestration, and multi-provider LLM support",
+  "suggested_app_name": "zero-server",
   "build": {
-    "compose_file": "docker-compose.yml",
-    "compose_web_service": "server"
+    "dockerfile": "server/Dockerfile",
+    "container_port": 3000
   },
   "volume": {
     "size": 10,
     "path": "/app/data"
   },
   "env": [
-    {
-      "key": "RUNNER_API_KEY",
-      "description": "Shared secret between server and runner for internal API auth",
-      "required": true,
-      "secret": true
-    },
     {
       "key": "JWT_SECRET",
       "description": "Secret key for signing JWT tokens. Must be set in production.",
@@ -62,15 +57,11 @@
       "key": "LOG_LEVEL",
       "description": "Logging verbosity (debug, info, warn, error)",
       "default": "info"
-    },
-    {
-      "key": "SESSION_IMAGE",
-      "description": "Docker image for agent session containers (built by CD pipeline)",
-      "default": "ghcr.io/cero-ai/zero-session:latest"
     }
   ],
   "webhook": {
     "enabled": true,
-    "branch": "main"
+    "branch": "main",
+    "paths": ["server/", "web/", "skills/"]
   }
 }
