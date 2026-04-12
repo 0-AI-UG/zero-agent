@@ -1,0 +1,47 @@
+{
+  "$schema": 1,
+  "name": "Zero Agent — Runner",
+  "description": "Container execution service that manages Docker session containers for agent workloads",
+  "suggested_app_name": "zero-runner",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "container_port": 3100
+  },
+  "volume": {
+    "size": 5,
+    "path": "/var/run/zero-runner"
+  },
+  "env": [
+    {
+      "key": "RUNNER_API_KEY",
+      "description": "Shared secret for authenticating requests from the server",
+      "required": true,
+      "secret": true
+    },
+    {
+      "key": "SESSION_IMAGE",
+      "description": "Docker image for agent session containers",
+      "default": "ghcr.io/cero-ai/zero-session:latest"
+    },
+    {
+      "key": "IDLE_TIMEOUT_SECS",
+      "description": "Seconds before idle session containers are stopped",
+      "default": "600"
+    },
+    {
+      "key": "MAX_CONTAINERS",
+      "description": "Maximum number of concurrent session containers",
+      "default": "10"
+    },
+    {
+      "key": "LOG_LEVEL",
+      "description": "Logging verbosity (debug, info, warn, error)",
+      "default": "info"
+    }
+  ],
+  "webhook": {
+    "enabled": true,
+    "branch": "main",
+    "paths": ["runner/"]
+  }
+}

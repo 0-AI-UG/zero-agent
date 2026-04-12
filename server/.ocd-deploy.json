@@ -1,0 +1,66 @@
+{
+  "$schema": 1,
+  "name": "Zero Agent — Server",
+  "description": "API server with real-time chat, agent orchestration, and multi-provider LLM support",
+  "suggested_app_name": "zero-server",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "container_port": 3000
+  },
+  "volume": {
+    "size": 10,
+    "path": "/app/data"
+  },
+  "env": [
+    {
+      "key": "JWT_SECRET",
+      "description": "Secret key for signing JWT tokens. Must be set in production.",
+      "required": true,
+      "secret": true
+    },
+    {
+      "key": "CREDENTIALS_KEY",
+      "description": "Encryption key for stored secrets (API keys, tokens). Falls back to JWT_SECRET if unset.",
+      "secret": true
+    },
+    {
+      "key": "OPENROUTER_API_KEY",
+      "description": "OpenRouter API key for LLM access. Can also be set later via admin panel.",
+      "secret": true
+    },
+    {
+      "key": "BRAVE_SEARCH_API_KEY",
+      "description": "Brave Search API key for web search. Can also be set later via admin panel.",
+      "secret": true
+    },
+    {
+      "key": "APP_URL",
+      "description": "Full public URL of the app (e.g. https://zero.example.com). Used for passkey auth and webhooks."
+    },
+    {
+      "key": "RP_ID",
+      "description": "WebAuthn relying party ID — the domain without protocol (e.g. zero.example.com)",
+      "default": "localhost"
+    },
+    {
+      "key": "RP_NAME",
+      "description": "Display name shown during passkey registration",
+      "default": "ZeroAgent"
+    },
+    {
+      "key": "CORS_ORIGIN",
+      "description": "Allowed CORS origin. Set to your app URL in production.",
+      "default": "*"
+    },
+    {
+      "key": "LOG_LEVEL",
+      "description": "Logging verbosity (debug, info, warn, error)",
+      "default": "info"
+    }
+  ],
+  "webhook": {
+    "enabled": true,
+    "branch": "main",
+    "paths": ["server/", "web/", "skills/"]
+  }
+}
