@@ -5,7 +5,8 @@
   "description": "API server with real-time chat, agent orchestration, and multi-provider LLM support",
   "suggested_app_name": "zero-server",
   "build": {
-    "dockerfile": "server/Dockerfile",
+    "dockerfile": "Dockerfile",
+    "context": ".",
     "container_port": 3000
   },
   "volume": {

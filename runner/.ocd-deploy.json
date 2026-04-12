@@ -6,6 +6,7 @@
   "suggested_app_name": "zero-runner",
   "build": {
     "dockerfile": "Dockerfile",
+    "context": "runner",
     "container_port": 3100
   },
   "volume": {
