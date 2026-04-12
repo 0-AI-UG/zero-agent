@@ -25,7 +25,6 @@ import { PackageJsonPreview } from "./package-json-preview";
 import { CsvPreview } from "./csv-preview";
 import { XlsxPreview } from "./xlsx-preview";
 import { HtmlPreview } from "./html-preview";
-import { VizPreview } from "./viz-preview";
 import { DownloadFallback } from "./download-fallback";
 import type { FileItem } from "@/hooks/use-files";
 
@@ -112,16 +111,12 @@ function isMarkdownFile(file: FileItem): boolean {
   return file.mimeType === "text/markdown" || file.filename.endsWith(".md");
 }
 
-function isVizFile(file: FileItem): boolean {
-  return file.mimeType === "text/html+viz" || file.filename.endsWith(".viz");
-}
-
 function isHtmlFile(file: FileItem): boolean {
   return file.mimeType === "text/html" || file.filename.endsWith(".html");
 }
 
 function isPlainTextFile(file: FileItem): boolean {
-  return (file.mimeType === "text/plain" || file.filename.endsWith(".txt")) && !isMarkdownFile(file) && !isCodeFile(file) && !isHtmlFile(file) && !isVizFile(file);
+  return (file.mimeType === "text/plain" || file.filename.endsWith(".txt")) && !isMarkdownFile(file) && !isCodeFile(file) && !isHtmlFile(file);
 }
 
 function isCsvFile(file: FileItem): boolean {
@@ -172,10 +167,6 @@ function FilePreviewContent({
 }) {
   if (file.mimeType.startsWith("image/") && url) {
     return <ImagePreview file={file} url={url} thumbnailUrl={thumbnailUrl} />;
-  }
-
-  if (isVizFile(file) && content !== undefined) {
-    return <VizPreview file={file} content={content} />;
   }
 
   if (isHtmlFile(file) && content !== undefined) {
