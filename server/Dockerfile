@@ -23,6 +23,9 @@ RUN bun install --frozen-lockfile
 # Copy config files needed for build & runtime
 COPY tsconfig.json ./tsconfig.json
 
+# Copy zero SDK source (server imports zero/schemas at runtime)
+COPY zero/ ./zero/
+
 # Copy server source
 COPY server/ ./server/
 
