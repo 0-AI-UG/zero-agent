@@ -1,14 +1,14 @@
 import { z } from "zod";
 import { tool, generateText } from "ai";
-import { getFilesByFolder, getFileByS3Key, getFilesByFolderPath, insertFile, deleteFile as deleteFileRecord } from "@/db/queries/files.ts";
-import { createFolder as createFolderRecord, getFoldersByParent, getFolderByPath, deleteFolder as deleteFolderRecord, deleteFoldersByPathPrefix } from "@/db/queries/folders.ts";
-import { readFromS3, readBinaryFromS3, writeToS3, deleteFromS3, s3 } from "@/lib/s3.ts";
+import { getFileByS3Key, insertFile } from "@/db/queries/files.ts";
+import { createFolder as createFolderRecord, getFolderByPath } from "@/db/queries/folders.ts";
+import { readFromS3, readBinaryFromS3, writeToS3, s3 } from "@/lib/s3.ts";
 import { applyEdits } from "@/lib/apply-edits.ts";
 import { lintContent } from "@/lib/lint.ts";
 import { sanitizePath } from "@/lib/sanitize.ts";
 import { truncateText } from "@/lib/truncate-result.ts";
-import { indexFileContent, removeFileIndex } from "@/db/queries/search.ts";
-import { embedAndStore, deleteVectorsBySource } from "@/lib/vectors.ts";
+import { indexFileContent } from "@/db/queries/search.ts";
+import { embedAndStore } from "@/lib/vectors.ts";
 import { log } from "@/lib/logger.ts";
 import { isModelMultimodal } from "@/config/models.ts";
 import { getVisionModel } from "@/lib/providers/index.ts";
@@ -84,7 +84,6 @@ function guessMimeType(filename: string): string {
     gif: "image/gif",
     pdf: "application/pdf",
     html: "text/html",
-    viz: "text/html+viz",
   };
   return map[ext ?? ""] ?? "application/octet-stream";
 }
@@ -116,26 +115,6 @@ function ensureFoldersExist(projectId: string, folderPath: string) {
   }
 }
 
-/**
- * Remove empty ancestor folders after a file deletion.
- * Walks up from folderPath to root, deleting each folder that has no files and no child folders.
- */
-function cleanupEmptyFolders(projectId: string, folderPath: string) {
-  let current = folderPath;
-  while (current !== "/") {
-    const files = getFilesByFolder(projectId, current);
-    const children = getFoldersByParent(projectId, current);
-    if (files.length > 0 || children.length > 0) break;
-    const folder = getFolderByPath(projectId, current);
-    if (folder) {
-      deleteFolderRecord(folder.id);
-    }
-    // Move to parent: "/posts/2026-03-07/" → "/posts/"
-    const segments = current.split("/").filter(Boolean);
-    segments.pop();
-    current = segments.length > 0 ? "/" + segments.join("/") + "/" : "/";
-  }
-}
 
 export function createFileTools(projectId: string, options?: { chatId?: string; userId?: string; modelId?: string; initialReadPaths?: string[] }) {
 
@@ -144,7 +123,7 @@ export function createFileTools(projectId: string, options?: { chatId?: string; 
   return {
     readFile: tool({
       description:
-        "Read the contents of a file from this project's storage. Supports text files and images (png, jpg, gif, webp) — images are returned visually. Use listFiles to find available files first. You must read a file before you can edit or overwrite it. Use offset/limit to read specific line ranges of large files.",
+        "Read a file from project storage. Supports text and images. Must read before editing.",
       inputSchema: z.object({
         path: z
           .string()
@@ -259,7 +238,7 @@ export function createFileTools(projectId: string, options?: { chatId?: string; 
 
     writeFile: tool({
       description:
-        "Write or overwrite a file in this project's storage. Use for creating new files or complete rewrites. You must read a file first before overwriting it. Prefer creating .md, .txt, .json, .csv, .py, or .html files — these formats have built-in preview support.",
+        "Create or overwrite a file in project storage. Must read first before overwriting.",
       inputSchema: z.object({
         path: z
           .string()
@@ -343,7 +322,7 @@ export function createFileTools(projectId: string, options?: { chatId?: string; 
 
     editFile: tool({
       description:
-        "Edit an existing file by applying changes. Supports two modes: (1) search-and-replace with oldText/newText, or (2) line-range replacement with startLine/endLine/newText — use line numbers from readFile output. You can mix both modes in a single call. You must readFile first before using this tool.",
+        "Edit a file via search-and-replace (oldText/newText) or line-range replacement (startLine/endLine/newText). Must readFile first.",
       inputSchema: z.object({
         path: z
           .string()
@@ -438,100 +417,9 @@ export function createFileTools(projectId: string, options?: { chatId?: string; 
       },
     }),
 
-    delete: tool({
-      description:
-        "Delete a file or folder from this project's storage. When deleting a folder, all files and subfolders inside it are deleted recursively. Use listFiles to find available files and folders first.",
-      inputSchema: z.object({
-        path: z
-          .string()
-          .describe(
-            "Path to delete. For a file: relative path like 'posts/old-draft.md'. For a folder: path like '/posts/2026-03-07' or '/posts/2026-03-07/' — deletes everything inside recursively.",
-          ),
-        type: z
-          .enum(["file", "folder"])
-          .describe("Whether to delete a file or a folder."),
-      }),
-      needsApproval: true,
-      execute: async ({ path: rawPath, type }) => {
-        if (type === "folder") {
-          // Normalize folder path
-          let folderPath = rawPath;
-          if (!folderPath.startsWith("/")) folderPath = "/" + folderPath;
-          if (folderPath !== "/" && !folderPath.endsWith("/")) folderPath += "/";
-
-          if (folderPath === "/") {
-            throw new Error("Cannot delete the root folder.");
-          }
-
-          toolLog.info("deleteFolder", { projectId, folderPath });
-
-          const folder = getFolderByPath(projectId, folderPath);
-          if (!folder) {
-            throw new Error(`Folder not found: ${folderPath}`);
-          }
-
-          // Delete all files under this folder from S3
-          const files = getFilesByFolderPath(projectId, folderPath);
-          await Promise.all(
-            files.flatMap((f) => {
-              const ops = [deleteFromS3(f.s3_key)];
-              if (f.thumbnail_s3_key) {
-                ops.push(deleteFromS3(f.thumbnail_s3_key).catch(() => {}));
-              }
-              return ops;
-            })
-          );
-
-          // Remove FTS indexes and vector embeddings for all files
-          for (const f of files) {
-            removeFileIndex(f.id);
-            deleteVectorsBySource(projectId, "file", f.id);
-            deleteFileRecord(f.id);
-          }
-
-          // Delete this folder and all child folders
-          deleteFoldersByPathPrefix(projectId, folderPath);
-
-          await reconcileToContainer(projectId);
-
-          // Clean up empty ancestor folders
-          cleanupEmptyFolders(projectId, folderPath);
-
-          toolLog.info("deleteFolder success", { projectId, folderPath, filesDeleted: files.length });
-          return { path: folderPath, type: "folder", deleted: true, filesDeleted: files.length };
-        }
-
-        // File deletion
-        const path = sanitizePath(rawPath);
-        const s3Key = `projects/${projectId}/${path}`;
-        toolLog.info("deleteFile", { projectId, path, s3Key });
-
-        const file = getFileByS3Key(projectId, s3Key);
-        if (!file) {
-          throw new Error(`File not found: ${path}`);
-        }
-
-        await deleteFromS3(s3Key);
-        if (file.thumbnail_s3_key) {
-          await deleteFromS3(file.thumbnail_s3_key);
-        }
-
-        removeFileIndex(file.id);
-        deleteVectorsBySource(projectId, "file", file.id);
-        deleteFileRecord(file.id);
-        await reconcileToContainer(projectId);
-
-        // Clean up empty ancestor folders
-        cleanupEmptyFolders(projectId, file.folder_path);
-
-        toolLog.info("deleteFile success", { projectId, path, fileId: file.id });
-        return { path, type: "file", deleted: true };
-      },
-    }),
-
     displayFile: tool({
       description:
-        "Display an existing project file inline in the chat for the user to see. Use this when the user should visually see a file — supported types: images (png, jpg, gif, webp, svg), HTML pages, and text files (md, txt, code). The file must already exist. This does NOT read the file's contents — use readFile if you need the content to reason about it. Do NOT call this for .viz files; .viz files are shown automatically when written.",
+        "Display a file inline in chat for the user to see. Does not read contents — use readFile for that.",
       inputSchema: z.object({
         path: z
           .string()

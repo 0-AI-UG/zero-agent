@@ -1,14 +1,15 @@
 import type { ModelMessage } from "@ai-sdk/provider-utils";
 import type { PrepareStepFunction } from "ai";
 import { clearStaleToolResults } from "@/lib/clear-stale-results.ts";
+import { getUndeliveredResults } from "@/lib/background-task-store.ts";
 import {
-  type SessionAnchor,
-  createEmptyAnchor,
-  extractAnchor,
-  renderAnchor,
-  saveAnchor,
-  loadAnchor,
-} from "@/lib/session-anchor.ts";
+  type CompactionState,
+  createEmptyCompactionState,
+  extractCompactionState,
+  renderCompactionState,
+  saveCompactionState,
+  loadCompactionState,
+} from "@/lib/compaction-state.ts";
 import { flushLearnings } from "@/lib/memory-flush.ts";
 import { log } from "@/lib/logger.ts";
 
@@ -113,18 +114,39 @@ interface CompactOptions {
   contextWindow: number;
   projectId?: string;
   runId?: string;
+  chatId?: string;
 }
 
 export function createCompactPrepareStep(options: CompactOptions): PrepareStepFunction {
-  const { contextWindow, projectId, runId } = options;
-  let currentAnchor: SessionAnchor | null = null;
+  const { contextWindow, projectId, runId, chatId } = options;
+  let currentState: CompactionState | null = null;
 
   return async ({ messages }) => {
     // Layer 0: Patch orphaned tool calls from aborted streams
     const patched = patchOrphanedToolCalls(messages);
 
+    // Layer 1: Inject background task completion notifications
+    let withNotifications = patched;
+    if (chatId) {
+      const completed = getUndeliveredResults(chatId);
+      if (completed.length > 0) {
+        const lines = completed.map((t) => {
+          if (t.status === "completed") {
+            return `- "${t.taskName}" (${t.runId}): completed — ${t.summary?.slice(0, 500) ?? "no summary"}${t.resultChatId ? ` [result chat: ${t.resultChatId}]` : ""}`;
+          }
+          return `- "${t.taskName}" (${t.runId}): failed — ${t.error ?? "unknown error"}`;
+        });
+        const notification: ModelMessage = {
+          role: "user" as const,
+          content: `[System notification] Background tasks completed since your last step:\n${lines.join("\n")}`,
+        };
+        withNotifications = [...patched, notification];
+        compactLog.info("injected background task notifications", { chatId, count: completed.length });
+      }
+    }
+
     // Layer 2: Always clear stale tool results (cheap, no LLM call)
-    const cleaned = clearStaleToolResults(patched);
+    const cleaned = clearStaleToolResults(withNotifications);
 
     // First, try to calculate actual tokens from metadata
     let estimatedTokens = calculateActualTokens(cleaned);
@@ -159,27 +181,27 @@ export function createCompactPrepareStep(options: CompactOptions): PrepareStepFu
     const oldMessages = cleaned.slice(0, -RECENT_MESSAGE_COUNT);
     const recentMessages = cleaned.slice(-RECENT_MESSAGE_COUNT);
 
-    // Load existing anchor if we have project context and haven't loaded yet
-    if (projectId && runId && !currentAnchor) {
-      currentAnchor = await loadAnchor(projectId, runId);
+    // Load existing compaction state if we have project context and haven't loaded yet
+    if (projectId && runId && !currentState) {
+      currentState = await loadCompactionState(projectId, runId);
     }
-    if (!currentAnchor) {
-      currentAnchor = createEmptyAnchor(runId ?? "");
+    if (!currentState) {
+      currentState = createEmptyCompactionState(runId ?? "");
     }
 
-    // Extract structured state from evicted messages and merge into anchor
-    const { anchor, learnings } = await extractAnchor(oldMessages, currentAnchor);
-    currentAnchor = anchor;
+    // Extract structured state from evicted messages and merge in
+    const { state, learnings } = await extractCompactionState(oldMessages, currentState);
+    currentState = state;
 
-    // Save anchor to S3 if we have project context
+    // Save state to S3 if we have project context
     if (projectId && runId) {
-      await saveAnchor(projectId, runId, anchor).catch((err) => {
-        compactLog.warn("failed to save anchor during compaction", {
+      await saveCompactionState(projectId, runId, state).catch((err) => {
+        compactLog.warn("failed to save compaction state", {
           error: err instanceof Error ? err.message : String(err),
         });
       });
 
-      // Flush learnings to memory incrementally (Phase 3)
+      // Flush learnings to memory incrementally
       if (learnings.length > 0) {
         await flushLearnings(projectId, learnings).catch((err) => {
           compactLog.warn("failed to flush learnings", {
@@ -189,17 +211,17 @@ export function createCompactPrepareStep(options: CompactOptions): PrepareStepFu
       }
     }
 
-    compactLog.info("anchored compaction complete", {
+    compactLog.info("compaction complete", {
       oldMessageCount: oldMessages.length,
-      anchorIntent: anchor.intent.slice(0, 80),
-      completedWork: anchor.completedWork.length,
-      decisions: anchor.activeDecisions.length,
+      intent: state.intent.slice(0, 80),
+      completedWork: state.completedWork.length,
+      decisions: state.activeDecisions.length,
     });
 
     const compactedMessages: ModelMessage[] = [
       {
         role: "user" as const,
-        content: renderAnchor(anchor),
+        content: renderCompactionState(state),
       },
       ...recentMessages,
     ];

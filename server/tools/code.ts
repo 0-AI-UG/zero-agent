@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { tool } from "ai";
-import { getLocalBackend } from "@/lib/execution/lifecycle.ts";
+import { ensureBackend } from "@/lib/execution/lifecycle.ts";
 import { writeToS3, readFromS3, deleteFromS3 } from "@/lib/s3.ts";
 import { insertFile, getFileByS3Key, deleteFile as deleteFileRecord } from "@/db/queries/files.ts";
 import { reconcileToContainer, sha256Hex } from "@/lib/execution/workspace-sync.ts";
@@ -349,55 +349,34 @@ export function clearReadyWorkspaces(): void {
   syncedProjects.clear();
 }
 
-export function createCodeTools(userId: string, projectId: string) {
-  function getBackend() {
-    const backend = getLocalBackend();
+export function createCodeTools(
+  userId: string,
+  projectId: string,
+  options: { autonomous?: boolean } = {},
+) {
+  async function getBackend() {
+    const backend = await ensureBackend();
     if (!backend?.isReady()) {
       throw new Error("Code execution is not available. Docker may not be running.");
     }
     return backend;
   }
 
-  async function ensureWorkspace(): Promise<void> {
-    const backend = getBackend();
+  async function ensureWorkspace() {
+    const backend = await getBackend();
     await backend.ensureContainer(userId, projectId);
     await reconcileToContainer(projectId);
     if (!syncedProjects.has(projectId)) {
       syncedProjects.add(projectId);
       toolLog.info("workspace synced", { userId, projectId });
     }
+    return backend;
   }
 
   return {
     bash: tool({
       description:
-        "Run a bash command in the project workspace (inside a container).\n" +
-        "Available runtimes: bun (TypeScript/JS), uv (Python), plus standard unix tools (rg, find, ls, mv, mkdir, jq, curl, ...).\n" +
-        "\n" +
-        "Preinstalled toolkit: `zero` — a CLI + TypeScript SDK that lets you call back into the host for things you can't do from inside the sandbox alone. Run `zero --help` to see all subcommands. Groups:\n" +
-        "  zero web {search,fetch}            — search the web / fetch a URL\n" +
-        "  zero image generate <prompt> [-o]  — generate an image, save to project files\n" +
-        "  zero schedule {add,ls,update,rm}   — manage scheduled / event-triggered tasks\n" +
-        "  zero chat search <query>           — semantic search over past conversations\n" +
-        "  zero telegram send <text>          — message the user on Telegram\n" +
-        "  zero creds {ls,get,set,rm}         — saved credentials (see security note below)\n" +
-        "  zero browser {open,click,fill,screenshot,evaluate,wait,snapshot,extract,status} — drive the per-project browser\n" +
-        "      Context-efficient patterns: prefer `zero browser snapshot` (text a11y tree) over `screenshot`. When you need a specific fact from a content-heavy page, use `zero browser extract \"<question>\"` — it runs Readability + keyword ranking server-side and returns only the most relevant paragraphs, instead of dumping the whole DOM. Snapshots/screenshots are auto-stubbed to one line once superseded.\n" +
-        "Every command supports --json so you can pipe through `jq`.\n" +
-        "\n" +
-        "Browser flows: chain several `zero browser ...` calls inside a single bash heredoc instead of one tool call per action. A 15-step flow becomes one tool result.\n" +
-        "Scripted automation: write a Bun script and `import { browser, web, creds } from \"zero\"`. Both forms share the same auth.\n" +
-        "\n" +
-        "SECURITY — using stored credentials without leaking them: `zero creds get <name>` writes ONLY the secret value to stdout, so use shell substitution to interpolate it into another command without the secret entering this tool result:\n" +
-        "  curl -H \"Authorization: Bearer $(zero creds get github)\" https://api.github.com/...\n" +
-        "  zero browser fill \"#password\" \"$(zero creds get github)\"\n" +
-        "Never read a credential into a variable you then echo, log, or include in your response.\n" +
-        "\n" +
-        "File search: use `rg <pattern>` and `find . -name <glob>` against the synced workspace — listFiles and searchFiles tools no longer exist.\n" +
-        "File moves and folder creation: use `mv` and `mkdir -p` directly — the workspace sync picks up the changes and updates the project file tree. There is no separate moveFile or createFolder tool.\n" +
-        "\n" +
-        "Files changed by the command are automatically synced back to the project. The shell starts in the project workspace directory. All project files are here — use relative paths directly. Do NOT cd into any directory before running commands.\n" +
-        "Output is truncated to ~8KB. For verbose commands (package installs, builds), pipe through `tail -20` or `head -n 50` to capture the relevant portion.",
+        "Run a bash command in the project workspace. The `zero` CLI is preinstalled — run `zero --help` to discover commands. Changed files auto-sync back. Output truncated to ~8KB.",
       inputSchema: z.object({
         command: z.string().describe("The bash command to execute"),
         timeout: z.number().optional().describe("Timeout in ms (default 120000, max 300000)"),
@@ -407,8 +386,7 @@ export function createCodeTools(userId: string, projectId: string) {
         toolLog.info("bash", { userId, projectId, command, background });
 
         try {
-          await ensureWorkspace();
-          const backend = getBackend();
+          const backend = await ensureWorkspace();
           markActivity(projectId);
 
           const result = await backend.runBash(
@@ -488,6 +466,8 @@ export function createCodeTools(userId: string, projectId: string) {
           // Gated: register pending sync, yield awaiting state, await verdict
           const { id: syncId, verdict } = registerPendingSync({
             projectId,
+            userId,
+            autonomous: options.autonomous,
             source: "bash",
             changes,
           });

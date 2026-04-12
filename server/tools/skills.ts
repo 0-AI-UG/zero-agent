@@ -10,7 +10,7 @@ export function createSkillTools(projectId: string, chatId?: string) {
   return {
     loadSkill: tool({
       description:
-        "Load a skill's full instructions by name. Call this when you need platform-specific guidance (e.g., how to use LinkedIn, Instagram, etc.). The skill index in your system prompt shows available skills.",
+        "Load a skill's instructions by name.",
       inputSchema: z.object({
         name: z.string().describe("The skill name to load (from the skills index)."),
       }),

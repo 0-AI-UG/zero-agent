@@ -1,29 +1,46 @@
 import { z } from "zod";
 import { tool, ToolLoopAgent, stepCountIs } from "ai";
-import { createDiscoverableToolset } from "@/tools/registry.ts";
+import { createToolset } from "@/tools/registry.ts";
 import { getChatModel, getEnrichModel } from "@/lib/providers/index.ts";
 import { getSkillSummaries } from "@/lib/skills/loader.ts";
 import { buildSkillsIndex } from "@/lib/skills/injector.ts";
+import { runAutonomousTask } from "@/lib/autonomous-agent.ts";
+import { events } from "@/lib/events.ts";
+import { registerBackgroundTask } from "@/lib/background-task-store.ts";
 import { nanoid } from "nanoid";
 import { log } from "@/lib/logger.ts";
 
 const toolLog = log.child({ module: "tool:agent" });
 
-// Structural exclusions beyond what the "subagent" context scope handles
+// Tools subagents don't get (on top of the `agent` spawner itself, which is
+// not injected here — only by the main-agent path in server/lib/agent.ts).
 const AGENT_EXCLUDED_TOOLS: string[] = [];
+
+/** Derive a short chat/task name from the first line of the task prompt. */
+function deriveTaskName(prompt: string, fallbackIndex: number): string {
+  const firstLine = prompt.split("\n", 1)[0]?.trim() ?? "";
+  if (!firstLine) return `Background agent ${fallbackIndex + 1}`;
+  return firstLine.length > 60 ? firstLine.slice(0, 57) + "…" : firstLine;
+}
 
 export interface AgentToolOptions {
   userId?: string;
   projectId?: string;
+  projectName?: string;
   onlyTools?: string[];
   modelId?: string;
+  chatId?: string;
 }
 
 export function createAgentTool(projectId: string, toolOptions: AgentToolOptions) {
   return tool({
     description:
-      "Spawn one or more agents to handle tasks autonomously. Use for multi-step research, data processing, content creation, or any task that needs its own tool loop. When you have multiple independent tasks, pass them all to run in parallel. Each agent has loadTools and can discover any tools it needs. Agents cannot use approval-based tools (e.g. delete) — handle those in the main conversation instead.",
+      "Spawn agents for autonomous tasks. Pass multiple tasks to run in parallel. Set background=true for long-running work. Agents have no conversation history — make prompts self-contained.",
     inputSchema: z.object({
+      background: z
+        .boolean()
+        .default(false)
+        .describe("Run in background (fire-and-forget). Returns immediately with a run ID. Use for long-running tasks where you don't need results inline."),
       tasks: z
         .array(
           z.object({
@@ -34,11 +51,72 @@ export function createAgentTool(projectId: string, toolOptions: AgentToolOptions
               .describe("'default' (main model) or 'fast' (Qwen). Use fast for research/scraping. IMPORTANT: tasks that need the browser tool MUST use 'default' — the fast model cannot handle the browser tool's input schema."),
           }),
         )
-        .min(1)
-        .max(5),
+        .min(1),
     }),
-    execute: async function* ({ tasks }, { toolCallId }) {
-      toolLog.info("spawn", { toolCallId, taskCount: tasks.length });
+    execute: async function* ({ background, tasks }, { toolCallId }) {
+      toolLog.info("spawn", { toolCallId, taskCount: tasks.length, background });
+
+      // ── Background mode: fire-and-forget via runAutonomousTask ──
+      if (background) {
+        const projectName = toolOptions.projectName ?? projectId;
+        const runs = tasks.map((task, index) => {
+          const runId = nanoid();
+          const taskName = deriveTaskName(task.prompt, index);
+
+          runAutonomousTask(
+            { id: projectId, name: projectName },
+            taskName,
+            task.prompt,
+            {
+              userId: toolOptions.userId,
+              // Delegated tasks carry a specific goal — don't inherit the
+              // project's HEARTBEAT.md checklist on top of it.
+              skipHeartbeat: true,
+              // Honor the parent's `model` hint (default vs fast).
+              fast: task.model === "fast",
+              // Inherit the parent's tool/skill allowlist so a restricted
+              // parent (e.g. scheduled task with onlyTools) can't escape the
+              // restriction by spawning a background agent.
+              onlyTools: toolOptions.onlyTools,
+            },
+          )
+            .then((result) => {
+              toolLog.info("background agent completed", { runId, chatId: result.chatId, taskName });
+              events.emit("background.completed", {
+                runId,
+                projectId,
+                chatId: result.chatId,
+                taskName,
+                summary: result.summary,
+              });
+            })
+            .catch((err) => {
+              const errorMsg = err instanceof Error ? err.message : String(err);
+              const chatId = (err as any)?.chatId ?? "";
+              toolLog.error("background agent failed", err, { runId, taskName });
+              events.emit("background.failed", {
+                runId,
+                projectId,
+                chatId,
+                taskName,
+                error: errorMsg,
+              });
+            });
+
+          if (toolOptions.chatId) {
+            registerBackgroundTask(toolOptions.chatId, { runId, taskName, projectId });
+          }
+
+          return { index, runId, taskName };
+        });
+
+        yield {
+          status: "background" as const,
+          message: `Started ${runs.length} background task(s). The user will be notified when they complete.`,
+          runs,
+        };
+        return;
+      }
 
       yield {
         status: "running" as const,
@@ -53,11 +131,11 @@ export function createAgentTool(projectId: string, toolOptions: AgentToolOptions
       let resolveUpdate: (() => void) | null = null;
 
       const promises = tasks.map(async (task, index) => {
-        // Each subagent gets its own discoverable toolset
-        const { activeTools, toolIndex } = createDiscoverableToolset(projectId, {
+        // Each subagent gets its own toolset (no chatId → no progress tools;
+        // no `agent` spawner → no recursive fan-out).
+        const { tools: activeTools, toolIndex } = createToolset(projectId, {
           userId: toolOptions.userId,
           excludeTools: AGENT_EXCLUDED_TOOLS,
-          context: "subagent",
           onlyTools: toolOptions.onlyTools,
           modelId: toolOptions.modelId,
         });
@@ -75,15 +153,11 @@ export function createAgentTool(projectId: string, toolOptions: AgentToolOptions
         const skillSummaries = toolOptions.projectId ? await getSkillSummaries(toolOptions.projectId) : [];
         const skillsIndex = buildSkillsIndex(skillSummaries);
 
-        const subagentInstructions = `You are a sub-agent executing a specific task autonomously.
-
-## Tools
-Call \`loadTools\` with tool names before using them. Only file tools (readFile, writeFile, editFile, listFiles), loadSkill, and loadTools are available without loading. Load all the tools you need in a SINGLE \`loadTools\` call upfront.
-
-${toolIndex}
-${skillsIndex ? `\n## Skills\n${skillsIndex}\nCall \`loadSkill\` with a skill name to get platform-specific instructions.\n` : ""}
-## Important
-- You MUST end with a text summary of your findings/results. Never end on just a tool call.`;
+        const subagentInstructions = [
+          toolIndex,
+          skillsIndex ? `## Skills\n${skillsIndex}` : "",
+          `End with a text summary of your results.`,
+        ].filter(Boolean).join("\n\n");
 
         const agent = new ToolLoopAgent({
           model: selectedModel,

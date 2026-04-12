@@ -10,17 +10,15 @@ interface CheckpointData {
   stepNumber: number;
   messages: unknown[];
   metadata?: Record<string, unknown>;
-  status?: "active" | "suspended";
 }
 
 const upsertStmt = db.prepare(
-  `INSERT INTO agent_checkpoints (run_id, chat_id, project_id, step_number, messages, metadata, status, updated_at)
-   VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+  `INSERT INTO agent_checkpoints (run_id, chat_id, project_id, step_number, messages, metadata, updated_at)
+   VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
    ON CONFLICT(run_id) DO UPDATE SET
      step_number = excluded.step_number,
      messages = excluded.messages,
      metadata = excluded.metadata,
-     status = excluded.status,
      updated_at = datetime('now')`,
 );
 
@@ -33,7 +31,6 @@ export function saveCheckpoint(data: CheckpointData): void {
       data.stepNumber,
       JSON.stringify(data.messages),
       data.metadata ? JSON.stringify(data.metadata) : null,
-      data.status ?? "active",
     );
   } catch (err) {
     cpLog.warn("failed to save checkpoint", {
@@ -50,18 +47,11 @@ interface StoredCheckpoint {
   step_number: number;
   messages: string;
   metadata: string | null;
-  status: string;
   created_at: string;
   updated_at: string;
 }
 
-const loadStmt = db.prepare(
-  "SELECT * FROM agent_checkpoints WHERE run_id = ?",
-);
-
-export function loadCheckpoint(runId: string) {
-  const row = loadStmt.get(runId) as StoredCheckpoint | undefined;
-  if (!row) return null;
+function hydrate(row: StoredCheckpoint) {
   return {
     runId: row.run_id,
     chatId: row.chat_id,
@@ -69,8 +59,14 @@ export function loadCheckpoint(runId: string) {
     stepNumber: row.step_number,
     messages: JSON.parse(row.messages) as unknown[],
     metadata: row.metadata ? JSON.parse(row.metadata) as Record<string, unknown> : null,
-    status: row.status as "active" | "suspended",
   };
+}
+
+const loadStmt = db.prepare("SELECT * FROM agent_checkpoints WHERE run_id = ?");
+
+export function loadCheckpoint(runId: string) {
+  const row = loadStmt.get(runId) as StoredCheckpoint | undefined;
+  return row ? hydrate(row) : null;
 }
 
 const deleteStmt = db.prepare("DELETE FROM agent_checkpoints WHERE run_id = ?");
@@ -79,56 +75,19 @@ export function deleteCheckpoint(runId: string): void {
   deleteStmt.run(runId);
 }
 
-const allActiveStmt = db.prepare(
-  "SELECT * FROM agent_checkpoints WHERE status = 'active'",
-);
+const allStmt = db.prepare("SELECT * FROM agent_checkpoints");
 
-/** Get all active (in-progress) checkpoints — used for crash recovery */
+/** Get all in-progress checkpoints — used for crash recovery on startup. */
 export function getActiveCheckpoints() {
-  return (allActiveStmt.all() as StoredCheckpoint[]).map((row) => ({
-    runId: row.run_id,
-    chatId: row.chat_id,
-    projectId: row.project_id,
-    stepNumber: row.step_number,
-    messages: JSON.parse(row.messages) as unknown[],
-    metadata: row.metadata ? JSON.parse(row.metadata) as Record<string, unknown> : null,
-    status: row.status as "active" | "suspended",
-  }));
+  return (allStmt.all() as StoredCheckpoint[]).map(hydrate);
 }
 
-const activeByChatStmt = db.prepare(
-  "SELECT * FROM agent_checkpoints WHERE chat_id = ? AND status = 'active' ORDER BY updated_at DESC LIMIT 1",
+const byChatStmt = db.prepare(
+  "SELECT * FROM agent_checkpoints WHERE chat_id = ? ORDER BY updated_at DESC LIMIT 1",
 );
 
-/** Get the active checkpoint for a chat — used to serve in-progress messages */
+/** Get the latest checkpoint for a chat — used to serve in-progress messages. */
 export function loadActiveCheckpointByChatId(chatId: string) {
-  const row = activeByChatStmt.get(chatId) as StoredCheckpoint | undefined;
-  if (!row) return null;
-  return {
-    runId: row.run_id,
-    chatId: row.chat_id,
-    projectId: row.project_id,
-    stepNumber: row.step_number,
-    messages: JSON.parse(row.messages) as unknown[],
-    metadata: row.metadata ? JSON.parse(row.metadata) as Record<string, unknown> : null,
-    status: row.status as "active" | "suspended",
-  };
+  const row = byChatStmt.get(chatId) as StoredCheckpoint | undefined;
+  return row ? hydrate(row) : null;
 }
-
-const suspendedStmt = db.prepare(
-  "SELECT * FROM agent_checkpoints WHERE status = 'suspended'",
-);
-
-/** Get all suspended checkpoints — used for resuming bounded sessions */
-export function getSuspendedCheckpoints() {
-  return (suspendedStmt.all() as StoredCheckpoint[]).map((row) => ({
-    runId: row.run_id,
-    chatId: row.chat_id,
-    projectId: row.project_id,
-    stepNumber: row.step_number,
-    messages: JSON.parse(row.messages) as unknown[],
-    metadata: row.metadata ? JSON.parse(row.metadata) as Record<string, unknown> : null,
-    status: row.status as "active" | "suspended",
-  }));
-}
-

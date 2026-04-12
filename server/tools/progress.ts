@@ -7,11 +7,10 @@ import {
   updateTodo as updateTodoQuery,
 } from "@/db/queries/todos.ts";
 import {
-  loadAnchor,
-  saveAnchor,
-  type SessionAnchor,
+  loadCompactionState,
+  saveCompactionState,
   type SubtaskItem,
-} from "@/lib/session-anchor.ts";
+} from "@/lib/compaction-state.ts";
 import { log } from "@/lib/logger.ts";
 
 const toolLog = log.child({ module: "tool:progress" });
@@ -19,53 +18,56 @@ const toolLog = log.child({ module: "tool:progress" });
 interface ProgressToolsOptions {
   projectId: string;
   chatId: string;
-  /** Anchor run ID — when set, progress syncs to the session anchor (automation mode) */
-  anchorRunId?: string;
+  /** Run ID — when set, progress items also sync into the compaction state's
+   *  plan field so they survive in-band compaction. */
+  runId?: string;
 }
 
 /**
- * Sync a progress update to the session anchor's plan field.
- * Fire-and-forget — does not block the tool response.
+ * Sync a progress update into the compaction state's plan field so it
+ * survives in-band compaction. Fire-and-forget — does not block the tool
+ * response. Returns without writing if no compaction state exists yet
+ * (compaction hasn't fired).
  */
-async function syncToAnchor(
+async function syncToCompactionState(
   projectId: string,
-  anchorRunId: string,
+  runId: string,
   action: "create" | "update",
   item: { id: string; title: string; status: string; notes?: string },
 ): Promise<void> {
   try {
-    const anchor = await loadAnchor(projectId, anchorRunId);
-    if (!anchor) return;
+    const state = await loadCompactionState(projectId, runId);
+    if (!state) return;
 
-    if (!anchor.plan) anchor.plan = [];
+    if (!state.plan) state.plan = [];
 
     if (action === "create") {
-      anchor.plan.push({
+      state.plan.push({
         id: item.id,
         title: item.title,
         status: item.status as SubtaskItem["status"],
       });
     } else {
-      const existing = anchor.plan.find((p) => p.id === item.id);
+      const existing = state.plan.find((p) => p.id === item.id);
       if (existing) {
         existing.status = item.status as SubtaskItem["status"];
         if (item.notes) existing.notes = item.notes;
       }
     }
 
-    await saveAnchor(projectId, anchorRunId, anchor);
+    await saveCompactionState(projectId, runId, state);
   } catch (err) {
-    toolLog.warn("failed to sync progress to anchor", {
+    toolLog.warn("failed to sync progress to compaction state", {
       error: err instanceof Error ? err.message : String(err),
     });
   }
 }
 
-export function createProgressTools({ projectId, chatId, anchorRunId }: ProgressToolsOptions) {
+export function createProgressTools({ projectId, chatId, runId }: ProgressToolsOptions) {
   return {
     progressCreate: tool({
       description:
-        "Create a progress item to track a step within a multi-step task. Use this when handling requests with 3+ distinct steps to plan work upfront.",
+        "Create a progress item to track a step.",
       inputSchema: z.object({
         title: z.string().describe("Short, action-oriented title for this step."),
         description: z.string().optional().describe("Optional details about what this step involves."),
@@ -75,8 +77,8 @@ export function createProgressTools({ projectId, chatId, anchorRunId }: Progress
         const todo = insertTodo(projectId, chatId, title, description);
         const result = { id: todo.id, title: todo.title, status: todo.status };
 
-        if (anchorRunId) {
-          syncToAnchor(projectId, anchorRunId, "create", result);
+        if (runId) {
+          syncToCompactionState(projectId, runId, "create", result);
         }
 
         return result;
@@ -85,7 +87,7 @@ export function createProgressTools({ projectId, chatId, anchorRunId }: Progress
 
     progressUpdate: tool({
       description:
-        "Update a progress item's status, title, or description. Mark 'in_progress' when starting a step, 'completed' when done, or 'failed' if blocked.",
+        "Update a progress item's status, title, or description.",
       inputSchema: z.object({
         todoId: z.string().describe("The ID of the progress item to update."),
         status: z
@@ -104,8 +106,8 @@ export function createProgressTools({ projectId, chatId, anchorRunId }: Progress
         const todo = updateTodoQuery(todoId, { status, title, description });
         const result = { id: todo.id, title: todo.title, status: todo.status };
 
-        if (anchorRunId) {
-          syncToAnchor(projectId, anchorRunId, "update", {
+        if (runId) {
+          syncToCompactionState(projectId, runId, "update", {
             ...result,
             notes: description,
           });
@@ -117,7 +119,7 @@ export function createProgressTools({ projectId, chatId, anchorRunId }: Progress
 
     progressList: tool({
       description:
-        "List progress items for the current task, optionally filtered by status. Use to review progress on multi-step tasks.",
+        "List progress items, optionally filtered by status.",
       inputSchema: z.object({
         status: z
           .enum(["pending", "in_progress", "completed", "failed"])
