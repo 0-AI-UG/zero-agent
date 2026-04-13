@@ -154,13 +154,17 @@ app.all("*", async (c) => {
 
   const route = matchRoute(method, pathname);
   if (!route) {
+    log.warn("route not found", { method, pathname });
     return Response.json({ error: "Not found" }, { status: 404 });
   }
 
+  const reqStart = Date.now();
   try {
-    return await route.handler(req);
+    const res = await route.handler(req);
+    log.info("request", { method, pathname, status: res.status, durationMs: Date.now() - reqStart });
+    return res;
   } catch (err) {
-    log.error("unhandled error", { method, pathname, error: String(err) });
+    log.error("unhandled error", { method, pathname, error: String(err), durationMs: Date.now() - reqStart });
     return Response.json({ error: "Internal server error" }, { status: 500 });
   }
 });
@@ -170,29 +174,43 @@ const server = serve({
   port: PORT,
 });
 
+log.info("runner starting", { port: PORT, defaultImage: process.env.DEFAULT_IMAGE ?? "zero-session:latest", registryImage: process.env.REGISTRY_IMAGE ?? "(none)" });
+
 // Initialize Docker on startup
-ensureSocketDir().catch((err) => {
-  log.warn("failed to create socket dir", { error: String(err) });
-});
+ensureSocketDir()
+  .then(() => log.info("socket dir ready"))
+  .catch((err) => log.warn("failed to create socket dir", { error: String(err) }));
+
 mgr.waitForDocker().then((ready) => {
   if (ready) {
-    log.info(`Runner service listening on port ${PORT}`);
+    log.info("runner ready", { port: PORT });
   } else {
-    log.warn(`Runner service listening on port ${PORT} (Docker not available)`);
+    log.warn("runner started without Docker", { port: PORT });
   }
 });
 
 // Graceful shutdown
 process.on("SIGTERM", async () => {
-  log.info("SIGTERM received, shutting down");
+  log.info("SIGTERM received, shutting down gracefully");
   await mgr.destroyAll();
   server.close();
+  log.info("shutdown complete");
   process.exit(0);
 });
 
 process.on("SIGINT", async () => {
-  log.info("SIGINT received, shutting down");
+  log.info("SIGINT received, shutting down gracefully");
   await mgr.destroyAll();
   server.close();
+  log.info("shutdown complete");
   process.exit(0);
+});
+
+process.on("uncaughtException", (err) => {
+  log.error("uncaught exception", { error: String(err), stack: err.stack });
+  process.exit(1);
+});
+
+process.on("unhandledRejection", (reason) => {
+  log.error("unhandled rejection", { error: String(reason) });
 });

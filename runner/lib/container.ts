@@ -70,24 +70,23 @@ export class ContainerManager {
   private latestScreenshots = new Map<string, { base64: string; title: string; url: string; timestamp: number }>();
 
   async waitForDocker(maxWaitMs = 30_000): Promise<boolean> {
+    mgrLog.info("waiting for Docker daemon", { maxWaitMs });
     const start = Date.now();
     while (Date.now() - start < maxWaitMs) {
       if (await docker.info()) {
         this._dockerReady = true;
-        mgrLog.info("Docker daemon is ready");
+        mgrLog.info("Docker daemon is ready", { waitedMs: Date.now() - start });
         await this.cleanupOrphaned();
         this.startReaper();
-        // Prebuild the session image so the first user doesn't pay the
-        // build cost on their first request. Fire-and-forget: log on
-        // failure but don't block startup.
-        this.ensureImage(DEFAULT_IMAGE).catch((err) =>
-          mgrLog.error("prebuild of session image failed", { error: String(err) }),
-        );
+        mgrLog.info("prebuilding session image", { image: DEFAULT_IMAGE });
+        this.ensureImage(DEFAULT_IMAGE)
+          .then(() => mgrLog.info("session image ready", { image: DEFAULT_IMAGE, totalMs: Date.now() - start }))
+          .catch((err) => mgrLog.error("prebuild of session image failed", { error: String(err) }));
         return true;
       }
       await new Promise((r) => setTimeout(r, 1000));
     }
-    mgrLog.warn("Docker daemon not available after timeout");
+    mgrLog.warn("Docker daemon not available after timeout", { waitedMs: maxWaitMs });
     return false;
   }
 
@@ -107,16 +106,19 @@ export class ContainerManager {
     const existing = this.containers.get(name);
     if (existing) {
       existing.lastUsedAt = Date.now();
+      mgrLog.debug("reusing existing container", { name, ip: existing.ip });
       return { name, ip: existing.ip, status: "running", createdAt: existing.createdAt, lastUsedAt: existing.lastUsedAt };
     }
 
     if (this.containers.size >= MAX_CONTAINERS) {
+      mgrLog.warn("container limit reached", { limit: MAX_CONTAINERS, active: this.containers.size });
       throw new Error(`Container limit reached (${MAX_CONTAINERS}). Destroy an idle container first.`);
     }
 
     // Deduplicate concurrent creation
     const inflight = this.creationLocks.get(name);
     if (inflight) {
+      mgrLog.info("waiting on inflight container creation", { name });
       await inflight;
       const s = this.containers.get(name);
       if (!s) throw new Error("Container creation failed");
@@ -146,10 +148,13 @@ export class ContainerManager {
     const image = opts?.image ?? DEFAULT_IMAGE;
     mgrLog.info("creating container", { name, image });
 
+    const imageStart = Date.now();
     const resolvedImage = await this.ensureImage(image);
+    mgrLog.info("image ready", { name, image: resolvedImage, imageMs: Date.now() - imageStart });
 
     const network = opts?.network ?? `runner-net-${name}`;
     await this.ensureNetwork(network);
+    mgrLog.debug("network ready", { name, network });
 
     // Start a per-container Unix socket the in-container `zero` CLI/SDK
     // will talk to. Identity is established by the mount itself (either
@@ -202,8 +207,10 @@ export class ContainerManager {
       const ip = await docker.getContainerIp(name);
       if (!ip) throw new Error("Could not determine container IP");
 
-      mgrLog.info("waiting for CDP", { name, ip });
+      mgrLog.info("container started, waiting for CDP", { name, containerId: containerId.slice(0, 12), ip });
+      const cdpStart = Date.now();
       await this.waitForCdp(ip, CDP_PORT);
+      mgrLog.info("CDP ready", { name, cdpMs: Date.now() - cdpStart });
 
       const { cdp } = await connectToPage(ip, CDP_PORT);
       const snapshotCache: SnapshotCache = { dirty: true, lastContent: "" };
@@ -243,8 +250,12 @@ export class ContainerManager {
   }
 
   async destroy(name: string): Promise<void> {
-    if (this.destroying.has(name)) return;
+    if (this.destroying.has(name)) {
+      mgrLog.debug("destroy already in progress", { name });
+      return;
+    }
     this.destroying.add(name);
+    mgrLog.info("destroying container", { name });
 
     try {
       const state = this.containers.get(name);
@@ -298,6 +309,7 @@ list(): ContainerInfo[] {
       this.reaperInterval = null;
     }
     const names = [...this.containers.keys()];
+    mgrLog.info("destroying all containers", { count: names.length });
     await Promise.allSettled(names.map((name) => this.destroy(name)));
   }
 
@@ -315,6 +327,8 @@ list(): ContainerInfo[] {
     if (!state) throw new Error(`Container "${name}" not found`);
     state.lastUsedAt = Date.now();
     state.busyCount++;
+    const bashStart = Date.now();
+    mgrLog.info("bash exec", { name, command: command.slice(0, 200), timeout: opts?.timeout });
 
     try {
       // Touch marker before execution for change detection
@@ -345,6 +359,7 @@ list(): ContainerInfo[] {
         ? result.stderr.slice(0, MAX_OUTPUT) + "\n[output truncated at 1MB]"
         : result.stderr;
 
+      mgrLog.info("bash exec done", { name, exitCode: result.exitCode, durationMs: Date.now() - bashStart, stdoutLen: stdout.length, stderrLen: stderr.length });
       return { stdout, stderr, exitCode: result.exitCode };
     } finally {
       state.busyCount--;
@@ -526,31 +541,51 @@ list(): ContainerInfo[] {
 
   private async waitForCdp(host: string, port: number, maxWaitMs = 30_000): Promise<void> {
     const start = Date.now();
+    let attempts = 0;
     while (Date.now() - start < maxWaitMs) {
+      attempts++;
       try {
         const res = await fetchWithTimeout(`http://${host}:${port}/json/version`, { timeout: 2000 });
-        if (res.ok) return;
-      } catch {}
+        if (res.ok) {
+          mgrLog.debug("CDP responded", { host, attempts, elapsedMs: Date.now() - start });
+          return;
+        }
+        mgrLog.debug("CDP not ready", { host, status: res.status, attempts });
+      } catch (err) {
+        if (attempts === 1 || attempts % 10 === 0) {
+          mgrLog.debug("CDP probe failed", { host, attempts, error: String(err).slice(0, 100) });
+        }
+      }
       await new Promise((r) => setTimeout(r, 500));
     }
-    throw new Error("Chrome CDP not ready within timeout");
+    throw new Error(`Chrome CDP not ready within timeout (${maxWaitMs}ms, ${attempts} attempts)`);
   }
 
   private async ensureImage(image: string): Promise<string> {
-    if (this.imageReadyTag) return this.imageReadyTag;
-    if (this.imageBuilding) return this.imageBuilding;
+    if (this.imageReadyTag) {
+      mgrLog.debug("image already cached", { image: this.imageReadyTag });
+      return this.imageReadyTag;
+    }
+    if (this.imageBuilding) {
+      mgrLog.debug("waiting on inflight image build/pull", { image });
+      return this.imageBuilding;
+    }
 
     this.imageBuilding = (async () => {
       if (await docker.imageExists(image)) {
+        mgrLog.info("image exists locally", { image });
         this.imageReadyTag = image;
         return image;
       }
 
       const registryImage = process.env.REGISTRY_IMAGE ?? image;
-      mgrLog.info("pulling image", { image: registryImage });
+      mgrLog.info("pulling image from registry", { image: registryImage });
+      const pullStart = Date.now();
       await docker.pullImage(registryImage);
+      mgrLog.info("image pulled", { image: registryImage, pullMs: Date.now() - pullStart });
       if (registryImage !== image) {
         await docker.tagImage(registryImage, image);
+        mgrLog.info("image tagged", { from: registryImage, to: image });
       }
       this.imageReadyTag = image;
       return image;
@@ -571,15 +606,22 @@ list(): ContainerInfo[] {
       const orphaned = containers.filter((c) =>
         c.Names.some((n) => /^\/(session-|runner-)/.test(n)),
       );
-      if (orphaned.length === 0) return;
+      if (orphaned.length === 0) {
+        mgrLog.info("no orphaned containers found");
+        return;
+      }
 
-      mgrLog.info("cleaning up orphaned containers", { count: orphaned.length });
+      const names = orphaned.map((c) => c.Names[0]?.replace(/^\//, "") ?? c.Id);
+      mgrLog.info("cleaning up orphaned containers", { count: orphaned.length, names });
       await Promise.allSettled(
         orphaned.map(async (c) => {
           const name = c.Names[0]?.replace(/^\//, "") ?? c.Id;
-          await docker.removeContainer(name).catch(() => {});
+          await docker.removeContainer(name).catch((err) => {
+            mgrLog.warn("failed to remove orphaned container", { name, error: String(err) });
+          });
         }),
       );
+      mgrLog.info("orphan cleanup complete");
     } catch (err) {
       mgrLog.warn("failed to cleanup orphaned containers", { error: String(err) });
     }
