@@ -138,13 +138,8 @@ export function FileList({
   if (isEmpty) {
     return (
       <div className="flex flex-col">
-        <div className="px-4 py-2 flex items-center justify-between">
-          <span className="text-xs text-muted-foreground tabular-nums">
-            0 items{storageSummary ? ` · ${storageSummary}` : ""}
-          </span>
-        </div>
         {breadcrumb && (
-          <div className="px-4 py-1.5 text-muted-foreground/70">
+          <div className="px-4 py-2 text-muted-foreground/70">
             {breadcrumb}
           </div>
         )}
@@ -254,9 +249,15 @@ export function FileList({
         </div>
       ) : (
       <div className="px-4 py-2 flex items-center justify-between">
-        <span className="text-xs text-muted-foreground tabular-nums">
-          {totalItems} item{totalItems !== 1 ? "s" : ""}{storageSummary ? ` · ${storageSummary}` : ""}
-        </span>
+        {breadcrumb ? (
+          <div className="text-muted-foreground/70 min-w-0 overflow-hidden">
+            {breadcrumb}
+          </div>
+        ) : (
+          <span className="text-xs text-muted-foreground tabular-nums">
+            {totalItems} item{totalItems !== 1 ? "s" : ""}{storageSummary ? ` · ${storageSummary}` : ""}
+          </span>
+        )}
         <Select
           value={sortBy}
           onValueChange={(v) =>
@@ -273,11 +274,6 @@ export function FileList({
           </SelectContent>
         </Select>
       </div>
-      )}
-      {breadcrumb && (
-        <div className="px-4 py-1.5 text-muted-foreground/70">
-          {breadcrumb}
-        </div>
       )}
       <div className="flex-1 overflow-y-auto px-2">
         {sortedFolders.map((folder) => (
