@@ -9,10 +9,12 @@
     "context": "runner",
     "container_port": 3100
   },
-  "volume": {
-    "size": 5,
-    "path": "/var/run/zero-runner"
-  },
+  "extra_volumes": [
+    {
+      "host_path": "/var/run/docker.sock",
+      "container_path": "/var/run/docker.sock"
+    }
+  ],
   "env": [
     {
       "key": "RUNNER_API_KEY",
