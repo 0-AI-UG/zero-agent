@@ -26,6 +26,10 @@
     /* Prevent iOS Safari from scrolling the page when focusing inputs */
     overscroll-behavior: none;
   }
+
+  #root {
+    height: 100%;
+  }
 }
 
 .font-display {
