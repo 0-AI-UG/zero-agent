@@ -28,14 +28,26 @@
 /* ── MDXEditor theme overrides ── */
 .mdxeditor-wrapper .mdxeditor {
   --accentBase: var(--background);
+  --accentBg: var(--accent);
+  --accentBgActive: var(--accent);
   --accentBgSubtle: var(--muted);
+  --accentBorder: var(--border);
+  --accentLine: var(--border);
+  --accentSolid: var(--foreground);
+  --accentSolidHover: var(--foreground);
   --accentText: var(--foreground);
   --accentTextContrast: var(--foreground);
   --baseBase: var(--background);
-  --baseBgSubtle: var(--muted);
+  --baseBg: var(--background);
+  --baseBgHover: var(--accent);
   --baseBgActive: var(--accent);
+  --baseBgSubtle: var(--muted);
   --baseBorder: var(--border);
+  --baseBorderHover: var(--border);
   --baseLine: var(--border);
+  --basePageBg: var(--background);
+  --baseSolid: var(--muted-foreground);
+  --baseSolidHover: var(--foreground);
   --baseText: var(--foreground);
   --baseTextContrast: var(--foreground);
   --baseTextHighContrast: var(--foreground);
@@ -46,14 +58,26 @@
 
 .mdxeditor-wrapper .mdxeditor.dark-theme {
   --accentBase: var(--background);
+  --accentBg: var(--accent);
+  --accentBgActive: var(--accent);
   --accentBgSubtle: var(--muted);
+  --accentBorder: var(--border);
+  --accentLine: var(--border);
+  --accentSolid: var(--foreground);
+  --accentSolidHover: var(--foreground);
   --accentText: var(--foreground);
   --accentTextContrast: var(--foreground);
   --baseBase: var(--background);
-  --baseBgSubtle: var(--muted);
+  --baseBg: var(--background);
+  --baseBgHover: var(--accent);
   --baseBgActive: var(--accent);
+  --baseBgSubtle: var(--muted);
   --baseBorder: var(--border);
+  --baseBorderHover: var(--border);
   --baseLine: var(--border);
+  --basePageBg: var(--background);
+  --baseSolid: var(--muted-foreground);
+  --baseSolidHover: var(--foreground);
   --baseText: var(--foreground);
   --baseTextContrast: var(--foreground);
   --baseTextHighContrast: var(--foreground);
