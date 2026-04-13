@@ -242,7 +242,9 @@ export class ContainerManager {
 
       return { name, ip, status: "running", createdAt: state.createdAt, lastUsedAt: state.lastUsedAt };
     } catch (err) {
-      mgrLog.error("container creation failed, cleaning up", { name, error: String(err) });
+      // Capture container logs before teardown to diagnose startup failures
+      const containerLogs = await docker.getContainerLogs(name, 50).catch(() => "(no logs)");
+      mgrLog.error("container creation failed, cleaning up", { name, error: String(err), containerLogs });
       await docker.removeContainer(name).catch(() => {});
       await stopSocketServer(socketServer, name).catch(() => {});
       throw err;
@@ -539,7 +541,7 @@ list(): ContainerInfo[] {
     finally { resolve!(); }
   }
 
-  private async waitForCdp(host: string, port: number, maxWaitMs = 30_000): Promise<void> {
+  private async waitForCdp(host: string, port: number, maxWaitMs = 45_000): Promise<void> {
     const start = Date.now();
     let attempts = 0;
     while (Date.now() - start < maxWaitMs) {
