@@ -68,6 +68,8 @@ export class ContainerManager {
   private _dockerReady = false;
   private reaperInterval: ReturnType<typeof setInterval> | null = null;
   private latestScreenshots = new Map<string, { base64: string; title: string; url: string; timestamp: number }>();
+  /** When the runner is itself containerized, this holds its container ID so it can join session networks. */
+  private selfContainerId: string | null = null;
 
   async waitForDocker(maxWaitMs = 30_000): Promise<boolean> {
     mgrLog.info("waiting for Docker daemon", { maxWaitMs });
@@ -76,6 +78,7 @@ export class ContainerManager {
       if (await docker.info()) {
         this._dockerReady = true;
         mgrLog.info("Docker daemon is ready", { waitedMs: Date.now() - start });
+        await this.detectSelfContainer();
         await this.cleanupOrphaned();
         this.startReaper();
         mgrLog.info("prebuilding session image", { image: DEFAULT_IMAGE });
@@ -275,6 +278,14 @@ export class ContainerManager {
           mgrLog.warn("failed to stop socket server", { name, error: String(err) });
         });
       }
+
+      // Clean up the per-session network and disconnect the runner from it
+      const network = `runner-net-${name}`;
+      if (this.selfContainerId) {
+        await docker.disconnectNetwork(network, this.selfContainerId).catch(() => {});
+      }
+      await docker.removeNetwork(network).catch(() => {});
+      this.readyNetworks.delete(network);
 
       mgrLog.info("container destroyed", { name });
     } finally {
@@ -599,7 +610,37 @@ list(): ContainerInfo[] {
   private async ensureNetwork(name: string): Promise<void> {
     if (this.readyNetworks.has(name)) return;
     await docker.ensureNetwork(name);
+    // When the runner itself is containerized, it must join the session
+    // network to reach session containers by IP.
+    if (this.selfContainerId) {
+      await docker.connectNetwork(name, this.selfContainerId).catch((err) => {
+        // "already connected" is fine — ignore
+        if (!String(err).includes("already exists")) {
+          mgrLog.warn("failed to join session network", { network: name, error: String(err) });
+        }
+      });
+      mgrLog.debug("runner joined session network", { network: name });
+    }
     this.readyNetworks.add(name);
+  }
+
+  /**
+   * Detect whether the runner is itself running inside a Docker container.
+   * If so, store the container ID so we can join session networks.
+   */
+  private async detectSelfContainer(): Promise<void> {
+    try {
+      const fs = await import("node:fs/promises");
+      // Docker sets the hostname to the short container ID
+      const hostname = (await fs.readFile("/etc/hostname", "utf-8")).trim();
+      // Verify it's actually a running container
+      if (hostname && await docker.isContainerRunning(hostname)) {
+        this.selfContainerId = hostname;
+        mgrLog.info("runner is containerized", { containerId: hostname });
+        return;
+      }
+    } catch {}
+    mgrLog.info("runner is running on host (not containerized)");
   }
 
   private async cleanupOrphaned(): Promise<void> {
