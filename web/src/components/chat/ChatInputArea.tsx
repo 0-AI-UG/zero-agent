@@ -199,7 +199,8 @@ export function ChatInputArea({
             <FilePickerButton
               projectId={projectId}
               onSelect={(file) => {
-                richTextareaRef.current?.insertFileChip(file.id, file.filename);
+                const fullPath = file.folderPath === "/" ? file.filename : `${file.folderPath}/${file.filename}`;
+                richTextareaRef.current?.insertFileChip(file.id, fullPath, file.filename);
                 richTextareaRef.current?.focus();
               }}
             />

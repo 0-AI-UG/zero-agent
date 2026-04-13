@@ -10,7 +10,7 @@ import {
   UsersIcon,
 } from "lucide-react";
 import type { Project } from "@/api/projects";
-import { useDeleteProject, useStarProject, useArchiveProject } from "@/api/projects";
+import { useDeleteProject, useStarProject, useArchiveProject, useUpdateProject } from "@/api/projects";
 import {
   Card,
   CardDescription,
@@ -35,6 +35,16 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
 
 interface ProjectCardProps {
   project: Project;
@@ -43,9 +53,13 @@ interface ProjectCardProps {
 export function ProjectCard({ project }: ProjectCardProps) {
   const navigate = useNavigate();
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editName, setEditName] = useState(project.name);
+  const [editDescription, setEditDescription] = useState(project.description ?? "");
   const deleteProject = useDeleteProject();
   const starProject = useStarProject();
   const archiveProject = useArchiveProject();
+  const updateProject = useUpdateProject(project.id);
   const basePath = `/projects/${project.id}`;
 
   return (
@@ -79,7 +93,13 @@ export function ProjectCard({ project }: ProjectCardProps) {
                   <StarIcon className={project.isStarred ? "fill-current" : ""} />
                   {project.isStarred ? "Unstar" : "Star"}
                 </DropdownMenuItem>
-                <DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => {
+                    setEditName(project.name);
+                    setEditDescription(project.description ?? "");
+                    setEditOpen(true);
+                  }}
+                >
                   <PencilIcon />
                   Edit details
                 </DropdownMenuItem>
@@ -142,6 +162,51 @@ export function ProjectCard({ project }: ProjectCardProps) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit project</DialogTitle>
+          </DialogHeader>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              updateProject.mutate(
+                { name: editName.trim(), description: editDescription.trim() },
+                { onSuccess: () => setEditOpen(false) },
+              );
+            }}
+            className="grid gap-4"
+          >
+            <div className="grid gap-2">
+              <Label htmlFor="edit-name">Name</Label>
+              <Input
+                id="edit-name"
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                required
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="edit-description">Description</Label>
+              <Textarea
+                id="edit-description"
+                value={editDescription}
+                onChange={(e) => setEditDescription(e.target.value)}
+                rows={3}
+              />
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setEditOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={updateProject.isPending || !editName.trim()}>
+                {updateProject.isPending ? "Saving..." : "Save"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

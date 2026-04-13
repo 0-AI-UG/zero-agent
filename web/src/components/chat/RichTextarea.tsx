@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
 
 export interface RichTextareaHandle {
   /** Insert a file chip at the current cursor position */
-  insertFileChip: (fileId: string, filename: string) => void;
+  insertFileChip: (fileId: string, filePath: string, displayName: string) => void;
   focus: () => void;
 }
 
@@ -23,7 +23,7 @@ interface RichTextareaProps {
   className?: string;
 }
 
-/** Serialise contentEditable innerHTML → plain text, turning chip spans into [file: name] */
+/** Serialise contentEditable innerHTML → plain text, turning chip spans into [file: path] */
 function serialise(el: HTMLElement): string {
   let text = "";
   for (const node of Array.from(el.childNodes)) {
@@ -31,7 +31,7 @@ function serialise(el: HTMLElement): string {
       text += node.textContent ?? "";
     } else if (node instanceof HTMLElement) {
       if (node.dataset.fileChip) {
-        text += `[file: ${node.dataset.filename}]`;
+        text += `[file: ${node.dataset.filepath ?? node.dataset.filename}]`;
       } else if (node.tagName === "BR") {
         text += "\n";
       } else {
@@ -48,14 +48,14 @@ function serialise(el: HTMLElement): string {
 }
 
 /** Build a non-editable chip span */
-function createChipElement(fileId: string, filename: string): HTMLSpanElement {
+function createChipElement(fileId: string, filePath: string, displayName: string): HTMLSpanElement {
   const chip = document.createElement("span");
   chip.contentEditable = "false";
   chip.dataset.fileChip = fileId;
-  chip.dataset.filename = filename;
+  chip.dataset.filepath = filePath;
   chip.className =
     "inline-flex items-center gap-0.5 rounded bg-primary/10 text-primary px-1.5 py-px text-[13px] font-medium mx-0.5 align-baseline select-all cursor-default";
-  chip.textContent = filename;
+  chip.textContent = displayName;
   return chip;
 }
 
@@ -76,7 +76,7 @@ export const RichTextarea = forwardRef<RichTextareaHandle, RichTextareaProps>(
     }, []);
 
     useImperativeHandle(ref, () => ({
-      insertFileChip(fileId: string, filename: string) {
+      insertFileChip(fileId: string, filePath: string, displayName: string) {
         const el = editorRef.current;
         if (!el) return;
 
@@ -91,7 +91,7 @@ export const RichTextarea = forwardRef<RichTextareaHandle, RichTextareaProps>(
         }
         el.focus();
 
-        const chip = createChipElement(fileId, filename);
+        const chip = createChipElement(fileId, filePath, displayName);
         const space = document.createTextNode("\u00A0");
 
         if (sel.rangeCount === 0) {

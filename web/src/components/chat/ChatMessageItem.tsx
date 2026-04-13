@@ -41,7 +41,18 @@ function formatEventName(name: string): string {
     .join(" ");
 }
 
-/** Replace [file: name] tokens with styled pill spans, matching the RichTextarea chip style */
+/** Strip auto-generated image descriptions prepended by the backend for non-multimodal models */
+function stripImageDescription(text: string): string {
+  const prefix = "[Image attached - described below]\n";
+  if (!text.startsWith(prefix)) return text;
+  // Remove the prefix and the caption (everything up to the double newline before the user's actual text)
+  const rest = text.slice(prefix.length);
+  const sepIdx = rest.indexOf("\n\n");
+  if (sepIdx === -1) return ""; // entire message was just the description
+  return rest.slice(sepIdx + 2);
+}
+
+/** Replace [file: path] tokens with styled pill spans showing just the filename */
 function renderFileChips(text: string): ReactNode {
   const regex = /\[file:\s*(.+?)\]/g;
   const parts: ReactNode[] = [];
@@ -52,12 +63,14 @@ function renderFileChips(text: string): ReactNode {
     if (match.index > lastIndex) {
       parts.push(text.slice(lastIndex, match.index));
     }
+    const filePath = match[1]!;
+    const displayName = filePath.split("/").pop() ?? filePath;
     parts.push(
       <span
         key={match.index}
         className="inline-flex items-center gap-0.5 rounded bg-primary/10 text-primary px-1.5 py-px text-[13px] font-medium mx-0.5 align-baseline"
       >
-        {match[1]}
+        {displayName}
       </span>,
     );
     lastIndex = regex.lastIndex;
@@ -101,8 +114,9 @@ function ChatMessageItemInner({
   const uniqueTexts: string[] = [];
   const seen = new Set<string>();
   for (const p of textParts) {
-    const key = p.text.trim();
-    if (key && !seen.has(key)) { seen.add(key); uniqueTexts.push(p.text); }
+    const t = message.role === "user" ? stripImageDescription(p.text) : p.text;
+    const key = t.trim();
+    if (key && !seen.has(key)) { seen.add(key); uniqueTexts.push(t); }
   }
   const fullText = uniqueTexts.join("\n");
   const lastTextIndex = message.parts.findLastIndex(
@@ -186,10 +200,12 @@ function ChatMessageItemInner({
           )}
           <MessageContent>
             {(() => {
-              const chips = message.role === "user" ? renderFileChips(part.text) : null;
+              const displayText = message.role === "user" ? stripImageDescription(part.text) : part.text;
+              if (!displayText) return null;
+              const chips = message.role === "user" ? renderFileChips(displayText) : null;
               return chips
                 ? <div className="text-sm whitespace-pre-wrap">{chips}</div>
-                : <MessageResponse>{part.text}</MessageResponse>;
+                : <MessageResponse>{displayText}</MessageResponse>;
             })()}
           </MessageContent>
           {message.role === "assistant" &&
