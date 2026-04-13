@@ -383,12 +383,16 @@ export function createCodeTools(
         background: z.boolean().optional().describe("Run the command as a background process. Returns immediately with the PID. Use for long-running servers and processes that should keep running."),
       }),
       execute: async function* ({ command, timeout, background }) {
-        toolLog.info("bash", { userId, projectId, command, background });
+        const mem = () => Math.round(process.memoryUsage().rss / 1024 / 1024);
+        toolLog.info("bash", { userId, projectId, command, background, rss: mem() });
 
         try {
+          toolLog.info("bash:mem before ensureWorkspace", { rss: mem() });
           const backend = await ensureWorkspace();
+          toolLog.info("bash:mem after ensureWorkspace", { rss: mem() });
           markActivity(projectId);
 
+          toolLog.info("bash:mem before runBash", { rss: mem() });
           const result = await backend.runBash(
             userId,
             projectId,
@@ -396,6 +400,7 @@ export function createCodeTools(
             timeout,
             background,
           );
+          toolLog.info("bash:mem after runBash", { rss: mem() });
 
           if (!result || typeof result !== "object") {
             toolLog.error("bash: backend returned invalid result", null, { userId, projectId, result });
@@ -429,14 +434,18 @@ export function createCodeTools(
           }
 
           // Kick off blob-dir persistence (debounced, non-blocking)
+          toolLog.info("bash:mem before persistBlobsAsync", { rss: mem() });
           persistBlobsAsync(backend, projectId);
+          toolLog.info("bash:mem after persistBlobsAsync", { rss: mem() });
 
           // Build the sync diff (changed + deleted files together)
+          toolLog.info("bash:mem before buildSyncChanges", { rss: mem() });
           const { changes, buildErrors } = await buildSyncChanges(
             projectId,
             result.changedFiles ?? [],
             result.deletedFiles ?? [],
           );
+          toolLog.info("bash:mem after buildSyncChanges", { rss: mem() });
 
           if (changes.length === 0) {
             yield {
