@@ -49,5 +49,6 @@ export function useFiles(projectId: string, folderPath?: string) {
       return res;
     },
     staleTime: 30_000,
+    placeholderData: keepPreviousData,
   });
 }

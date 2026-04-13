@@ -137,14 +137,26 @@ export function FileList({
 
   if (isEmpty) {
     return (
-      <div className="flex flex-col items-center justify-center py-16 px-6 text-center">
-        <EmptyFilesIllustration className="mb-3" />
-        <p className="text-sm font-medium mb-1">This folder is empty</p>
-        <p className="text-xs text-muted-foreground max-w-[240px]">
-          {currentPath === "/"
-            ? "Files will appear here as your assistant creates content, or upload your own."
-            : "Upload files or ask your assistant to create content here."}
-        </p>
+      <div className="flex flex-col">
+        <div className="px-4 py-2 flex items-center justify-between">
+          <span className="text-xs text-muted-foreground tabular-nums">
+            0 items{storageSummary ? ` · ${storageSummary}` : ""}
+          </span>
+        </div>
+        {breadcrumb && (
+          <div className="px-4 py-1.5 text-muted-foreground/70">
+            {breadcrumb}
+          </div>
+        )}
+        <div className="flex flex-col items-center justify-center py-16 px-6 text-center">
+          <EmptyFilesIllustration className="mb-3" />
+          <p className="text-sm font-medium mb-1">This folder is empty</p>
+          <p className="text-xs text-muted-foreground max-w-[240px]">
+            {currentPath === "/"
+              ? "Files will appear here as your assistant creates content, or upload your own."
+              : "Upload files or ask your assistant to create content here."}
+          </p>
+        </div>
       </div>
     );
   }

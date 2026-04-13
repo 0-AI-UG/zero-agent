@@ -355,7 +355,7 @@ export function FilesPage() {
     );
   }
 
-  const showSplit = !isMobile && !isLoading && data;
+  const showSplit = !isMobile;
 
   return (
     <div
