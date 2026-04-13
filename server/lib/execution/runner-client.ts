@@ -79,10 +79,18 @@ export class RunnerClient implements ExecutionBackend {
   async healthCheck(): Promise<boolean> {
     try {
       const res = await fetchWithTimeout(`${this.baseUrl}/health`, { timeout: 5_000 });
-      if (!res.ok) return false;
+      if (!res.ok) {
+        clientLog.warn("runner health check returned non-ok status", { url: this.baseUrl, status: res.status });
+        return false;
+      }
       const data = await res.json() as { dockerReady?: boolean };
-      return data.dockerReady === true;
-    } catch {
+      if (data.dockerReady !== true) {
+        clientLog.warn("runner health check: docker not ready", { url: this.baseUrl });
+        return false;
+      }
+      return true;
+    } catch (err) {
+      clientLog.warn("runner health check failed", { url: this.baseUrl, error: String(err) });
       return false;
     }
   }
