@@ -206,7 +206,8 @@ export class RunnerClient implements ExecutionBackend {
           size,
           120_000,
         );
-        clientLog.info("system snapshot restored from S3 (streamed)", { projectId, sizeBytes: size });
+        const pm = process.memoryUsage();
+        clientLog.info("system snapshot restored from S3 (streamed)", { projectId, sizeBytes: size, heapMB: (pm.heapUsed / 1048576).toFixed(0), extMB: (pm.external / 1048576).toFixed(0), arrMB: (pm.arrayBuffers / 1048576).toFixed(0) });
       }
     } catch {
       // First-time projects have no snapshot - silently skip.

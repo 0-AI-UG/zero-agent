@@ -52,6 +52,11 @@ import type { StreamingStepInput, BatchStepInput, BatchStepResult } from "./type
 
 const stepLog = log.child({ module: "agent-step" });
 
+function heapMB(): string {
+  const m = process.memoryUsage();
+  return `heap=${(m.heapUsed / 1048576).toFixed(0)}MB ext=${(m.external / 1048576).toFixed(0)}MB arr=${(m.arrayBuffers / 1048576).toFixed(0)}MB`;
+}
+
 // ────────────────────────────────────────────────────────────────────────
 //  Streaming variant (web chat)
 // ────────────────────────────────────────────────────────────────────────
@@ -133,6 +138,7 @@ export async function runAgentStepStreaming(input: StreamingStepInput): Promise<
       chatId,
       messageCount: messages.length,
       language,
+      mem: heapMB(),
     });
 
     // Seed the read-guard from history and retrieve RAG context.
@@ -151,6 +157,7 @@ export async function runAgentStepStreaming(input: StreamingStepInput): Promise<
     // Create the agent.
     const cw = model ? getModelContextWindow(model) : 128_000;
     runId = generateId();
+    stepLog.info("creating agent", { mem: heapMB() });
     const agent = await createAgent(project, {
       model,
       language,
@@ -207,6 +214,7 @@ export async function runAgentStepStreaming(input: StreamingStepInput): Promise<
     });
 
     registerRun({ runId, chatId, projectId: project.id, startedAt: Date.now() });
+    stepLog.info("agent ready, starting stream", { mem: heapMB() });
 
     // Track per-step and cumulative usage.
     let lastStepUsage: Record<string, number> = {};

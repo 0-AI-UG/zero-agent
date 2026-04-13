@@ -222,11 +222,14 @@ export async function createAgent(project: ProjectForAgent, options: AgentOption
     onStepFinish: async ({ toolCalls, response }) => {
       stepCount++;
       const toolNames = toolCalls.filter((tc): tc is NonNullable<typeof tc> => !!tc).map((tc) => tc.toolName);
+      const m = process.memoryUsage();
       agentLog.info("step finished", {
         projectId: project.id,
         step: stepCount,
         toolCount: toolCalls.length,
         tools: toolNames,
+        heapMB: (m.heapUsed / 1048576).toFixed(0),
+        extMB: (m.external / 1048576).toFixed(0),
       });
 
       // Notify checkpoint callback with this step's response messages

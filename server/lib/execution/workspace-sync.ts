@@ -128,5 +128,6 @@ export async function reconcileToContainer(
     }
   }
 
-  syncLog.info("reconciled", { projectId, subpath, pushed: toPush.length, deleted: toDelete.length });
+  const m = process.memoryUsage();
+  syncLog.info("reconciled", { projectId, subpath, pushed: toPush.length, deleted: toDelete.length, heapMB: (m.heapUsed / 1048576).toFixed(0), extMB: (m.external / 1048576).toFixed(0) });
 }
