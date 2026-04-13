@@ -5,11 +5,16 @@
 <h1 align="center">Zero Agent</h1>
 
 <p align="center">
-  <strong>Self-hosted AI agent platform. Like ChatGPT or Claude — but you own it.</strong>
+  <strong>Self-hosted AI agent platform for teams.</strong><br>
+  Chat, browse the web, execute code, manage files, automate tasks — with any model.
 </p>
 
 <p align="center">
-  Bring your own models. Pay per use. Keep your data.
+  <a href="https://zero-agent.cero-ai.com">Website</a> ·
+  <a href="#quick-start">Quick Start</a> ·
+  <a href="#features">Features</a> ·
+  <a href="https://github.com/0-AI-UG/zero-agent/issues">Issues</a> ·
+  <a href="https://github.com/0-AI-UG/zero-agent/discussions">Discussions</a>
 </p>
 
 <p align="center">
@@ -17,68 +22,13 @@
   <a href="https://github.com/0-AI-UG/zero-agent/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/0-AI-UG/zero-agent?style=flat"></a>
   <a href="https://github.com/0-AI-UG/zero-agent/releases"><img alt="Release" src="https://img.shields.io/github/v/release/0-AI-UG/zero-agent?include_prereleases"></a>
   <a href="https://github.com/0-AI-UG/zero-agent/issues"><img alt="Issues" src="https://img.shields.io/github/issues/0-AI-UG/zero-agent"></a>
-  <a href="https://bun.sh"><img alt="Built with Bun" src="https://img.shields.io/badge/built%20with-Bun-f9f1e1"></a>
-</p>
-
-<p align="center">
-  <a href="#quick-start">Quick start</a> ·
-  <a href="#features">Features</a> ·
-  <a href="#configuration">Configuration</a> ·
-  <a href="#architecture">Architecture</a> ·
-  <a href="#contributing">Contributing</a>
 </p>
 
 <p align="center">
   <img src="docs/screenshots/chat.png" width="860" alt="Zero Agent chat interface">
 </p>
 
-## About
-
-Zero Agent is an open-source, self-hosted AI assistant platform. It runs on your own hardware, talks to 100+ models through [OpenRouter](https://openrouter.ai), and gives every project its own sandboxed Docker container where the agent can browse the web, run code, manage files, and execute tasks on a schedule.
-
-Unlike closed platforms that charge a flat subscription, throttle you at peak hours, and process your data on their servers, Zero Agent lets you bring your own keys, pick any model for any task, and keep everything on infrastructure you control.
-
-## Why Zero Agent?
-
-|  | ChatGPT | Claude | Gemini | **Zero Agent** |
-|---|---|---|---|---|
-| **Cost** | $20–200/mo fixed | $20–200/mo fixed | $8–250/mo fixed | **Pay per use (~$5–20/mo typical)** |
-| **Usage caps** | 150 msgs/3h (Plus) | ~45 msgs/5h (Pro) | Undisclosed "fair use" | **None — your API limits only** |
-| **Peak throttling** | Downgrades model | Caps tighten | Caps drop silently | **None** |
-| **Model choice** | OpenAI only | Anthropic only | Google only | **100+ models, any provider** |
-| **Data privacy** | Processed by OpenAI | Processed by Anthropic | Processed by Google | **On your hardware\*** |
-| **Self-hosted** | No | No | No | **Yes** |
-| **Code execution** | Sandboxed interpreter | Limited | Limited | **Full Docker containers** |
-| **Automation** | Limited GPTs | No | No | **Cron + event triggers** |
-| **Multi-user** | Per-seat only | Per-seat only | Per-seat only | **Projects with roles + presence** |
-| **Open source** | No | No | No | **MIT license** |
-
-<sub>* Prompts are sent to your chosen model provider's API. For full sovereignty, self-host inference (e.g. vLLM, Ollama) and point Zero Agent at it.</sub>
-
-## Features
-
-- **Chat with any model** — streaming responses, tool use, chain-of-thought, 100+ models via OpenRouter
-- **Sandboxed code execution** — every project gets an isolated Docker container with Python, Bun, git, and standard tooling
-- **Headless browser** — automated web browsing with Chromium + Chrome DevTools Protocol
-- **Web search** — integrated web search with automatic page content extraction (Brave Search)
-- **File management** — upload, organize, edit, and semantic search with S3-compatible storage
-- **Image generation** — generate images through OpenRouter-supported models
-- **App deployment** — run and expose containerized apps with automatic port detection and HTTP proxying
-- **Skills system** — extensible markdown-defined skill modules (presentation, spreadsheet, visualizer, skill-creator, and more)
-- **Credential vault** — securely store usernames, passwords, TOTP secrets, and passkeys for the agent to use
-- **Scheduled tasks** — cron-based autonomous agents that run on a schedule
-- **Event triggers** — react to file changes, new messages, and other project events with filters and cooldowns
-- **Parallel sub-agents** — spawn up to 5 sub-agents in parallel with live progress UI
-- **Persistent memory** — per-project `SOUL.md`, `MEMORY.md`, and `HEARTBEAT.md`, editable by users and agents
-- **Semantic search (RAG)** — hybrid dense + sparse retrieval over files, memories, and past messages
-- **Crash recovery** — checkpointing and durability so interrupted runs resume cleanly
-- **Multi-user projects** — workspaces with roles, invitations, and realtime presence
-- **Passkey + TOTP 2FA** — modern WebAuthn authentication out of the box
-- **Admin panel** — user management, model configuration, usage tracking
-- **Responsive UI** — desktop nav rail, mobile bottom tabs, same features everywhere
-- **Docker Compose deploy** — two services, one command, production-ready
-
-## Quick start
+## Quick Start
 
 **Prerequisites:** [Bun](https://bun.sh) v1.3+, [Docker](https://docs.docker.com/get-docker/)
 
@@ -93,33 +43,95 @@ cp .env.example .env
 bun run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) and complete the setup wizard to create the first admin user.
+Open [http://localhost:3000](http://localhost:3000) and complete the setup wizard.
 
-### Run with Docker Compose
+### Docker Compose
 
 ```bash
 docker compose up
 ```
-
-This starts both services:
 
 | Service | Port | Description |
 |---|---|---|
 | **server** | 3000 | API, web UI, agent orchestration |
 | **runner** | 3100 | Container lifecycle, browser, code execution |
 
-For one-click deployment on Hetzner, see `ocd.manifest.json`.
+## Features
+
+### 1. Chat with 100+ models
+
+Streaming responses, tool use, and chain-of-thought reasoning powered by [OpenRouter](https://openrouter.ai). Switch models per message. One API key, every provider.
+
+### 2. Sandboxed code execution
+
+Every project gets an isolated Docker container with Python, Bun, git, and standard tooling. The agent writes and runs code in a real environment — not a toy interpreter.
+
+### 3. Headless browser
+
+Automated web browsing with Chromium and Chrome DevTools Protocol. Navigate pages, fill forms, take screenshots, and extract content — with stealth mode to bypass bot detection.
+
+### 4. Web search
+
+Integrated search via Brave Search API with automatic page content extraction and markdown conversion.
+
+### 5. File management
+
+Upload, organize, preview, and edit files with S3-compatible storage. Supports images, code, CSV, XLSX, JSON, PDF, and more. Includes semantic search (hybrid dense + sparse retrieval) across files and conversation history.
+
+### 6. Image generation
+
+Generate images through OpenRouter-supported models (FLUX and others) with customizable aspect ratios.
+
+### 7. App deployment
+
+Run containerized apps inside projects with automatic port detection and HTTP proxying. Build and preview web apps without leaving the chat.
+
+### 8. Skills system
+
+Extensible markdown-defined skill modules. Built-in skills include presentation builder, spreadsheet analyzer, and a skill creator for building your own.
+
+### 9. Scheduled tasks & event triggers
+
+Cron-based autonomous agents that run on a schedule. Event triggers react to file changes, new messages, and other project events with filters and cooldowns.
+
+### 10. Parallel sub-agents
+
+Spawn up to 5 sub-agents in parallel with live progress UI. Break complex tasks into concurrent work streams.
+
+### 11. Plan mode
+
+The agent writes a detailed plan for your review before executing. Approve, revise, or reject before any changes are made.
+
+### 12. Persistent memory
+
+Per-project `SOUL.md` (identity/instructions), `MEMORY.md` (facts and decisions), and `HEARTBEAT.md` (autonomous agent goals) — editable by both users and the agent.
+
+### 13. Credential vault
+
+Securely store usernames, passwords, and TOTP secrets for the agent to use during automated browsing and logins.
+
+### 14. Multi-user projects
+
+Workspaces with roles, invitations, and realtime presence. See who's online, who's typing, and collaborate on the same project.
+
+### 15. Notifications
+
+Web Push notifications and Telegram bot integration. Get notified when tasks complete, plans need review, or the agent needs approval.
+
+### 16. Security
+
+Passkey (WebAuthn) and TOTP 2FA authentication. JWT sessions with per-user token limits. Admin panel for user management, model configuration, and usage tracking.
 
 ## Configuration
 
-Copy `.env.example` to `.env` and set the required values:
+Copy `.env.example` to `.env`:
 
 | Variable | Required | Description |
 |---|---|---|
 | `OPENROUTER_API_KEY` | Yes | [OpenRouter](https://openrouter.ai) key — one credential, 100+ models |
-| `BRAVE_SEARCH_API_KEY` | No | [Brave Search](https://brave.com/search/api/) key for the web search tool |
+| `BRAVE_SEARCH_API_KEY` | No | [Brave Search](https://brave.com/search/api/) key for web search |
 
-Everything else — models, image providers, execution backend, per-skill credentials — is configured at runtime through the admin panel.
+Models, image providers, credentials, and per-skill settings are configured at runtime through the admin panel.
 
 ## Architecture
 
@@ -146,64 +158,58 @@ Everything else — models, image providers, execution backend, per-skill creden
             └── Chromium + Python + Bun
 ```
 
-**Server** — single Bun process serving both API and frontend. SQLite in WAL mode for relational data, S3-compatible storage for files, memory, and snapshots. Agents are built on [AI SDK](https://ai-sdk.dev)'s `ToolLoopAgent` with dynamic tool loading, checkpointing, and crash recovery.
+**Server** — Bun process serving API and frontend. SQLite (WAL mode) for relational data, S3-compatible storage for files and snapshots. Agents built on [AI SDK](https://ai-sdk.dev) with dynamic tool loading, checkpointing, and crash recovery.
 
-**Runner** — standalone Bun service that manages Docker containers through the Engine API. Provides container lifecycle, bash execution, Chromium control (CDP), file I/O, S3-backed workspace sync, snapshotting, and HTTP proxying for deployed apps.
+**Runner** — Standalone Bun service managing Docker containers via Engine API. Provides bash execution, Chromium control (CDP), file I/O, workspace sync, snapshotting, and HTTP proxying.
 
-**Frontend** — React 19 + Tailwind CSS v4 + shadcn/ui. TanStack Query for server state, Zustand for client state, React Router v7 for routing, and WebSockets for realtime events (streaming, presence, typing, file changes, task completions).
+**Frontend** — React 19 + Tailwind CSS v4 + shadcn/ui. TanStack Query for server state, Zustand for client state, React Router v7 for routing, WebSockets for realtime events.
 
-## Project structure
-
-```
-server/    Backend (Bun + SQLite)
-runner/    Sandbox service (Bun + Docker)
-web/       Frontend (React 19 + Tailwind v4 + shadcn/ui)
-zero/      Bun SDK + CLI — the `zero` command agents call from bash
-skills/    Built-in skills (presentation, spreadsheet, visualizer, skill-creator)
-data/      Runtime data (SQLite, files, vectors.db)
-```
-
-## Development
-
-```bash
-bun run dev              # Hot-reload dev server on :3000
-bun run build            # Build frontend to web/dist/
-bun run compile          # Full build — server binary + frontend assets
-```
-
-## Tech stack
+## Tech Stack
 
 | Layer | Technology |
 |---|---|
 | Runtime | [Bun](https://bun.sh) |
 | AI | [AI SDK](https://ai-sdk.dev) + [OpenRouter](https://openrouter.ai) |
 | Frontend | React 19, Tailwind CSS v4, shadcn/ui, TanStack Query, Zustand, React Router v7 |
-| Realtime | WebSockets |
 | Database | SQLite (WAL mode) |
 | Vectors | SQLite + HNSW via [`@0-ai/s3lite`](https://github.com/0-AI-UG/s3lite) |
 | Storage | S3-compatible |
 | Sandbox | Docker Engine API, Chromium + CDP |
 | Auth | Passkeys (WebAuthn) + TOTP 2FA |
+| Notifications | Web Push + Telegram |
+
+## Project Structure
+
+```
+server/    Backend — API, agent loop, scheduler, auth, RAG
+runner/    Sandbox service — containers, browser, code execution
+web/       Frontend — React 19, Tailwind v4, shadcn/ui
+zero/      CLI + SDK — the `zero` command agents call from bash
+skills/    Built-in skills — presentation, spreadsheet, skill-creator
+data/      Runtime data — SQLite, files, vectors
+```
+
+## Development
+
+```bash
+bun run dev              # Hot-reload dev server on :3000
+bun run build            # Build frontend
+bun run compile          # Full build — server binary + frontend assets
+```
 
 ## Contributing
 
-Contributions are welcome! Whether it's a bug fix, a new skill, a feature, or documentation — please open an issue to discuss changes before sending a pull request.
+Contributions welcome — bug fixes, new skills, features, or docs. Please open an issue to discuss before sending a pull request.
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feat/amazing-feature`)
-3. Commit your changes (`git commit -m 'feat: add amazing feature'`)
-4. Push to the branch (`git push origin feat/amazing-feature`)
-5. Open a Pull Request
+3. Commit your changes
+4. Open a Pull Request
 
-## Community & support
-
-- **Issues** — [github.com/0-AI-UG/zero-agent/issues](https://github.com/0-AI-UG/zero-agent/issues)
-- **Discussions** — [github.com/0-AI-UG/zero-agent/discussions](https://github.com/0-AI-UG/zero-agent/discussions)
-
-## Star history
+## Star History
 
 [![Star History Chart](https://api.star-history.com/svg?repos=0-AI-UG/zero-agent&type=Date)](https://star-history.com/#0-AI-UG/zero-agent&Date)
 
 ## License
 
-Zero Agent is released under the [MIT License](LICENSE).
+[MIT](LICENSE)
