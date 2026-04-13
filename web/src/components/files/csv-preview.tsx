@@ -149,24 +149,26 @@ export function CsvPreview({ file, content, projectId }: CsvPreviewProps) {
   // Preview header actions
   useEffect(() => {
     setActions(
-      <div className="flex items-center gap-1.5">
+      <div className="flex items-center gap-1">
         {isDirty && (
           <Button
             variant="ghost"
             size="icon-sm"
             onClick={handleReset}
-            title="Reset changes"
+            title="Discard changes"
+            className="text-muted-foreground"
           >
-            <UndoIcon className="h-3.5 w-3.5" />
+            <UndoIcon className="size-4" />
           </Button>
         )}
         <Button
-          variant="default"
+          variant={isDirty ? "default" : "ghost"}
           size="sm"
           onClick={handleSave}
           disabled={!isDirty || updateFile.isPending}
+          className={isDirty ? "" : "text-muted-foreground"}
         >
-          <SaveIcon className="h-3.5 w-3.5 mr-1" />
+          <SaveIcon className="size-3.5" />
           {updateFile.isPending ? "Saving..." : "Save"}
         </Button>
       </div>,
@@ -192,18 +194,18 @@ export function CsvPreview({ file, content, projectId }: CsvPreviewProps) {
             size="icon-sm"
             onClick={handleDownloadCsv}
             title="Download CSV"
-            className="h-7 w-7"
+            className="size-7 text-muted-foreground"
           >
-            <DownloadIcon className="h-3.5 w-3.5" />
+            <DownloadIcon className="size-3.5" />
           </Button>
           <Button
             variant="ghost"
             size="icon-sm"
             onClick={handleExportXlsx}
             title="Export as Excel"
-            className="h-7 w-7"
+            className="size-7 text-muted-foreground"
           >
-            <FileSpreadsheetIcon className="h-3.5 w-3.5" />
+            <FileSpreadsheetIcon className="size-3.5" />
           </Button>
         </>
       }

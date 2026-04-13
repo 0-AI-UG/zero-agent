@@ -2,12 +2,15 @@ import { useState, useMemo, useCallback, useRef, useEffect, type ReactNode } fro
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   PlusIcon,
-  XIcon,
   Trash2Icon,
   ArrowUpIcon,
   ArrowDownIcon,
   FilterIcon,
   SearchIcon,
+  XIcon,
+  ChevronsUpDownIcon,
+  ColumnsIcon,
+  RowsIcon,
 } from "lucide-react";
 import {
   AlertDialog,
@@ -28,7 +31,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 
-const ROW_HEIGHT = 32;
+const ROW_HEIGHT = 34;
 
 type SortDir = "asc" | "desc" | null;
 
@@ -101,6 +104,8 @@ export function SpreadsheetTable({
   const [colWidths, setColWidths] = useState<Record<number, number>>({});
   const resizeRef = useRef<{ col: number; startX: number; startW: number } | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [selectedRow, setSelectedRow] = useState<number | null>(null);
+  const [selectedCol, setSelectedCol] = useState<number | null>(null);
 
   const numericCols = useMemo(
     () => headers.map((_, i) => isNumericColumn(rows, i)),
@@ -156,9 +161,8 @@ export function SpreadsheetTable({
     return count;
   }, [search, processedRows]);
 
-  // Row virtualizer - only renders visible rows + overscan
   const rowVirtualizer = useVirtualizer({
-    count: processedRows.length + (editable ? 1 : 0), // +1 for add-row button
+    count: processedRows.length + (editable ? 1 : 0),
     getScrollElement: () => scrollContainerRef.current,
     estimateSize: () => ROW_HEIGHT,
     overscan: 20,
@@ -248,7 +252,6 @@ export function SpreadsheetTable({
     [colWidths],
   );
 
-  // Keyboard shortcut for search
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "f") {
@@ -262,144 +265,157 @@ export function SpreadsheetTable({
 
   if (headers.length === 0) {
     return (
-      <div className="flex items-center justify-center h-40 text-sm text-muted-foreground">
-        {editable ? "No data found in CSV file." : "Empty sheet"}
+      <div className="flex flex-col items-center justify-center h-40 gap-2 text-sm text-muted-foreground">
+        <ColumnsIcon className="size-8 opacity-30" />
+        {editable ? "No data found. Add columns to get started." : "Empty sheet"}
       </div>
     );
   }
 
-  const extraCols = editable ? 3 : 1; // row#, action col, add-col col vs just row#
+  const extraCols = editable ? 2 : 1;
 
   return (
     <div className="flex flex-col h-full">
       {/* Toolbar */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b bg-muted/30">
+      <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border/60 bg-muted/20">
+        {/* Search */}
         <div className="relative flex-1 max-w-xs">
-          <SearchIcon className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+          <SearchIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground pointer-events-none" />
           <input
             ref={searchRef}
             type="text"
-            placeholder={editable ? "Search... (Cmd+F)" : "Search..."}
+            placeholder={editable ? "Search (⌘F)" : "Search..."}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full h-7 pl-7 pr-2 text-xs bg-background border rounded-md outline-none focus:ring-1 focus:ring-ring"
+            className="w-full h-7 pl-8 pr-16 text-xs bg-background border border-border/60 rounded-md outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/60"
           />
           {search && (
-            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground">
-              {searchMatchCount} match{searchMatchCount !== 1 ? "es" : ""}
-            </span>
+            <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-1">
+              <span className="text-[10px] text-muted-foreground tabular-nums">
+                {searchMatchCount}
+              </span>
+              <button
+                type="button"
+                className="p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
+                onClick={() => setSearch("")}
+              >
+                <XIcon className="size-3" />
+              </button>
+            </div>
           )}
         </div>
 
+        {/* Active filters badge */}
         {activeFilterCount > 0 && (
           <Button
             variant="ghost"
             size="sm"
             onClick={clearAllFilters}
-            className="h-7 text-xs gap-1"
+            className="h-7 text-xs gap-1.5 text-muted-foreground"
           >
-            <FilterIcon className="h-3 w-3" />
-            {activeFilterCount} filter{activeFilterCount !== 1 ? "s" : ""}
-            <XIcon className="h-3 w-3" />
+            <FilterIcon className="size-3" />
+            {activeFilterCount}
+            <XIcon className="size-3" />
           </Button>
         )}
 
         <div className="flex-1" />
 
-        <span className="text-[11px] text-muted-foreground tabular-nums">
-          {processedRows.length !== rows.length
-            ? `${processedRows.length} of ${rows.length}`
-            : rows.length}{" "}
-          row{rows.length !== 1 ? "s" : ""} · {headers.length} col
-          {headers.length !== 1 ? "s" : ""}
-        </span>
+        {/* Stats */}
+        <div className="flex items-center gap-3 text-[11px] text-muted-foreground tabular-nums">
+          <span className="flex items-center gap-1">
+            <RowsIcon className="size-3 opacity-50" />
+            {processedRows.length !== rows.length
+              ? `${processedRows.length}/${rows.length}`
+              : rows.length}
+          </span>
+          <span className="flex items-center gap-1">
+            <ColumnsIcon className="size-3 opacity-50" />
+            {headers.length}
+          </span>
+        </div>
 
+        {/* Custom actions slot */}
         {toolbarActions && (
-          <div className="flex items-center gap-1 border-l pl-2 ml-1">
+          <div className="flex items-center gap-1 border-l border-border/60 pl-2 ml-1">
             {toolbarActions}
           </div>
         )}
       </div>
 
-      {/* Virtualized table */}
+      {/* Table */}
       <div ref={scrollContainerRef} className="flex-1 overflow-auto">
         <table className="w-full text-sm border-collapse">
           <thead className="sticky top-0 z-10">
-            <tr className="bg-muted border-b">
+            <tr className="border-b border-border/60">
               {/* Row number header */}
-              <th className="w-10 min-w-10 px-2 py-1.5 text-[10px] font-medium text-muted-foreground text-right border-r bg-muted sticky left-0 z-20">
+              <th className="w-12 min-w-12 px-2 py-1.5 text-[10px] font-medium text-muted-foreground/70 text-right border-r border-border/40 bg-muted/60 sticky left-0 z-20 select-none">
                 #
               </th>
-              {/* Action column (editable only) */}
-              {editable && <th className="w-7 min-w-7 p-0 bg-muted border-r" />}
+              {/* Data columns */}
               {headers.map((header, i) => {
                 const width = colWidths[i] ?? 150;
                 const hasFilter = filters[i]?.text;
+                const isSorted = sortCol === i;
                 return (
                   <th
                     key={i}
-                    className="relative p-0 border-r bg-muted group/col"
+                    className="relative p-0 border-r border-border/40 bg-muted/60 group/col select-none"
                     style={{ width, minWidth: width }}
                   >
-                    <div className="flex items-center">
+                    <div className="flex items-center h-8">
+                      {/* Sort button / header label */}
                       <button
                         type="button"
-                        className="flex-1 flex items-center gap-1 px-2 py-1.5 text-left text-xs font-medium hover:bg-muted-foreground/5 cursor-pointer select-none"
+                        className="flex-1 flex items-center gap-1 px-2.5 h-full text-left text-xs font-medium text-foreground/80 hover:text-foreground hover:bg-muted/80 cursor-pointer truncate"
                         onClick={() => handleSort(i)}
                       >
                         {editable ? (
                           <input
-                            className="flex-1 bg-transparent text-xs font-medium outline-none min-w-0"
+                            className="flex-1 bg-transparent text-xs font-medium outline-none min-w-0 text-foreground"
                             value={header}
                             onClick={(e) => e.stopPropagation()}
                             onChange={(e) => onHeaderChange?.(i, e.target.value)}
+                            placeholder={`Column ${i + 1}`}
                           />
                         ) : (
-                          <span className="flex-1 truncate">{header}</span>
+                          <span className="flex-1 truncate">{header || `Column ${i + 1}`}</span>
                         )}
-                        {sortCol === i && sortDir === "asc" && (
-                          <ArrowUpIcon className="h-3 w-3 shrink-0 text-foreground" />
+                        {isSorted && sortDir === "asc" && (
+                          <ArrowUpIcon className="size-3 shrink-0 text-primary" />
                         )}
-                        {sortCol === i && sortDir === "desc" && (
-                          <ArrowDownIcon className="h-3 w-3 shrink-0 text-foreground" />
+                        {isSorted && sortDir === "desc" && (
+                          <ArrowDownIcon className="size-3 shrink-0 text-primary" />
+                        )}
+                        {!isSorted && (
+                          <ChevronsUpDownIcon className="size-3 shrink-0 text-muted-foreground/30 group-hover/col:text-muted-foreground/60" />
                         )}
                       </button>
 
-                      {/* Filter button */}
+                      {/* Filter popover */}
                       <Popover
                         open={openFilter === i}
-                        onOpenChange={(open) =>
-                          setOpenFilter(open ? i : null)
-                        }
+                        onOpenChange={(open) => setOpenFilter(open ? i : null)}
                       >
                         <PopoverTrigger asChild>
                           <button
                             type="button"
-                            className={`shrink-0 p-1 mr-1 rounded hover:bg-muted-foreground/10 ${
+                            className={`shrink-0 p-1 mr-0.5 rounded hover:bg-muted-foreground/10 ${
                               hasFilter
                                 ? "text-primary"
-                                : "text-muted-foreground opacity-0 group-hover/col:opacity-100"
+                                : "text-muted-foreground/40 opacity-0 group-hover/col:opacity-100"
                             }`}
                           >
-                            <FilterIcon className="h-3 w-3" />
-                            {hasFilter && (
-                              <span className="sr-only">Active filter</span>
-                            )}
+                            <FilterIcon className="size-3" />
                           </button>
                         </PopoverTrigger>
-                        <PopoverContent
-                          className="w-56 p-3"
-                          align="start"
-                          sideOffset={4}
-                        >
+                        <PopoverContent className="w-56 p-3" align="start" sideOffset={4}>
                           <div className="space-y-2">
                             <p className="text-xs font-medium">
                               Filter: {header || `Column ${i + 1}`}
                             </p>
                             <div className="flex gap-1">
-                              {(
-                                ["contains", "starts", "exact"] as const
-                              ).map((mode) => (
+                              {(["contains", "starts", "exact"] as const).map((mode) => (
                                 <button
                                   key={mode}
                                   type="button"
@@ -408,9 +424,7 @@ export function SpreadsheetTable({
                                       ? "bg-primary text-primary-foreground border-primary"
                                       : "bg-background border-border text-muted-foreground hover:text-foreground"
                                   }`}
-                                  onClick={() =>
-                                    handleFilterModeChange(i, mode)
-                                  }
+                                  onClick={() => handleFilterModeChange(i, mode)}
                                 >
                                   {mode === "contains"
                                     ? "Contains"
@@ -424,9 +438,7 @@ export function SpreadsheetTable({
                               placeholder="Filter value..."
                               className="h-7 text-xs"
                               value={filters[i]?.text ?? ""}
-                              onChange={(e) =>
-                                handleFilterChange(i, e.target.value)
-                              }
+                              onChange={(e) => handleFilterChange(i, e.target.value)}
                               autoFocus
                             />
                             {filters[i]?.text && (
@@ -443,24 +455,23 @@ export function SpreadsheetTable({
                         </PopoverContent>
                       </Popover>
 
-                      {/* Delete column (editable only) */}
+                      {/* Delete column */}
                       {editable && headers.length > 1 && (
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
                             <button
                               type="button"
-                              className="absolute -top-1 right-3 opacity-0 group-hover/col:opacity-100 p-0.5 rounded-full bg-muted-foreground/10 hover:bg-destructive/20 text-muted-foreground hover:text-destructive"
+                              className="shrink-0 p-1 mr-0.5 rounded opacity-0 group-hover/col:opacity-100 text-muted-foreground/40 hover:text-destructive hover:bg-destructive/10"
                               title="Delete column"
                             >
-                              <Trash2Icon className="h-2.5 w-2.5" />
+                              <Trash2Icon className="size-3" />
                             </button>
                           </AlertDialogTrigger>
                           <AlertDialogContent size="sm">
                             <AlertDialogHeader>
                               <AlertDialogTitle>Delete column</AlertDialogTitle>
                               <AlertDialogDescription>
-                                Delete "{header || `Column ${i + 1}`}" and all
-                                its data?
+                                Delete "{header || `Column ${i + 1}`}" and all its data?
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
@@ -479,14 +490,12 @@ export function SpreadsheetTable({
 
                     {/* Resize handle */}
                     <div
-                      className="absolute top-0 right-0 w-1.5 h-full cursor-col-resize hover:bg-primary/30 z-10"
+                      className="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-primary/40 active:bg-primary/60 z-10"
                       onMouseDown={(e) => handleResizeStart(e, i)}
                       onDoubleClick={() => {
                         const maxLen = Math.max(
                           (header || "Column").length,
-                          ...rows
-                            .slice(0, 200)
-                            .map((r) => (r[i] ?? "").length),
+                          ...rows.slice(0, 200).map((r) => (r[i] ?? "").length),
                         );
                         setColWidths((prev) => ({
                           ...prev,
@@ -497,16 +506,16 @@ export function SpreadsheetTable({
                   </th>
                 );
               })}
-              {/* Add column header (editable only) */}
+              {/* Add column */}
               {editable && (
-                <th className="w-8 min-w-8 p-0 bg-muted">
+                <th className="w-9 min-w-9 p-0 bg-muted/60">
                   <button
                     type="button"
-                    className="flex items-center justify-center w-full h-full p-1.5 text-muted-foreground hover:text-foreground"
+                    className="flex items-center justify-center w-full h-8 text-muted-foreground/50 hover:text-foreground hover:bg-muted/80"
                     onClick={onAddColumn}
                     title="Add column"
                   >
-                    <PlusIcon className="h-3.5 w-3.5" />
+                    <PlusIcon className="size-3.5" />
                   </button>
                 </th>
               )}
@@ -517,7 +526,7 @@ export function SpreadsheetTable({
               <tr>
                 <td
                   colSpan={headers.length + extraCols}
-                  className="text-center py-8 text-sm text-muted-foreground"
+                  className="text-center py-12 text-sm text-muted-foreground"
                 >
                   {search || activeFilterCount > 0
                     ? "No matching rows"
@@ -527,7 +536,7 @@ export function SpreadsheetTable({
             )}
             {processedRows.length > 0 && (
               <>
-                {/* Top spacer for virtualized rows */}
+                {/* Top spacer */}
                 {(() => {
                   const firstItem = rowVirtualizer.getVirtualItems()[0];
                   return firstItem && firstItem.start > 0 ? (
@@ -540,19 +549,18 @@ export function SpreadsheetTable({
                   ) : null;
                 })()}
                 {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-                  // Last virtual item is the add-row button when editable
                   if (editable && virtualRow.index === processedRows.length) {
                     return (
                       <tr key="add-row" data-index={virtualRow.index}>
-                        <td className="p-0 sticky left-0" />
-                        <td className="p-0" colSpan={headers.length + 2}>
+                        <td className="p-0 sticky left-0 bg-background" />
+                        <td className="p-0" colSpan={headers.length + 1}>
                           <button
                             type="button"
-                            className="flex items-center justify-center w-full py-1.5 text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                            className="flex items-center justify-center w-full py-2 text-muted-foreground/50 hover:text-foreground hover:bg-muted/30 gap-1.5 text-xs"
                             onClick={onAddRow}
-                            title="Add row"
                           >
-                            <PlusIcon className="h-3.5 w-3.5" />
+                            <PlusIcon className="size-3.5" />
+                            Add row
                           </button>
                         </td>
                       </tr>
@@ -562,45 +570,67 @@ export function SpreadsheetTable({
                   const item = processedRows[virtualRow.index];
                   if (!item) return null;
                   const { row, originalIdx } = item;
+                  const isSelected = selectedRow === originalIdx;
+                  const isEven = virtualRow.index % 2 === 0;
 
                   return (
                     <tr
                       key={originalIdx}
                       data-index={virtualRow.index}
-                      className={`border-b hover:bg-muted/30 ${editable ? "group/row" : ""}`}
+                      className={`border-b border-border/20 group/row ${
+                        isSelected
+                          ? "bg-primary/5"
+                          : isEven
+                            ? "bg-transparent"
+                            : "bg-muted/15"
+                      } ${!isSelected ? "hover:bg-muted/30" : ""}`}
                       style={{ height: ROW_HEIGHT }}
+                      onClick={() => setSelectedRow(isSelected ? null : originalIdx)}
                     >
                       {/* Row number */}
-                      <td className="w-10 min-w-10 px-2 py-0 text-[10px] text-muted-foreground text-right border-r bg-muted/20 sticky left-0 tabular-nums">
-                        {originalIdx + 1}
+                      <td className={`w-12 min-w-12 px-2 py-0 text-[10px] text-muted-foreground/60 text-right border-r border-border/40 sticky left-0 z-[1] tabular-nums select-none ${
+                        isSelected ? "bg-primary/5" : isEven ? "bg-background" : "bg-muted/15"
+                      }`}>
+                        <div className="flex items-center justify-end gap-1">
+                          {editable && (
+                            <button
+                              type="button"
+                              className="opacity-0 group-hover/row:opacity-100 p-0.5 -ml-1 rounded text-muted-foreground/50 hover:text-destructive"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onDeleteRow?.(originalIdx);
+                              }}
+                              title="Delete row"
+                            >
+                              <Trash2Icon className="size-2.5" />
+                            </button>
+                          )}
+                          <span>{originalIdx + 1}</span>
+                        </div>
                       </td>
-                      {/* Delete row button (editable only) */}
-                      {editable && (
-                        <td className="w-7 min-w-7 p-0 border-r">
-                          <button
-                            type="button"
-                            className="flex items-center justify-center w-full p-1 opacity-0 group-hover/row:opacity-100 text-muted-foreground hover:text-destructive"
-                            onClick={() => onDeleteRow?.(originalIdx)}
-                            title="Delete row"
-                          >
-                            <XIcon className="h-3 w-3" />
-                          </button>
-                        </td>
-                      )}
+                      {/* Cells */}
                       {headers.map((_, colIdx) => {
                         const width = colWidths[colIdx] ?? 150;
                         const cellValue = row[colIdx] ?? "";
                         const isMatch =
                           search &&
                           cellValue.toLowerCase().includes(search.toLowerCase());
+                        const isCellSelected = isSelected && selectedCol === colIdx;
                         return editable ? (
                           <td
                             key={colIdx}
-                            className={`p-0 border-r ${isMatch ? "bg-yellow-500/15" : ""}`}
+                            className={`p-0 border-r border-border/20 ${
+                              isMatch ? "bg-yellow-500/10" : ""
+                            } ${isCellSelected ? "ring-1 ring-inset ring-primary/50" : ""}`}
                             style={{ width, minWidth: width }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedRow(originalIdx);
+                              setSelectedCol(colIdx);
+                            }}
                           >
                             <input
-                              className="w-full bg-transparent px-2 py-1.5 text-sm font-mono outline-none focus:ring-1 focus:ring-ring focus:ring-inset rounded-none"
+                              className="w-full bg-transparent px-2.5 py-1.5 text-sm font-mono outline-none"
                               value={cellValue}
                               onChange={(e) =>
                                 onCellChange?.(originalIdx, colIdx, e.target.value)
@@ -610,18 +640,20 @@ export function SpreadsheetTable({
                         ) : (
                           <td
                             key={colIdx}
-                            className={`px-2 py-1.5 border-r font-mono text-sm ${isMatch ? "bg-yellow-500/15" : ""}`}
-                            style={{ width, minWidth: width }}
+                            className={`px-2.5 py-1.5 border-r border-border/20 text-sm truncate ${
+                              isMatch ? "bg-yellow-500/10" : ""
+                            } ${numericCols[colIdx] ? "text-right font-mono tabular-nums" : ""}`}
+                            style={{ width, minWidth: width, maxWidth: width }}
                           >
                             {cellValue}
                           </td>
                         );
                       })}
-                      {editable && <td className="w-8 p-0" />}
+                      {editable && <td className="w-9 p-0" />}
                     </tr>
                   );
                 })}
-                {/* Bottom spacer for virtualized rows */}
+                {/* Bottom spacer */}
                 {(() => {
                   const items = rowVirtualizer.getVirtualItems();
                   const lastItem = items[items.length - 1];

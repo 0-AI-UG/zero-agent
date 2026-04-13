@@ -266,31 +266,28 @@ export function XlsxPreview({ file, url, projectId }: XlsxPreviewProps) {
   // Preview header actions
   useEffect(() => {
     setActions(
-      <div className="flex items-center gap-1.5">
+      <div className="flex items-center gap-1">
         {isDirty && (
           <Button
             variant="ghost"
             size="icon-sm"
             onClick={handleReset}
-            title="Reset changes"
+            title="Discard changes"
+            className="text-muted-foreground"
           >
-            <UndoIcon className="h-3.5 w-3.5" />
+            <UndoIcon className="size-4" />
           </Button>
         )}
         {isDirty && (
-          <Button
-            variant="default"
-            size="sm"
-            onClick={handleSave}
-          >
-            <SaveIcon className="h-3.5 w-3.5 mr-1" />
+          <Button variant="default" size="sm" onClick={handleSave}>
+            <SaveIcon className="size-3.5" />
             Save
           </Button>
         )}
         {!isDirty && (
-          <Button variant="outline" size="sm" asChild>
+          <Button variant="ghost" size="sm" className="text-muted-foreground" asChild>
             <a href={url} download={file.filename}>
-              <DownloadIcon className="h-4 w-4 mr-1" />
+              <DownloadIcon className="size-3.5" />
               Download
             </a>
           </Button>
@@ -326,10 +323,10 @@ export function XlsxPreview({ file, url, projectId }: XlsxPreviewProps) {
         onClick={() => handleImportSheetAsCsv(sheet)}
         disabled={createFile.isPending}
         title="Import this sheet as a CSV file"
-        className="h-7 text-xs gap-1"
+        className="h-7 text-xs gap-1 text-muted-foreground"
       >
-        <FileTextIcon className="h-3.5 w-3.5" />
-        Import as CSV
+        <FileTextIcon className="size-3.5" />
+        CSV
       </Button>
       {sheets.length > 1 && (
         <Button
@@ -338,10 +335,10 @@ export function XlsxPreview({ file, url, projectId }: XlsxPreviewProps) {
           onClick={handleImportAllAsCsv}
           disabled={createFile.isPending}
           title="Import all sheets as separate CSV files"
-          className="h-7 text-xs gap-1"
+          className="h-7 text-xs gap-1 text-muted-foreground"
         >
-          <FilesIcon className="h-3.5 w-3.5" />
-          Import All
+          <FilesIcon className="size-3.5" />
+          All CSV
         </Button>
       )}
     </>
