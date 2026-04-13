@@ -818,7 +818,7 @@ export function TasksPage() {
             {!project.automationEnabled && (
               <a
                 href={`/projects/${projectId}/settings`}
-                className="flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-[11px] font-medium text-amber-700 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-400 dark:hover:bg-amber-900"
+                className="flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground hover:text-foreground"
               >
                 <PauseCircleIcon className="size-3" />
                 Paused

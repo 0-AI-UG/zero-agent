@@ -464,3 +464,30 @@
 [data-streamdown="code-block-body"] {
   overflow-x: auto;
 }
+
+/* ── Streamdown markdown contrast fixes (dark mode) ── */
+.dark [data-streamdown="table"] {
+  border-color: color-mix(in oklch, var(--foreground) 25%, transparent);
+}
+
+.dark [data-streamdown="table-header"] {
+  background: color-mix(in oklch, var(--foreground) 12%, var(--background));
+}
+
+.dark [data-streamdown="table-row"] {
+  border-color: color-mix(in oklch, var(--foreground) 18%, transparent);
+}
+
+.dark [data-streamdown="table-cell"],
+.dark [data-streamdown="table-header-cell"] {
+  color: var(--foreground);
+}
+
+.dark [data-streamdown="blockquote"] {
+  color: color-mix(in oklch, var(--foreground) 80%, transparent);
+  border-color: color-mix(in oklch, var(--foreground) 30%, transparent);
+}
+
+.dark [data-streamdown="inline-code"] {
+  background: color-mix(in oklch, var(--foreground) 14%, var(--background));
+}
