@@ -272,7 +272,7 @@ export function SpreadsheetTable({
     );
   }
 
-  const extraCols = editable ? 2 : 1;
+  const extraCols = 1; // row number column
 
   return (
     <div className="flex flex-col h-full">
@@ -349,7 +349,7 @@ export function SpreadsheetTable({
           <thead className="sticky top-0 z-10">
             <tr className="border-b border-border/60">
               {/* Row number header */}
-              <th className="w-12 min-w-12 px-2 py-1.5 text-[10px] font-medium text-muted-foreground/70 text-right border-r border-border/40 bg-muted/60 sticky left-0 z-20 select-none">
+              <th className="w-12 min-w-12 px-2 py-1.5 text-[10px] font-medium text-muted-foreground/70 text-right border-r border-border/40 bg-muted sticky left-0 z-20 select-none">
                 #
               </th>
               {/* Data columns */}
@@ -506,19 +506,6 @@ export function SpreadsheetTable({
                   </th>
                 );
               })}
-              {/* Add column */}
-              {editable && (
-                <th className="w-9 min-w-9 p-0 bg-muted/60">
-                  <button
-                    type="button"
-                    className="flex items-center justify-center w-full h-8 text-muted-foreground/50 hover:text-foreground hover:bg-muted/80"
-                    onClick={onAddColumn}
-                    title="Add column"
-                  >
-                    <PlusIcon className="size-3.5" />
-                  </button>
-                </th>
-              )}
             </tr>
           </thead>
           <tbody>
@@ -553,15 +540,26 @@ export function SpreadsheetTable({
                     return (
                       <tr key="add-row" data-index={virtualRow.index}>
                         <td className="p-0 sticky left-0 z-[2] bg-background" />
-                        <td className="p-0" colSpan={headers.length + 1}>
-                          <button
-                            type="button"
-                            className="flex items-center justify-center w-full py-2 text-muted-foreground/50 hover:text-foreground hover:bg-muted/30 gap-1.5 text-xs"
-                            onClick={onAddRow}
-                          >
-                            <PlusIcon className="size-3.5" />
-                            Add row
-                          </button>
+                        <td className="p-0" colSpan={headers.length}>
+                          <div className="flex items-center">
+                            <button
+                              type="button"
+                              className="flex-1 flex items-center justify-center py-2 text-muted-foreground/50 hover:text-foreground hover:bg-muted/30 gap-1.5 text-xs"
+                              onClick={onAddRow}
+                            >
+                              <PlusIcon className="size-3.5" />
+                              Add row
+                            </button>
+                            <div className="w-px h-5 bg-border/40" />
+                            <button
+                              type="button"
+                              className="flex-1 flex items-center justify-center py-2 text-muted-foreground/50 hover:text-foreground hover:bg-muted/30 gap-1.5 text-xs"
+                              onClick={onAddColumn}
+                            >
+                              <PlusIcon className="size-3.5" />
+                              Add column
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -648,7 +646,6 @@ export function SpreadsheetTable({
                           </td>
                         );
                       })}
-                      {editable && <td className="w-9 p-0" />}
                     </tr>
                   );
                 })}
