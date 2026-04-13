@@ -1,6 +1,6 @@
-import { authenticateRequest } from "@/lib/auth.ts";
+import { authenticateRequest } from "@/lib/auth/auth.ts";
 import { handleError } from "@/routes/utils.ts";
-import { getVapidKeys } from "@/lib/vapid.ts";
+import { getVapidKeys } from "@/lib/notifications/vapid.ts";
 import {
   upsertSubscription,
   deleteSubscription,

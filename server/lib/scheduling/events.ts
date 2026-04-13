@@ -1,4 +1,4 @@
-import { log } from "@/lib/logger.ts";
+import { log } from "@/lib/utils/logger.ts";
 
 const eventLog = log.child({ module: "events" });
 

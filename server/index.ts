@@ -4,8 +4,8 @@ import fs from "fs/promises";
 import { Hono } from "hono";
 import { serve } from "@hono/node-server";
 import type { Context } from "hono";
-import { corsHeaders } from "@/lib/cors.ts";
-import { log } from "@/lib/logger.ts";
+import { corsHeaders } from "@/lib/http/cors.ts";
+import { log } from "@/lib/utils/logger.ts";
 import { handleHealth } from "@/routes/health.ts";
 import { handleLogin, handleMe, handleUpdateMe, handlePasswordResetInit, handlePasswordResetConfirm, handlePasswordResetPasskeyOptions, handlePasswordResetPasskeyConfirm } from "@/routes/auth.ts";
 import {
@@ -145,7 +145,7 @@ import {
   reconcile,
   getLocalBackend,
 } from "@/lib/execution/lifecycle.ts";
-import { proxyAppRequest } from "@/lib/app-proxy.ts";
+import { proxyAppRequest } from "@/lib/http/app-proxy.ts";
 import { getSetting } from "@/lib/settings.ts";
 
 import {
@@ -157,9 +157,10 @@ import {
   handleDeleteSkill,
 } from "@/routes/skills.ts";
 
-import { startScheduler, stopScheduler } from "@/lib/scheduler.ts";
+import { startScheduler, stopScheduler } from "@/lib/scheduling/scheduler.ts";
 import { requestShutdown, drainActiveRuns, isShuttingDown } from "@/lib/durability/shutdown.ts";
 import { recoverInterruptedRuns } from "@/lib/durability/recovery.ts";
+import { pruneOrphanedMessageVectors } from "@/lib/search/vectors.ts";
 import { handleListUsers, handleCreateUser, handleDeleteUser, handleUpdateUser } from "@/routes/admin.ts";
 import {
   handleCreateInvitation,
@@ -191,7 +192,7 @@ import {
   handleDeleteRunner,
   handleTestRunner,
 } from "@/routes/runners.ts";
-import { requireAdmin, authenticateRequest } from "@/lib/auth.ts";
+import { requireAdmin, authenticateRequest } from "@/lib/auth/auth.ts";
 import { mountCliHandlers } from "@/cli-handlers/index.ts";
 import { db } from "@/db/index.ts";
 
@@ -572,7 +573,7 @@ app.get("/api/capabilities", h((req: Request) => {
 // Short-lived token for /_apps/* browser navigation
 app.post("/api/app-token", h(async (req: Request) => {
   const { userId, username } = await authenticateRequest(req);
-  const { createAppToken } = await import("@/lib/auth.ts");
+  const { createAppToken } = await import("@/lib/auth/auth.ts");
   const appToken = await createAppToken(userId, username);
   return Response.json({ token: appToken }, { headers: corsHeaders });
 }));
@@ -634,10 +635,10 @@ import { getRequestListener } from "@hono/node-server";
 const honoListener = getRequestListener(app.fetch);
 const nodeServer = createHttpServer(honoListener);
 
-import { attachWebSocketServer, closeWebSocketServer } from "@/lib/ws.ts";
-import { startWsBridge, startBackgroundBridge } from "@/lib/ws-bridge.ts";
-import { initBackgroundTaskListeners } from "@/lib/background-task-store.ts";
-import { initBackgroundResume } from "@/lib/background-resume.ts";
+import { attachWebSocketServer, closeWebSocketServer } from "@/lib/http/ws.ts";
+import { startWsBridge, startBackgroundBridge } from "@/lib/http/ws-bridge.ts";
+import { initBackgroundTaskListeners } from "@/lib/agent/background-task-store.ts";
+import { initBackgroundResume } from "@/lib/agent/background-resume.ts";
 
 attachWebSocketServer(nodeServer);
 startWsBridge();
@@ -666,7 +667,7 @@ recoverInterruptedRuns();
 
 startScheduler();
 
-import { startEventTriggers, stopAllEventTriggers } from "@/lib/event-trigger.ts";
+import { startEventTriggers, stopAllEventTriggers } from "@/lib/scheduling/event-trigger.ts";
 startEventTriggers();
 
 // Register the global Telegram provider + wire webhook or start the long-poller.
@@ -685,6 +686,19 @@ startupExpirySweep();
 // owning runs are gone, so auto-reject and broadcast so any reconnecting
 // UI flips the card.
 recoverSyncOrphansOnStartup();
+
+// ── Periodic vector pruning (every 30 min) ──
+const _vectorPruneInterval = setInterval(() => {
+  try {
+    const { projectsPruned, vectorsDeleted } = pruneOrphanedMessageVectors();
+    if (vectorsDeleted > 0) {
+      log.info("vector prune complete", { projectsPruned, vectorsDeleted });
+    }
+  } catch (err) {
+    log.warn("vector prune failed", { error: err instanceof Error ? err.message : String(err) });
+  }
+}, 30 * 60 * 1000);
+if (typeof _vectorPruneInterval === "object" && "unref" in _vectorPruneInterval) _vectorPruneInterval.unref();
 
 // ── Local Docker Backend ──
 // Only initialize Docker if admin has explicitly enabled server execution

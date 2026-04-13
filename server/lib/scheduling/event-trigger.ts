@@ -1,11 +1,11 @@
-import { events, type EventName, type AgentEvents } from "@/lib/events.ts";
+import { events, type EventName, type AgentEvents } from "@/lib/scheduling/events.ts";
 import { getAllEventTasks, getEventTasksForEvent, getTaskById, markEventTaskRun } from "@/db/queries/scheduled-tasks.ts";
 import { insertTaskRun, updateTaskRun } from "@/db/queries/task-runs.ts";
 import { getProjectById } from "@/db/queries/projects.ts";
 import { getProjectMembers } from "@/db/queries/members.ts";
-import { runAutonomousTask } from "@/lib/autonomous-agent.ts";
-import { formatDateForSQLite } from "@/lib/schedule-parser.ts";
-import { log } from "@/lib/logger.ts";
+import { runAutonomousTask } from "@/lib/agent/autonomous-agent.ts";
+import { formatDateForSQLite } from "@/lib/scheduling/schedule-parser.ts";
+import { log } from "@/lib/utils/logger.ts";
 import type { ScheduledTaskRow } from "@/db/types.ts";
 
 const triggerLog = log.child({ module: "event-trigger" });

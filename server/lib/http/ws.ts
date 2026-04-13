@@ -1,10 +1,10 @@
 import { WebSocketServer, WebSocket } from "ws";
 import type { Server as HttpServer, IncomingMessage } from "node:http";
-import { verifyToken, type TokenPayload } from "@/lib/auth.ts";
+import { verifyToken, type TokenPayload } from "@/lib/auth/auth.ts";
 import { isProjectMember } from "@/db/queries/members.ts";
 import { getUserById } from "@/db/queries/users.ts";
 import { getProjectById } from "@/db/queries/projects.ts";
-import { log } from "@/lib/logger.ts";
+import { log } from "@/lib/utils/logger.ts";
 
 const wsLog = log.child({ module: "ws" });
 

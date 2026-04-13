@@ -1,8 +1,8 @@
 /**
  * Admin routes for managing runner instances.
  */
-import { corsHeaders } from "@/lib/cors.ts";
-import { requireAdmin } from "@/lib/auth.ts";
+import { corsHeaders } from "@/lib/http/cors.ts";
+import { requireAdmin } from "@/lib/auth/auth.ts";
 import {
   listRunners,
   getRunner,
@@ -13,7 +13,7 @@ import {
 import { reconcile, getLocalBackend } from "@/lib/execution/lifecycle.ts";
 import { RunnerClient } from "@/lib/execution/runner-client.ts";
 import { RunnerPool } from "@/lib/execution/runner-pool.ts";
-import { log } from "@/lib/logger.ts";
+import { log } from "@/lib/utils/logger.ts";
 
 const runnerLog = log.child({ module: "admin-runners" });
 

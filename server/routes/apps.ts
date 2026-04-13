@@ -1,6 +1,6 @@
-import { corsHeaders } from "@/lib/cors.ts";
-import { authenticateRequest, createShareToken, verifyShareToken } from "@/lib/auth.ts";
-import { getParams } from "@/lib/request.ts";
+import { corsHeaders } from "@/lib/http/cors.ts";
+import { authenticateRequest, createShareToken, verifyShareToken } from "@/lib/auth/auth.ts";
+import { getParams } from "@/lib/http/request.ts";
 import { handleError, verifyProjectAccess } from "@/routes/utils.ts";
 import {
   getPortsByProject,
@@ -76,7 +76,7 @@ export async function handleListServices(req: Request): Promise<Response> {
           (await portManager.checkPort(p.project_id, p.port).catch(() => false));
         if (reachable) return p;
         const updated = updatePort(p.id, { status: "stopped" });
-        const { invalidateAppCache } = await import("@/lib/app-proxy.ts");
+        const { invalidateAppCache } = await import("@/lib/http/app-proxy.ts");
         invalidateAppCache(p.slug);
         return updated ?? { ...p, status: "stopped" };
       }),
@@ -100,7 +100,7 @@ export async function handleDeleteService(req: Request): Promise<Response> {
     }
 
     deletePort(serviceId);
-    const { invalidateAppCache } = await import("@/lib/app-proxy.ts");
+    const { invalidateAppCache } = await import("@/lib/http/app-proxy.ts");
     invalidateAppCache(port.slug);
 
     return Response.json({ ok: true }, { headers: corsHeaders });
@@ -160,7 +160,7 @@ export async function handleAppStatus(req: Request): Promise<Response> {
       }
       // Port not reachable - mark as stopped and fall through to cold-start if pinned
       updatePort(port.id, { status: "stopped" });
-      const { invalidateAppCache } = await import("@/lib/app-proxy.ts");
+      const { invalidateAppCache } = await import("@/lib/http/app-proxy.ts");
       invalidateAppCache(port.slug);
     }
 

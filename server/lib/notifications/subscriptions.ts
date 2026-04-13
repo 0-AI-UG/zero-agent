@@ -10,7 +10,7 @@
  */
 
 import { isKindChannelEnabled } from "@/db/queries/user-notification-subscriptions.ts";
-import { isUserConnected } from "@/lib/ws.ts";
+import { isUserConnected } from "@/lib/http/ws.ts";
 import { getSubscriptionsByUserId } from "@/db/queries/push-subscriptions.ts";
 import { getLinkByUserId } from "@/db/queries/user-telegram-links.ts";
 

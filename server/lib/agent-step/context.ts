@@ -10,11 +10,11 @@
  */
 import type { UIMessage } from "ai";
 import { getFileById } from "@/db/queries/files.ts";
-import { semanticSearch, isEmbeddingConfigured, embedValue } from "@/lib/vectors.ts";
+import { semanticSearch, isEmbeddingConfigured, embedValue } from "@/lib/search/vectors.ts";
 import { getUserTokenTotal } from "@/db/queries/usage-logs.ts";
 import { db } from "@/db/index.ts";
 import { readFromS3 } from "@/lib/s3.ts";
-import { log } from "@/lib/logger.ts";
+import { log } from "@/lib/utils/logger.ts";
 
 const ctxLog = log.child({ module: "agent-step:context" });
 

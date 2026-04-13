@@ -1,9 +1,9 @@
 import bcrypt from "bcrypt";
 import { TOTP, Secret } from "otpauth";
 import QRCode from "qrcode";
-import { corsHeaders } from "@/lib/cors.ts";
-import { authenticateRequest, createToken, createTempToken, verifyTempToken } from "@/lib/auth.ts";
-import { AuthError } from "@/lib/errors.ts";
+import { corsHeaders } from "@/lib/http/cors.ts";
+import { authenticateRequest, createToken, createTempToken, verifyTempToken } from "@/lib/auth/auth.ts";
+import { AuthError } from "@/lib/utils/errors.ts";
 import { getUserById } from "@/db/queries/users.ts";
 import { getSetting } from "@/lib/settings.ts";
 import {
@@ -18,8 +18,8 @@ import {
 } from "@/db/queries/totp.ts";
 import { getPasskeyCount } from "@/db/queries/passkeys.ts";
 import { handleError } from "@/routes/utils.ts";
-import { authRateLimiter, recordAuthFailure } from "@/lib/rate-limit.ts";
-import { log } from "@/lib/logger.ts";
+import { authRateLimiter, recordAuthFailure } from "@/lib/http/rate-limit.ts";
+import { log } from "@/lib/utils/logger.ts";
 import { nanoid } from "nanoid";
 
 const totpLog = log.child({ module: "totp" });

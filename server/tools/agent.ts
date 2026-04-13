@@ -4,11 +4,11 @@ import { createToolset } from "@/tools/registry.ts";
 import { getChatModel, getEnrichModel } from "@/lib/providers/index.ts";
 import { getSkillSummaries } from "@/lib/skills/loader.ts";
 import { buildSkillsIndex } from "@/lib/skills/injector.ts";
-import { runAutonomousTask } from "@/lib/autonomous-agent.ts";
-import { events } from "@/lib/events.ts";
-import { registerBackgroundTask } from "@/lib/background-task-store.ts";
+import { runAutonomousTask } from "@/lib/agent/autonomous-agent.ts";
+import { events } from "@/lib/scheduling/events.ts";
+import { registerBackgroundTask } from "@/lib/agent/background-task-store.ts";
 import { nanoid } from "nanoid";
-import { log } from "@/lib/logger.ts";
+import { log } from "@/lib/utils/logger.ts";
 
 const toolLog = log.child({ module: "tool:agent" });
 

@@ -2,7 +2,7 @@
  * Port Manager - handles cold-start restart of pinned ports and reconciliation.
  * Processes are started by the bash tool; this only manages restart for pinned services.
  */
-import { log } from "@/lib/logger.ts";
+import { log } from "@/lib/utils/logger.ts";
 import type { ExecutionBackend } from "./backend-interface.ts";
 import {
   getAllActivePorts,
@@ -10,7 +10,7 @@ import {
   getPinnedPortsByProject,
   updatePort,
 } from "@/db/queries/apps.ts";
-import { invalidateAppCache } from "@/lib/app-proxy.ts";
+import { invalidateAppCache } from "@/lib/http/app-proxy.ts";
 
 const portLog = log.child({ module: "port-manager" });
 

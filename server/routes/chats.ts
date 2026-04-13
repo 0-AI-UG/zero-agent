@@ -1,8 +1,8 @@
-import { authenticateRequest } from "@/lib/auth.ts";
-import { corsHeaders } from "@/lib/cors.ts";
-import { getParams } from "@/lib/request.ts";
+import { authenticateRequest } from "@/lib/auth/auth.ts";
+import { corsHeaders } from "@/lib/http/cors.ts";
+import { getParams } from "@/lib/http/request.ts";
 import { handleError, verifyProjectAccess, toUTC } from "@/routes/utils.ts";
-import { NotFoundError } from "@/lib/errors.ts";
+import { NotFoundError } from "@/lib/utils/errors.ts";
 import {
   insertChat,
   getChatsByProject,
@@ -11,9 +11,9 @@ import {
   deleteChat,
 } from "@/db/queries/chats.ts";
 import type { ChatRow } from "@/db/types.ts";
-import { events } from "@/lib/events.ts";
-import { semanticSearch } from "@/lib/vectors.ts";
-import { ValidationError } from "@/lib/errors.ts";
+import { events } from "@/lib/scheduling/events.ts";
+import { semanticSearch } from "@/lib/search/vectors.ts";
+import { ValidationError } from "@/lib/utils/errors.ts";
 import { cancelSyncsForChat } from "@/lib/sync-approval.ts";
 
 function formatChat(row: ChatRow) {

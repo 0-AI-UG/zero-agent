@@ -1,9 +1,9 @@
 import bcrypt from "bcrypt";
-import { corsHeaders } from "@/lib/cors.ts";
-import { requireAdmin } from "@/lib/auth.ts";
+import { corsHeaders } from "@/lib/http/cors.ts";
+import { requireAdmin } from "@/lib/auth/auth.ts";
 import { db, generateId } from "@/db/index.ts";
 import { handleError } from "@/routes/utils.ts";
-import { log } from "@/lib/logger.ts";
+import { log } from "@/lib/utils/logger.ts";
 import type { UserRow } from "@/db/types.ts";
 import { getUserTokenTotalsByIds } from "@/db/queries/usage-logs.ts";
 

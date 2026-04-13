@@ -1,5 +1,5 @@
-import { requestAbort } from "@/lib/resumable-stream.ts";
-import { log } from "@/lib/logger.ts";
+import { requestAbort } from "@/lib/http/resumable-stream.ts";
+import { log } from "@/lib/utils/logger.ts";
 
 const shutdownLog = log.child({ module: "shutdown" });
 

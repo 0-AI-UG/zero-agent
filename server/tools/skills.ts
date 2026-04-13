@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { tool } from "ai";
 import { loadFullSkill, checkGating } from "@/lib/skills/loader.ts";
-import { events } from "@/lib/events.ts";
-import { log } from "@/lib/logger.ts";
+import { events } from "@/lib/scheduling/events.ts";
+import { log } from "@/lib/utils/logger.ts";
 
 const toolLog = log.child({ module: "tool:skills" });
 

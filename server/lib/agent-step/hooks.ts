@@ -5,14 +5,14 @@
  * failed memory flush must never cause a chat reply to fail.
  */
 import type { UIMessage } from "ai";
-import { log } from "@/lib/logger.ts";
+import { log } from "@/lib/utils/logger.ts";
 import { touchChat, updateChat, getChatById } from "@/db/queries/chats.ts";
 import { saveChatMessages } from "@/db/queries/messages.ts";
 import { insertUsageLog } from "@/db/queries/usage-logs.ts";
 import { getModelPricing } from "@/config/models.ts";
-import { embedAndStore } from "@/lib/vectors.ts";
-import { flushConversationMemory } from "@/lib/memory-flush.ts";
-import { detectExploreItems } from "@/lib/heartbeat-explore.ts";
+import { embedAndStore } from "@/lib/search/vectors.ts";
+import { flushConversationMemory } from "@/lib/conversation/memory-flush.ts";
+import { detectExploreItems } from "@/lib/scheduling/heartbeat-explore.ts";
 import { loadCheckpoint, deleteCheckpoint } from "@/lib/durability/checkpoint.ts";
 import { deregisterRun } from "@/lib/durability/shutdown.ts";
 

@@ -1,4 +1,4 @@
-import { log } from "@/lib/logger.ts";
+import { log } from "@/lib/utils/logger.ts";
 import { getSetting } from "@/lib/settings.ts";
 
 const searchLog = log.child({ module: "search" });
@@ -29,6 +29,15 @@ interface CacheEntry {
 }
 
 const cache = new Map<string, CacheEntry>();
+
+// Sweep expired entries every 5 minutes so stale results don't accumulate
+const _cacheSweep = setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of cache) {
+    if (now - entry.timestamp > CACHE_TTL_MS) cache.delete(key);
+  }
+}, 5 * 60 * 1000);
+if (typeof _cacheSweep === "object" && "unref" in _cacheSweep) _cacheSweep.unref();
 
 function getCached(query: string): SearchResponse | null {
   const entry = cache.get(query);

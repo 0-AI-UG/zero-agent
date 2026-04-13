@@ -17,7 +17,7 @@ import {
 } from "@/db/queries/snapshots.ts";
 import { readBinaryFromS3, writeToS3, deleteFromS3, listS3Files } from "@/lib/s3.ts";
 import { reconcileToContainer, sha256Hex } from "@/lib/execution/workspace-sync.ts";
-import { log } from "@/lib/logger.ts";
+import { log } from "@/lib/utils/logger.ts";
 import type { FileSnapshotRow } from "@/db/types.ts";
 
 const snapLog = log.child({ module: "snapshots" });

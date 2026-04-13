@@ -4,10 +4,10 @@ import { createToolset } from "@/tools/registry.ts";
 import { getSkillSummaries } from "@/lib/skills/loader.ts";
 import { buildSkillsIndex } from "@/lib/skills/injector.ts";
 import { createAgentTool } from "@/tools/agent.ts";
-import { createCompactPrepareStep } from "@/lib/compact-conversation.ts";
+import { createCompactPrepareStep } from "@/lib/conversation/compact-conversation.ts";
 import { createPlanningTools } from "@/tools/planning.ts";
 import { readFromS3 } from "@/lib/s3.ts";
-import { log } from "@/lib/logger.ts";
+import { log } from "@/lib/utils/logger.ts";
 
 const agentLog = log.child({ module: "agent" });
 

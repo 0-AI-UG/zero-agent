@@ -11,7 +11,7 @@
  * any other means here, and do not import authenticateRequest from
  * server/lib/auth.ts inside cli-handlers/ - the trust model is different.
  */
-import { AuthError } from "@/lib/errors.ts";
+import { AuthError } from "@/lib/utils/errors.ts";
 import { getLocalBackend } from "@/lib/execution/lifecycle.ts";
 import { listEnabledRunners } from "@/db/queries/runners.ts";
 import type { CliContext } from "./context.ts";

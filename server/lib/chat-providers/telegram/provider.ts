@@ -27,7 +27,7 @@ import {
   type TelegramUpdate,
   type TelegramMessage,
   type TelegramCallbackQuery,
-} from "@/lib/telegram.ts";
+} from "@/lib/telegram-global/telegram.ts";
 import { isModelMultimodal } from "@/config/models.ts";
 import { getActiveProvider, getVisionModel } from "@/lib/providers/index.ts";
 import {
@@ -35,7 +35,7 @@ import {
   getBotInfoSync,
   isBotConfigured,
 } from "@/lib/telegram-global/bot.ts";
-import { log } from "@/lib/logger.ts";
+import { log } from "@/lib/utils/logger.ts";
 import { generateId, db } from "@/db/index.ts";
 import type { ChatRow, MessageRow, UserTelegramLinkRow } from "@/db/types.ts";
 

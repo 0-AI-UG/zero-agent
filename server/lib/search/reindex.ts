@@ -1,8 +1,8 @@
-import { deleteProjectIndex, ensureIndex, putProjectVectors, isEmbeddingConfigured, chunkText, textToSparseVector } from "@/lib/vectors.ts";
+import { deleteProjectIndex, ensureIndex, putProjectVectors, isEmbeddingConfigured, chunkText, textToSparseVector } from "@/lib/search/vectors.ts";
 import { readFromS3 } from "@/lib/s3.ts";
 import { embedMany } from "ai";
 import { getEmbeddingModel } from "@/lib/providers/index.ts";
-import { log } from "@/lib/logger.ts";
+import { log } from "@/lib/utils/logger.ts";
 import { db } from "@/db/index.ts";
 import type { SparseVector } from "@0-ai/s3lite/vectors";
 

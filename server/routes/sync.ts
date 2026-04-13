@@ -1,7 +1,7 @@
-import { corsHeaders } from "@/lib/cors.ts";
-import { authenticateRequest } from "@/lib/auth.ts";
+import { corsHeaders } from "@/lib/http/cors.ts";
+import { authenticateRequest } from "@/lib/auth/auth.ts";
 import { handleError, verifyProjectAccess } from "@/routes/utils.ts";
-import { NotFoundError, ValidationError } from "@/lib/errors.ts";
+import { NotFoundError, ValidationError } from "@/lib/utils/errors.ts";
 import {
   resolvePendingSync,
   getSyncRow,

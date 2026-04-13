@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ValidationError } from "@/lib/errors.ts";
+import { ValidationError } from "@/lib/utils/errors.ts";
 
 // Auth
 export const passwordSchema = z

@@ -11,8 +11,8 @@
 //   - codex-rs/login/src/auth/manager.rs:85    REFRESH_TOKEN_URL = "https://auth.openai.com/oauth/token"
 
 import { getSetting, setSetting, deleteSetting } from "@/lib/settings.ts";
-import { encrypt, decrypt } from "@/lib/crypto.ts";
-import { log } from "@/lib/logger.ts";
+import { encrypt, decrypt } from "@/lib/auth/crypto.ts";
+import { log } from "@/lib/utils/logger.ts";
 import { retryFetch } from "@/lib/providers/middleware.ts";
 
 const tokLog = log.child({ module: "codex-tokens" });

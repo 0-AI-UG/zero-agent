@@ -7,8 +7,8 @@
 // ~/.codex/auth.json into the admin UI. We extract the tokens and then
 // refresh them autonomously like the Rust CLI does.
 
-import { corsHeaders } from "@/lib/cors.ts";
-import { requireAdmin } from "@/lib/auth.ts";
+import { corsHeaders } from "@/lib/http/cors.ts";
+import { requireAdmin } from "@/lib/auth/auth.ts";
 import { handleError } from "@/routes/utils.ts";
 import {
   getStatus,

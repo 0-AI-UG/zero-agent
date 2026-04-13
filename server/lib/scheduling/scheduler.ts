@@ -2,11 +2,11 @@ import { getDueTasks, markTaskRun, skipTaskRun } from "@/db/queries/scheduled-ta
 import { insertTaskRun, updateTaskRun } from "@/db/queries/task-runs.ts";
 import { getProjectById } from "@/db/queries/projects.ts";
 import { getProjectMembers } from "@/db/queries/members.ts";
-import { runAutonomousTask } from "@/lib/autonomous-agent.ts";
-import { formatDateForSQLite } from "@/lib/schedule-parser.ts";
-import { events } from "@/lib/events.ts";
+import { runAutonomousTask } from "@/lib/agent/autonomous-agent.ts";
+import { formatDateForSQLite } from "@/lib/scheduling/schedule-parser.ts";
+import { events } from "@/lib/scheduling/events.ts";
 import { isShuttingDown } from "@/lib/durability/shutdown.ts";
-import { log } from "@/lib/logger.ts";
+import { log } from "@/lib/utils/logger.ts";
 
 const schedLog = log.child({ module: "scheduler" });
 

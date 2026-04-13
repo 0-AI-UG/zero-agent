@@ -1,9 +1,9 @@
-import { corsHeaders } from "@/lib/cors.ts";
-import { authenticateRequest } from "@/lib/auth.ts";
-import { getParams } from "@/lib/request.ts";
-import { validateBody, uploadRequestSchema, folderPathSchema, createFolderSchema, moveFileSchema, moveFolderSchema } from "@/lib/validation.ts";
+import { corsHeaders } from "@/lib/http/cors.ts";
+import { authenticateRequest } from "@/lib/auth/auth.ts";
+import { getParams } from "@/lib/http/request.ts";
+import { validateBody, uploadRequestSchema, folderPathSchema, createFolderSchema, moveFileSchema, moveFolderSchema } from "@/lib/auth/validation.ts";
 import { handleError, verifyProjectAccess, toUTC } from "@/routes/utils.ts";
-import { ValidationError, NotFoundError } from "@/lib/errors.ts";
+import { ValidationError, NotFoundError } from "@/lib/utils/errors.ts";
 import {
   insertFile,
   getFilesByFolder,
@@ -27,11 +27,11 @@ import {
 import { generateDownloadUrl, generateUploadUrl, deleteFromS3, writeToS3, readBinaryFromS3 } from "@/lib/s3.ts";
 import { generateId } from "@/db/index.ts";
 import { searchFileContent } from "@/db/queries/search.ts";
-import { events } from "@/lib/events.ts";
-import { embedAndStore, deleteVectorsBySource, semanticSearch } from "@/lib/vectors.ts";
+import { events } from "@/lib/scheduling/events.ts";
+import { embedAndStore, deleteVectorsBySource, semanticSearch } from "@/lib/search/vectors.ts";
 import { reconcileToContainer, sha256Hex } from "@/lib/execution/workspace-sync.ts";
 import { updateFileHash } from "@/db/queries/files.ts";
-import { log } from "@/lib/logger.ts";
+import { log } from "@/lib/utils/logger.ts";
 
 const routeLog = log.child({ module: "routes:files" });
 

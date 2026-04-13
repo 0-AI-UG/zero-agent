@@ -22,7 +22,7 @@ import {
   expirePendingResponses,
 } from "@/db/queries/pending-responses.ts";
 import type { PendingResponseRow } from "@/db/types.ts";
-import { log } from "@/lib/logger.ts";
+import { log } from "@/lib/utils/logger.ts";
 import type {
   PendingRequesterKind,
   PendingRequesterContext,

@@ -2,7 +2,7 @@ import { Readability } from "@mozilla/readability";
 import TurndownService from "turndown";
 import { gfm } from "turndown-plugin-gfm";
 import { parseHTML } from "linkedom";
-import { log } from "@/lib/logger.ts";
+import { log } from "@/lib/utils/logger.ts";
 
 const fetchLog = log.child({ module: "fetch-page" });
 
@@ -24,6 +24,15 @@ interface CacheEntry {
 }
 
 const cache = new Map<string, CacheEntry>();
+
+// Sweep expired entries every 5 minutes so stale pages don't accumulate
+const _cacheSweep = setInterval(() => {
+  const now = Date.now();
+  for (const [url, entry] of cache) {
+    if (now - entry.timestamp > CACHE_TTL_MS) cache.delete(url);
+  }
+}, 5 * 60 * 1000);
+if (typeof _cacheSweep === "object" && "unref" in _cacheSweep) _cacheSweep.unref();
 
 function getCached(url: string): FetchPageResult | null {
   const entry = cache.get(url);

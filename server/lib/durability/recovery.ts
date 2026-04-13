@@ -2,7 +2,7 @@ import { generateId } from "ai";
 import { getActiveCheckpoints, deleteCheckpoint } from "@/lib/durability/checkpoint.ts";
 import { saveChatMessages } from "@/db/queries/messages.ts";
 import { touchChat } from "@/db/queries/chats.ts";
-import { log } from "@/lib/logger.ts";
+import { log } from "@/lib/utils/logger.ts";
 
 const recoveryLog = log.child({ module: "recovery" });
 

@@ -6,9 +6,9 @@
  * business logic.
  */
 import type { z } from "zod";
-import { search } from "@/lib/search.ts";
-import { fetchPage } from "@/lib/fetch-page.ts";
-import { truncateText } from "@/lib/truncate-result.ts";
+import { search } from "@/lib/search/search.ts";
+import { fetchPage } from "@/lib/media/fetch-page.ts";
+import { truncateText } from "@/lib/conversation/truncate-result.ts";
 import type { CliContext } from "./context.ts";
 import { ok } from "./response.ts";
 import type { WebSearchInput, WebFetchInput } from "zero/schemas";

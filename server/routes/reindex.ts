@@ -1,8 +1,8 @@
-import { corsHeaders } from "@/lib/cors.ts";
-import { authenticateRequest } from "@/lib/auth.ts";
-import { getParams } from "@/lib/request.ts";
+import { corsHeaders } from "@/lib/http/cors.ts";
+import { authenticateRequest } from "@/lib/auth/auth.ts";
+import { getParams } from "@/lib/http/request.ts";
 import { handleError, verifyProjectAccess } from "@/routes/utils.ts";
-import { reindexProject, isReindexRunning, getReindexStatus, getLatestProgress, addProgressListener } from "@/lib/reindex.ts";
+import { reindexProject, isReindexRunning, getReindexStatus, getLatestProgress, addProgressListener } from "@/lib/search/reindex.ts";
 
 export async function handleReindex(request: Request): Promise<Response> {
   try {

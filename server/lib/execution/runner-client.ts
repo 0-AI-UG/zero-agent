@@ -8,8 +8,8 @@ import type {
   ExecutionBackend, BashResult, ExecResult, SessionInfo, ContainerListEntry,
 } from "./backend-interface.ts";
 import { listS3Files, readStreamFromS3, writeStreamToS3, s3FileExists, s3FileSize } from "@/lib/s3.ts";
-import { fetchWithTimeout } from "@/lib/deferred.ts";
-import { log } from "@/lib/logger.ts";
+import { fetchWithTimeout } from "@/lib/utils/deferred.ts";
+import { log } from "@/lib/utils/logger.ts";
 
 const clientLog = log.child({ module: "runner-client" });
 

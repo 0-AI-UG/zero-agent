@@ -1,6 +1,6 @@
 import { db, generateId } from "@/db/index.ts";
 import type { ScheduledTaskRow } from "@/db/types.ts";
-import { computeNextRun, formatDateForSQLite } from "@/lib/schedule-parser.ts";
+import { computeNextRun, formatDateForSQLite } from "@/lib/scheduling/schedule-parser.ts";
 
 const insertStmt = db.prepare(
   "INSERT INTO scheduled_tasks (id, project_id, user_id, name, prompt, schedule, next_run_at, enabled, required_tools, required_skills, trigger_type, trigger_event, trigger_filter, cooldown_seconds, max_steps) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *",

@@ -1,5 +1,5 @@
-import { events } from "@/lib/events.ts";
-import { log } from "@/lib/logger.ts";
+import { events } from "@/lib/scheduling/events.ts";
+import { log } from "@/lib/utils/logger.ts";
 
 const storeLog = log.child({ module: "background-task-store" });
 

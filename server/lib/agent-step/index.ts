@@ -22,12 +22,12 @@ import {
 } from "ai";
 import type { UIMessage } from "ai";
 
-import { createAgent } from "@/lib/agent.ts";
+import { createAgent } from "@/lib/agent/agent.ts";
 import { getModelContextWindow } from "@/config/models.ts";
-import { corsHeaders } from "@/lib/cors.ts";
-import { log } from "@/lib/logger.ts";
-import { events } from "@/lib/events.ts";
-import { ConflictError } from "@/lib/errors.ts";
+import { corsHeaders } from "@/lib/http/cors.ts";
+import { log } from "@/lib/utils/logger.ts";
+import { events } from "@/lib/scheduling/events.ts";
+import { ConflictError } from "@/lib/utils/errors.ts";
 
 import {
   streamContext,
@@ -35,8 +35,8 @@ import {
   clearActiveStreamId,
   getActiveStreamId,
   clearAbortController,
-} from "@/lib/resumable-stream.ts";
-import { notifyStreamStarted, notifyStreamEnded } from "@/lib/ws-bridge.ts";
+} from "@/lib/http/resumable-stream.ts";
+import { notifyStreamStarted, notifyStreamEnded } from "@/lib/http/ws-bridge.ts";
 import { isShuttingDown, registerRun, deregisterRun } from "@/lib/durability/shutdown.ts";
 import { saveCheckpoint, deleteCheckpoint } from "@/lib/durability/checkpoint.ts";
 
@@ -169,8 +169,8 @@ export async function runAgentStepStreaming(input: StreamingStepInput): Promise<
           chatId,
           projectId: project.id,
           stepNumber,
-          messages: [...messages, ...responseMessages],
-          metadata: { userId, model, streamId },
+          messages: responseMessages,
+          metadata: { userId, model, streamId, inputMessageCount: messages.length },
         });
       },
     });
@@ -399,14 +399,11 @@ export async function runAgentStepBatch(input: BatchStepInput): Promise<BatchSte
         chatId,
         projectId: project.id,
         stepNumber,
-        messages:
-          fullPrompt != null
-            ? [{ role: "user", content: fullPrompt }, ...responseMessages]
-            : [
-                ...((priorMessages ?? []) as Array<{ role: string; content: unknown }>),
-                ...responseMessages,
-              ],
-        metadata,
+        messages: responseMessages,
+        metadata: {
+          ...metadata,
+          inputMessageCount: fullPrompt != null ? 1 : (priorMessages?.length ?? 0),
+        },
       });
     },
   });

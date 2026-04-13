@@ -1,16 +1,16 @@
 import { ZodError } from "zod";
-import { corsHeaders } from "@/lib/cors.ts";
+import { corsHeaders } from "@/lib/http/cors.ts";
 import {
   NotFoundError,
   ConflictError,
-} from "@/lib/errors.ts";
+} from "@/lib/utils/errors.ts";
 import { getProjectById } from "@/db/queries/projects.ts";
 import { isProjectMember, getMemberRole, getMemberCount } from "@/db/queries/members.ts";
 import { getUserById } from "@/db/queries/users.ts";
 import type {
   ProjectRow,
 } from "@/db/types.ts";
-import { log } from "@/lib/logger.ts";
+import { log } from "@/lib/utils/logger.ts";
 
 const routeLog = log.child({ module: "routes" });
 

@@ -11,13 +11,13 @@ import { z } from "zod";
 import { readFromS3 } from "@/lib/s3.ts";
 import { createPendingGroup } from "@/lib/pending-responses/store.ts";
 import { NOTIFICATION_KINDS } from "@/lib/notifications/kinds.ts";
-import { broadcastToProject } from "@/lib/ws.ts";
-import { log } from "@/lib/logger.ts";
-import { requestAbort, createAbortController, clearAbortController } from "@/lib/resumable-stream.ts";
+import { broadcastToProject } from "@/lib/http/ws.ts";
+import { log } from "@/lib/utils/logger.ts";
+import { requestAbort, createAbortController, clearAbortController } from "@/lib/http/resumable-stream.ts";
 import { insertChat } from "@/db/queries/chats.ts";
 import { saveChatMessages } from "@/db/queries/messages.ts";
 import { getProjectById } from "@/db/queries/projects.ts";
-import { events } from "@/lib/events.ts";
+import { events } from "@/lib/scheduling/events.ts";
 import { runAgentStepStreaming } from "@/lib/agent-step/index.ts";
 
 const planLog = log.child({ module: "planning" });

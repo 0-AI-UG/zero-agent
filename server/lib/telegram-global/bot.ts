@@ -13,8 +13,8 @@ import {
   getTelegramBotInfo,
   setTelegramWebhook,
   deleteTelegramWebhook,
-} from "@/lib/telegram.ts";
-import { log } from "@/lib/logger.ts";
+} from "@/lib/telegram-global/telegram.ts";
+import { log } from "@/lib/utils/logger.ts";
 
 const botLog = log.child({ module: "telegram-global/bot" });
 

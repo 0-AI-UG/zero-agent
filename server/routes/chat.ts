@@ -1,13 +1,13 @@
 import { generateId } from "ai";
 import type { UIMessage } from "ai";
-import { authenticateRequest } from "@/lib/auth.ts";
-import { corsHeaders } from "@/lib/cors.ts";
-import { getParams } from "@/lib/request.ts";
-import { validateBody, chatRequestSchema } from "@/lib/validation.ts";
+import { authenticateRequest } from "@/lib/auth/auth.ts";
+import { corsHeaders } from "@/lib/http/cors.ts";
+import { getParams } from "@/lib/http/request.ts";
+import { validateBody, chatRequestSchema } from "@/lib/auth/validation.ts";
 import { handleError, verifyProjectAccess } from "@/routes/utils.ts";
 import { verifyChatOwnership } from "@/routes/chats.ts";
-import { log } from "@/lib/logger.ts";
-import { createAbortController, clearActiveStreamId, clearAbortController, requestAbort } from "@/lib/resumable-stream.ts";
+import { log } from "@/lib/utils/logger.ts";
+import { createAbortController, clearActiveStreamId, clearAbortController, requestAbort } from "@/lib/http/resumable-stream.ts";
 import { CircuitBreakerOpenError } from "@/lib/durability/circuit-breaker.ts";
 import { runAgentStepStreaming } from "@/lib/agent-step/index.ts";
 

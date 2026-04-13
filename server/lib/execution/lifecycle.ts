@@ -8,7 +8,7 @@ import { PortManager } from "./app-manager.ts";
 import { setSetting, getSetting } from "@/lib/settings.ts";
 import { setSnapshotBackendGetter, startSnapshotLoop, stopSnapshotLoop } from "./snapshot.ts";
 import { setRoutePortManager } from "@/routes/apps.ts";
-import { log } from "@/lib/logger.ts";
+import { log } from "@/lib/utils/logger.ts";
 
 const lifecycleLog = log.child({ module: "execution-lifecycle" });
 

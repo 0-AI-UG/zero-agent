@@ -1,11 +1,11 @@
 import bcrypt from "bcrypt";
-import { corsHeaders } from "@/lib/cors.ts";
+import { corsHeaders } from "@/lib/http/cors.ts";
 import { db, generateId } from "@/db/index.ts";
-import { createTempToken, createToken } from "@/lib/auth.ts";
+import { createTempToken, createToken } from "@/lib/auth/auth.ts";
 import { setSetting } from "@/lib/settings.ts";
 import { handleError } from "@/routes/utils.ts";
-import { usernameSchema, passwordSchema } from "@/lib/validation.ts";
-import { log } from "@/lib/logger.ts";
+import { usernameSchema, passwordSchema } from "@/lib/auth/validation.ts";
+import { log } from "@/lib/utils/logger.ts";
 
 const setupLog = log.child({ module: "setup" });
 

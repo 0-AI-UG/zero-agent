@@ -3,7 +3,7 @@
  * `{ ok: true, data }` or `{ ok: false, error: { code, message } }` so
  * the SDK client can throw a structured ZeroError on failure.
  */
-import { AuthError, ForbiddenError, NotFoundError, ValidationError } from "@/lib/errors.ts";
+import { AuthError, ForbiddenError, NotFoundError, ValidationError } from "@/lib/utils/errors.ts";
 
 export function ok<T>(data: T, status = 200): Response {
   return Response.json({ ok: true, data }, { status });

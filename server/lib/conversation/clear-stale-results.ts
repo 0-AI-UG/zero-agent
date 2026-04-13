@@ -7,7 +7,7 @@
  * (only affects what the model sees).
  */
 import type { ModelMessage } from "@ai-sdk/provider-utils";
-import { log } from "@/lib/logger.ts";
+import { log } from "@/lib/utils/logger.ts";
 
 const clearLog = log.child({ module: "clear-stale" });
 

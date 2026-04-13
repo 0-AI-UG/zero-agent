@@ -13,9 +13,9 @@ import {
   getTelegramUpdates,
   deleteTelegramWebhook,
   type TelegramUpdate,
-} from "@/lib/telegram.ts";
+} from "@/lib/telegram-global/telegram.ts";
 import { getBotToken, refreshBotInfo } from "./bot.ts";
-import { log } from "@/lib/logger.ts";
+import { log } from "@/lib/utils/logger.ts";
 
 const pollLog = log.child({ module: "telegram-global/poller" });
 

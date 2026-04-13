@@ -10,12 +10,12 @@
 import type { z } from "zod";
 import { ensureBackend } from "@/lib/execution/lifecycle.ts";
 import type { BrowserAction } from "@/lib/browser/protocol.ts";
-import { processHtml } from "@/lib/fetch-page.ts";
+import { processHtml } from "@/lib/media/fetch-page.ts";
 import { writeToS3 } from "@/lib/s3.ts";
 import { insertFile, updateFileThumbnail } from "@/db/queries/files.ts";
 import { createFolder as createFolderRecord, getFolderByPath } from "@/db/queries/folders.ts";
-import { createThumbnail, thumbnailS3Key } from "@/lib/thumbnail.ts";
-import { sanitizePath } from "@/lib/sanitize.ts";
+import { createThumbnail, thumbnailS3Key } from "@/lib/media/thumbnail.ts";
+import { sanitizePath } from "@/lib/files/sanitize.ts";
 import { reconcileToContainer, sha256Hex } from "@/lib/execution/workspace-sync.ts";
 import type { CliContext } from "./context.ts";
 import { ok, fail } from "./response.ts";

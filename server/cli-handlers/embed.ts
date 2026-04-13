@@ -6,7 +6,7 @@
 import type { z } from "zod";
 import { embedMany } from "ai";
 import { getEmbeddingModel } from "@/lib/providers/index.ts";
-import { isEmbeddingConfigured } from "@/lib/vectors.ts";
+import { isEmbeddingConfigured } from "@/lib/search/vectors.ts";
 import type { CliContext } from "./context.ts";
 import { ok, fail } from "./response.ts";
 import type { EmbedInput } from "zero/schemas";

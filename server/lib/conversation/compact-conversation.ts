@@ -1,7 +1,7 @@
 import type { ModelMessage } from "@ai-sdk/provider-utils";
 import type { PrepareStepFunction } from "ai";
-import { clearStaleToolResults } from "@/lib/clear-stale-results.ts";
-import { getUndeliveredResults } from "@/lib/background-task-store.ts";
+import { clearStaleToolResults } from "@/lib/conversation/clear-stale-results.ts";
+import { getUndeliveredResults } from "@/lib/agent/background-task-store.ts";
 import {
   type CompactionState,
   createEmptyCompactionState,
@@ -9,9 +9,9 @@ import {
   renderCompactionState,
   saveCompactionState,
   loadCompactionState,
-} from "@/lib/compaction-state.ts";
-import { flushLearnings } from "@/lib/memory-flush.ts";
-import { log } from "@/lib/logger.ts";
+} from "@/lib/conversation/compaction-state.ts";
+import { flushLearnings } from "@/lib/conversation/memory-flush.ts";
+import { log } from "@/lib/utils/logger.ts";
 
 const compactLog = log.child({ module: "compact" });
 

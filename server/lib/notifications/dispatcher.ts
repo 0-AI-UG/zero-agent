@@ -12,9 +12,9 @@
  * registered.
  */
 
-import { log } from "@/lib/logger.ts";
-import { broadcastToUser } from "@/lib/ws.ts";
-import { sendPushToUser } from "@/lib/web-push.ts";
+import { log } from "@/lib/utils/logger.ts";
+import { broadcastToUser } from "@/lib/http/ws.ts";
+import { sendPushToUser } from "@/lib/notifications/web-push.ts";
 import { createPendingGroup } from "@/lib/pending-responses/store.ts";
 import type {
   PendingRequesterContext,

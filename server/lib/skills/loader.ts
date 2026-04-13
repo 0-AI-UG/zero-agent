@@ -3,7 +3,7 @@ import { readFromS3 } from "@/lib/s3.ts";
 import { getSkillFiles, getSkillFileByName, getFilesByFolder } from "@/db/queries/files.ts";
 import { parseSkillMd } from "./parser.ts";
 import type { SkillSummary, LoadedSkill, SkillMetadata } from "./types.ts";
-import { log } from "@/lib/logger.ts";
+import { log } from "@/lib/utils/logger.ts";
 
 const skillLog = log.child({ module: "skills" });
 

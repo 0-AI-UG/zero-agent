@@ -8,7 +8,7 @@
  * Also exposes `persistOnDestroy` for callers that want to flush before
  * tearing a container down.
  */
-import { log } from "@/lib/logger.ts";
+import { log } from "@/lib/utils/logger.ts";
 import type { ExecutionBackend } from "./backend-interface.ts";
 
 const snapLog = log.child({ module: "snapshot" });
@@ -63,4 +63,10 @@ export function stopSnapshotLoop(): void {
   clearInterval(loop);
   loop = null;
   snapLog.info("snapshot loop stopped");
+}
+
+/** Remove tracking entries for a project (call when a container is destroyed). */
+export function clearProjectActivity(projectId: string): void {
+  lastActivityAt.delete(projectId);
+  lastSnapshotAt.delete(projectId);
 }

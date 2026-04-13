@@ -32,8 +32,8 @@
  */
 import { generateId } from "ai";
 import type { UIMessage } from "ai";
-import { events } from "@/lib/events.ts";
-import { log } from "@/lib/logger.ts";
+import { events } from "@/lib/scheduling/events.ts";
+import { log } from "@/lib/utils/logger.ts";
 import { getChatById } from "@/db/queries/chats.ts";
 import { getMessagesByChat } from "@/db/queries/messages.ts";
 import { getProjectById } from "@/db/queries/projects.ts";
@@ -41,12 +41,12 @@ import {
   getActiveStreamId,
   createAbortController,
   clearAbortController,
-} from "@/lib/resumable-stream.ts";
+} from "@/lib/http/resumable-stream.ts";
 import { runAgentStepStreaming } from "@/lib/agent-step/index.ts";
 import {
   getParentChatIdForRun,
   hasUndeliveredResults,
-} from "@/lib/background-task-store.ts";
+} from "@/lib/agent/background-task-store.ts";
 import { isShuttingDown } from "@/lib/durability/shutdown.ts";
 
 const resumeLog = log.child({ module: "background-resume" });

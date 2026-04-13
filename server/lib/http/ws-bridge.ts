@@ -1,6 +1,6 @@
-import { events } from "@/lib/events.ts";
-import { broadcastToProject, broadcastPresence, setStreamingUser, clearStreamingUser } from "@/lib/ws.ts";
-import { sendPushToUser } from "@/lib/web-push.ts";
+import { events } from "@/lib/scheduling/events.ts";
+import { broadcastToProject, broadcastPresence, setStreamingUser, clearStreamingUser } from "@/lib/http/ws.ts";
+import { sendPushToUser } from "@/lib/notifications/web-push.ts";
 import { getProjectMembers } from "@/db/queries/members.ts";
 
 /**

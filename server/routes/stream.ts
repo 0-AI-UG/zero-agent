@@ -1,11 +1,11 @@
 import { UI_MESSAGE_STREAM_HEADERS } from "ai";
-import { authenticateRequest } from "@/lib/auth.ts";
-import { corsHeaders } from "@/lib/cors.ts";
-import { getParams } from "@/lib/request.ts";
+import { authenticateRequest } from "@/lib/auth/auth.ts";
+import { corsHeaders } from "@/lib/http/cors.ts";
+import { getParams } from "@/lib/http/request.ts";
 import { handleError, verifyProjectAccess } from "@/routes/utils.ts";
 import { getChatById } from "@/db/queries/chats.ts";
-import { streamContext, getActiveStreamId } from "@/lib/resumable-stream.ts";
-import { log } from "@/lib/logger.ts";
+import { streamContext, getActiveStreamId } from "@/lib/http/resumable-stream.ts";
+import { log } from "@/lib/utils/logger.ts";
 
 const streamLog = log.child({ module: "stream" });
 

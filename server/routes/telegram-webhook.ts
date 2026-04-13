@@ -6,9 +6,9 @@
  * Routes every update through the TelegramProvider. Always returns 200 to
  * prevent Telegram from retrying (errors are logged instead).
  */
-import { log } from "@/lib/logger.ts";
+import { log } from "@/lib/utils/logger.ts";
 import { handleGlobalUpdate } from "@/lib/chat-providers/telegram/router.ts";
-import type { TelegramUpdate } from "@/lib/telegram.ts";
+import type { TelegramUpdate } from "@/lib/telegram-global/telegram.ts";
 
 const webhookLog = log.child({ module: "routes:telegram-webhook" });
 

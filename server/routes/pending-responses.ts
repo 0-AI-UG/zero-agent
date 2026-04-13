@@ -10,10 +10,10 @@
  * is the one that decides which user sees which row.
  */
 
-import { authenticateRequest } from "@/lib/auth.ts";
+import { authenticateRequest } from "@/lib/auth/auth.ts";
 import { handleError } from "@/routes/utils.ts";
-import { corsHeaders } from "@/lib/cors.ts";
-import { ValidationError, NotFoundError, ForbiddenError } from "@/lib/errors.ts";
+import { corsHeaders } from "@/lib/http/cors.ts";
+import { ValidationError, NotFoundError, ForbiddenError } from "@/lib/utils/errors.ts";
 import { getPendingResponseById } from "@/db/queries/pending-responses.ts";
 import { resolvePendingResponse } from "@/lib/pending-responses/store.ts";
 import type { PendingResponseRow } from "@/db/types.ts";

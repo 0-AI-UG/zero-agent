@@ -6,9 +6,9 @@
  *  - GET    /api/me/telegram/status         - current link state
  *  - PUT    /api/me/telegram/active-project - set active project for inbound messages
  */
-import { authenticateRequest } from "@/lib/auth.ts";
+import { authenticateRequest } from "@/lib/auth/auth.ts";
 import { handleError } from "@/routes/utils.ts";
-import { corsHeaders } from "@/lib/cors.ts";
+import { corsHeaders } from "@/lib/http/cors.ts";
 import { TelegramProvider } from "@/lib/chat-providers/telegram/provider.ts";
 import { getLinkForUser } from "@/lib/chat-providers/telegram/linker.ts";
 import {

@@ -3,7 +3,8 @@ import type { QueryResult, SparseVector } from "@0-ai/s3lite/vectors";
 import { embedMany } from "ai";
 import { getEmbeddingModel } from "@/lib/providers/index.ts";
 import { getSetting } from "@/lib/settings.ts";
-import { log } from "@/lib/logger.ts";
+import { db } from "@/db/index.ts";
+import { log } from "@/lib/utils/logger.ts";
 const vecLog = log.child({ module: "vectors" });
 
 const DIMENSION = 1536;
@@ -368,4 +369,65 @@ export function putProjectVectors(
   const client = getClient();
   const indexName = `project:${projectId}`;
   client.putVectors(indexName, vectors);
+}
+
+// ── Vector pruning ──────────────────────────────────────────────────────
+
+const getProjectIds = db.prepare("SELECT id FROM projects");
+const messageExists = db.prepare("SELECT 1 FROM messages WHERE id = ? LIMIT 1");
+
+/**
+ * Remove message vectors whose source messages no longer exist in the DB.
+ * Runs per-project to avoid holding large key lists in memory.
+ */
+export function pruneOrphanedMessageVectors(): { projectsPruned: number; vectorsDeleted: number } {
+  const client = getClient();
+  let totalDeleted = 0;
+  let projectsPruned = 0;
+
+  const projects = getProjectIds.all() as { id: string }[];
+
+  for (const { id: projectId } of projects) {
+    const indexName = `project:${projectId}`;
+    if (!client.getIndex(indexName)) continue;
+
+    const orphanKeys: string[] = [];
+    let startAfter: string | undefined;
+
+    // Page through all message vectors
+    while (true) {
+      const { keys, isTruncated, nextStartAfter } = client.listVectors(indexName, {
+        prefix: "message:",
+        maxKeys: 500,
+        startAfter,
+      });
+
+      for (const key of keys) {
+        // key format: "message:{msgId}:{chunkIndex}"
+        const parts = key.split(":");
+        const msgId = parts[1];
+        if (msgId && !messageExists.get(msgId)) {
+          orphanKeys.push(key);
+        }
+      }
+
+      if (!isTruncated) break;
+      startAfter = nextStartAfter;
+    }
+
+    if (orphanKeys.length > 0) {
+      // Delete in batches of 500
+      for (let i = 0; i < orphanKeys.length; i += 500) {
+        client.deleteVectors(indexName, orphanKeys.slice(i, i + 500));
+      }
+      totalDeleted += orphanKeys.length;
+      projectsPruned++;
+      vecLog.info("pruned orphaned message vectors", {
+        projectId,
+        deleted: orphanKeys.length,
+      });
+    }
+  }
+
+  return { projectsPruned, vectorsDeleted: totalDeleted };
 }

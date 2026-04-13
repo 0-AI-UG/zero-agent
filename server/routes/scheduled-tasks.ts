@@ -1,8 +1,8 @@
-import { authenticateRequest } from "@/lib/auth.ts";
-import { corsHeaders } from "@/lib/cors.ts";
-import { getParams } from "@/lib/request.ts";
+import { authenticateRequest } from "@/lib/auth/auth.ts";
+import { corsHeaders } from "@/lib/http/cors.ts";
+import { getParams } from "@/lib/http/request.ts";
 import { handleError, verifyProjectAccess, toUTC } from "@/routes/utils.ts";
-import { NotFoundError, ValidationError } from "@/lib/errors.ts";
+import { NotFoundError, ValidationError } from "@/lib/utils/errors.ts";
 import {
   insertTask,
   getTasksByProject,
@@ -11,13 +11,13 @@ import {
   deleteTask,
 } from "@/db/queries/scheduled-tasks.ts";
 import { insertTaskRun, updateTaskRun, getRunsByTask } from "@/db/queries/task-runs.ts";
-import { runAutonomousTask } from "@/lib/autonomous-agent.ts";
+import { runAutonomousTask } from "@/lib/agent/autonomous-agent.ts";
 import { markTaskRun } from "@/db/queries/scheduled-tasks.ts";
-import { parseSchedule } from "@/lib/schedule-parser.ts";
-import { formatDateForSQLite } from "@/lib/schedule-parser.ts";
-import { registerEventTask, unregisterEventTask, refreshEventTask } from "@/lib/event-trigger.ts";
+import { parseSchedule } from "@/lib/scheduling/schedule-parser.ts";
+import { formatDateForSQLite } from "@/lib/scheduling/schedule-parser.ts";
+import { registerEventTask, unregisterEventTask, refreshEventTask } from "@/lib/scheduling/event-trigger.ts";
 import type { ScheduledTaskRow, TaskRunRow } from "@/db/types.ts";
-import type { EventName } from "@/lib/events.ts";
+import type { EventName } from "@/lib/scheduling/events.ts";
 
 const VALID_TRIGGER_EVENTS: EventName[] = [
   "file.created", "file.updated", "file.deleted", "file.moved",

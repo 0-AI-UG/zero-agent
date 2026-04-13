@@ -2,8 +2,8 @@ import { generateText } from "ai";
 import type { UIMessage } from "ai";
 import { getEnrichModel } from "@/lib/providers/index.ts";
 import { readFromS3, writeToS3 } from "@/lib/s3.ts";
-import { extractConversationText } from "@/lib/message-utils.ts";
-import { log } from "@/lib/logger.ts";
+import { extractConversationText } from "@/lib/conversation/message-utils.ts";
+import { log } from "@/lib/utils/logger.ts";
 
 const hbLog = log.child({ module: "heartbeat-explore" });
 

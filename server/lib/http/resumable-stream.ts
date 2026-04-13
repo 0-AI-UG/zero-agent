@@ -110,18 +110,29 @@ export function clearActiveStreamId(chatId: string) {
 // we need a side channel that calls controller.abort() on the in-flight model
 // call. The signal is passed into createAgentUIStreamResponse, which forwards
 // it to streamText for native, token-level cancellation.
-const abortControllers = new Map<string, AbortController>();
+const abortControllers = new Map<string, { controller: AbortController; createdAt: number }>();
+
+const ABORT_CONTROLLER_TTL_MS = 15 * 60 * 1000; // 15 minutes
+
+// Sweep stale abort controllers every 5 minutes
+const _abortSweep = setInterval(() => {
+  const now = Date.now();
+  for (const [chatId, entry] of abortControllers) {
+    if (now - entry.createdAt > ABORT_CONTROLLER_TTL_MS) abortControllers.delete(chatId);
+  }
+}, 5 * 60 * 1000);
+if (typeof _abortSweep === "object" && "unref" in _abortSweep) _abortSweep.unref();
 
 export function createAbortController(chatId: string): AbortController {
   const controller = new AbortController();
-  abortControllers.set(chatId, controller);
+  abortControllers.set(chatId, { controller, createdAt: Date.now() });
   return controller;
 }
 
 export function requestAbort(chatId: string): boolean {
-  const controller = abortControllers.get(chatId);
-  if (!controller) return false;
-  controller.abort();
+  const entry = abortControllers.get(chatId);
+  if (!entry) return false;
+  entry.controller.abort();
   return true;
 }
 

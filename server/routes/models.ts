@@ -1,5 +1,5 @@
-import { corsHeaders } from "@/lib/cors.ts";
-import { authenticateRequest, requireAdmin } from "@/lib/auth.ts";
+import { corsHeaders } from "@/lib/http/cors.ts";
+import { authenticateRequest, requireAdmin } from "@/lib/auth/auth.ts";
 import { handleError } from "@/routes/utils.ts";
 import {
   getAllModels,

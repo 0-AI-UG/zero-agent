@@ -12,7 +12,7 @@
  *     exits non-zero, preventing silent empty interpolation.
  */
 import type { z } from "zod";
-import { encrypt, decrypt } from "@/lib/crypto.ts";
+import { encrypt, decrypt } from "@/lib/auth/crypto.ts";
 import {
   insertCredential,
   getCredentialsByProject,

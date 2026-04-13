@@ -1,8 +1,8 @@
-import { authenticateRequest } from "@/lib/auth.ts";
-import { corsHeaders } from "@/lib/cors.ts";
-import { getParams } from "@/lib/request.ts";
+import { authenticateRequest } from "@/lib/auth/auth.ts";
+import { corsHeaders } from "@/lib/http/cors.ts";
+import { getParams } from "@/lib/http/request.ts";
 import { handleError, verifyProjectAccess, verifyProjectOwnership, toUTC } from "@/routes/utils.ts";
-import { ValidationError, ConflictError, NotFoundError } from "@/lib/errors.ts";
+import { ValidationError, ConflictError, NotFoundError } from "@/lib/utils/errors.ts";
 import { getProjectMembers, getMemberRole, removeProjectMember, insertProjectMember } from "@/db/queries/members.ts";
 import { hasPendingInvitation, insertInvitation, getPendingByProject } from "@/db/queries/invitations.ts";
 import { getUserByUsername } from "@/db/queries/users.ts";

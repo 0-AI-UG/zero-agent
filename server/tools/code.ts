@@ -7,11 +7,11 @@ import { reconcileToContainer, sha256Hex } from "@/lib/execution/workspace-sync.
 import { getFolderByPath, createFolder as createFolderRecord } from "@/db/queries/folders.ts";
 import { getProjectById } from "@/db/queries/projects.ts";
 import { removeFileIndex } from "@/db/queries/search.ts";
-import { deleteVectorsBySource } from "@/lib/vectors.ts";
+import { deleteVectorsBySource } from "@/lib/search/vectors.ts";
 import { registerPendingSync, type SyncChangeBlob } from "@/lib/sync-approval.ts";
 import { markActivity } from "@/lib/execution/snapshot.ts";
-import { log } from "@/lib/logger.ts";
-import { truncateText, stripBase64 } from "@/lib/truncate-result.ts";
+import { log } from "@/lib/utils/logger.ts";
+import { truncateText, stripBase64 } from "@/lib/conversation/truncate-result.ts";
 import path from "node:path";
 
 const toolLog = log.child({ module: "tool:code" });

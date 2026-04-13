@@ -1,6 +1,6 @@
 import type { LanguageModelV3Middleware, LanguageModelV3Message } from "@ai-sdk/provider";
 import { llmCircuitBreaker, CircuitBreakerOpenError } from "@/lib/durability/circuit-breaker.ts";
-import { log } from "@/lib/logger.ts";
+import { log } from "@/lib/utils/logger.ts";
 
 const mwLog = log.child({ module: "provider-middleware" });
 

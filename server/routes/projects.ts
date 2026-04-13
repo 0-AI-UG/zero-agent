@@ -1,11 +1,11 @@
-import { corsHeaders } from "@/lib/cors.ts";
-import { authenticateRequest } from "@/lib/auth.ts";
+import { corsHeaders } from "@/lib/http/cors.ts";
+import { authenticateRequest } from "@/lib/auth/auth.ts";
 import {
   validateBody,
   createProjectSchema,
   updateProjectSchema,
   updateSoulSchema,
-} from "@/lib/validation.ts";
+} from "@/lib/auth/validation.ts";
 import {
   insertProject,
   getProjectsByUser,
@@ -15,7 +15,7 @@ import {
   getLastMessageByProject,
 } from "@/db/queries/projects.ts";
 import { getUserById } from "@/db/queries/users.ts";
-import { ForbiddenError } from "@/lib/errors.ts";
+import { ForbiddenError } from "@/lib/utils/errors.ts";
 import { insertFile, getFileByS3Key, updateFileSize } from "@/db/queries/files.ts";
 import { indexFileContent } from "@/db/queries/search.ts";
 import { insertChat } from "@/db/queries/chats.ts";
@@ -24,8 +24,8 @@ import { generateId } from "@/db/index.ts";
 import { writeToS3, readFromS3 } from "@/lib/s3.ts";
 import { handleError, formatProject, verifyProjectOwnership, verifyProjectAccess } from "@/routes/utils.ts";
 import { insertProjectMember, getMemberRole, getMemberCount } from "@/db/queries/members.ts";
-import { createHeartbeatTask } from "@/lib/heartbeat.ts";
-import { createDefaultTasks } from "@/lib/default-tasks.ts";
+import { createHeartbeatTask } from "@/lib/scheduling/heartbeat.ts";
+import { createDefaultTasks } from "@/lib/scheduling/default-tasks.ts";
 
 type RequestWithId = Request & { params: { id: string } };
 
@@ -220,7 +220,7 @@ export async function handleDeleteProject(request: Request): Promise<Response> {
     deleteProject(id);
     // Clean up vector embeddings (fire-and-forget, non-critical)
     try {
-      const { deleteProjectIndex } = await import("@/lib/vectors.ts");
+      const { deleteProjectIndex } = await import("@/lib/search/vectors.ts");
       deleteProjectIndex(id);
     } catch {}
 

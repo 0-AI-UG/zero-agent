@@ -1,19 +1,19 @@
-import { corsHeaders } from "@/lib/cors.ts";
-import { authenticateRequest } from "@/lib/auth.ts";
+import { corsHeaders } from "@/lib/http/cors.ts";
+import { authenticateRequest } from "@/lib/auth/auth.ts";
 import {
   validateBody,
   installSkillSchema,
   discoverSkillsSchema,
   installFromGithubSchema,
-} from "@/lib/validation.ts";
+} from "@/lib/auth/validation.ts";
 import { handleError, verifyProjectAccess } from "@/routes/utils.ts";
 import { parseSkillMd } from "@/lib/skills/parser.ts";
 import { loadFullSkill, getSkillSummaries } from "@/lib/skills/loader.ts";
 import { installSkillFiles, uninstallSkill } from "@/lib/skills/installer.ts";
 import { parseGitHubUrl, discoverSkills, fetchSkillFiles } from "@/lib/skills/github.ts";
 import { getSkillFileByName } from "@/db/queries/files.ts";
-import { NotFoundError } from "@/lib/errors.ts";
-import { log } from "@/lib/logger.ts";
+import { NotFoundError } from "@/lib/utils/errors.ts";
+import { log } from "@/lib/utils/logger.ts";
 import type { InstallResult } from "@/lib/skills/installer.ts";
 
 const skillLog = log.child({ module: "routes:skills" });

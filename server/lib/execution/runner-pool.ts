@@ -11,8 +11,9 @@ import type {
   ExecutionBackend, BashResult, ExecResult, SessionInfo, ContainerListEntry,
 } from "./backend-interface.ts";
 import { RunnerClient } from "./runner-client.ts";
+import { clearProjectActivity } from "./snapshot.ts";
 import { listEnabledRunners } from "@/db/queries/runners.ts";
-import { log } from "@/lib/logger.ts";
+import { log } from "@/lib/utils/logger.ts";
 
 const poolLog = log.child({ module: "runner-pool" });
 
@@ -173,6 +174,7 @@ export class RunnerPool implements ExecutionBackend {
     if (!resolved) return; // already gone
     await resolved.client.destroyContainer(projectId);
     this.projectRunner.delete(projectId);
+    clearProjectActivity(projectId);
   }
 
   async getContainerManifest(projectId: string, subpath?: string): Promise<Record<string, string>> {

@@ -1,9 +1,9 @@
 import { generateId } from "ai";
 import { createAutonomousChat, touchChat } from "@/db/queries/chats.ts";
 import { db } from "@/db/index.ts";
-import { loadCompactionState, deleteCompactionState } from "@/lib/compaction-state.ts";
-import { flushLearnings } from "@/lib/memory-flush.ts";
-import { log } from "@/lib/logger.ts";
+import { loadCompactionState, deleteCompactionState } from "@/lib/conversation/compaction-state.ts";
+import { flushLearnings } from "@/lib/conversation/memory-flush.ts";
+import { log } from "@/lib/utils/logger.ts";
 import { runAgentStepBatch } from "@/lib/agent-step/index.ts";
 import {
   retrieveBatchContextBlock,

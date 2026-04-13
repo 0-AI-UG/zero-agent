@@ -1,15 +1,15 @@
 import bcrypt from "bcrypt";
-import { corsHeaders } from "@/lib/cors.ts";
-import { authenticateRequest, createToken, createTempToken, verifyTempToken, isTotpRequired } from "@/lib/auth.ts";
-import { AuthError } from "@/lib/errors.ts";
-import { validateBody, loginSchema, passwordSchema } from "@/lib/validation.ts";
+import { corsHeaders } from "@/lib/http/cors.ts";
+import { authenticateRequest, createToken, createTempToken, verifyTempToken, isTotpRequired } from "@/lib/auth/auth.ts";
+import { AuthError } from "@/lib/utils/errors.ts";
+import { validateBody, loginSchema, passwordSchema } from "@/lib/auth/validation.ts";
 import { getUserByUsername, getUserById, updateUserCompanionSharing, updateUserPassword } from "@/db/queries/users.ts";
 import { getPasskeyCount, getPasskeysByUserId, getPasskeyByCredentialId, updatePasskeyCounter } from "@/db/queries/passkeys.ts";
 import { getTotpSecret } from "@/db/queries/totp.ts";
 import { createTOTP } from "@/routes/totp.ts";
 import { handleError } from "@/routes/utils.ts";
-import { authRateLimiter, recordAuthFailure } from "@/lib/rate-limit.ts";
-import { log } from "@/lib/logger.ts";
+import { authRateLimiter, recordAuthFailure } from "@/lib/http/rate-limit.ts";
+import { log } from "@/lib/utils/logger.ts";
 const authLog = log.child({ module: "auth" });
 
 function getClientIP(request: Request): string {

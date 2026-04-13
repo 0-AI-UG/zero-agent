@@ -12,8 +12,8 @@ import {
   updateTask,
   deleteTask,
 } from "@/db/queries/scheduled-tasks.ts";
-import { parseSchedule } from "@/lib/schedule-parser.ts";
-import { registerEventTask, unregisterEventTask, refreshEventTask } from "@/lib/event-trigger.ts";
+import { parseSchedule } from "@/lib/scheduling/schedule-parser.ts";
+import { registerEventTask, unregisterEventTask, refreshEventTask } from "@/lib/scheduling/event-trigger.ts";
 import type { CliContext } from "./context.ts";
 import { ok, fail } from "./response.ts";
 import type {

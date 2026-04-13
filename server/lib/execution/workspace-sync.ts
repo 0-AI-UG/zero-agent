@@ -12,7 +12,7 @@ import { createHash } from "node:crypto";
 import { getAllProjectFiles, updateFileHash } from "@/db/queries/files.ts";
 import { readBinaryFromS3 } from "@/lib/s3.ts";
 import { getLocalBackend } from "./lifecycle.ts";
-import { log } from "@/lib/logger.ts";
+import { log } from "@/lib/utils/logger.ts";
 
 const syncLog = log.child({ module: "workspace-sync" });
 

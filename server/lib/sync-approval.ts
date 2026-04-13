@@ -41,8 +41,8 @@ import {
 } from "@/db/queries/pending-responses.ts";
 import { getProjectMembers } from "@/db/queries/members.ts";
 import type { PendingResponseRow } from "@/db/types.ts";
-import { broadcastToProject } from "@/lib/ws.ts";
-import { log } from "@/lib/logger.ts";
+import { broadcastToProject } from "@/lib/http/ws.ts";
+import { log } from "@/lib/utils/logger.ts";
 
 const syncLog = log.child({ module: "sync-approval" });
 

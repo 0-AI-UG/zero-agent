@@ -9,10 +9,10 @@
  * are `ws` | `push` | `telegram`.
  */
 
-import { authenticateRequest } from "@/lib/auth.ts";
+import { authenticateRequest } from "@/lib/auth/auth.ts";
 import { handleError } from "@/routes/utils.ts";
-import { corsHeaders } from "@/lib/cors.ts";
-import { ValidationError } from "@/lib/errors.ts";
+import { corsHeaders } from "@/lib/http/cors.ts";
+import { ValidationError } from "@/lib/utils/errors.ts";
 import {
   listUserSubscriptions,
   upsertUserSubscription,

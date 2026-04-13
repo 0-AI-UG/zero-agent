@@ -1,5 +1,5 @@
 import { db } from "@/db/index.ts";
-import { corsHeaders } from "@/lib/cors.ts";
+import { corsHeaders } from "@/lib/http/cors.ts";
 
 export async function handleHealth(): Promise<Response> {
   try {

@@ -4,7 +4,7 @@
  * uses internally for RAG.
  */
 import type { z } from "zod";
-import { isEmbeddingConfigured, embedValue, semanticSearch } from "@/lib/vectors.ts";
+import { isEmbeddingConfigured, embedValue, semanticSearch } from "@/lib/search/vectors.ts";
 import type { CliContext } from "./context.ts";
 import { ok, fail } from "./response.ts";
 import type { SearchInput } from "zero/schemas";

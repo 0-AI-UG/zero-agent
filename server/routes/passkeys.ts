@@ -9,9 +9,9 @@ import type {
   AuthenticationResponseJSON,
   AuthenticatorTransportFuture,
 } from "@simplewebauthn/server";
-import { corsHeaders } from "@/lib/cors.ts";
-import { authenticateRequest, createToken, verifyTempToken } from "@/lib/auth.ts";
-import { AuthError } from "@/lib/errors.ts";
+import { corsHeaders } from "@/lib/http/cors.ts";
+import { authenticateRequest, createToken, verifyTempToken } from "@/lib/auth/auth.ts";
+import { AuthError } from "@/lib/utils/errors.ts";
 import { getUserById } from "@/db/queries/users.ts";
 import {
   getPasskeysByUserId,
@@ -22,9 +22,9 @@ import {
   deletePasskey,
 } from "@/db/queries/passkeys.ts";
 import { handleError } from "@/routes/utils.ts";
-import { authRateLimiter, recordAuthFailure } from "@/lib/rate-limit.ts";
-import { log } from "@/lib/logger.ts";
-import { isTotpRequired } from "@/lib/auth.ts";
+import { authRateLimiter, recordAuthFailure } from "@/lib/http/rate-limit.ts";
+import { log } from "@/lib/utils/logger.ts";
+import { isTotpRequired } from "@/lib/auth/auth.ts";
 
 const passkeyLog = log.child({ module: "passkey" });
 

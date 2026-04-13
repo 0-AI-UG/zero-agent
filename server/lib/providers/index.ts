@@ -1,6 +1,6 @@
 import { getSetting } from "@/lib/settings.ts";
 import { getModelById } from "@/db/queries/models.ts";
-import { log } from "@/lib/logger.ts";
+import { log } from "@/lib/utils/logger.ts";
 import type { InferenceProvider, SpecializedKind } from "@/lib/providers/types.ts";
 import { openrouterProvider } from "@/lib/providers/openrouter.ts";
 import { codexProvider } from "@/lib/providers/codex.ts";

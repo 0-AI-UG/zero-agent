@@ -1,5 +1,5 @@
 import { db } from "@/db/index.ts";
-import { log } from "@/lib/logger.ts";
+import { log } from "@/lib/utils/logger.ts";
 
 const cpLog = log.child({ module: "checkpoint" });
 

@@ -10,8 +10,8 @@ import {
   loadCompactionState,
   saveCompactionState,
   type SubtaskItem,
-} from "@/lib/compaction-state.ts";
-import { log } from "@/lib/logger.ts";
+} from "@/lib/conversation/compaction-state.ts";
+import { log } from "@/lib/utils/logger.ts";
 
 const toolLog = log.child({ module: "tool:progress" });
 

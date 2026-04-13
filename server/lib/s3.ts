@@ -1,7 +1,7 @@
 import { unlinkSync } from "node:fs";
 import { S3Client, PresignHandler } from "@0-ai/s3lite";
-import { corsHeaders } from "@/lib/cors.ts";
-import { log } from "@/lib/logger.ts";
+import { corsHeaders } from "@/lib/http/cors.ts";
+import { log } from "@/lib/utils/logger.ts";
 
 const s3Log = log.child({ module: "s3" });
 

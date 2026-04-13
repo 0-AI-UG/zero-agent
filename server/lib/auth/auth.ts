@@ -1,5 +1,5 @@
 import { jwtVerify, SignJWT } from "jose";
-import { AuthError, ForbiddenError } from "@/lib/errors.ts";
+import { AuthError, ForbiddenError } from "@/lib/utils/errors.ts";
 import { getUserById } from "@/db/queries/users.ts";
 import { getSetting } from "@/lib/settings.ts";
 

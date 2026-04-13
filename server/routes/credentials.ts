@@ -1,8 +1,8 @@
-import { corsHeaders } from "@/lib/cors.ts";
-import { authenticateRequest } from "@/lib/auth.ts";
-import { validateBody, createCredentialSchema, updateCredentialSchema } from "@/lib/validation.ts";
+import { corsHeaders } from "@/lib/http/cors.ts";
+import { authenticateRequest } from "@/lib/auth/auth.ts";
+import { validateBody, createCredentialSchema, updateCredentialSchema } from "@/lib/auth/validation.ts";
 import { handleError, verifyProjectAccess } from "@/routes/utils.ts";
-import { encrypt } from "@/lib/crypto.ts";
+import { encrypt } from "@/lib/auth/crypto.ts";
 import {
   insertCredential,
   getCredentialsByProject,
@@ -10,7 +10,7 @@ import {
   updateCredential,
   deleteCredential,
 } from "@/db/queries/credentials.ts";
-import { log } from "@/lib/logger.ts";
+import { log } from "@/lib/utils/logger.ts";
 
 const credLog = log.child({ module: "routes:credentials" });
 

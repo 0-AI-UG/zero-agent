@@ -6,8 +6,8 @@ import { indexFileContent } from "@/db/queries/search.ts";
 import { parseSkillMd } from "./parser.ts";
 import { invalidateSummaryCache } from "./loader.ts";
 import type { SkillFrontmatter } from "./types.ts";
-import { events } from "@/lib/events.ts";
-import { log } from "@/lib/logger.ts";
+import { events } from "@/lib/scheduling/events.ts";
+import { log } from "@/lib/utils/logger.ts";
 
 const installLog = log.child({ module: "skills:installer" });
 

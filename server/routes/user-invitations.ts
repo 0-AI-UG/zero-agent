@@ -1,12 +1,12 @@
 import bcrypt from "bcrypt";
 import { createHash, randomBytes } from "node:crypto";
 import { z } from "zod";
-import { corsHeaders } from "@/lib/cors.ts";
-import { requireAdmin, createToken, createTempToken, isTotpRequired } from "@/lib/auth.ts";
+import { corsHeaders } from "@/lib/http/cors.ts";
+import { requireAdmin, createToken, createTempToken, isTotpRequired } from "@/lib/auth/auth.ts";
 import { handleError } from "@/routes/utils.ts";
-import { validateBody, passwordSchema, usernameSchema } from "@/lib/validation.ts";
-import { ValidationError, AuthError } from "@/lib/errors.ts";
-import { authRateLimiter, recordAuthFailure } from "@/lib/rate-limit.ts";
+import { validateBody, passwordSchema, usernameSchema } from "@/lib/auth/validation.ts";
+import { ValidationError, AuthError } from "@/lib/utils/errors.ts";
+import { authRateLimiter, recordAuthFailure } from "@/lib/http/rate-limit.ts";
 import { getUserByUsername, getUserById, insertUser } from "@/db/queries/users.ts";
 import { db } from "@/db/index.ts";
 import {
@@ -17,7 +17,7 @@ import {
   deleteInvitation,
   type UserInvitationRow,
 } from "@/db/queries/user-invitations.ts";
-import { log } from "@/lib/logger.ts";
+import { log } from "@/lib/utils/logger.ts";
 
 const inviteLog = log.child({ module: "user-invitations" });
 

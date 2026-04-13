@@ -8,7 +8,7 @@
  */
 import type { z } from "zod";
 import { nanoid } from "nanoid";
-import { log } from "@/lib/logger.ts";
+import { log } from "@/lib/utils/logger.ts";
 import {
   insertPort,
   getPortByProjectAndPort,

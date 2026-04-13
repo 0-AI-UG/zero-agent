@@ -4,9 +4,9 @@
  * Auth via short-lived app tokens in the query string (issued by the gate page).
  */
 import { getPortBySlug } from "@/db/queries/apps.ts";
-import { verifyAppToken, verifyShareToken } from "@/lib/auth.ts";
-import { corsHeaders } from "@/lib/cors.ts";
-import { log } from "@/lib/logger.ts";
+import { verifyAppToken, verifyShareToken } from "@/lib/auth/auth.ts";
+import { corsHeaders } from "@/lib/http/cors.ts";
+import { log } from "@/lib/utils/logger.ts";
 
 const proxyLog = log.child({ module: "app-proxy" });
 
