@@ -811,31 +811,25 @@ export function TasksPage() {
     <div className="h-full overflow-y-auto">
       <div className="max-w-2xl mx-auto px-4 md:px-5 py-6 space-y-5">
         <div className="flex items-center justify-between">
-          <div>
+          <div className="flex items-center gap-3">
             <h2 className="text-xl font-bold tracking-tight font-display">
               Automation
             </h2>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Tasks that run on a schedule or in response to events
-            </p>
+            {!project.automationEnabled && (
+              <a
+                href={`/projects/${projectId}/settings`}
+                className="flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-[11px] font-medium text-amber-700 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-400 dark:hover:bg-amber-900"
+              >
+                <PauseCircleIcon className="size-3" />
+                Paused
+              </a>
+            )}
           </div>
           <Button size="sm" onClick={() => setCreating(true)}>
             <PlusIcon className="size-4 mr-1" />
             New Task
           </Button>
         </div>
-
-        {!project.automationEnabled && (
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <PauseCircleIcon className="size-3.5 shrink-0" />
-            <p>
-              Automation is paused.{" "}
-              <a href={`/projects/${projectId}/settings`} className="underline hover:text-foreground">
-                Enable in Settings
-              </a>
-            </p>
-          </div>
-        )}
 
         {isLoading ? (
           <div className="space-y-3">

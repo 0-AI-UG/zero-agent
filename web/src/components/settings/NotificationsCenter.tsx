@@ -54,6 +54,10 @@ const KIND_META: Record<string, { title: string; description: string }> = {
     title: "Task failed",
     description: "When something the agent was doing errors out.",
   },
+  plan_review: {
+    title: "Plan review",
+    description: "When an agent submits a plan for your approval.",
+  },
 };
 
 const CHANNEL_META: Record<

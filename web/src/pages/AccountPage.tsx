@@ -39,7 +39,7 @@ export function AccountPage() {
 
     const handleScroll = () => {
       const containerRect = container.getBoundingClientRect();
-      let current = NAV_ITEMS[0].id;
+      let current: string = NAV_ITEMS[0].id;
 
       for (const { id } of NAV_ITEMS) {
         const el = document.getElementById(`section-${id}`);

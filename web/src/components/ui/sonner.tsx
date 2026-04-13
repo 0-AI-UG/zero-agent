@@ -19,6 +19,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
       theme={theme as ToasterProps["theme"]}
       className="toaster group"
       closeButton
+      // @ts-expect-error dismissible exists at runtime but missing from types
       dismissible
       gap={8}
       icons={{

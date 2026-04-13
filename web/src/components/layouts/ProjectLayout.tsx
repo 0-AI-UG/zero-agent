@@ -320,7 +320,7 @@ function ProjectSidebar({
       icon: SettingsIcon,
       label: "Settings",
     },
-  ] as const;
+  ];
 
   return (
     <Sidebar collapsible="icon" className="[--sidebar:var(--background)]">

@@ -43,7 +43,7 @@ const RAMP = " .'`^\":;Il!i><~+_-?][}{1)(|/tfjrxnuvczXYUJCLQ0OZmwqpdbkhao*#MW&8%
 
 function densityChar(d: number): string {
   const i = Math.floor(d * (RAMP.length - 1));
-  return RAMP[Math.max(0, Math.min(RAMP.length - 1, i))];
+  return RAMP[Math.max(0, Math.min(RAMP.length - 1, i))]!;
 }
 
 const STAR_CHARS = ".*+·'`";
