@@ -345,7 +345,7 @@ export function SpreadsheetTable({
 
       {/* Table */}
       <div ref={scrollContainerRef} className="flex-1 overflow-auto">
-        <table className="w-full text-sm border-collapse">
+        <table className="text-sm border-collapse">
           <thead className="sticky top-0 z-10">
             <tr className="border-b border-border/60">
               {/* Row number header */}
@@ -552,7 +552,7 @@ export function SpreadsheetTable({
                   if (editable && virtualRow.index === processedRows.length) {
                     return (
                       <tr key="add-row" data-index={virtualRow.index}>
-                        <td className="p-0 sticky left-0 bg-background" />
+                        <td className="p-0 sticky left-0 z-[2] bg-background" />
                         <td className="p-0" colSpan={headers.length + 1}>
                           <button
                             type="button"
@@ -588,9 +588,8 @@ export function SpreadsheetTable({
                       onClick={() => setSelectedRow(isSelected ? null : originalIdx)}
                     >
                       {/* Row number */}
-                      <td className={`w-12 min-w-12 px-2 py-0 text-[10px] text-muted-foreground/60 text-right border-r border-border/40 sticky left-0 z-[1] tabular-nums select-none ${
-                        isSelected ? "bg-primary/5" : isEven ? "bg-background" : "bg-muted/15"
-                      }`}>
+                      <td className="w-12 min-w-12 px-2 py-0 text-[10px] text-muted-foreground/60 text-right border-r border-border/40 sticky left-0 z-[2] tabular-nums select-none bg-background">
+
                         <div className="flex items-center justify-end gap-1">
                           {editable && (
                             <button
