@@ -572,6 +572,27 @@ function ServerExecutionSection() {
         )}
       </div>
 
+      {/* Execution Toggle */}
+      <div className="rounded-lg border p-4">
+        <div className="flex items-center justify-between gap-4">
+          <div className="space-y-1">
+            <p className="text-sm font-medium">Enabled</p>
+            <p className="text-xs text-muted-foreground">
+              Toggles code execution, browser sessions, and port forwarding/services.
+            </p>
+          </div>
+          <Switch
+            checked={serverExecutionEnabled}
+            onCheckedChange={(checked) => {
+              toggleExecution.mutate(checked);
+            }}
+            disabled={toggleExecution.isPending}
+            aria-label="Toggle server execution"
+          />
+        </div>
+      </div>
+
+      {serverExecutionEnabled && (<>
       {/* Runners */}
       <div className="rounded-lg border">
         <div className="flex items-center justify-between p-4 pb-0">
@@ -731,24 +752,8 @@ function ServerExecutionSection() {
         </DialogContent>
       </Dialog>
 
-      {/* Execution Settings */}
+      {/* Container Settings */}
       <div className="rounded-lg border p-4 space-y-4">
-        <div className="flex items-center justify-between gap-4">
-          <div className="space-y-1">
-            <p className="text-sm font-medium">Enabled</p>
-            <p className="text-xs text-muted-foreground">
-              Toggles code execution, browser sessions, and port forwarding/services.
-            </p>
-          </div>
-          <Switch
-            checked={serverExecutionEnabled}
-            onCheckedChange={(checked) => {
-              toggleExecution.mutate(checked);
-            }}
-            disabled={toggleExecution.isPending}
-            aria-label="Toggle server execution"
-          />
-        </div>
         <div className="flex items-center justify-between gap-4">
           <div className="space-y-1">
             <p className="text-sm font-medium">Max running containers</p>
@@ -852,6 +857,7 @@ function ServerExecutionSection() {
           </Table>
         )}
       </div>
+      </>)}
     </section>
   );
 }
