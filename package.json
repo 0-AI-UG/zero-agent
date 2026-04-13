@@ -8,10 +8,10 @@
     "zero"
   ],
   "scripts": {
-    "dev": "node --import tsx/esm dev.ts",
+    "dev": "tsx dev.ts",
     "build": "bun --filter web build",
-    "compile": "node --import tsx/esm build.ts",
-    "start": "NODE_ENV=production node --import tsx/esm server/index.ts",
+    "compile": "tsx build.ts",
+    "start": "NODE_ENV=production tsx server/index.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },

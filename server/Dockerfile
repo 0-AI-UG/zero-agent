@@ -44,4 +44,4 @@ RUN mkdir -p /app/data/workspaces
 EXPOSE 3000
 
 ENV NODE_ENV=production
-CMD ["node", "--import", "tsx/esm", "server/index.ts"]
+CMD ["./node_modules/.bin/tsx", "server/index.ts"]
