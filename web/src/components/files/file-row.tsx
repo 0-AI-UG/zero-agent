@@ -89,13 +89,9 @@ export function FileRow({
                 {file.filename}
               </p>
               {(() => {
-                const { extension, color } = getFileTypeInfo(file.mimeType, file.filename);
+                const { extension } = getFileTypeInfo(file.mimeType, file.filename);
                 return extension ? (
-                  <span className={cn(
-                    "shrink-0 text-[10px] font-medium leading-none px-1 py-0.5 rounded",
-                    color,
-                    "bg-muted"
-                  )}>
+                  <span className="shrink-0 text-[10px] font-medium leading-none px-1 py-0.5 rounded bg-muted text-muted-foreground">
                     {extension}
                   </span>
                 ) : null;

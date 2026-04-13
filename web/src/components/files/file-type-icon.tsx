@@ -112,6 +112,6 @@ export function getFileTypeInfo(mimeType: string, filename?: string): FileTypeIn
 }
 
 export function FileTypeIcon({ mimeType, filename, className }: FileTypeIconProps) {
-  const { icon: Icon, color } = getFileTypeInfo(mimeType, filename);
-  return <Icon className={cn("h-5 w-5", color, className)} />;
+  const { icon: Icon } = getFileTypeInfo(mimeType, filename);
+  return <Icon className={cn("size-4 text-muted-foreground", className)} />;
 }
