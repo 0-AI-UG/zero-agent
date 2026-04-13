@@ -162,7 +162,7 @@ export function SpreadsheetTable({
   }, [search, processedRows]);
 
   const rowVirtualizer = useVirtualizer({
-    count: processedRows.length,
+    count: processedRows.length + (editable ? 1 : 0),
     getScrollElement: () => scrollContainerRef.current,
     estimateSize: () => ROW_HEIGHT,
     overscan: 20,
@@ -272,7 +272,7 @@ export function SpreadsheetTable({
     );
   }
 
-  const extraCols = 1; // row number column
+  const extraCols = editable ? 2 : 1; // row number + add-column
 
   return (
     <div className="flex flex-col h-full">
@@ -509,6 +509,22 @@ export function SpreadsheetTable({
                   </th>
                 );
               })}
+              {/* Add column header */}
+              {editable && (
+                <th
+                  className="p-0 border-r border-border/40 bg-muted/60 w-0"
+                  style={{ backgroundColor: "var(--muted)" }}
+                >
+                  <button
+                    type="button"
+                    className="flex items-center justify-center gap-1.5 h-8 px-3 text-muted-foreground/50 hover:text-foreground hover:bg-muted/80 text-xs whitespace-nowrap"
+                    onClick={onAddColumn}
+                  >
+                    <PlusIcon className="size-3.5" />
+                    Add column
+                  </button>
+                </th>
+              )}
             </tr>
           </thead>
           <tbody>
@@ -539,6 +555,28 @@ export function SpreadsheetTable({
                   ) : null;
                 })()}
                 {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                  if (editable && virtualRow.index === processedRows.length) {
+                    return (
+                      <tr key="add-row" data-index={virtualRow.index}>
+                        <td
+                          className="p-0 sticky left-0"
+                          style={{ zIndex: 2, backgroundColor: "var(--background)" }}
+                        />
+                        <td className="p-0" colSpan={headers.length}>
+                          <button
+                            type="button"
+                            className="flex items-center justify-center w-full py-2 text-muted-foreground/50 hover:text-foreground hover:bg-muted/30 gap-1.5 text-xs"
+                            onClick={onAddRow}
+                          >
+                            <PlusIcon className="size-3.5" />
+                            Add row
+                          </button>
+                        </td>
+                        <td className="p-0" />
+                      </tr>
+                    );
+                  }
+
                   const item = processedRows[virtualRow.index];
                   if (!item) return null;
                   const { row, originalIdx } = item;
@@ -622,6 +660,7 @@ export function SpreadsheetTable({
                           </td>
                         );
                       })}
+                      {editable && <td className="p-0" />}
                     </tr>
                   );
                 })}
@@ -646,28 +685,6 @@ export function SpreadsheetTable({
         </table>
       </div>
 
-      {/* Add row / Add column buttons */}
-      {editable && (
-        <div className="flex items-center border-t border-border/40">
-          <button
-            type="button"
-            className="flex-1 flex items-center justify-center py-2 text-muted-foreground/50 hover:text-foreground hover:bg-muted/30 gap-1.5 text-xs"
-            onClick={onAddRow}
-          >
-            <PlusIcon className="size-3.5" />
-            Add row
-          </button>
-          <div className="w-px h-5 bg-border/40" />
-          <button
-            type="button"
-            className="flex-1 flex items-center justify-center py-2 text-muted-foreground/50 hover:text-foreground hover:bg-muted/30 gap-1.5 text-xs"
-            onClick={onAddColumn}
-          >
-            <PlusIcon className="size-3.5" />
-            Add column
-          </button>
-        </div>
-      )}
     </div>
   );
 }
