@@ -117,6 +117,37 @@ export function ChatPanel({ projectId, chatId, initialMessages, initialIsStreami
   // Guard: useChat may return {} instead of [] when restoring from internal store
   const messages = Array.isArray(rawMessages) ? rawMessages : [];
 
+  // When the stream ends, mark any still-loading tool parts as failed (interrupted).
+  const prevStatusRef = useRef(status);
+  useEffect(() => {
+    const wasStreaming = prevStatusRef.current === "streaming" || prevStatusRef.current === "submitted";
+    prevStatusRef.current = status;
+    if (!wasStreaming || status !== "ready") return;
+
+    const isLoadingPart = (p: any) =>
+      p.toolCallId && (p.state === "input-streaming" || p.state === "input-available");
+
+    const hasOrphaned = messages.some(
+      (m) => m.role === "assistant" && m.parts.some(isLoadingPart),
+    );
+    if (!hasOrphaned) return;
+
+    setMessages((prev) =>
+      prev.map((msg) => {
+        if (msg.role !== "assistant") return msg;
+        if (!msg.parts.some(isLoadingPart)) return msg;
+        return {
+          ...msg,
+          parts: msg.parts.map((p: any) =>
+            isLoadingPart(p)
+              ? { ...p, state: "output-error" as const, errorText: "Interrupted" }
+              : p,
+          ),
+        };
+      }),
+    );
+  }, [status, messages, setMessages]);
+
   // Keep a ref to messages for unmount sync and onFinish
   const messagesRef = useRef(messages);
   messagesRef.current = messages;

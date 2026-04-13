@@ -256,10 +256,30 @@ export async function runAgentStepStreaming(input: StreamingStepInput): Promise<
           };
         }
       },
-      onFinish: ({ messages: finalMessages, isAborted }) => {
+      onFinish: ({ messages: rawFinished, isAborted }) => {
         clearActiveStreamId(chatId);
         clearAbortController(chatId);
         notifyStreamEnded(project.id, chatId);
+
+        // When aborted, mark any in-flight tool parts as failed so they
+        // persist correctly and don't appear as "loading" on reload.
+        const finalMessages = isAborted
+          ? rawFinished.map((m) => {
+              if (m.role !== "assistant") return m;
+              const hasLoading = m.parts?.some(
+                (p: any) => p.toolCallId && (p.state === "input-streaming" || p.state === "input-available"),
+              );
+              if (!hasLoading) return m;
+              return {
+                ...m,
+                parts: m.parts.map((p: any) =>
+                  p.toolCallId && (p.state === "input-streaming" || p.state === "input-available")
+                    ? { ...p, state: "output-error", errorText: "Interrupted" }
+                    : p,
+                ),
+              };
+            })
+          : rawFinished;
 
         const durationMs = Date.now() - start;
         if (isAborted) {

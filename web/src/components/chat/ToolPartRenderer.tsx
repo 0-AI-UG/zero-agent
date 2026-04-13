@@ -157,20 +157,6 @@ function WriteFileCard({ output, projectId }: { output: any; projectId?: string 
 
 // ── Other Tool Cards ──
 
-function CodeTable({ lines, lineOffset = 0, className }: { lines: string[]; lineOffset?: number; className?: string }) {
-  return (
-    <table className="w-full text-xs font-mono border-collapse">
-      <tbody>
-        {lines.map((line, i) => (
-          <tr key={i} className="leading-5">
-            <td className="select-none text-right text-muted-foreground/50 px-3 align-top w-10 min-w-10 whitespace-nowrap">{lineOffset + i + 1}</td>
-            <td className={cn("pr-3 whitespace-pre", className)}>{line}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
-}
 
 /**
  * True when the command runs `zero creds get` as a top-level invocation
@@ -312,21 +298,6 @@ function BashResultCard({
   );
 }
 
-function StreamingContentCard({ title, content, language }: { title: string; content: string; language?: string }) {
-  const lines = content.split("\n");
-  return (
-    <div className="rounded-lg border bg-card max-w-2xl w-full my-1 overflow-hidden">
-      <div className="flex items-center gap-1.5 text-xs text-muted-foreground px-3 py-2 border-b bg-muted/50">
-        <FileTextIcon className="size-3" />
-        <span className="font-medium truncate">{title}</span>
-        <Shimmer className="text-xs ml-auto shrink-0" duration={1.5}>writing</Shimmer>
-      </div>
-      <div className="max-h-80 overflow-auto">
-        <CodeTable lines={lines} />
-      </div>
-    </div>
-  );
-}
 
 function ForwardPortCard({ output, input }: { output: any; input: any }) {
   const port = input?.port ?? output?.port;
@@ -427,17 +398,6 @@ export const ToolCallPart = memo(function ToolCallPart({
     );
   }
 
-  // Streaming input display for content-heavy tools
-  if (isLoading && toolName === "writeFile") {
-    const inp = (part.input ?? {}) as Record<string, unknown>;
-    if (typeof inp.content === "string" && inp.content) {
-      const filename = typeof inp.path === "string" ? inp.path.split("/").pop() : "file";
-      const ext = filename?.split(".").pop() ?? "";
-      const langMap: Record<string, string> = { py: "python", js: "javascript", ts: "typescript", json: "json", md: "markdown", css: "css", html: "html" };
-      return <StreamingContentCard title={filename ?? "file"} content={inp.content} language={langMap[ext] ?? ext} />;
-    }
-    // Fall through to default shimmer if content field hasn't started streaming yet
-  }
 
   // Custom rich rendering for specific tool results
   if (hasOutput) {
