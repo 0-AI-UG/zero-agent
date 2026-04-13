@@ -1,9 +1,10 @@
-import { CheckIcon, XIcon, CloudIcon } from "lucide-react";
+import { CheckIcon, XIcon, CloudIcon, Loader2Icon } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Shimmer } from "@/components/ai/shimmer";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
+import { getToolActiveLabel } from "./ToolPartRenderer";
 
 interface TaskProgress {
   index: number;
@@ -81,11 +82,7 @@ function TaskRow({
   const isFailed = state === "rejected";
   const detailText = isFailed ? result?.error : result?.text;
 
-  const statusLine = isRunning
-    ? progress
-      ? `step ${progress.step}${progress.currentTools?.length ? ` · ${progress.currentTools.join(" · ")}` : ""}`
-      : "starting…"
-    : null;
+  const tools = isRunning && progress?.currentTools?.length ? progress.currentTools : null;
 
   return (
     <Collapsible>
@@ -104,11 +101,20 @@ function TaskRow({
       </CollapsibleTrigger>
 
       {isRunning && (
-        <div className="ml-5 border-l border-border/50 pl-3 space-y-0.5">
-          {statusLine && (
-            <Shimmer className="text-[11px] font-mono text-muted-foreground" duration={1.5}>
-              {statusLine}
-            </Shimmer>
+        <div className="ml-5 border-l border-border/50 pl-3 space-y-1">
+          {tools ? (
+            <div className="flex flex-wrap gap-1">
+              {tools.map((tool, i) => (
+                <span
+                  key={i}
+                  className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono bg-muted text-muted-foreground"
+                >
+                  {getToolActiveLabel(tool)}
+                </span>
+              ))}
+            </div>
+          ) : (
+            <Loader2Icon className="size-3 animate-spin text-muted-foreground" />
           )}
           {progress?.lastText && (
             <p className="text-[11px] text-muted-foreground/70 italic whitespace-pre-wrap break-words line-clamp-3">
