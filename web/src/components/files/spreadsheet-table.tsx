@@ -162,7 +162,7 @@ export function SpreadsheetTable({
   }, [search, processedRows]);
 
   const rowVirtualizer = useVirtualizer({
-    count: processedRows.length + (editable ? 1 : 0),
+    count: processedRows.length,
     getScrollElement: () => scrollContainerRef.current,
     estimateSize: () => ROW_HEIGHT,
     overscan: 20,
@@ -349,7 +349,10 @@ export function SpreadsheetTable({
           <thead className="sticky top-0 z-10">
             <tr className="border-b border-border/60">
               {/* Row number header */}
-              <th className="w-12 min-w-12 px-2 py-1.5 text-[10px] font-medium text-muted-foreground/70 text-right border-r border-border/40 bg-muted sticky left-0 z-20 select-none">
+              <th
+                className="w-12 min-w-12 px-2 py-1.5 text-[10px] font-medium text-muted-foreground/70 text-right border-r border-border/40 sticky left-0 select-none"
+                style={{ zIndex: 30, backgroundColor: "var(--muted)" }}
+              >
                 #
               </th>
               {/* Data columns */}
@@ -536,35 +539,6 @@ export function SpreadsheetTable({
                   ) : null;
                 })()}
                 {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-                  if (editable && virtualRow.index === processedRows.length) {
-                    return (
-                      <tr key="add-row" data-index={virtualRow.index}>
-                        <td className="p-0 sticky left-0 z-[2] bg-background" />
-                        <td className="p-0" colSpan={headers.length}>
-                          <div className="flex items-center">
-                            <button
-                              type="button"
-                              className="flex-1 flex items-center justify-center py-2 text-muted-foreground/50 hover:text-foreground hover:bg-muted/30 gap-1.5 text-xs"
-                              onClick={onAddRow}
-                            >
-                              <PlusIcon className="size-3.5" />
-                              Add row
-                            </button>
-                            <div className="w-px h-5 bg-border/40" />
-                            <button
-                              type="button"
-                              className="flex-1 flex items-center justify-center py-2 text-muted-foreground/50 hover:text-foreground hover:bg-muted/30 gap-1.5 text-xs"
-                              onClick={onAddColumn}
-                            >
-                              <PlusIcon className="size-3.5" />
-                              Add column
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  }
-
                   const item = processedRows[virtualRow.index];
                   if (!item) return null;
                   const { row, originalIdx } = item;
@@ -586,8 +560,10 @@ export function SpreadsheetTable({
                       onClick={() => setSelectedRow(isSelected ? null : originalIdx)}
                     >
                       {/* Row number */}
-                      <td className="w-12 min-w-12 px-2 py-0 text-[10px] text-muted-foreground/60 text-right border-r border-border/40 sticky left-0 z-[2] tabular-nums select-none bg-background">
-
+                      <td
+                        className="w-12 min-w-12 px-2 py-0 text-[10px] text-muted-foreground/60 text-right border-r border-border/40 sticky left-0 tabular-nums select-none"
+                        style={{ zIndex: 2, backgroundColor: "var(--background)" }}
+                      >
                         <div className="flex items-center justify-end gap-1">
                           {editable && (
                             <button
@@ -669,6 +645,29 @@ export function SpreadsheetTable({
           </tbody>
         </table>
       </div>
+
+      {/* Add row / Add column buttons */}
+      {editable && (
+        <div className="flex items-center border-t border-border/40">
+          <button
+            type="button"
+            className="flex-1 flex items-center justify-center py-2 text-muted-foreground/50 hover:text-foreground hover:bg-muted/30 gap-1.5 text-xs"
+            onClick={onAddRow}
+          >
+            <PlusIcon className="size-3.5" />
+            Add row
+          </button>
+          <div className="w-px h-5 bg-border/40" />
+          <button
+            type="button"
+            className="flex-1 flex items-center justify-center py-2 text-muted-foreground/50 hover:text-foreground hover:bg-muted/30 gap-1.5 text-xs"
+            onClick={onAddColumn}
+          >
+            <PlusIcon className="size-3.5" />
+            Add column
+          </button>
+        </div>
+      )}
     </div>
   );
 }
