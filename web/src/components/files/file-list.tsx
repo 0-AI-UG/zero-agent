@@ -40,6 +40,7 @@ interface FileListProps {
   onBulkDelete: () => void;
   isBulkDeleting?: boolean;
   onRangeSelect: (ids: { fileIds: string[]; folderIds: string[] }, additive: boolean) => void;
+  storageSummary?: string;
 }
 
 export function FileList({
@@ -67,6 +68,7 @@ export function FileList({
   onBulkDelete,
   isBulkDeleting,
   onRangeSelect,
+  storageSummary,
 }: FileListProps) {
   const anchorIndexRef = useRef<number | null>(null);
   const { data: project } = useProject(projectId);
@@ -239,7 +241,7 @@ export function FileList({
       ) : (
       <div className="px-4 py-2 flex items-center justify-between">
         <span className="text-xs text-muted-foreground tabular-nums">
-          {totalItems} item{totalItems !== 1 ? "s" : ""}
+          {totalItems} item{totalItems !== 1 ? "s" : ""}{storageSummary ? ` · ${storageSummary}` : ""}
         </span>
         <Select
           value={sortBy}
@@ -258,7 +260,7 @@ export function FileList({
         </Select>
       </div>
       )}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto px-2">
         {sortedFolders.map((folder) => (
           <FolderRow
             key={folder.id}

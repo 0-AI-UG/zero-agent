@@ -211,12 +211,7 @@ function BashResultCard({
   const collapseByDefault = exitCode === 0 && !error;
   const [expanded, setExpanded] = useState(!collapseByDefault);
 
-  const exitBadgeColor =
-    exitCode === 0
-      ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
-      : exitCode === -1
-        ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
-        : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400";
+  const exitBadgeColor = "text-muted-foreground/70";
 
   const outputContent = [error, stdout, stderr].filter(Boolean).join("\n");
   const outputLines = outputContent ? outputContent.split("\n") : [];
@@ -252,29 +247,40 @@ function BashResultCard({
           <button
             type="button"
             onClick={() => setExpanded((v) => !v)}
-            className="flex items-center gap-1.5 min-w-0 flex-1 px-3 py-2 hover:bg-muted text-left"
+            className="flex items-center w-full px-3 py-2 hover:bg-muted text-left"
           >
-            {headerLeft}
+            <div className="flex items-center gap-1.5 min-w-0 flex-1">
+              {headerLeft}
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              {!expanded && hasOutput && (
+                <span className="text-xs text-muted-foreground/70">{summary}</span>
+              )}
+              {sync && sync.changes && (
+                <SyncChangesHover syncId={sync.id} changes={sync.changes} />
+              )}
+              {sync && <SyncInlineControls proposal={sync} />}
+              {exitCode != null && (
+                <span className={cn("text-xs font-medium", exitBadgeColor)}>
+                  {exitCode === -1 ? "timeout" : `exit ${exitCode}`}
+                </span>
+              )}
+            </div>
           </button>
         ) : (
-          <div className="flex items-center gap-1.5 min-w-0 flex-1 px-3 py-2">
-            {headerLeft}
+          <div className="flex items-center px-3 py-2">
+            <div className="flex items-center gap-1.5 min-w-0 flex-1">
+              {headerLeft}
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              {exitCode != null && (
+                <span className={cn("text-xs font-medium", exitBadgeColor)}>
+                  {exitCode === -1 ? "timeout" : `exit ${exitCode}`}
+                </span>
+              )}
+            </div>
           </div>
         )}
-        <div className="flex items-center gap-2 px-3 py-2 shrink-0">
-          {isCollapsible && !expanded && hasOutput && (
-            <span className="text-xs text-muted-foreground/70">{summary}</span>
-          )}
-          {sync && sync.changes && (
-            <SyncChangesHover syncId={sync.id} changes={sync.changes} />
-          )}
-          {sync && <SyncInlineControls proposal={sync} />}
-          {exitCode != null && (
-            <span className={cn("text-xs px-1.5 py-0.5 rounded-full font-medium", exitBadgeColor)}>
-              {exitCode === -1 ? "timeout" : `exit ${exitCode}`}
-            </span>
-          )}
-        </div>
       </div>
       {expanded && redactCreds && rawStdout && (
         <div className="px-3 py-2 text-xs text-amber-700 dark:text-amber-400 border-b bg-amber-50/50 dark:bg-amber-950/20">
@@ -487,7 +493,7 @@ export const ToolCallPart = memo(function ToolCallPart({
         hasError ? "text-destructive" : "text-muted-foreground",
       )}
     >
-      {isImageRead ? <ImageIcon className={cn("size-4", hasError ? "text-destructive" : hasOutput && "text-emerald-500")} /> : <Icon className={cn("size-4", hasError ? "text-destructive" : hasOutput && "text-emerald-500")} />}
+      {isImageRead ? <ImageIcon className={cn("size-3.5", hasError && "text-destructive")} /> : <Icon className={cn("size-3.5", hasError && "text-destructive")} />}
       <span>
         {isLoading ? (
           <Shimmer className="text-sm" duration={1.5}>

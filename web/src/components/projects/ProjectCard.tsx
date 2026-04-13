@@ -1,7 +1,14 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
 import { formatDistanceToNow } from "date-fns";
-import { Trash2Icon, MessageSquareIcon, FolderIcon, UsersIcon } from "lucide-react";
+import {
+  MoreVerticalIcon,
+  StarIcon,
+  PencilIcon,
+  ArchiveIcon,
+  Trash2Icon,
+  UsersIcon,
+} from "lucide-react";
 import type { Project } from "@/api/projects";
 import { useDeleteProject } from "@/api/projects";
 import {
@@ -20,6 +27,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 
 interface ProjectCardProps {
@@ -35,18 +49,47 @@ export function ProjectCard({ project }: ProjectCardProps) {
   return (
     <>
       <Card
-        className="group cursor-pointer transition-colors hover:bg-muted/50 relative"
+        className="group cursor-pointer transition-all border-border/50 hover:border-border hover:bg-accent/50 relative !py-0 !gap-0"
         onClick={() => navigate(basePath)}
       >
-        <CardHeader>
+        <CardHeader className="px-4 py-3.5">
           <div className="flex items-start justify-between gap-2">
             <CardTitle className="text-base truncate">{project.name}</CardTitle>
-            {project.memberCount > 1 && (
-              <span className="flex items-center gap-1 text-[10px] text-muted-foreground shrink-0 mt-1">
-                <UsersIcon className="size-3" />
-                {project.memberCount}
-              </span>
-            )}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="size-7 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground -mt-0.5 -mr-1"
+                  onClick={(e) => e.stopPropagation()}
+                  aria-label="Project options"
+                >
+                  <MoreVerticalIcon className="size-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                <DropdownMenuItem>
+                  <StarIcon />
+                  Star
+                </DropdownMenuItem>
+                <DropdownMenuItem>
+                  <PencilIcon />
+                  Edit details
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem>
+                  <ArchiveIcon />
+                  Archive
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  variant="destructive"
+                  onClick={() => setConfirmOpen(true)}
+                >
+                  <Trash2Icon />
+                  Delete
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
           <CardDescription className="line-clamp-2">
             {project.description || "No description"}
@@ -54,48 +97,17 @@ export function ProjectCard({ project }: ProjectCardProps) {
 
           <div className="flex items-center justify-between mt-2">
             <p className="text-xs text-muted-foreground">
-              Updated {formatDistanceToNow(new Date(project.updatedAt), { addSuffix: true })}
+              Updated{" "}
+              {formatDistanceToNow(new Date(project.updatedAt), {
+                addSuffix: true,
+              })}
             </p>
-
-            {/* Quick action buttons */}
-            <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className="size-7 text-muted-foreground hover:text-foreground"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  navigate(basePath);
-                }}
-                aria-label="Open chat"
-              >
-                <MessageSquareIcon className="size-3.5" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className="size-7 text-muted-foreground hover:text-foreground"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  navigate(`${basePath}/files`);
-                }}
-                aria-label="Open files"
-              >
-                <FolderIcon className="size-3.5" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className="size-7 text-muted-foreground hover:text-destructive"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setConfirmOpen(true);
-                }}
-                aria-label="Delete project"
-              >
-                <Trash2Icon className="size-3.5" />
-              </Button>
-            </div>
+            {project.memberCount > 1 && (
+              <span className="flex items-center gap-1 text-[10px] text-muted-foreground shrink-0">
+                <UsersIcon className="size-3" />
+                {project.memberCount}
+              </span>
+            )}
           </div>
         </CardHeader>
       </Card>
@@ -106,8 +118,7 @@ export function ProjectCard({ project }: ProjectCardProps) {
             <AlertDialogTitle>Delete project</AlertDialogTitle>
             <AlertDialogDescription>
               This will permanently delete <strong>{project.name}</strong> and
-              all its chats, messages, and files. This action cannot be
-              undone.
+              all its chats, messages, and files. This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

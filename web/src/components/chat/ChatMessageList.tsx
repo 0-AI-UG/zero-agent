@@ -1,4 +1,5 @@
 import { isToolUIPart, getToolName } from "ai";
+import { Link } from "react-router";
 import { Button } from "@/components/ui/button";
 import {
   ConversationEmptyState,
@@ -10,12 +11,11 @@ import {
 import { Shimmer } from "@/components/ai/shimmer";
 import { Suggestions, Suggestion } from "@/components/ai/suggestion";
 import { getToolActiveLabel } from "@/components/chat/ToolPartRenderer";
-import { QuickActionsManager } from "@/components/chat/QuickActionsManager";
 import { ChatMessageItem, type ChatMessage } from "@/components/chat/ChatMessageItem";
 import { getQuickActionIcon } from "@/components/chat/QuickActionsManager";
 import { AlertCircleIcon, RefreshCcwIcon, PackageIcon, SearchIcon, TargetIcon } from "lucide-react";
 import { useCallback, useRef, type ReactNode } from "react";
-import logoSvg from "@/logo.svg";
+import logoSvg from "@/logo-mark.svg";
 
 const HIDDEN_TOOLS = new Set(["progressCreate", "progressUpdate", "progressList", "searchFiles", "readFile", "loadSkill"]);
 
@@ -123,48 +123,57 @@ export function ChatMessageList({
     return false;
   })();
 
+  const isOnboarding = messages.length === 1 && messages[0]?.role === "assistant" && !isStreaming;
+
   return (
     <>
       {messages.length === 0 && (
-        <ConversationEmptyState
-          icon={<img src={logoSvg} alt="Zero Agent" className="size-10" />}
-          title={project?.assistantName ?? "Zero Agent"}
-          description={project?.assistantDescription ?? "Ask me anything - I can browse the web, manage files, run code, and automate tasks."}
-        />
-      )}
-      {messages.length === 0 && (
-        <div className="flex justify-center pb-4">
-          <div className="flex flex-wrap justify-center gap-2">
-            {starterSuggestions.map((s) => (
-              <Suggestion
-                key={s.text}
-                suggestion={s.text}
-                icon={s.icon}
-                description={s.description}
-                onClick={onSuggestion}
-                className="w-48"
-              />
-            ))}
-            <QuickActionsManager projectId={projectId} />
+        <div className="flex flex-col items-center justify-center flex-1 min-h-[60vh] gap-4">
+          <ConversationEmptyState
+            className="!h-auto !min-h-0 flex-none"
+            icon={<img src={logoSvg} alt="Zero Agent" className="size-10" />}
+            title={project?.assistantName ?? "Zero Agent"}
+            description={project?.assistantDescription ?? "Ask me anything - I can browse the web, manage files, run code, and automate tasks."}
+          />
+          <div className="flex justify-center pb-4">
+            <div className="flex flex-wrap justify-center gap-2">
+              {starterSuggestions.map((s) => (
+                <Suggestion
+                  key={s.text}
+                  suggestion={s.text}
+                  description={s.description}
+                  onClick={onSuggestion}
+                />
+              ))}
+            </div>
           </div>
+          <Link
+            to={`/projects/${projectId}/settings`}
+            className="text-xs text-muted-foreground underline hover:text-foreground transition-colors"
+          >
+            Customize agent
+          </Link>
         </div>
       )}
-      {messages.map((message, index) => (
-        <ChatMessageItem
-          key={message.id}
-          message={message}
-          projectId={projectId}
-          chatId={chatId}
-          isLastMessage={index === messages.length - 1}
-          isStreaming={isStreaming}
-          memberMap={memberMap}
-          isMultiMember={isMultiMember}
-          onCopy={handleCopy}
-          onRegenerate={stableRegenerate}
-        />
-      ))}
-      {messages.length === 1 && messages[0]?.role === "assistant" && !isStreaming && (
-        <div className="flex justify-center pb-4">
+      {isOnboarding ? (
+        <div className="flex flex-col items-center justify-center flex-1 min-h-[60vh] gap-6">
+          <div className="text-muted-foreground mb-2">
+            <img src={logoSvg} alt="Zero Agent" className="size-10" />
+          </div>
+          <div className="w-full max-w-2xl">
+            <ChatMessageItem
+              key={messages[0]!.id}
+              message={messages[0]!}
+              projectId={projectId}
+              chatId={chatId}
+              isLastMessage
+              isStreaming={isStreaming}
+              memberMap={memberMap}
+              isMultiMember={isMultiMember}
+              onCopy={handleCopy}
+              onRegenerate={stableRegenerate}
+            />
+          </div>
           <Suggestions className="justify-center flex-wrap">
             {((messages[0] as any).metadata?.onboardingSuggestions as Array<{ text: string; icon: string; description: string }> | undefined)?.map((s) => (
               <Suggestion
@@ -185,6 +194,21 @@ export function ChatMessageList({
             ))}
           </Suggestions>
         </div>
+      ) : (
+        messages.map((message, index) => (
+          <ChatMessageItem
+            key={message.id}
+            message={message}
+            projectId={projectId}
+            chatId={chatId}
+            isLastMessage={index === messages.length - 1}
+            isStreaming={isStreaming}
+            memberMap={memberMap}
+            isMultiMember={isMultiMember}
+            onCopy={handleCopy}
+            onRegenerate={stableRegenerate}
+          />
+        ))
       )}
       {showThinking && (
         <Message from="assistant">

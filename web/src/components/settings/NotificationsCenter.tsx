@@ -68,23 +68,23 @@ const CHANNEL_META: Record<
 > = {
   ws: {
     label: "In-app",
-    tintText: "text-emerald-600 dark:text-emerald-400",
-    tintBg: "bg-emerald-500/10",
-    tintBorder: "border-emerald-500/30",
+    tintText: "text-muted-foreground",
+    tintBg: "bg-muted/40",
+    tintBorder: "border-muted-foreground/30",
     icon: <RadioIcon className="size-3.5" />,
   },
   push: {
     label: "Push",
-    tintText: "text-violet-600 dark:text-violet-400",
-    tintBg: "bg-violet-500/10",
-    tintBorder: "border-violet-500/30",
+    tintText: "text-muted-foreground",
+    tintBg: "bg-muted/40",
+    tintBorder: "border-muted-foreground/30",
     icon: <SmartphoneIcon className="size-3.5" />,
   },
   telegram: {
     label: "Telegram",
-    tintText: "text-sky-600 dark:text-sky-400",
-    tintBg: "bg-sky-500/10",
-    tintBorder: "border-sky-500/30",
+    tintText: "text-muted-foreground",
+    tintBg: "bg-muted/40",
+    tintBorder: "border-muted-foreground/30",
     icon: <SendIcon className="size-3.5" />,
   },
 };
@@ -198,40 +198,48 @@ export function NotificationsCenter() {
     telegram: !!tgStatus?.linked,
   };
 
+  const pushStatusText = !push.isSupported
+    ? "Unsupported"
+    : push.isSubscribed
+      ? "Active"
+      : "Off";
+
+  const telegramStatusText = tgLoading
+    ? "Checking…"
+    : !tgStatus?.configured
+      ? "Not configured"
+      : tgStatus.linked
+        ? "Linked"
+        : "Not linked";
+
   return (
-    <section className="space-y-4">
-      {/* Section header - matches sibling settings sections */}
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <BellIcon className="size-4 text-violet-500" />
-          <h3 className="text-sm font-semibold">Notifications</h3>
-        </div>
-        <span className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground/60 font-mono">
-          Console
-        </span>
+    <section className="space-y-6">
+      {/* Section header */}
+      <div className="flex items-center gap-2">
+        <BellIcon className="size-4 text-muted-foreground" />
+        <h3 className="text-sm font-semibold">Notifications</h3>
       </div>
 
-      {/* Unified card: channel strip + events ledger + install footer */}
-      <div className="rounded-lg border bg-card overflow-hidden">
-        {/* ─── Channel strip ─── */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-border">
-          <ChannelModule
+      {/* ─── Channels platform ─── */}
+      <div className="rounded-xl border bg-card overflow-hidden">
+        <div className="px-5 pt-4 pb-3">
+          <span className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground/60 font-mono">
+            Channels
+          </span>
+        </div>
+        <div className="px-4 pb-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {/* In-app */}
+          <ChannelCard
             channel="ws"
-            subtitle="Browser tab & toast"
             active={availability.ws}
             statusText={availability.ws ? "Always on" : "Disconnected"}
           />
-          <ChannelModule
+
+          {/* Push */}
+          <ChannelCard
             channel="push"
-            subtitle="OS notifications"
             active={availability.push}
-            statusText={
-              !push.isSupported
-                ? "Not supported"
-                : push.isSubscribed
-                  ? "This device"
-                  : "Off"
-            }
+            statusText={pushStatusText}
             action={
               push.isSupported ? (
                 <ModuleAction
@@ -245,28 +253,17 @@ export function NotificationsCenter() {
               ) : null
             }
           />
-          <ChannelModule
+
+          {/* Telegram */}
+          <ChannelCard
             channel="telegram"
-            subtitle={
-              tgStatus?.linked && tgStatus.telegramUsername
-                ? `@${tgStatus.telegramUsername}`
-                : "Chat & alerts"
-            }
             active={availability.telegram}
-            statusText={
-              tgLoading
-                ? "Checking…"
-                : !tgStatus?.configured
-                  ? "Not configured"
-                  : tgStatus.linked
-                    ? "Linked"
-                    : "Not linked"
-            }
+            statusText={telegramStatusText}
             action={
               tgStatus?.configured ? (
                 tgStatus.linked ? (
                   confirmUnlink ? (
-                    <span className="flex items-center gap-3">
+                    <span className="flex items-center gap-2">
                       <ModuleAction
                         onClick={() =>
                           unlink.mutate(undefined, {
@@ -304,13 +301,13 @@ export function NotificationsCenter() {
           />
         </div>
 
-        {/* ─── Telegram active-project picker ─── */}
+        {/* Telegram active-project picker */}
         {tgStatus?.linked && tgStatus.projects.length > 0 && (
-          <div className="border-t border-border bg-muted/20 px-5 py-3 flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3 min-w-0">
-              <SendIcon className="size-3.5 text-sky-500 shrink-0" />
+          <div className="border-t border-border px-5 py-3 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <SendIcon className="size-3.5 text-muted-foreground shrink-0" />
               <p className="text-xs text-muted-foreground truncate">
-                Default project for Telegram messages
+                Default Telegram project
               </p>
             </div>
             <select
@@ -333,138 +330,56 @@ export function NotificationsCenter() {
           </div>
         )}
 
-        {/* ─── Telegram link-code reveal (inline, no animation) ─── */}
+        {/* Telegram link-code reveal */}
         {tgStatus?.configured && !tgStatus.linked && code && (
-          <div className="border-t border-border bg-muted/30 px-5 py-4">
-            <div className="flex items-start gap-4">
-              <div className="size-9 rounded-md border border-sky-500/30 bg-sky-500/10 text-sky-600 dark:text-sky-400 flex items-center justify-center shrink-0">
-                <SendIcon className="size-4" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-xs text-muted-foreground">
-                  Open Telegram, message{" "}
-                  <span className="font-medium text-foreground">
-                    {code.botUsername ? `@${code.botUsername}` : "the bot"}
-                  </span>
-                  , and send the code below.
-                </p>
-                <div className="mt-2 flex items-center gap-2">
-                  <code className="flex-1 rounded-md border bg-background px-3 py-2 text-sm font-mono tracking-wider truncate">
-                    /start {code.code}
-                  </code>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      navigator.clipboard?.writeText(`/start ${code.code}`);
-                      setCopied(true);
-                      setTimeout(() => setCopied(false), 1500);
-                    }}
-                    className="rounded-md border bg-background size-9 flex items-center justify-center text-muted-foreground hover:text-foreground shrink-0"
-                    aria-label="Copy code"
-                  >
-                    {copied ? (
-                      <CheckIcon className="size-4" />
-                    ) : (
-                      <CopyIcon className="size-4" />
-                    )}
-                  </button>
-                </div>
-                <div className="mt-2 flex items-center justify-between text-[11px] text-muted-foreground gap-3">
-                  <span className="truncate">
-                    Expires in {Math.round(code.expiresIn / 60)} min · waiting
-                    for confirmation
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setCode(null)}
-                    className="hover:text-foreground shrink-0 uppercase tracking-wider font-medium"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
+          <div className="border-t border-border px-5 py-4">
+            <p className="text-xs text-muted-foreground">
+              Open Telegram, message{" "}
+              <span className="font-medium text-foreground">
+                {code.botUsername ? `@${code.botUsername}` : "the bot"}
+              </span>
+              , and send:
+            </p>
+            <div className="mt-2 flex items-center gap-2">
+              <code className="flex-1 rounded-md border bg-muted/40 px-3 py-2 text-sm font-mono tracking-wider truncate">
+                /start {code.code}
+              </code>
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard?.writeText(`/start ${code.code}`);
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 1500);
+                }}
+                className="rounded-md border bg-muted/40 size-9 flex items-center justify-center text-muted-foreground hover:text-foreground shrink-0"
+                aria-label="Copy code"
+              >
+                {copied ? (
+                  <CheckIcon className="size-4" />
+                ) : (
+                  <CopyIcon className="size-4" />
+                )}
+              </button>
+            </div>
+            <div className="mt-2 flex items-center justify-between text-[11px] text-muted-foreground gap-3">
+              <span className="truncate">
+                Expires in {Math.round(code.expiresIn / 60)} min
+              </span>
+              <button
+                type="button"
+                onClick={() => setCode(null)}
+                className="hover:text-foreground shrink-0 uppercase tracking-wider font-medium"
+              >
+                Cancel
+              </button>
             </div>
           </div>
         )}
 
-        {/* ─── Events ledger ─── */}
-        <div className="border-t border-border">
-          <div className="flex items-center justify-between px-5 py-2.5">
-            <span className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground font-mono">
-              Events
-            </span>
-            <span className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground/60 font-mono hidden sm:block">
-              Toggle per channel
-            </span>
-          </div>
-
-          {error && !data ? (
-            <p className="px-5 pb-5 text-xs text-destructive">{error}</p>
-          ) : !data ? (
-            <ul className="divide-y divide-border border-t border-border">
-              {Object.keys(KIND_META).map((kind, i) => (
-                <li key={kind} className="px-5 py-4 flex items-center gap-4">
-                  <span className="font-mono text-[10px] text-muted-foreground/40 tabular-nums shrink-0 w-5">
-                    {String(i + 1).padStart(2, "0")}
-                  </span>
-                  <div className="flex-1">
-                    <div className="h-3 w-32 rounded bg-muted" />
-                    <div className="h-2 w-48 mt-2 rounded bg-muted/60" />
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {(["ws", "push", "telegram"] as const).map((c) => (
-                      <div
-                        key={c}
-                        className="size-7 rounded-md border border-border bg-muted/40"
-                      />
-                    ))}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <ul className="divide-y divide-border border-t border-border">
-              {kinds.map((kind, idx) => {
-                const meta = KIND_META[kind];
-                return (
-                  <li
-                    key={kind}
-                    className="px-5 py-4 flex items-center gap-4 hover:bg-muted/20"
-                  >
-                    <span className="font-mono text-[10px] text-muted-foreground/40 tabular-nums shrink-0 w-5">
-                      {String(idx + 1).padStart(2, "0")}
-                    </span>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium leading-tight">
-                        {meta?.title ?? kind}
-                      </p>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        {meta?.description ?? kind}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      {channels.map((ch) => (
-                        <ChannelChip
-                          key={ch}
-                          channel={ch}
-                          checked={isEnabled(kind, ch)}
-                          available={availability[ch]}
-                          disabled={pending.has(ruleKey(kind, ch))}
-                          onChange={(v) => handleToggle(kind, ch, v)}
-                        />
-                      ))}
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </div>
-
-        {/* ─── Install / iOS hint footer ─── */}
+        {/* Install / iOS hint */}
         {(canInstall || (isIOS && !isStandalone)) && (
-          <div className="border-t border-border bg-muted/20 px-5 py-3 flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3 min-w-0">
+          <div className="border-t border-border px-5 py-3 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5 min-w-0">
               <SmartphoneIcon className="size-3.5 text-muted-foreground shrink-0" />
               <p className="text-xs text-muted-foreground truncate">
                 {isIOS && !isStandalone
@@ -486,11 +401,114 @@ export function NotificationsCenter() {
         )}
       </div>
 
-      {/* Footnote + non-fatal errors */}
-      <p className="text-[11px] text-muted-foreground leading-relaxed">
-        Default-on: events fire on every configured channel. Toggle a chip off
-        to silence that event on that channel - even if the channel isn&apos;t
-        set up yet, your preference is remembered for when it is.
+      {/* ─── Per-channel event cards ─── */}
+      {error && !data ? (
+        <p className="text-xs text-destructive">{error}</p>
+      ) : (
+        channels.map((ch) => {
+          const meta = CHANNEL_META[ch];
+          const active = availability[ch];
+          return (
+            <div
+              key={ch}
+              className="rounded-xl border bg-card overflow-hidden"
+            >
+              {/* Channel header */}
+              <div className="flex items-center gap-3 px-5 pt-4 pb-3">
+                <div
+                  className={`size-7 rounded-md border flex items-center justify-center shrink-0 ${
+                    active
+                      ? `${meta.tintBg} ${meta.tintBorder} ${meta.tintText}`
+                      : "border-border bg-muted/40 text-muted-foreground/50"
+                  }`}
+                >
+                  {meta.icon}
+                </div>
+                <div className="flex items-center gap-2 flex-1 min-w-0">
+                  <span className="text-sm font-medium">{meta.label}</span>
+                  <span
+                    className={`size-1.5 rounded-full shrink-0 ${
+                      active ? "bg-emerald-500" : "bg-muted-foreground/30"
+                    }`}
+                    aria-hidden
+                  />
+                </div>
+                {!active && (
+                  <span className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground/50 font-mono shrink-0">
+                    {ch === "ws"
+                      ? "Disconnected"
+                      : ch === "push"
+                        ? pushStatusText
+                        : telegramStatusText}
+                  </span>
+                )}
+              </div>
+
+              {/* Event toggles */}
+              {!data ? (
+                <div className="divide-y divide-border border-t border-border">
+                  {Object.keys(KIND_META).map((kind) => (
+                    <div
+                      key={kind}
+                      className="px-5 py-3 flex items-center gap-4"
+                    >
+                      <div className="flex-1">
+                        <div className="h-3 w-32 rounded bg-muted" />
+                      </div>
+                      <div className="size-8 rounded-full bg-muted/40" />
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="divide-y divide-border border-t border-border">
+                  {kinds.map((kind) => {
+                    const kindMeta = KIND_META[kind];
+                    const checked = isEnabled(kind, ch);
+                    const key = ruleKey(kind, ch);
+                    return (
+                      <div
+                        key={kind}
+                        className="px-5 py-3 flex items-center gap-4 hover:bg-muted/15 transition-colors"
+                      >
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium leading-tight">
+                            {kindMeta?.title ?? kind}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={checked}
+                          aria-label={`${kindMeta?.title ?? kind} via ${meta.label}`}
+                          disabled={pending.has(key)}
+                          onClick={() => handleToggle(kind, ch, !checked)}
+                          className={`relative w-9 h-5 rounded-full transition-colors shrink-0 disabled:opacity-50 ${
+                            checked
+                              ? "bg-emerald-600"
+                              : "bg-muted-foreground/25"
+                          } ${!active && checked ? "opacity-60" : ""}`}
+                        >
+                          <span
+                            className={`absolute top-0.5 left-0.5 size-4 rounded-full bg-white shadow-sm transition-transform ${
+                              checked ? "translate-x-4" : "translate-x-0"
+                            }`}
+                          />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })
+      )}
+
+      {/* Footnote */}
+      <p className="text-[11px] text-muted-foreground/60 leading-relaxed">
+        Events fire on every configured channel by default. Toggle off to
+        silence per-channel — preferences are saved even before a channel is
+        set up.
       </p>
       {error && data && <p className="text-xs text-destructive">{error}</p>}
     </section>
@@ -498,55 +516,46 @@ export function NotificationsCenter() {
 }
 
 // ─────────────────────────────────────────────
-// Channel module - one column of the top strip
+// Channel card - compact status card
 // ─────────────────────────────────────────────
-function ChannelModule({
+function ChannelCard({
   channel,
-  subtitle,
   active,
   statusText,
   action,
 }: {
   channel: Channel;
-  subtitle: string;
   active: boolean;
   statusText: string;
   action?: ReactNode;
 }) {
   const meta = CHANNEL_META[channel];
   return (
-    <div className="p-4 flex flex-col gap-3 min-h-[8.5rem]">
-      <div className="flex items-start justify-between gap-2">
-        <div
-          className={`size-9 rounded-md border flex items-center justify-center shrink-0 ${
-            active
-              ? `${meta.tintBg} ${meta.tintBorder} ${meta.tintText}`
-              : "border-border bg-muted/40 text-muted-foreground"
-          }`}
-        >
-          <span className="[&>svg]:size-4">{meta.icon}</span>
+    <div className="rounded-lg border border-border/60 bg-muted/20 p-3.5 flex items-center gap-3">
+      <div
+        className={`size-8 rounded-md border flex items-center justify-center shrink-0 ${
+          active
+            ? `${meta.tintBg} ${meta.tintBorder} ${meta.tintText}`
+            : "border-border bg-muted/40 text-muted-foreground/50"
+        }`}
+      >
+        <span className="[&>svg]:size-3.5">{meta.icon}</span>
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <p className="text-sm font-medium leading-tight">{meta.label}</p>
+          <span
+            className={`size-1.5 rounded-full shrink-0 ${
+              active ? "bg-emerald-500" : "bg-muted-foreground/30"
+            }`}
+            aria-hidden
+          />
         </div>
-        <span
-          className={`size-1.5 rounded-full mt-3 ${
-            active ? "bg-emerald-500" : "bg-muted-foreground/30"
-          }`}
-          aria-hidden
-        />
-      </div>
-      <div className="min-w-0">
-        <p className="text-sm font-display font-semibold leading-tight tracking-tight">
-          {meta.label}
-        </p>
-        <p className="text-[11px] text-muted-foreground truncate mt-0.5">
-          {subtitle}
-        </p>
-      </div>
-      <div className="flex items-center justify-between gap-2 mt-auto pt-1">
-        <span className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground/80 font-mono truncate">
+        <p className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground/70 font-mono mt-0.5">
           {statusText}
-        </span>
-        {action}
+        </p>
       </div>
+      {action && <div className="shrink-0">{action}</div>}
     </div>
   );
 }
@@ -581,49 +590,3 @@ function ModuleAction({
   );
 }
 
-// ─────────────────────────────────────────────
-// Channel chip - square icon toggle (event row)
-// ─────────────────────────────────────────────
-function ChannelChip({
-  channel,
-  checked,
-  available,
-  disabled,
-  onChange,
-}: {
-  channel: Channel;
-  checked: boolean;
-  available: boolean;
-  disabled: boolean;
-  onChange: (next: boolean) => void;
-}) {
-  const meta = CHANNEL_META[channel];
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-label={`${meta.label} notifications`}
-      disabled={disabled}
-      onClick={() => onChange(!checked)}
-      title={
-        !available
-          ? `${meta.label} channel is not configured - your preference is saved for when it is.`
-          : `${meta.label}: ${checked ? "on" : "off"}`
-      }
-      className={`relative size-7 rounded-md border flex items-center justify-center disabled:opacity-50 ${
-        checked
-          ? `${meta.tintBg} ${meta.tintBorder} ${meta.tintText}`
-          : "border-border bg-background text-muted-foreground/50 hover:text-foreground hover:border-muted-foreground/40"
-      } ${!available && checked ? "opacity-60" : ""}`}
-    >
-      {meta.icon}
-      {!available && checked && (
-        <span
-          className="absolute -top-0.5 -right-0.5 size-1.5 rounded-full bg-amber-500 ring-2 ring-card"
-          aria-hidden
-        />
-      )}
-    </button>
-  );
-}

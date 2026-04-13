@@ -1,6 +1,5 @@
-import { useState, useMemo, useEffect } from "react";
-import { Link } from "react-router";
-import { useAuthStore } from "@/stores/auth";
+import { useState, useMemo, useEffect, useRef, useCallback } from "react";
+import { useNavigate } from "react-router";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -41,7 +40,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
-  ArrowLeftIcon,
   TrashIcon,
   KeyIcon,
   ShieldIcon,
@@ -49,7 +47,6 @@ import {
   PlusIcon,
   EyeIcon,
   EyeOffIcon,
-  LogOutIcon,
   SearchIcon,
   MoreHorizontalIcon,
   UserPlusIcon,
@@ -67,6 +64,7 @@ import {
   PowerIcon,
   PowerOffIcon,
   GaugeIcon,
+  ChevronLeftIcon,
 } from "lucide-react";
 import {
   useAdminInvitations,
@@ -112,7 +110,6 @@ import {
 import type { ModelConfig } from "@/stores/model";
 import { Switch } from "@/components/ui/switch";
 import { Spinner } from "@/components/ui/spinner";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -164,66 +161,112 @@ function formatRelativeDate(dateStr: string) {
   return `${Math.floor(diffDays / 365)}y ago`;
 }
 
+const ADMIN_NAV_ITEMS = [
+  { id: "settings", label: "Settings" },
+  { id: "execution", label: "Execution" },
+  { id: "models", label: "Models" },
+  { id: "usage", label: "Usage" },
+  { id: "users", label: "Users" },
+] as const;
+
 export function AdminPage() {
-  const logout = useAuthStore((s) => s.logout);
+  const navigate = useNavigate();
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [activeSection, setActiveSection] = useState<string>("settings");
+  const isClickScrolling = useRef(false);
+
+  // Scroll-spy: observe which section is currently in view
+  useEffect(() => {
+    const container = scrollRef.current;
+    if (!container) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (isClickScrolling.current) return;
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            setActiveSection(entry.target.id);
+            break;
+          }
+        }
+      },
+      { root: container, rootMargin: "-20% 0px -70% 0px", threshold: 0 },
+    );
+
+    for (const { id } of ADMIN_NAV_ITEMS) {
+      const el = container.querySelector(`#${id}`);
+      if (el) observer.observe(el);
+    }
+
+    return () => observer.disconnect();
+  }, []);
+
+  const scrollTo = useCallback((id: string) => {
+    const el = scrollRef.current?.querySelector(`#${id}`);
+    if (!el) return;
+    isClickScrolling.current = true;
+    setActiveSection(id);
+    el.scrollIntoView({ behavior: "smooth", block: "start" });
+    // Re-enable scroll spy after the smooth scroll finishes
+    setTimeout(() => { isClickScrolling.current = false; }, 800);
+  }, []);
 
   return (
-    <div className="flex flex-col h-screen">
-      <header className="shrink-0 border-b bg-background/95 backdrop-blur-sm supports-[backdrop-filter]:bg-background/60">
-        <div className="flex items-center justify-between h-14 px-6 max-w-3xl mx-auto w-full">
-          <div className="flex items-center gap-3">
-            <Link
-              to="/"
-              className="text-muted-foreground hover:text-foreground transition-colors"
-              aria-label="Back to projects"
+    <div className="flex h-full">
+      {/* Second-level sidebar — navigation only */}
+      <nav className="hidden md:flex flex-col w-56 shrink-0 pt-10 pb-6 pl-8 pr-4 sticky top-0 h-screen">
+        <button
+          onClick={() => navigate(-1)}
+          className="flex items-center gap-1.5 mb-6 text-xl font-bold tracking-tight font-display hover:opacity-70 transition-opacity"
+        >
+          <ChevronLeftIcon className="size-5" />
+          Admin
+        </button>
+        <div className="space-y-0.5">
+          {ADMIN_NAV_ITEMS.map(({ id, label }) => (
+            <button
+              key={id}
+              onClick={() => scrollTo(id)}
+              className={`w-full text-left px-3 py-2 rounded-md text-[15px] transition-colors ${
+                activeSection === id
+                  ? "bg-accent text-accent-foreground font-semibold"
+                  : "text-muted-foreground font-medium hover:text-foreground hover:bg-accent/50"
+              }`}
             >
-              <ArrowLeftIcon className="size-4" />
-            </Link>
-            <h1 className="text-sm font-semibold tracking-tight font-display">
-              Admin
-            </h1>
-          </div>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={logout}
-            aria-label="Sign out"
-          >
-            <LogOutIcon className="size-4" />
-          </Button>
+              {label}
+            </button>
+          ))}
         </div>
-      </header>
+      </nav>
 
-      <main className="flex-1 overflow-y-auto">
-        <div className="max-w-3xl mx-auto px-6 py-6">
-          <Tabs defaultValue="settings">
-            <TabsList className="w-full">
-              <TabsTrigger value="settings">Settings</TabsTrigger>
-              <TabsTrigger value="execution">Execution</TabsTrigger>
-              <TabsTrigger value="models">Models</TabsTrigger>
-              <TabsTrigger value="usage">Usage</TabsTrigger>
-              <TabsTrigger value="users">Users</TabsTrigger>
-            </TabsList>
-            <TabsContent value="settings" className="space-y-8 pt-4">
-              <InstanceSettingsSection />
-              <SecuritySection />
-            </TabsContent>
-            <TabsContent value="execution" className="space-y-8 pt-4">
-              <ServerExecutionSection />
-            </TabsContent>
-            <TabsContent value="models" className="pt-4">
-              <ModelManagementSection />
-            </TabsContent>
-            <TabsContent value="usage" className="pt-4">
-              <UsageSection />
-            </TabsContent>
-            <TabsContent value="users" className="pt-4 space-y-8">
-              <UserManagementSection />
-              <InvitationsSection />
-            </TabsContent>
-          </Tabs>
+      {/* Content — single scrollable page */}
+      <div ref={scrollRef} className="flex-1 overflow-y-auto">
+        <div className="max-w-3xl px-4 md:px-10 pt-6 md:pt-10 pb-8 space-y-12">
+
+          <section id="settings" className="space-y-8 scroll-mt-10">
+            <InstanceSettingsSection />
+            <SecuritySection />
+          </section>
+
+          <section id="execution" className="space-y-8 scroll-mt-10">
+            <ServerExecutionSection />
+          </section>
+
+          <section id="models" className="scroll-mt-10">
+            <ModelManagementSection />
+          </section>
+
+          <section id="usage" className="scroll-mt-10">
+            <UsageSection />
+          </section>
+
+          <section id="users" className="space-y-8 scroll-mt-10">
+            <UserManagementSection />
+            <InvitationsSection />
+          </section>
+
         </div>
-      </main>
+      </div>
     </div>
   );
 }
@@ -304,7 +347,7 @@ function InstanceSettingsSection() {
   return (
     <section className="space-y-4">
       <div className="flex items-center gap-2">
-        <KeyIcon className="size-4 text-emerald-500" />
+        <KeyIcon className="size-4 text-muted-foreground" />
         <h3 className="text-sm font-semibold">Instance Settings</h3>
       </div>
       <div className="rounded-lg border p-4 space-y-4">
@@ -520,7 +563,7 @@ function ServerExecutionSection() {
   return (
     <section className="space-y-4">
       <div className="flex items-center gap-2">
-        <CpuIcon className="size-4 text-cyan-500" />
+        <CpuIcon className="size-4 text-muted-foreground" />
         <h3 className="text-sm font-semibold">Server Execution</h3>
         {serverExecutionEnabled && runnerStatus?.connected ? (
           <Badge variant="default" className="text-[10px]">On</Badge>
@@ -876,7 +919,7 @@ function SecuritySection() {
   return (
     <section className="space-y-4">
       <div className="flex items-center gap-2">
-        <ShieldCheckIcon className="size-4 text-amber-500" />
+        <ShieldCheckIcon className="size-4 text-muted-foreground" />
         <h3 className="text-sm font-semibold">Security</h3>
       </div>
       <div className="rounded-lg border p-4">
@@ -926,7 +969,7 @@ function ModelManagementSection() {
     <section className="space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <CpuIcon className="size-4 text-violet-500" />
+          <CpuIcon className="size-4 text-muted-foreground" />
           <h3 className="text-sm font-semibold">Models</h3>
           {modelCount > 0 && (
             <span className="text-xs text-muted-foreground tabular-nums">
@@ -976,7 +1019,7 @@ function ModelManagementSection() {
                           </Badge>
                         )}
                         {model.multimodal && (
-                          <Badge variant="outline" className="text-[10px] h-4 px-1 border-violet-500/30 text-violet-600 dark:text-violet-400">
+                          <Badge variant="outline" className="text-[10px] h-4 px-1 border-muted-foreground/30 text-muted-foreground">
                             Vision
                           </Badge>
                         )}
@@ -1319,7 +1362,7 @@ function UsageSection() {
     <section className="space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <BarChart3Icon className="size-4 text-emerald-500" />
+          <BarChart3Icon className="size-4 text-muted-foreground" />
           <h3 className="text-sm font-semibold">Usage</h3>
         </div>
         <div className="flex gap-1">
@@ -1452,7 +1495,7 @@ function UserManagementSection() {
     <section className="space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <ShieldIcon className="size-4 text-blue-500" />
+          <ShieldIcon className="size-4 text-muted-foreground" />
           <h3 className="text-sm font-semibold">User Management</h3>
           {totalCount > 0 && (
             <span className="text-xs text-muted-foreground tabular-nums">
@@ -1892,7 +1935,7 @@ function InvitationsSection() {
   return (
     <section className="space-y-4">
       <div className="flex items-center gap-2">
-        <UserPlusIcon className="size-4 text-blue-500" />
+        <UserPlusIcon className="size-4 text-muted-foreground" />
         <h3 className="text-sm font-semibold">Invitations</h3>
         {invitations && invitations.length > 0 && (
           <span className="text-xs text-muted-foreground tabular-nums">

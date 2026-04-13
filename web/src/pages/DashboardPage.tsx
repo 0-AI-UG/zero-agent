@@ -1,7 +1,5 @@
 import { useState, useMemo } from "react";
-import { Link } from "react-router";
 import { useProjects } from "@/api/projects";
-import { useAuthStore } from "@/stores/auth";
 import { useCurrentUser } from "@/api/admin";
 import { useInvitations, useAcceptInvitation, useDeclineInvitation } from "@/api/invitations";
 import { ProjectCard } from "@/components/projects/ProjectCard";
@@ -9,18 +7,15 @@ import { CreateProjectDialog } from "@/components/projects/CreateProjectDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { CircleHelpIcon, LogOutIcon, MailIcon, SearchIcon, ShieldIcon, UserIcon } from "lucide-react";
+import { MailIcon, SearchIcon } from "lucide-react";
 import { EmptyProjectsIllustration } from "@/components/ui/illustrations";
-import { InstallBanner } from "@/components/InstallBanner";
 
 export function DashboardPage() {
   const { data: projects, isLoading, error } = useProjects();
-  const logout = useAuthStore((s) => s.logout);
   const { data: currentUser } = useCurrentUser();
   const { data: invitations } = useInvitations();
   const acceptInvitation = useAcceptInvitation();
   const declineInvitation = useDeclineInvitation();
-  const isAdmin = currentUser?.isAdmin;
   const canCreateProjects = currentUser?.canCreateProjects !== false;
   const [search, setSearch] = useState("");
 
@@ -36,45 +31,17 @@ export function DashboardPage() {
   }, [projects, search]);
 
   return (
-    <div className="flex flex-col h-screen">
-      <header className="shrink-0 border-b bg-background/95 backdrop-blur-sm supports-[backdrop-filter]:bg-background/60">
-        <div className="flex items-center justify-between h-14 px-6 max-w-5xl mx-auto w-full">
-          <h1 className="text-sm font-semibold tracking-tight font-display">Projects</h1>
-          <div className="flex items-center gap-2">
+    <div className="flex flex-col h-full">
+      <div className="flex-1 overflow-y-auto">
+        <div className="max-w-4xl mx-auto px-4 md:px-6 pt-6 md:pt-16 pb-8 space-y-8">
+          {/* Page header */}
+          <div className="flex items-center justify-between">
+            <h1 className="text-xl font-bold tracking-tight font-display">
+              Projects
+            </h1>
             {canCreateProjects && <CreateProjectDialog />}
-            <Button variant="ghost" size="icon-sm" asChild aria-label="Help">
-              <Link to="/help">
-                <CircleHelpIcon className="size-4" />
-              </Link>
-            </Button>
-            {isAdmin && (
-              <Button variant="ghost" size="icon-sm" asChild aria-label="Admin settings">
-                <Link to="/admin">
-                  <ShieldIcon className="size-4" />
-                </Link>
-              </Button>
-            )}
-            <Button variant="ghost" size="icon-sm" asChild aria-label="Account settings">
-              <Link to="/account">
-                <UserIcon className="size-4" />
-              </Link>
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={logout}
-              aria-label="Sign out"
-            >
-              <LogOutIcon className="size-4" />
-            </Button>
           </div>
-        </div>
-      </header>
 
-      <InstallBanner />
-
-      <main className="flex-1 overflow-y-auto">
-        <div className="max-w-5xl mx-auto px-6 py-8 space-y-6">
           {/* Pending Invitations */}
           {invitations && invitations.length > 0 && (
             <div className="space-y-2">
@@ -84,9 +51,11 @@ export function DashboardPage() {
                   className="rounded-lg border border-primary/20 bg-primary/5 p-4 flex items-center justify-between gap-4"
                 >
                   <div className="flex items-center gap-3 min-w-0">
-                    <MailIcon className="size-4 text-primary shrink-0" />
+                    <MailIcon className="size-4 text-muted-foreground shrink-0" />
                     <p className="text-sm truncate">
-                      <span className="text-muted-foreground">{inv.inviterUsername}</span>{" "}
+                      <span className="text-muted-foreground">
+                        {inv.inviterUsername}
+                      </span>{" "}
                       invited you to{" "}
                       <span className="font-medium">{inv.projectName}</span>
                     </p>
@@ -96,7 +65,10 @@ export function DashboardPage() {
                       variant="default"
                       size="sm"
                       onClick={() => acceptInvitation.mutate(inv.id)}
-                      disabled={acceptInvitation.isPending || declineInvitation.isPending}
+                      disabled={
+                        acceptInvitation.isPending ||
+                        declineInvitation.isPending
+                      }
                     >
                       Accept
                     </Button>
@@ -104,7 +76,10 @@ export function DashboardPage() {
                       variant="ghost"
                       size="sm"
                       onClick={() => declineInvitation.mutate(inv.id)}
-                      disabled={acceptInvitation.isPending || declineInvitation.isPending}
+                      disabled={
+                        acceptInvitation.isPending ||
+                        declineInvitation.isPending
+                      }
                     >
                       Decline
                     </Button>
@@ -114,23 +89,23 @@ export function DashboardPage() {
             </div>
           )}
 
-          {/* Search */}
+          {/* Search bar - full width, bold */}
           {projects && projects.length > 0 && (
-            <div className="relative max-w-xs">
-              <SearchIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+            <div className="relative">
+              <SearchIcon className="absolute left-4 top-1/2 -translate-y-1/2 size-5 text-muted-foreground" />
               <Input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search projects..."
-                className="pl-9 h-9"
+                className="!h-12 pl-12 text-base border-border"
               />
             </div>
           )}
 
           {isLoading && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {Array.from({ length: 3 }).map((_, i) => (
-                <Skeleton key={i} className="h-[120px] rounded-xl" />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <Skeleton key={i} className="h-[140px] rounded-xl" />
               ))}
             </div>
           )}
@@ -155,20 +130,23 @@ export function DashboardPage() {
           )}
 
           {filtered.length > 0 && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {filtered.map((project) => (
                 <ProjectCard key={project.id} project={project} />
               ))}
             </div>
           )}
 
-          {projects && projects.length > 0 && filtered.length === 0 && search && (
-            <p className="text-sm text-muted-foreground text-center py-8">
-              No projects matching "{search}"
-            </p>
-          )}
+          {projects &&
+            projects.length > 0 &&
+            filtered.length === 0 &&
+            search && (
+              <p className="text-sm text-muted-foreground text-center py-8">
+                No projects matching &quot;{search}&quot;
+              </p>
+            )}
         </div>
-      </main>
+      </div>
     </div>
   );
 }

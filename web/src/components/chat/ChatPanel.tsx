@@ -217,9 +217,9 @@ export function ChatPanel({ projectId, chatId, initialMessages, initialIsStreami
   );
 
   return (
-    <div className="flex flex-col flex-1 min-h-0">
+    <div className="relative flex flex-col flex-1 min-h-0">
       <Conversation>
-        <ConversationContent className="px-6 md:px-10">
+        <ConversationContent className="px-6 md:px-10 pb-48 max-w-4xl mx-auto w-full">
           <ChatMessageList
             messages={messages}
             projectId={projectId}
@@ -239,22 +239,20 @@ export function ChatPanel({ projectId, chatId, initialMessages, initialIsStreami
         <ConversationScrollButton />
       </Conversation>
 
-
-
-      {isAutonomous ? (
-        <div className="px-6 py-4 md:px-10">
-          <p className="text-xs text-muted-foreground text-center">
-            This is an automation log. Messages cannot be sent here.
-          </p>
-        </div>
-      ) : source ? (
-        <div className="px-6 py-4 md:px-10">
-          <p className="text-xs text-muted-foreground text-center">
-            This chat is connected to {sourceLabel(source)}. Reply from the {sourceLabel(source)} app.
-          </p>
-        </div>
-      ) : (
-        <>
+      <div className="absolute bottom-0 left-0 right-0 z-10 bg-background">
+        {isAutonomous ? (
+          <div className="px-6 py-4 md:px-10 max-w-4xl mx-auto w-full">
+            <p className="text-xs text-muted-foreground text-center">
+              This is an automation log. Messages cannot be sent here.
+            </p>
+          </div>
+        ) : source ? (
+          <div className="px-6 py-4 md:px-10 max-w-4xl mx-auto w-full">
+            <p className="text-xs text-muted-foreground text-center">
+              This chat is connected to {sourceLabel(source)}. Reply from the {sourceLabel(source)} app.
+            </p>
+          </div>
+        ) : (
           <ChatInputArea
             projectId={projectId}
             chatId={chatId}
@@ -268,8 +266,8 @@ export function ChatPanel({ projectId, chatId, initialMessages, initialIsStreami
             typingUsers={typingUsers}
             presenceDots={<PresenceDots chatId={chatId} />}
           />
-        </>
-      )}
+        )}
+      </div>
     </div>
   );
 }

@@ -7,6 +7,7 @@ import { ProjectLayout } from "@/components/layouts/ProjectLayout";
 import { LoginPage } from "@/pages/LoginPage";
 import { InvitePage } from "@/pages/InvitePage";
 import { DashboardPage } from "@/pages/DashboardPage";
+import { DashboardLayout } from "@/components/layouts/DashboardLayout";
 import { ProjectPage } from "@/pages/ProjectPage";
 import { FilesPage } from "@/pages/FilesPage";
 import { TasksPage } from "@/pages/TasksPage";
@@ -45,11 +46,13 @@ export function App() {
 
           {/* Protected routes */}
           <Route element={<ProtectedRoute />}>
-            <Route path="/" element={<DashboardPage />} />
+            <Route element={<DashboardLayout />}>
+              <Route path="/" element={<DashboardPage />} />
+              <Route path="/account" element={<AccountPage />} />
+              <Route path="/help" element={<HelpPage />} />
+              <Route path="/admin" element={<AdminPage />} />
+            </Route>
             <Route path="/pending/:id" element={<PendingResponsePage />} />
-            <Route path="/account" element={<AccountPage />} />
-            <Route path="/help" element={<HelpPage />} />
-            <Route path="/admin" element={<AdminPage />} />
             <Route path="/projects/:projectId" element={<ProjectLayout />}>
               <Route index element={<ProjectPage />} />
               <Route path="c/:chatId" element={<ProjectPage />} />

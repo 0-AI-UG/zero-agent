@@ -66,29 +66,29 @@ export function FolderBreadcrumbs({ currentPath, onNavigate, onDropItem }: Folde
   const segments = currentPath.split("/").filter(Boolean);
 
   return (
-    <div className="flex items-center gap-0.5 text-sm overflow-x-auto">
+    <div className="flex items-center gap-0.5 text-xs overflow-x-auto">
       <BreadcrumbDropTarget
         path="/"
         onClick={() => onNavigate("/")}
         onDropItem={onDropItem}
-        className="shrink-0 rounded px-1.5 py-0.5 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+        className="shrink-0 rounded px-1.5 py-0.5 text-muted-foreground/60 hover:text-foreground hover:bg-muted transition-colors"
       >
-        <HomeIcon className="h-3.5 w-3.5" />
+        <HomeIcon className="h-3 w-3" />
       </BreadcrumbDropTarget>
       {segments.map((segment, i) => {
         const path = "/" + segments.slice(0, i + 1).join("/") + "/";
         const isLast = i === segments.length - 1;
         return (
           <div key={path} className="flex items-center gap-0.5 shrink-0">
-            <ChevronRightIcon className="h-3 w-3 text-muted-foreground" />
+            <ChevronRightIcon className="h-2.5 w-2.5 text-muted-foreground/40" />
             <BreadcrumbDropTarget
               path={path}
               onClick={() => onNavigate(path)}
               onDropItem={onDropItem}
               className={
                 isLast
-                  ? "rounded px-1.5 py-0.5 text-xs font-medium"
-                  : "rounded px-1.5 py-0.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                  ? "rounded px-1.5 py-0.5 text-xs text-muted-foreground font-medium hover:text-foreground transition-colors"
+                  : "rounded px-1.5 py-0.5 text-xs text-muted-foreground/60 hover:text-foreground hover:bg-muted transition-colors"
               }
             >
               {segment}

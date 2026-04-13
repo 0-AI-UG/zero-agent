@@ -150,7 +150,7 @@ export function ChatInputArea({
   }, [input, imageAttachment, isStreaming, sendMessage]);
 
   return (
-    <div className="px-3 py-4 sm:px-6 md:px-10 space-y-2">
+    <div className="px-3 pb-2 sm:pb-4 sm:px-6 md:px-10 space-y-2 max-w-4xl mx-auto w-full">
       <TodoProgress messages={messages} />
       {imageAttachment && (
         <div className="flex items-center gap-2 pb-2">
@@ -196,8 +196,6 @@ export function ChatInputArea({
               </span>
             )}
             {presenceDots}
-            <PlanModeToggle chatId={chatId} />
-            <ToolSelector />
             <FilePickerButton
               projectId={projectId}
               onSelect={(file) => {
@@ -205,68 +203,74 @@ export function ChatInputArea({
                 richTextareaRef.current?.focus();
               }}
             />
-            <ModelSection />
-            <LanguageToggle />
-            {isMultimodal && (
-              <ImageUploadButton
-                attachment={imageAttachment}
-                onAttach={setImageAttachment}
-                onRemove={() => setImageAttachment(null)}
-              />
-            )}
-            {containerStatus?.status === "running" && (
-              <BrowserPreview projectId={projectId} chatId={chatId} />
-            )}
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <div className="flex items-center gap-1.5 px-2 py-1 text-xs text-muted-foreground">
-                  <span
-                    className={`size-2 rounded-full ${
-                      containerStatus?.status === "running"
-                        ? "bg-emerald-500"
+            <span className="hidden md:contents">
+              <PlanModeToggle chatId={chatId} />
+              <ToolSelector />
+              <ModelSection />
+              <LanguageToggle />
+              {isMultimodal && (
+                <ImageUploadButton
+                  attachment={imageAttachment}
+                  onAttach={setImageAttachment}
+                  onRemove={() => setImageAttachment(null)}
+                />
+              )}
+              {containerStatus?.status === "running" && (
+                <BrowserPreview projectId={projectId} chatId={chatId} />
+              )}
+            </span>
+            <span className="hidden md:contents">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="flex items-center gap-1.5 px-2 py-1 text-xs text-muted-foreground">
+                    <span
+                      className={`size-2 rounded-full ${
+                        containerStatus?.status === "running"
+                          ? "bg-emerald-500"
+                          : capabilities?.serverDocker
+                            ? "bg-emerald-500/50"
+                            : "bg-muted-foreground/40"
+                      }`}
+                    />
+                    <span>
+                      {containerStatus?.status === "running"
+                        ? "Ready to run"
                         : capabilities?.serverDocker
-                          ? "bg-emerald-500/50"
-                          : "bg-muted-foreground/40"
-                    }`}
-                  />
-                  <span>
-                    {containerStatus?.status === "running"
-                      ? "Ready to run"
-                      : capabilities?.serverDocker
-                        ? "First run may be slow"
-                        : "Can't run code"}
-                  </span>
-                </div>
-              </TooltipTrigger>
-              <TooltipContent side="top">
-                {containerStatus?.status === "running"
-                  ? "Your environment is warm - actions will run instantly"
-                  : capabilities?.serverDocker
-                    ? "Your environment will spin up on the first action, then stay fast"
-                    : "Code execution isn't available in this environment"}
-              </TooltipContent>
-            </Tooltip>
-            {(totalUsage.totalTokens ?? 0) > 0 && (
-              <Context
-                usedTokens={totalContextTokens || (totalUsage.totalTokens ?? 0)}
-                maxTokens={getSelectedModel().contextWindow}
-                usage={totalUsage}
-                modelId={getSelectedModel().id}
-              >
-                <ContextTrigger />
-                <ContextContent>
-                  <ContextContentHeader />
-                  <ContextContentBody className="space-y-1.5">
-                    <ContextUsageSectionLabel>Billed tokens</ContextUsageSectionLabel>
-                    <ContextInputUsage />
-                    <ContextOutputUsage />
-                    <ContextReasoningUsage />
-                    <ContextCacheUsage />
-                  </ContextContentBody>
-                  <ContextContentFooter />
-                </ContextContent>
-              </Context>
-            )}
+                          ? "First run may be slow"
+                          : "Can't run code"}
+                    </span>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent side="top">
+                  {containerStatus?.status === "running"
+                    ? "Your environment is warm - actions will run instantly"
+                    : capabilities?.serverDocker
+                      ? "Your environment will spin up on the first action, then stay fast"
+                      : "Code execution isn't available in this environment"}
+                </TooltipContent>
+              </Tooltip>
+              {(totalUsage.totalTokens ?? 0) > 0 && (
+                <Context
+                  usedTokens={totalContextTokens || (totalUsage.totalTokens ?? 0)}
+                  maxTokens={getSelectedModel().contextWindow}
+                  usage={totalUsage}
+                  modelId={getSelectedModel().id}
+                >
+                  <ContextTrigger />
+                  <ContextContent>
+                    <ContextContentHeader />
+                    <ContextContentBody className="space-y-1.5">
+                      <ContextUsageSectionLabel>Billed tokens</ContextUsageSectionLabel>
+                      <ContextInputUsage />
+                      <ContextOutputUsage />
+                      <ContextReasoningUsage />
+                      <ContextCacheUsage />
+                    </ContextContentBody>
+                    <ContextContentFooter />
+                  </ContextContent>
+                </Context>
+              )}
+            </span>
           </div>
           <Tooltip>
             <TooltipTrigger asChild>

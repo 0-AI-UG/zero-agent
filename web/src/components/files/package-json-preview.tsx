@@ -87,7 +87,7 @@ function PackageJsonStructured({
           <div className="space-y-1">
             {Object.entries(parsed.scripts).map(([name, command]) => (
               <div key={name} className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-mono">
-                <PlayIcon className="h-3.5 w-3.5 text-green-500 shrink-0" />
+                <PlayIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                 <span className="font-medium">{name}</span>
                 <span className="text-muted-foreground truncate">{command}</span>
               </div>

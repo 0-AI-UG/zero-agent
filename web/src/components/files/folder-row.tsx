@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { FolderIcon, ChevronRightIcon, Trash2Icon, GripVerticalIcon } from "lucide-react";
+import { FolderIcon, Trash2Icon, GripVerticalIcon } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -68,7 +68,7 @@ export function FolderRow({ folder, onClick, onDelete, isDeleting, onDropItem, r
         onDragLeave={readOnly ? undefined : handleDragLeave}
         onDrop={readOnly ? undefined : handleDrop}
         className={cn(
-          "group flex items-center gap-3 w-full px-4 py-3 border-b last:border-b-0 transition-colors",
+          "group flex items-center gap-3 w-full px-4 py-2.5 transition-colors rounded-md",
           readOnly ? "" : "cursor-grab active:cursor-grabbing",
           dragOver
             ? "bg-primary/10 border-primary ring-1 ring-primary/30"
@@ -77,20 +77,16 @@ export function FolderRow({ folder, onClick, onDelete, isDeleting, onDropItem, r
             : "hover:bg-muted/50"
         )}
       >
-        <GripVerticalIcon className={cn(
-          "h-3.5 w-3.5 text-muted-foreground/40 shrink-0 transition-opacity",
-          readOnly ? "invisible" : "opacity-0 group-hover:opacity-100"
-        )} />
         <button
           onClick={onClick}
           className="flex items-center gap-3 flex-1 min-w-0 text-left"
         >
-          <FolderIcon className={cn("h-5 w-5 shrink-0", dragOver ? "text-primary" : readOnly ? "text-indigo-500" : "text-muted-foreground")} />
-          <span className={cn("flex-1 text-sm font-medium truncate", readOnly && "text-indigo-500")}>{folder.name}</span>
+          <FolderIcon className={cn("h-5 w-5 shrink-0", dragOver ? "text-primary" : "text-muted-foreground")} />
+          <span className={cn("flex-1 text-sm font-medium truncate", readOnly && "text-muted-foreground")}>{folder.name}</span>
           {readOnly && (
             <span className="text-[10px] text-muted-foreground border rounded px-1.5 py-0.5 shrink-0">managed</span>
           )}
-          <ChevronRightIcon className="h-4 w-4 text-muted-foreground shrink-0" />
+
         </button>
         <button
           onClick={(e) => {
@@ -104,6 +100,10 @@ export function FolderRow({ folder, onClick, onDelete, isDeleting, onDropItem, r
         >
           <Trash2Icon className="h-3.5 w-3.5" />
         </button>
+        <GripVerticalIcon className={cn(
+          "h-3.5 w-3.5 text-muted-foreground/40 shrink-0 transition-opacity",
+          readOnly ? "invisible" : "opacity-0 group-hover:opacity-100"
+        )} />
       </div>
 
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>

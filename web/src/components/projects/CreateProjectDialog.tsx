@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/dialog";
 import { Plus } from "lucide-react";
 
-export function CreateProjectDialog() {
+export function CreateProjectDialog({ trigger }: { trigger?: React.ReactNode } = {}) {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
@@ -44,10 +44,12 @@ export function CreateProjectDialog() {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button size="sm">
-          <Plus className="size-4 mr-1" />
-          New Project
-        </Button>
+        {trigger ?? (
+          <Button size="sm">
+            <Plus className="size-4 mr-1" />
+            New Project
+          </Button>
+        )}
       </DialogTrigger>
       <DialogContent>
         <form onSubmit={handleSubmit}>

@@ -173,7 +173,7 @@ export const RichTextarea = forwardRef<RichTextareaHandle, RichTextareaProps>(
           aria-placeholder={placeholder}
           data-slot="input-group-control"
           className={cn(
-            "field-sizing-content max-h-48 min-h-16 w-full flex-1 resize-none rounded-none border-0 bg-transparent py-3 px-3 text-sm shadow-none outline-none focus-visible:ring-0 dark:bg-transparent overflow-y-auto whitespace-pre-wrap break-words",
+            "field-sizing-content max-h-48 min-h-10 md:min-h-16 w-full flex-1 resize-none rounded-none border-0 bg-transparent py-2.5 md:py-3 px-3 text-base md:text-sm shadow-none outline-none focus-visible:ring-0 dark:bg-transparent overflow-y-auto whitespace-pre-wrap break-words",
             className,
           )}
           onInput={handleInput}

@@ -16,9 +16,10 @@ function defaultFolderForFile(_file: File, currentPath: string): string {
 interface UploadButtonProps {
   projectId: string;
   currentPath: string;
+  compact?: boolean;
 }
 
-export function UploadButton({ projectId, currentPath }: UploadButtonProps) {
+export function UploadButton({ projectId, currentPath, compact }: UploadButtonProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
 
@@ -88,12 +89,14 @@ export function UploadButton({ projectId, currentPath }: UploadButtonProps) {
     <>
       <Button
         variant="outline"
-        size="sm"
+        size={compact ? "icon" : "sm"}
+        className={compact ? "h-8 w-8" : undefined}
         onClick={() => fileInputRef.current?.click()}
         disabled={uploadMutation.isPending}
+        title="Upload"
       >
-        <UploadIcon className="h-4 w-4 mr-1" />
-        {uploadMutation.isPending ? "Uploading..." : "Upload"}
+        <UploadIcon className={compact ? "h-4 w-4" : "h-4 w-4 mr-1"} />
+        {!compact && (uploadMutation.isPending ? "Uploading..." : "Upload")}
       </Button>
       <input
         ref={fileInputRef}

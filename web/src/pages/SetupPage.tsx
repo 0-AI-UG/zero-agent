@@ -56,12 +56,38 @@ export function SetupPage() {
       setError("All fields are required.");
       return;
     }
-    if (password !== confirmPassword) {
-      setError("Passwords do not match.");
+    // Username validation (matches server-side usernameSchema)
+    if (username.length < 3) {
+      setError("Username must be at least 3 characters.");
       return;
     }
-    if (password.length < 6) {
-      setError("Password must be at least 6 characters.");
+    if (username.length > 32) {
+      setError("Username must be at most 32 characters.");
+      return;
+    }
+    if (!/^[a-zA-Z0-9_-]+$/.test(username)) {
+      setError("Username may only contain letters, numbers, underscores and hyphens.");
+      return;
+    }
+    // Password validation (matches server-side passwordSchema)
+    if (password.length < 8) {
+      setError("Password must be at least 8 characters.");
+      return;
+    }
+    if (!/[a-z]/.test(password)) {
+      setError("Password must contain a lowercase letter.");
+      return;
+    }
+    if (!/[A-Z]/.test(password)) {
+      setError("Password must contain an uppercase letter.");
+      return;
+    }
+    if (!/[0-9]/.test(password)) {
+      setError("Password must contain a number.");
+      return;
+    }
+    if (password !== confirmPassword) {
+      setError("Passwords do not match.");
       return;
     }
     setStep(2);

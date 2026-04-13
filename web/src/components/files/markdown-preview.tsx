@@ -24,13 +24,21 @@ import {
   type MDXEditorMethods,
 } from "@mdxeditor/editor";
 import "@mdxeditor/editor/style.css";
-import { CopyIcon, SaveIcon } from "lucide-react";
+import { CopyIcon, SaveIcon, MoreVerticalIcon, TypeIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
 import { useTheme } from "next-themes";
 import { useUpdateFileContent } from "@/hooks/use-update-file-content";
 import { usePreviewActions } from "./preview-actions-context";
 import type { FileItem } from "@/hooks/use-files";
+import { cn } from "@/lib/utils";
 
 interface MarkdownPreviewProps {
   file: FileItem;
@@ -42,6 +50,7 @@ export function MarkdownPreview({ file, content, projectId }: MarkdownPreviewPro
   const editorRef = useRef<MDXEditorMethods>(null);
   const { resolvedTheme } = useTheme();
   const [editContent, setEditContent] = useState(content);
+  const [showToolbar, setShowToolbar] = useState(false);
   const updateFile = useUpdateFileContent(projectId);
   const isDirty = editContent !== content;
   const { setActions } = usePreviewActions();
@@ -56,36 +65,51 @@ export function MarkdownPreview({ file, content, projectId }: MarkdownPreviewPro
     );
   };
 
+  const handleCopy = () => {
+    navigator.clipboard.writeText(editContent).then(() => {
+      toast.success("Copied to clipboard");
+    });
+  };
+
   useEffect(() => {
     setActions(
-      <>
-        <Button
-          variant="default"
-          size="sm"
-          onClick={handleSave}
-          disabled={updateFile.isPending || !isDirty}
-        >
-          <SaveIcon className="h-4 w-4 mr-1" />
-          {updateFile.isPending ? "Saving..." : "Save"}
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          onClick={() => {
-            navigator.clipboard.writeText(editContent).then(() => {
-              toast.success("Copied to clipboard");
-            });
-          }}
-        >
-          <CopyIcon className="h-4 w-4" />
-        </Button>
-      </>
+      <div className="flex items-center gap-1">
+        {isDirty && (
+          <Button
+            variant="default"
+            size="sm"
+            onClick={handleSave}
+            disabled={updateFile.isPending}
+          >
+            <SaveIcon className="h-3.5 w-3.5 mr-1" />
+            {updateFile.isPending ? "Saving..." : "Save"}
+          </Button>
+        )}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon-sm">
+              <MoreVerticalIcon className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={() => setShowToolbar((v) => !v)}>
+              <TypeIcon className="h-3.5 w-3.5 mr-2" />
+              {showToolbar ? "Hide formatting" : "Show formatting"}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={handleCopy}>
+              <CopyIcon className="h-3.5 w-3.5 mr-2" />
+              Copy content
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
     );
     return () => setActions(null);
-  }, [isDirty, updateFile.isPending, editContent]);
+  }, [isDirty, updateFile.isPending, editContent, showToolbar]);
 
   return (
-    <div className="mdxeditor-wrapper p-4">
+    <div className={cn("mdxeditor-wrapper p-4", !showToolbar && "mdxeditor-toolbar-hidden")}>
       <MDXEditor
         key={file.id}
         ref={editorRef}

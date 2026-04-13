@@ -119,7 +119,7 @@ export function ModelSection() {
                         </span>
                       )}
                       {model.multimodal && (
-                        <span className="rounded-full bg-violet-500/10 px-1.5 py-0.5 text-[10px] font-medium text-violet-600 dark:text-violet-400">
+                        <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
                           Vision
                         </span>
                       )}

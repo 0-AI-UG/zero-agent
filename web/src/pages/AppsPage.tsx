@@ -251,9 +251,9 @@ export function AppsPage() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="max-w-2xl mx-auto px-5 py-6 space-y-5">
+      <div className="max-w-2xl mx-auto px-4 md:px-5 py-6 space-y-5">
         <div>
-          <h2 className="text-base font-semibold tracking-tight font-display">
+          <h2 className="text-xl font-bold tracking-tight font-display">
             Apps
           </h2>
           <p className="text-xs text-muted-foreground mt-0.5">

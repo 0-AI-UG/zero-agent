@@ -266,6 +266,48 @@ export function FilesPage() {
     }
   };
 
+  // Resizable panel
+  const MIN_PANEL_WIDTH = 300;
+  const MAX_PANEL_WIDTH = 600;
+  const DEFAULT_PANEL_WIDTH = 440;
+  const COMPACT_THRESHOLD = 380;
+  const [panelWidth, setPanelWidth] = useState(DEFAULT_PANEL_WIDTH);
+  const isCompact = panelWidth < COMPACT_THRESHOLD;
+  const resizingRef = useRef(false);
+  const startXRef = useRef(0);
+  const startWidthRef = useRef(0);
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!resizingRef.current) return;
+      const delta = e.clientX - startXRef.current;
+      const newWidth = Math.min(MAX_PANEL_WIDTH, Math.max(MIN_PANEL_WIDTH, startWidthRef.current + delta));
+      setPanelWidth(newWidth);
+    };
+    const handleMouseUp = () => {
+      if (resizingRef.current) {
+        resizingRef.current = false;
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+      }
+    };
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, []);
+
+  const handleResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    resizingRef.current = true;
+    startXRef.current = e.clientX;
+    startWidthRef.current = panelWidth;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  }, [panelWidth]);
+
   // Drag overlay state
   const [isDragOver, setIsDragOver] = useState(false);
   const dragCounter = useRef(0);
@@ -352,13 +394,14 @@ export function FilesPage() {
       <div
         className={cn(
           "flex flex-col",
-          showSplit ? "w-[440px] shrink-0 border-r" : "flex-1"
+          showSplit ? "shrink-0 border-r" : "flex-1"
         )}
+        style={showSplit ? { width: panelWidth } : undefined}
       >
         {/* Header */}
-        <div className="shrink-0 px-5 pt-5 pb-3 space-y-3">
+        <div className="shrink-0 px-4 pt-4 pb-2 space-y-2.5">
           <div className="flex items-center justify-between gap-2">
-            <h2 className="text-base font-semibold tracking-tight font-display">Files</h2>
+            <h2 className="text-xl font-bold tracking-tight font-display">Files</h2>
             <div className="flex items-center gap-1.5">
               <Button
                 variant="ghost"
@@ -371,29 +414,27 @@ export function FilesPage() {
               </Button>
               <Button
                 variant="outline"
-                size="sm"
+                size={isCompact ? "icon" : "sm"}
+                className={isCompact ? "h-8 w-8" : undefined}
                 onClick={() => setFileDialogOpen(true)}
+                title="New file"
               >
-                <FilePlusIcon className="h-4 w-4 mr-1" />
-                File
+                <FilePlusIcon className={cn("h-4 w-4", !isCompact && "mr-1")} />
+                {!isCompact && "File"}
               </Button>
               <Button
                 variant="outline"
-                size="sm"
+                size={isCompact ? "icon" : "sm"}
+                className={isCompact ? "h-8 w-8" : undefined}
                 onClick={() => setFolderDialogOpen(true)}
+                title="New folder"
               >
-                <FolderPlusIcon className="h-4 w-4 mr-1" />
-                Folder
+                <FolderPlusIcon className={cn("h-4 w-4", !isCompact && "mr-1")} />
+                {!isCompact && "Folder"}
               </Button>
-              <UploadButton projectId={projectId!} currentPath={currentPath} />
+              <UploadButton projectId={projectId!} currentPath={currentPath} compact={isCompact} />
             </div>
           </div>
-          {storageInfo && (
-            <p className="text-[11px] text-muted-foreground tabular-nums">
-              {storageInfo.count} file{storageInfo.count !== 1 ? "s" : ""} &middot; {formatBytes(storageInfo.totalSize)}
-            </p>
-          )}
-          <FolderBreadcrumbs currentPath={currentPath} onNavigate={navigateTo} onDropItem={handleDropItem} />
           {/* Search bar */}
           <div className="relative">
             <SearchIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -464,10 +505,26 @@ export function FilesPage() {
             onBulkDelete={() => setBulkConfirmOpen(true)}
             isBulkDeleting={isBulkDeleting}
             onRangeSelect={rangeSelect}
+            storageSummary={storageInfo ? `${storageInfo.count} file${storageInfo.count !== 1 ? "s" : ""} · ${formatBytes(storageInfo.totalSize)}` : undefined}
           />
           )}
         </div>
+
+        {/* Breadcrumb path at bottom – only shown inside subfolders */}
+        {currentPath !== "/" && (
+          <div className="shrink-0 border-t border-border/40 px-4 py-2 text-muted-foreground/70">
+            <FolderBreadcrumbs currentPath={currentPath} onNavigate={navigateTo} onDropItem={handleDropItem} />
+          </div>
+        )}
       </div>
+
+      {/* Resize handle */}
+      {showSplit && (
+        <div
+          onMouseDown={handleResizeStart}
+          className="w-1 shrink-0 cursor-col-resize hover:bg-primary/20 active:bg-primary/30 transition-colors"
+        />
+      )}
 
       {/* Preview panel (desktop) */}
       {!isMobile && selectedFile && (

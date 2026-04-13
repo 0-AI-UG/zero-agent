@@ -1,52 +1,238 @@
-import { useState, useEffect } from "react";
-import { Link } from "react-router";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { useNavigate } from "react-router";
 import { useCurrentUser } from "@/api/admin";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { ArrowLeftIcon, ShieldCheckIcon, CheckIcon, CopyIcon, ClipboardCheckIcon, FingerprintIcon, Trash2Icon } from "lucide-react";
+import { ShieldCheckIcon, CheckIcon, CopyIcon, ClipboardCheckIcon, FingerprintIcon, Trash2Icon, MoonIcon, SunIcon, MonitorIcon, PaletteIcon, UploadIcon, XIcon, ChevronLeftIcon } from "lucide-react";
 import { totpSetup, totpConfirm, totpDisable, totpStatus } from "@/api/totp";
 import { passkeyRegisterOptions, passkeyRegisterVerify, passkeyList, passkeyDelete } from "@/api/passkeys";
 import { startRegistration } from "@simplewebauthn/browser";
 import { NotificationsCenter } from "@/components/settings/NotificationsCenter";
+import { useColorModeStore, type ColorMode } from "@/stores/color-mode";
+
+const NAV_ITEMS = [
+  { id: "general", label: "General" },
+  { id: "appearance", label: "Appearance" },
+  { id: "security", label: "Security" },
+  { id: "notifications", label: "Notifications" },
+] as const;
 
 export function AccountPage() {
   const { data: user } = useCurrentUser();
+  const navigate = useNavigate();
+  const [activeSection, setActiveSection] = useState<string>("general");
+  const contentRef = useRef<HTMLDivElement>(null);
+
+  const handleNav = useCallback((id: string) => {
+    const el = document.getElementById(`section-${id}`);
+    if (el && contentRef.current) {
+      const top = el.getBoundingClientRect().top - contentRef.current.getBoundingClientRect().top + contentRef.current.scrollTop - 24;
+      contentRef.current.scrollTo({ top, behavior: "smooth" });
+    }
+  }, []);
+
+  useEffect(() => {
+    const container = contentRef.current;
+    if (!container) return;
+
+    const handleScroll = () => {
+      const containerRect = container.getBoundingClientRect();
+      let current = NAV_ITEMS[0].id;
+
+      for (const { id } of NAV_ITEMS) {
+        const el = document.getElementById(`section-${id}`);
+        if (el) {
+          const top = el.getBoundingClientRect().top - containerRect.top;
+          if (top <= 80) {
+            current = id;
+          }
+        }
+      }
+      setActiveSection(current);
+    };
+
+    container.addEventListener("scroll", handleScroll, { passive: true });
+    return () => container.removeEventListener("scroll", handleScroll);
+  }, []);
+
   if (!user) return null;
 
   return (
-    <div className="flex flex-col h-screen">
-      <header className="shrink-0 border-b bg-background/95 backdrop-blur-sm supports-[backdrop-filter]:bg-background/60">
-        <div className="flex items-center h-14 px-6 max-w-xl mx-auto w-full gap-3">
-          <Button variant="ghost" size="icon-sm" asChild aria-label="Back">
-            <Link to="/">
-              <ArrowLeftIcon className="size-4" />
-            </Link>
-          </Button>
-          <h1 className="text-sm font-semibold tracking-tight font-display">Account</h1>
+    <div className="flex h-full">
+      {/* Second-level sidebar */}
+      <nav className="hidden md:flex flex-col w-56 shrink-0 pt-10 pb-6 pl-8 pr-4">
+        <button
+          onClick={() => navigate(-1)}
+          className="flex items-center gap-1.5 mb-6 text-xl font-bold tracking-tight font-display hover:opacity-70 transition-opacity"
+        >
+          <ChevronLeftIcon className="size-5" />
+          Settings
+        </button>
+        <div className="space-y-0.5">
+          {NAV_ITEMS.map(({ id, label }) => (
+            <button
+              key={id}
+              onClick={() => handleNav(id)}
+              className={`w-full text-left px-3 py-2 rounded-md text-[15px] transition-colors ${
+                activeSection === id
+                  ? "bg-accent text-accent-foreground font-semibold"
+                  : "text-muted-foreground font-medium hover:text-foreground hover:bg-accent/50"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
         </div>
-      </header>
+      </nav>
 
-      <main className="flex-1 overflow-y-auto">
-        <div className="max-w-xl mx-auto px-5 py-6 space-y-8">
-          <div>
-            <p className="text-xs text-muted-foreground">{user.username}</p>
+      {/* Content */}
+      <div ref={contentRef} className="flex-1 overflow-y-auto">
+        <div className="px-4 md:px-10 pt-6 md:pt-10 pb-8 space-y-10">
+
+          {/* General */}
+          <div id="section-general">
+            <h3 className="text-sm font-semibold mb-4">General</h3>
+            <div className="rounded-lg border p-4">
+              <p className="text-sm text-muted-foreground">{user.username}</p>
+            </div>
           </div>
 
-          <div className="space-y-2">
-            <h2 className="text-sm font-semibold">Two-Factor Authentication</h2>
-            <p className="text-sm text-muted-foreground">
+          {/* Appearance */}
+          <div id="section-appearance">
+            <AppearanceSection />
+          </div>
+
+          {/* Security */}
+          <div id="section-security">
+            <h3 className="text-sm font-semibold mb-4">Security</h3>
+            <p className="text-sm text-muted-foreground mb-6">
               Add a second layer of verification when signing in. You can enable one or both methods.
             </p>
+            <div className="space-y-6">
+              <TwoFactorSection />
+              <PasskeySection />
+            </div>
           </div>
 
-          <TwoFactorSection />
-
-          <PasskeySection />
-
-          <NotificationsCenter />
+          {/* Notifications */}
+          <div id="section-notifications">
+            <NotificationsCenter />
+          </div>
         </div>
-      </main>
+      </div>
     </div>
+  );
+}
+
+const COLOR_MODE_OPTIONS: { value: ColorMode; label: string; icon: typeof MoonIcon }[] = [
+  { value: "dark", label: "Dark", icon: MoonIcon },
+  { value: "light", label: "Light", icon: SunIcon },
+  { value: "system", label: "System", icon: MonitorIcon },
+];
+
+function AppearanceSection() {
+  const colorMode = useColorModeStore((s) => s.colorMode);
+  const setColorMode = useColorModeStore((s) => s.setColorMode);
+  const customThemeName = useColorModeStore((s) => s.customThemeName);
+  const setCustomTheme = useColorModeStore((s) => s.setCustomTheme);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [uploadError, setUploadError] = useState("");
+
+  const handleThemeUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setUploadError("");
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 50_000) {
+      setUploadError("File too large (max 50KB)");
+      return;
+    }
+    if (!file.name.endsWith(".css")) {
+      setUploadError("Only .css files are accepted");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const css = reader.result as string;
+      if (css.includes("<script")) {
+        setUploadError("Invalid CSS file");
+        return;
+      }
+      if (!css.includes("--")) {
+        setUploadError("CSS file must contain CSS variable overrides (e.g. --background)");
+        return;
+      }
+      setCustomTheme(css, file.name);
+    };
+    reader.readAsText(file);
+    if (fileRef.current) fileRef.current.value = "";
+  };
+
+  return (
+    <section className="space-y-4">
+      <h3 className="text-sm font-semibold">Appearance</h3>
+
+      <div className="rounded-lg border p-4 space-y-5">
+        {/* Color mode */}
+        <div className="space-y-2">
+          <p className="text-xs text-muted-foreground">Color mode</p>
+          <div className="flex gap-2">
+            {COLOR_MODE_OPTIONS.map(({ value, label, icon: Icon }) => (
+              <button
+                key={value}
+                onClick={() => setColorMode(value)}
+                className={`flex items-center gap-2 px-3 py-2 rounded-md border text-sm transition-colors ${
+                  colorMode === value
+                    ? "border-primary bg-primary/10 text-foreground"
+                    : "border-border bg-transparent text-muted-foreground hover:border-primary/40"
+                }`}
+              >
+                <Icon className="size-4" />
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Custom theme */}
+        <div className="space-y-2">
+          <p className="text-xs text-muted-foreground">Custom theme</p>
+          {uploadError && <p className="text-xs text-destructive">{uploadError}</p>}
+          {customThemeName ? (
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 px-3 py-2 rounded-md border bg-primary/5 text-sm">
+                <PaletteIcon className="size-3.5 text-primary" />
+                <span>{customThemeName}</span>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => setCustomTheme(null, null)}
+                aria-label="Remove custom theme"
+              >
+                <XIcon className="size-3.5 text-muted-foreground" />
+              </Button>
+            </div>
+          ) : (
+            <div>
+              <input
+                ref={fileRef}
+                type="file"
+                accept=".css"
+                onChange={handleThemeUpload}
+                className="hidden"
+              />
+              <Button variant="outline" size="sm" onClick={() => fileRef.current?.click()}>
+                <UploadIcon className="size-3.5 mr-1.5" />
+                Upload CSS
+              </Button>
+              <p className="text-[10px] text-muted-foreground mt-1.5">
+                Upload a .css file with CSS variable overrides to customize colors.
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -62,7 +248,6 @@ function TwoFactorSection() {
   const [status, setStatus] = useState<{ enabled: boolean; required: boolean; backupCodesRemaining: number; passkeyCount?: number } | null>(null);
   const [statusLoading, setStatusLoading] = useState(true);
 
-  // Fetch status on mount
   useEffect(() => {
     totpStatus()
       .then(setStatus)
@@ -124,16 +309,15 @@ function TwoFactorSection() {
   if (statusLoading) return null;
 
   return (
-    <section className="space-y-4">
+    <section className="space-y-3">
       <div className="flex items-center gap-2">
-        <ShieldCheckIcon className="size-4 text-emerald-500" />
-        <h3 className="text-sm font-semibold">Authenticator App</h3>
+        <ShieldCheckIcon className="size-4 text-muted-foreground" />
+        <h4 className="text-sm font-medium">Authenticator App</h4>
       </div>
 
       <div className="rounded-lg border p-4 space-y-4">
         {error && <p className="text-xs text-destructive">{error}</p>}
 
-        {/* Idle - not enabled */}
         {step === "idle" && !status?.enabled && (
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">
@@ -145,7 +329,6 @@ function TwoFactorSection() {
           </div>
         )}
 
-        {/* Idle - enabled */}
         {step === "idle" && status?.enabled && (
           <div className="space-y-3">
             <div className="flex items-center gap-2">
@@ -171,7 +354,6 @@ function TwoFactorSection() {
           </div>
         )}
 
-        {/* Setup - show QR */}
         {step === "setup" && (
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
@@ -212,11 +394,10 @@ function TwoFactorSection() {
           </div>
         )}
 
-        {/* Backup codes */}
         {step === "backup" && (
           <div className="space-y-4">
             <div className="flex items-center gap-2">
-              <CheckIcon className="size-4 text-emerald-500" />
+              <CheckIcon className="size-4 text-muted-foreground" />
               <p className="text-sm font-medium">Two-factor authentication enabled</p>
             </div>
             <p className="text-sm text-muted-foreground">
@@ -244,7 +425,6 @@ function TwoFactorSection() {
           </div>
         )}
 
-        {/* Disable - confirm with code */}
         {step === "disable" && (
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
@@ -341,10 +521,10 @@ function PasskeySection() {
   if (loading) return null;
 
   return (
-    <section className="space-y-4">
+    <section className="space-y-3">
       <div className="flex items-center gap-2">
-        <FingerprintIcon className="size-4 text-blue-500" />
-        <h3 className="text-sm font-semibold">Passkeys</h3>
+        <FingerprintIcon className="size-4 text-muted-foreground" />
+        <h4 className="text-sm font-medium">Passkeys</h4>
       </div>
 
       <div className="rounded-lg border p-4 space-y-4">
@@ -414,4 +594,3 @@ function PasskeySection() {
     </section>
   );
 }
-

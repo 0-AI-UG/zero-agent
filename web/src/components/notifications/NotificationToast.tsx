@@ -103,9 +103,9 @@ export function NotificationToast({
   return (
     <div
       className={cn(
-        "relative w-[340px] max-w-[calc(100vw-2rem)]",
-        "rounded-md border bg-popover text-popover-foreground",
-        "shadow-sm",
+        "relative w-[360px] max-w-[calc(100vw-2rem)]",
+        "rounded-xl border border-border/60 bg-popover text-popover-foreground",
+        "shadow-lg shadow-black/10",
       )}
       role="alertdialog"
       aria-label={title}
@@ -114,30 +114,30 @@ export function NotificationToast({
         type="button"
         onClick={() => toast.dismiss(toastId)}
         aria-label="Dismiss"
-        className="absolute right-1.5 top-1.5 inline-flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
+        className="absolute right-2.5 top-2.5 inline-flex size-6 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
       >
-        <XIcon className="h-3.5 w-3.5" />
+        <XIcon className="size-3.5" />
       </button>
-      <div className="flex flex-col gap-2 px-3.5 py-2.5 pr-7">
-        <div className="flex min-w-0 flex-col gap-0.5">
-          <div className="text-[13px] font-medium leading-tight">{title}</div>
+      <div className="flex flex-col gap-3 p-4 pr-10">
+        <div className="flex min-w-0 flex-col gap-1">
+          <div className="text-sm font-semibold leading-tight">{title}</div>
           {body && (
-            <div className="text-xs text-muted-foreground whitespace-pre-wrap leading-snug">
+            <div className="text-[13px] text-muted-foreground whitespace-pre-wrap leading-relaxed">
               {body}
             </div>
           )}
         </div>
 
         {hasActions && (
-          <div className="flex items-center justify-end gap-1.5">
+          <div className="flex items-center justify-end gap-2 pt-0.5">
             {actions!.map((action, i) => (
               <Button
                 key={action.id}
                 size="sm"
-                variant={i === actions!.length - 1 ? "default" : "ghost"}
+                variant={i === actions!.length - 1 ? "default" : "outline"}
                 disabled={submitting !== null}
                 onClick={() => void send(action.id, action.id)}
-                className="h-7 px-2.5 text-xs"
+                className="h-8 px-3.5 text-xs font-medium"
               >
                 {submitting === action.id ? "…" : action.label}
               </Button>
@@ -146,14 +146,14 @@ export function NotificationToast({
         )}
 
         {hasReplyInput && (
-          <form onSubmit={onSubmitReply} className="flex flex-col gap-1.5">
+          <form onSubmit={onSubmitReply} className="flex flex-col gap-2 pt-0.5">
             <Input
               autoFocus
               value={text}
               onChange={(e) => setText(e.target.value)}
               placeholder="Reply…"
               disabled={submitting !== null}
-              className="h-7 text-xs"
+              className="h-8 text-xs"
               aria-label="Reply"
             />
             {error && <div className="text-xs text-destructive">{error}</div>}
@@ -162,7 +162,7 @@ export function NotificationToast({
                 type="submit"
                 size="sm"
                 disabled={submitting !== null || !text.trim()}
-                className="h-7 px-2.5 text-xs"
+                className="h-8 px-3.5 text-xs font-medium"
               >
                 {submitting ? "Sending…" : "Send"}
               </Button>
@@ -171,13 +171,14 @@ export function NotificationToast({
         )}
 
         {!hasActions && !hasReplyInput && url && (
-          <div className="flex items-center justify-end">
+          <div className="flex items-center justify-end pt-0.5">
             <Button
               size="sm"
+              variant="outline"
               onClick={() => {
                 window.location.href = url;
               }}
-              className="h-7 px-2.5 text-xs"
+              className="h-8 px-3.5 text-xs font-medium"
             >
               Open
             </Button>

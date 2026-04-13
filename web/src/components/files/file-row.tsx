@@ -64,15 +64,11 @@ export function FileRow({
         draggable={!readOnly}
         onDragStart={readOnly ? undefined : handleDragStart}
         className={cn(
-          "group flex items-center gap-3 w-full px-4 py-3 border-b last:border-b-0 transition-colors",
+          "group flex items-center gap-3 w-full px-4 py-2.5 transition-colors rounded-md",
           readOnly ? "" : "cursor-grab active:cursor-grabbing",
           isSelected ? "bg-accent" : "hover:bg-muted/50"
         )}
       >
-        <GripVerticalIcon className={cn(
-          "h-3.5 w-3.5 text-muted-foreground/40 shrink-0 transition-opacity",
-          readOnly ? "invisible" : "opacity-0 group-hover:opacity-100"
-        )} />
         <button
           onClick={onClick}
           className="flex items-center gap-3 flex-1 min-w-0 text-left"
@@ -123,6 +119,10 @@ export function FileRow({
         >
           <Trash2Icon className="h-3.5 w-3.5" />
         </button>
+        <GripVerticalIcon className={cn(
+          "h-3.5 w-3.5 text-muted-foreground/40 shrink-0 transition-opacity",
+          readOnly ? "invisible" : "opacity-0 group-hover:opacity-100"
+        )} />
       </div>
 
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>

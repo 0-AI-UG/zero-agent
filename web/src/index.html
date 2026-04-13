@@ -2,11 +2,35 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover" />
     <link rel="icon" type="image/svg+xml" href="./logo.svg" />
-    <meta name="theme-color" content="#2563eb" />
+    <meta name="theme-color" content="#15171a" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <script>
+      // Prevent flash of wrong theme — runs synchronously before first paint
+      (function() {
+        var d = document.documentElement;
+        var mode = 'dark';
+        try {
+          var raw = localStorage.getItem('color-mode-preference');
+          if (raw) {
+            var state = JSON.parse(raw).state;
+            var stored = state && state.colorMode;
+            if (stored === 'light') mode = 'light';
+            else if (stored === 'system') mode = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+            var css = state && state.customThemeCss;
+            if (css) {
+              var s = document.createElement('style');
+              s.id = 'custom-theme';
+              s.textContent = css;
+              document.head.appendChild(s);
+            }
+          }
+        } catch(e) {}
+        if (mode === 'dark') d.classList.add('dark');
+      })();
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;700&family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&display=swap" rel="stylesheet" />

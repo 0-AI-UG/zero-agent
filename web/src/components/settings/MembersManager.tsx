@@ -59,7 +59,7 @@ export function MembersManager({ projectId, project }: MembersManagerProps) {
   return (
     <section className="space-y-4">
       <div className="flex items-center gap-2">
-        <UsersIcon className="size-4 text-indigo-500" />
+        <UsersIcon className="size-4 text-muted-foreground" />
         <h3 className="text-sm font-semibold">Members</h3>
       </div>
 
