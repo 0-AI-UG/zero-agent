@@ -41,6 +41,7 @@ interface FileListProps {
   isBulkDeleting?: boolean;
   onRangeSelect: (ids: { fileIds: string[]; folderIds: string[] }, additive: boolean) => void;
   storageSummary?: string;
+  breadcrumb?: React.ReactNode;
 }
 
 export function FileList({
@@ -69,6 +70,7 @@ export function FileList({
   isBulkDeleting,
   onRangeSelect,
   storageSummary,
+  breadcrumb,
 }: FileListProps) {
   const anchorIndexRef = useRef<number | null>(null);
   const { data: project } = useProject(projectId);
@@ -259,6 +261,11 @@ export function FileList({
           </SelectContent>
         </Select>
       </div>
+      )}
+      {breadcrumb && (
+        <div className="px-4 py-1.5 text-muted-foreground/70">
+          {breadcrumb}
+        </div>
       )}
       <div className="flex-1 overflow-y-auto px-2">
         {sortedFolders.map((folder) => (

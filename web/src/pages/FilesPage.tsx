@@ -400,12 +400,6 @@ export function FilesPage() {
       >
         {/* Header */}
         <div className="shrink-0 px-4 pt-4 pb-2 space-y-2.5">
-          {/* Breadcrumb path – only shown inside subfolders */}
-          {currentPath !== "/" && (
-            <div className="text-muted-foreground/70">
-              <FolderBreadcrumbs currentPath={currentPath} onNavigate={navigateTo} onDropItem={handleDropItem} />
-            </div>
-          )}
           <div className="flex items-center justify-between gap-2">
             <h2 className="text-xl font-bold tracking-tight font-display">Files</h2>
             <div className="flex items-center gap-1.5">
@@ -512,6 +506,7 @@ export function FilesPage() {
             isBulkDeleting={isBulkDeleting}
             onRangeSelect={rangeSelect}
             storageSummary={storageInfo ? `${storageInfo.count} file${storageInfo.count !== 1 ? "s" : ""} · ${formatBytes(storageInfo.totalSize)}` : undefined}
+            breadcrumb={currentPath !== "/" ? <FolderBreadcrumbs currentPath={currentPath} onNavigate={navigateTo} onDropItem={handleDropItem} /> : undefined}
           />
           )}
         </div>
