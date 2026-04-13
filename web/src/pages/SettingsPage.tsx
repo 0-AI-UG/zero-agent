@@ -1,4 +1,4 @@
-import { useParams, useOutletContext } from "react-router";
+import { useParams, useOutletContext, useNavigate } from "react-router";
 import { useUpdateProject } from "@/api/projects";
 import type { Project } from "@/api/projects";
 import { useReindexProject } from "@/api/files";
@@ -14,13 +14,8 @@ import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import {
-  BotIcon,
-  DatabaseIcon,
-  FolderIcon,
-  ZapIcon,
-  ShieldCheckIcon,
   CheckIcon,
   LoaderIcon,
   AlertCircleIcon,
@@ -28,136 +23,189 @@ import {
   TrashIcon,
   PencilIcon,
   XIcon,
+  ChevronLeftIcon,
 } from "lucide-react";
 import { MembersManager } from "@/components/settings/MembersManager";
+import { CredentialsManager } from "@/components/settings/CredentialsManager";
+
+const NAV_ITEMS = [
+  { id: "general", label: "General" },
+  { id: "members", label: "Members" },
+  { id: "credentials", label: "Credentials" },
+  { id: "assistant", label: "Assistant" },
+] as const;
 
 export function SettingsPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const { project } = useOutletContext<{ project: Project }>();
+  const navigate = useNavigate();
   const updateProject = useUpdateProject(projectId!);
   const reindex = useReindexProject(projectId!);
 
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [activeSection, setActiveSection] = useState<string>("general");
+  const isClickScrolling = useRef(false);
+
+  useEffect(() => {
+    const container = scrollRef.current;
+    if (!container) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (isClickScrolling.current) return;
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            setActiveSection(entry.target.id);
+            break;
+          }
+        }
+      },
+      { root: container, rootMargin: "-20% 0px -70% 0px", threshold: 0 },
+    );
+
+    for (const { id } of NAV_ITEMS) {
+      const el = container.querySelector(`#${id}`);
+      if (el) observer.observe(el);
+    }
+
+    return () => observer.disconnect();
+  }, []);
+
+  const scrollTo = useCallback((id: string) => {
+    const el = scrollRef.current?.querySelector(`#${id}`);
+    if (!el) return;
+    isClickScrolling.current = true;
+    setActiveSection(id);
+    el.scrollIntoView({ behavior: "smooth", block: "start" });
+    setTimeout(() => { isClickScrolling.current = false; }, 800);
+  }, []);
+
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="max-w-2xl mx-auto px-4 md:px-5 py-6 space-y-8">
-        <div>
-          <h2 className="text-xl font-bold tracking-tight font-display">
-            Settings
-          </h2>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Configure project behavior
-          </p>
+    <div className="flex h-full">
+      {/* Second-level sidebar */}
+      <nav className="hidden md:flex flex-col w-56 shrink-0 pt-10 pb-6 pl-8 pr-4 sticky top-0 h-screen">
+        <button
+          onClick={() => navigate(-1)}
+          className="flex items-center gap-1.5 mb-6 text-xl font-bold tracking-tight font-display hover:opacity-70 transition-opacity"
+        >
+          <ChevronLeftIcon className="size-5" />
+          Settings
+        </button>
+        <div className="space-y-0.5">
+          {NAV_ITEMS.map(({ id, label }) => (
+            <button
+              key={id}
+              onClick={() => scrollTo(id)}
+              className={`w-full text-left px-3 py-2 rounded-md text-[15px] transition-colors ${
+                activeSection === id
+                  ? "bg-accent text-accent-foreground font-semibold"
+                  : "text-muted-foreground font-medium hover:text-foreground hover:bg-accent/50"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
         </div>
+      </nav>
 
-        {/* Members section */}
-        <MembersManager projectId={projectId!} project={project} />
+      {/* Content */}
+      <div ref={scrollRef} className="flex-1 overflow-y-auto">
+        <div className="max-w-3xl px-4 md:px-10 pt-6 md:pt-10 pb-8 space-y-12">
 
-        {/* Customize Assistant section */}
-        <CustomizeAssistantSection projectId={projectId!} project={project} />
+          {/* General */}
+          <section id="general" className="space-y-8 scroll-mt-10">
+            <div>
+              <h3 className="text-sm font-semibold mb-4">General</h3>
 
-        {/* Automation section */}
-        <section className="space-y-4">
-          <div className="flex items-center gap-2">
-            <ZapIcon className="size-4 text-muted-foreground" />
-            <h3 className="text-sm font-semibold">Automation</h3>
-          </div>
+              <div className="rounded-lg border p-4 space-y-4">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">Enable automations</p>
+                    <p className="text-xs text-muted-foreground">
+                      Allow scheduled and event-triggered tasks to run automatically.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={project.automationEnabled}
+                    onCheckedChange={(checked) =>
+                      updateProject.mutate({ automationEnabled: checked })
+                    }
+                    disabled={updateProject.isPending}
+                    aria-label="Enable automations"
+                  />
+                </div>
 
-          <div className="rounded-lg border p-4 space-y-4">
-            <div className="flex items-center justify-between gap-4">
-              <div className="space-y-1">
-                <p className="text-sm font-medium">Enable automations</p>
-                <p className="text-xs text-muted-foreground">
-                  Allow scheduled and event-triggered tasks to run automatically.
-                </p>
+                <div className="flex items-center justify-between gap-4">
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">Review changes before saving</p>
+                    <p className="text-xs text-muted-foreground">
+                      Preview file changes and approve them before they're saved to your project.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={project.syncGatingEnabled}
+                    onCheckedChange={(checked) =>
+                      updateProject.mutate({ syncGatingEnabled: checked })
+                    }
+                    disabled={updateProject.isPending}
+                    aria-label="Review changes before saving"
+                  />
+                </div>
+
+                <div className="flex items-center justify-between gap-4">
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">Show skills in file explorer</p>
+                    <p className="text-xs text-muted-foreground">
+                      Display the skills folder in the file explorer.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={project.showSkillsInFiles}
+                    onCheckedChange={(checked) =>
+                      updateProject.mutate({ showSkillsInFiles: checked })
+                    }
+                    disabled={updateProject.isPending}
+                    aria-label="Show skills in file explorer"
+                  />
+                </div>
               </div>
-              <Switch
-                checked={project.automationEnabled}
-                onCheckedChange={(checked) =>
-                  updateProject.mutate({ automationEnabled: checked })
-                }
-                disabled={updateProject.isPending}
-                aria-label="Enable automations"
-              />
-            </div>
-          </div>
-        </section>
-
-        {/* Review section */}
-        <section className="space-y-4">
-          <div className="flex items-center gap-2">
-            <ShieldCheckIcon className="size-4 text-muted-foreground" />
-            <h3 className="text-sm font-semibold">Review</h3>
-          </div>
-
-          <div className="rounded-lg border p-4 space-y-4">
-            <div className="flex items-center justify-between gap-4">
-              <div className="space-y-1">
-                <p className="text-sm font-medium">Review changes before saving</p>
-                <p className="text-xs text-muted-foreground">
-                  Preview file changes and approve them before they're saved to your project.
-                </p>
-              </div>
-              <Switch
-                checked={project.syncGatingEnabled}
-                onCheckedChange={(checked) =>
-                  updateProject.mutate({ syncGatingEnabled: checked })
-                }
-                disabled={updateProject.isPending}
-                aria-label="Review changes before saving"
-              />
-            </div>
-          </div>
-        </section>
-
-        {/* Display section */}
-        <section className="space-y-4">
-          <div className="flex items-center gap-2">
-            <FolderIcon className="size-4 text-muted-foreground" />
-            <h3 className="text-sm font-semibold">Display</h3>
-          </div>
-
-          <div className="rounded-lg border p-4 space-y-4">
-            <div className="flex items-center justify-between gap-4">
-              <div className="space-y-1">
-                <p className="text-sm font-medium">Show skills in file explorer</p>
-                <p className="text-xs text-muted-foreground">
-                  Display the skills folder in the file explorer.
-                </p>
-              </div>
-              <Switch
-                checked={project.showSkillsInFiles}
-                onCheckedChange={(checked) =>
-                  updateProject.mutate({ showSkillsInFiles: checked })
-                }
-                disabled={updateProject.isPending}
-                aria-label="Show skills in file explorer"
-              />
-            </div>
-          </div>
-        </section>
-
-        {/* Knowledge Base section */}
-        <section className="space-y-4">
-          <div className="flex items-center gap-2">
-            <DatabaseIcon className="size-4 text-muted-foreground" />
-            <h3 className="text-sm font-semibold">Knowledge Base</h3>
-          </div>
-
-          <div className="rounded-lg border p-4 space-y-4">
-            <div className="flex items-center justify-between gap-4">
-              <div className="space-y-1">
-                <p className="text-sm font-medium">Reindex embeddings</p>
-                <p className="text-xs text-muted-foreground">
-                  Rebuild search index for all files, memories, and chat history.
-                </p>
-              </div>
-              <ReindexButton reindex={reindex} />
             </div>
 
-            <ReindexStatus progress={reindex.progress} onDismiss={reindex.reset} />
-          </div>
-        </section>
+            <div>
+              <h3 className="text-sm font-semibold mb-4">Knowledge Base</h3>
 
+              <div className="rounded-lg border p-4 space-y-4">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">Reindex embeddings</p>
+                    <p className="text-xs text-muted-foreground">
+                      Rebuild search index for all files, memories, and chat history.
+                    </p>
+                  </div>
+                  <ReindexButton reindex={reindex} />
+                </div>
+
+                <ReindexStatus progress={reindex.progress} onDismiss={reindex.reset} />
+              </div>
+            </div>
+          </section>
+
+          {/* Members */}
+          <section id="members" className="scroll-mt-10">
+            <MembersManager projectId={projectId!} project={project} />
+          </section>
+
+          {/* Credentials */}
+          <section id="credentials" className="scroll-mt-10">
+            <CredentialsManager projectId={projectId!} />
+          </section>
+
+          {/* Assistant */}
+          <section id="assistant" className="scroll-mt-10">
+            <CustomizeAssistantSection projectId={projectId!} project={project} />
+          </section>
+
+        </div>
       </div>
     </div>
   );
@@ -308,10 +356,7 @@ function CustomizeAssistantSection({ projectId, project }: { projectId: string; 
 
   return (
     <section className="space-y-4">
-      <div className="flex items-center gap-2">
-        <BotIcon className="size-4 text-muted-foreground" />
-        <h3 className="text-sm font-semibold">Customize Assistant</h3>
-      </div>
+      <h3 className="text-sm font-semibold">Assistant</h3>
 
       {/* Identity */}
       <div className="rounded-lg border p-4 space-y-3">

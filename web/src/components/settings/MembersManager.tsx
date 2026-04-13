@@ -4,7 +4,7 @@ import { useMembers, useInviteMember, useRemoveMember, useLeaveProject } from "@
 import { useAuthStore } from "@/stores/auth";
 import type { Project } from "@/api/projects";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { UsersIcon, TrashIcon, ClockIcon, LogOutIcon } from "lucide-react";
+import { TrashIcon, ClockIcon, LogOutIcon } from "lucide-react";
 
 interface MembersManagerProps {
   projectId: string;
@@ -58,10 +58,7 @@ export function MembersManager({ projectId, project }: MembersManagerProps) {
 
   return (
     <section className="space-y-4">
-      <div className="flex items-center gap-2">
-        <UsersIcon className="size-4 text-muted-foreground" />
-        <h3 className="text-sm font-semibold">Members</h3>
-      </div>
+      <h3 className="text-sm font-semibold">Members</h3>
 
       <div className="rounded-lg border p-4 space-y-4">
         {isLoading && (
