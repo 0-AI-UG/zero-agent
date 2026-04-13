@@ -687,6 +687,20 @@ startupExpirySweep();
 // UI flips the card.
 recoverSyncOrphansOnStartup();
 
+// ── Heap monitoring (every 60s) ──
+const _heapMonitor = setInterval(() => {
+  const mem = process.memoryUsage();
+  const fmt = (b: number) => (b / 1024 / 1024).toFixed(1);
+  log.info("heap", {
+    rss: fmt(mem.rss) + "MB",
+    heapUsed: fmt(mem.heapUsed) + "MB",
+    heapTotal: fmt(mem.heapTotal) + "MB",
+    external: fmt(mem.external) + "MB",
+    arrayBuffers: fmt(mem.arrayBuffers) + "MB",
+  });
+}, 60_000);
+if (typeof _heapMonitor === "object" && "unref" in _heapMonitor) _heapMonitor.unref();
+
 // ── Periodic vector pruning (every 30 min) ──
 const _vectorPruneInterval = setInterval(() => {
   try {
