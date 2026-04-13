@@ -7,7 +7,7 @@ import type { BrowserAction, BrowserResult } from "@/lib/browser/protocol.ts";
 import type {
   ExecutionBackend, BashResult, ExecResult, SessionInfo, ContainerListEntry,
 } from "./backend-interface.ts";
-import { readBinaryFromS3, writeToS3, listS3Files } from "@/lib/s3.ts";
+import { listS3Files, readStreamFromS3, writeStreamToS3, s3FileExists, s3FileSize } from "@/lib/s3.ts";
 import { fetchWithTimeout } from "@/lib/deferred.ts";
 import { log } from "@/lib/logger.ts";
 
@@ -132,21 +132,24 @@ export class RunnerClient implements ExecutionBackend {
     if (!result.created) return;
 
     try {
-      const buffer = await readBinaryFromS3(`containers/${projectId}/system.tar.gz`);
-      if (buffer && buffer.byteLength > 0) {
+      const snapshotKey = `containers/${projectId}/system.tar.gz`;
+      if (s3FileExists(snapshotKey)) {
+        const size = s3FileSize(snapshotKey);
+        const stream = readStreamFromS3(snapshotKey);
         await this.request(`/containers/${encodeURIComponent(name)}/files/snapshot`, {
           method: "PUT",
-          body: new Uint8Array(buffer),
+          body: stream,
+          duplex: "half",
           timeout: 120_000,
-          headers: { "Content-Type": "application/gzip" },
-        });
-        clientLog.info("system snapshot restored from S3", { projectId, sizeBytes: buffer.byteLength });
+          headers: { "Content-Type": "application/gzip", "Content-Length": String(size) },
+        } as any);
+        clientLog.info("system snapshot restored from S3 (streamed)", { projectId, sizeBytes: size });
       }
     } catch {
       // First-time projects have no snapshot - silently skip.
     }
 
-    // Restore workspace blob dirs in parallel
+    // Restore workspace blob dirs in parallel (streamed)
     try {
       const prefix = `projects/${projectId}/.session/blobs/`;
       const keys = await listS3Files(prefix);
@@ -155,10 +158,12 @@ export class RunnerClient implements ExecutionBackend {
           const filename = key.slice(prefix.length);
           const dir = filename.replace(/\.tar\.gz$/, "").replace(/__/g, "/");
           if (!dir) return;
-          const buf = await readBinaryFromS3(key);
-          if (!buf || buf.byteLength === 0) return;
-          await this.restoreBlobDir(projectId, dir, buf);
-          clientLog.info("blob dir restored", { projectId, dir, sizeBytes: buf.byteLength });
+          if (!s3FileExists(key)) return;
+          const size = s3FileSize(key);
+          if (size === 0) return;
+          const stream = readStreamFromS3(key);
+          await this.restoreBlobDirStream(projectId, dir, stream, size);
+          clientLog.info("blob dir restored (streamed)", { projectId, dir, sizeBytes: size });
         } catch (err) {
           clientLog.warn("blob restore failed", { projectId, key, error: String(err) });
         }
@@ -183,36 +188,46 @@ export class RunnerClient implements ExecutionBackend {
     }
   }
 
-  async saveBlobDir(projectId: string, dir: string): Promise<Buffer | null> {
+  async saveBlobDir(projectId: string, dir: string): Promise<ReadableStream<Uint8Array> | null> {
     const name = this.containerName(projectId);
     try {
       const res = await this.request(
         `/containers/${encodeURIComponent(name)}/files/blob?dir=${encodeURIComponent(dir)}`,
         { method: "POST", timeout: 180_000, headers: { "Content-Type": "application/json" } },
       );
-      if (!res.ok) return null;
-      const buf = Buffer.from(await res.arrayBuffer());
-      return buf.byteLength > 0 ? buf : null;
+      if (!res.ok || !res.body) return null;
+      // Check Content-Length to avoid returning empty streams
+      const cl = res.headers.get("Content-Length");
+      if (cl === "0") return null;
+      return res.body as ReadableStream<Uint8Array>;
     } catch (err) {
       clientLog.warn("saveBlobDir failed", { projectId, dir, error: String(err) });
       return null;
     }
   }
 
-  async restoreBlobDir(projectId: string, dir: string, data: Buffer): Promise<void> {
+  async restoreBlobDir(projectId: string, dir: string, data: ReadableStream<Uint8Array>, size?: number): Promise<void> {
     const name = this.containerName(projectId);
+    const headers: Record<string, string> = { "Content-Type": "application/gzip" };
+    if (size !== undefined) headers["Content-Length"] = String(size);
     await this.request(
       `/containers/${encodeURIComponent(name)}/files/blob?dir=${encodeURIComponent(dir)}`,
       {
         method: "PUT",
-        body: new Uint8Array(data),
+        body: data,
+        duplex: "half",
         timeout: 180_000,
-        headers: { "Content-Type": "application/gzip" },
-      },
+        headers,
+      } as any,
     );
   }
 
-  /** Save a system snapshot to S3. Best-effort, never throws. */
+  /** Internal helper: stream from S3 → runner for blob restore */
+  private async restoreBlobDirStream(projectId: string, dir: string, stream: ReadableStream<Uint8Array>, size: number): Promise<void> {
+    return this.restoreBlobDir(projectId, dir, stream, size);
+  }
+
+  /** Save a system snapshot to S3. Best-effort, never throws. Streams directly without buffering. */
   async persistSystemSnapshot(projectId: string): Promise<void> {
     const name = this.containerName(projectId);
     try {
@@ -221,12 +236,11 @@ export class RunnerClient implements ExecutionBackend {
         timeout: 120_000,
         headers: { "Content-Type": "application/json" },
       });
-      if (!res.ok) return;
-      const buffer = Buffer.from(await res.arrayBuffer());
-      if (buffer.byteLength > 0) {
-        await writeToS3(`containers/${projectId}/system.tar.gz`, buffer);
-        clientLog.info("system snapshot persisted", { projectId, sizeBytes: buffer.byteLength });
-      }
+      if (!res.ok || !res.body) return;
+      const cl = res.headers.get("Content-Length");
+      if (cl === "0") return;
+      await writeStreamToS3(`containers/${projectId}/system.tar.gz`, res.body as ReadableStream<Uint8Array>);
+      clientLog.info("system snapshot persisted (streamed)", { projectId, contentLength: cl });
     } catch (err) {
       clientLog.warn("persistSystemSnapshot failed", { projectId, error: String(err) });
     }
@@ -235,18 +249,18 @@ export class RunnerClient implements ExecutionBackend {
   async destroyContainer(projectId: string): Promise<void> {
     const name = this.containerName(projectId);
 
-    // Save system snapshot before destroying
+    // Save system snapshot before destroying (streamed)
     try {
       const snapshotRes = await this.request(`/containers/${encodeURIComponent(name)}/files/snapshot`, {
         method: "POST",
         timeout: 120_000,
         headers: { "Content-Type": "application/json" },
       });
-      if (snapshotRes.ok) {
-        const buffer = Buffer.from(await snapshotRes.arrayBuffer());
-        if (buffer.byteLength > 0) {
-          await writeToS3(`containers/${projectId}/system.tar.gz`, buffer);
-          clientLog.info("system snapshot saved to S3", { projectId, sizeBytes: buffer.byteLength });
+      if (snapshotRes.ok && snapshotRes.body) {
+        const cl = snapshotRes.headers.get("Content-Length");
+        if (cl !== "0") {
+          await writeStreamToS3(`containers/${projectId}/system.tar.gz`, snapshotRes.body as ReadableStream<Uint8Array>);
+          clientLog.info("system snapshot saved to S3 (streamed)", { projectId, contentLength: cl });
         }
       }
     } catch (err) {

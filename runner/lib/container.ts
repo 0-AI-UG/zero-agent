@@ -5,7 +5,7 @@
 import { docker } from "./docker-client.ts";
 import { CdpClient, connectToPage } from "./cdp.ts";
 import { executeAction, type RefMap, type CursorState, type SnapshotCache } from "./browser.ts";
-import { touchMarker, listFiles, detectChanges, readFiles, writeFiles, deleteFiles, saveSystemSnapshot, restoreSystemSnapshot, detectBlobDirs, tarWorkspaceDir, untarWorkspaceDir, manifest as filesManifest, STATIC_BLOB_DIRS } from "./files.ts";
+import { touchMarker, listFiles, detectChanges, readFiles, writeFiles, deleteFiles, saveSystemSnapshot, saveSystemSnapshotStream, restoreSystemSnapshot, restoreSystemSnapshotStream, detectBlobDirs, tarWorkspaceDir, tarWorkspaceDirStream, untarWorkspaceDir, untarWorkspaceDirStream, manifest as filesManifest, STATIC_BLOB_DIRS } from "./files.ts";
 import { fetchWithTimeout } from "./deferred.ts";
 import { log } from "./logger.ts";
 import { startSocketServer, stopSocketServer, socketPathFor, socketSubpathFor, ensureSocketDir } from "./socket-proxy.ts";
@@ -418,6 +418,13 @@ list(): ContainerInfo[] {
     return tarWorkspaceDir(name, dir);
   }
 
+  async saveBlobStream(name: string, dir: string): Promise<ReadableStream<Uint8Array> | null> {
+    const state = this.containers.get(name);
+    if (!state) throw new Error(`Container "${name}" not found`);
+    state.lastUsedAt = Date.now();
+    return tarWorkspaceDirStream(name, dir);
+  }
+
   async restoreBlob(name: string, dir: string, data: Buffer): Promise<boolean> {
     const state = this.containers.get(name);
     if (!state) throw new Error(`Container "${name}" not found`);
@@ -425,6 +432,14 @@ list(): ContainerInfo[] {
     // Invalidate blob dir cache since contents changed
     state.blobDirsExpiresAt = 0;
     return untarWorkspaceDir(name, dir, data);
+  }
+
+  async restoreBlobStream(name: string, dir: string, dataStream: ReadableStream<Uint8Array>, dataSize: number): Promise<boolean> {
+    const state = this.containers.get(name);
+    if (!state) throw new Error(`Container "${name}" not found`);
+    state.lastUsedAt = Date.now();
+    state.blobDirsExpiresAt = 0;
+    return untarWorkspaceDirStream(name, dir, dataStream, dataSize);
   }
 
   async readFiles(name: string, paths: string[]): Promise<Array<{ path: string; data: string; sizeBytes: number }>> {
@@ -473,9 +488,26 @@ list(): ContainerInfo[] {
     }
   }
 
+  async saveSnapshotStream(name: string): Promise<ReadableStream<Uint8Array> | null> {
+    const state = this.containers.get(name);
+    if (!state) throw new Error(`Container "${name}" not found`);
+    state.lastUsedAt = Date.now();
+    state.busyCount++;
+    try {
+      return await saveSystemSnapshotStream(name);
+    } finally {
+      state.busyCount--;
+    }
+  }
+
   async restoreSnapshot(name: string, data: Buffer): Promise<boolean> {
     if (!this.containers.has(name)) throw new Error(`Container "${name}" not found`);
     return restoreSystemSnapshot(name, data);
+  }
+
+  async restoreSnapshotStream(name: string, dataStream: ReadableStream<Uint8Array>, dataSize: number): Promise<boolean> {
+    if (!this.containers.has(name)) throw new Error(`Container "${name}" not found`);
+    return restoreSystemSnapshotStream(name, dataStream, dataSize);
   }
 
   // -- Browser --

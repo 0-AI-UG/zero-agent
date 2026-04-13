@@ -47,8 +47,8 @@ export interface ExecutionBackend {
   getContainerManifest(projectId: string, subpath?: string): Promise<Record<string, string>>;
 
   listBlobDirs(projectId: string): Promise<string[]>;
-  saveBlobDir(projectId: string, dir: string): Promise<Buffer | null>;
-  restoreBlobDir(projectId: string, dir: string, data: Buffer): Promise<void>;
+  saveBlobDir(projectId: string, dir: string): Promise<ReadableStream<Uint8Array> | null>;
+  restoreBlobDir(projectId: string, dir: string, data: ReadableStream<Uint8Array>, size?: number): Promise<void>;
   touchActivity(projectId: string): void;
 
   runBash(userId: string, projectId: string, command: string, timeout?: number, background?: boolean): Promise<BashResult>;

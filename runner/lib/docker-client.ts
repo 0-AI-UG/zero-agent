@@ -8,7 +8,7 @@ const dockerLog = log.child({ module: "docker-client" });
 
 const API_VERSION = "v1.47";
 
-/** fetch-like wrapper for Unix socket HTTP requests */
+/** fetch-like wrapper for Unix socket HTTP requests (buffered response) */
 function unixFetch(url: string, socketPath: string, init?: RequestInit): Promise<Response> {
   return new Promise((resolve, reject) => {
     const parsed = new URL(url);
@@ -47,6 +47,115 @@ function unixFetch(url: string, socketPath: string, init?: RequestInit): Promise
       }
     }
     req.end();
+  });
+}
+
+/** Streaming variant — resolves as soon as headers arrive, body is a ReadableStream */
+function unixFetchStreaming(url: string, socketPath: string, init?: RequestInit): Promise<Response> {
+  return new Promise((resolve, reject) => {
+    const parsed = new URL(url);
+    const options: http.RequestOptions = {
+      socketPath,
+      path: parsed.pathname + parsed.search,
+      method: init?.method ?? "GET",
+      headers: init?.headers as Record<string, string> | undefined,
+    };
+
+    const req = http.request(options, (res) => {
+      const headers = new Headers();
+      for (const [key, value] of Object.entries(res.headers)) {
+        if (value) headers.set(key, Array.isArray(value) ? value.join(", ") : value);
+      }
+
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          res.on("data", (chunk: Buffer) => {
+            controller.enqueue(new Uint8Array(chunk));
+          });
+          res.on("end", () => controller.close());
+          res.on("error", (err) => controller.error(err));
+        },
+        cancel() {
+          res.destroy();
+        },
+      });
+
+      resolve(new Response(body, {
+        status: res.statusCode ?? 200,
+        statusText: res.statusMessage,
+        headers,
+      }));
+    });
+
+    req.on("error", reject);
+
+    if (init?.body) {
+      if (init.body instanceof ArrayBuffer || init.body instanceof Uint8Array || Buffer.isBuffer(init.body)) {
+        req.write(Buffer.from(init.body as ArrayBuffer));
+      } else if (typeof init.body === "string") {
+        req.write(init.body);
+      }
+    }
+    req.end();
+  });
+}
+
+/** Streaming PUT — pipes a ReadableStream as the request body */
+function unixFetchStreamingPut(
+  url: string,
+  socketPath: string,
+  stream: ReadableStream<Uint8Array>,
+  headers?: Record<string, string>,
+): Promise<Response> {
+  return new Promise((resolve, reject) => {
+    const parsed = new URL(url);
+    const options: http.RequestOptions = {
+      socketPath,
+      path: parsed.pathname + parsed.search,
+      method: "PUT",
+      headers,
+    };
+
+    const req = http.request(options, (res) => {
+      const chunks: Buffer[] = [];
+      res.on("data", (chunk) => chunks.push(chunk));
+      res.on("end", () => {
+        const body = Buffer.concat(chunks);
+        const resHeaders = new Headers();
+        for (const [key, value] of Object.entries(res.headers)) {
+          if (value) resHeaders.set(key, Array.isArray(value) ? value.join(", ") : value);
+        }
+        resolve(new Response(body, {
+          status: res.statusCode ?? 200,
+          statusText: res.statusMessage,
+          headers: resHeaders,
+        }));
+      });
+      res.on("error", reject);
+    });
+
+    req.on("error", reject);
+
+    // Pipe the ReadableStream into the http request
+    const reader = stream.getReader();
+    (async () => {
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          // Apply backpressure: wait for drain if write returns false
+          const canWrite = req.write(value);
+          if (!canWrite) {
+            await new Promise<void>((r) => req.once("drain", r));
+          }
+        }
+        req.end();
+      } catch (err) {
+        req.destroy(err instanceof Error ? err : new Error(String(err)));
+      } finally {
+        reader.releaseLock();
+      }
+    })();
   });
 }
 
@@ -328,6 +437,18 @@ export class DockerClient {
     }
   }
 
+  /** Streaming putArchive — pipes a tar stream directly to Docker without buffering. */
+  async putArchiveStream(containerName: string, containerPath: string, tarStream: ReadableStream<Uint8Array>): Promise<void> {
+    const url = `${this.baseUrl}/containers/${encodeURIComponent(containerName)}/archive?path=${encodeURIComponent(containerPath)}`;
+    const res = await unixFetchStreamingPut(url, this.socket, tarStream, {
+      "Content-Type": "application/x-tar",
+    });
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(`putArchiveStream failed: ${err}`);
+    }
+  }
+
   async getArchive(containerName: string, containerPath: string): Promise<Buffer> {
     const res = await this.fetch(
       `/containers/${encodeURIComponent(containerName)}/archive?path=${encodeURIComponent(containerPath)}`,
@@ -337,6 +458,19 @@ export class DockerClient {
       throw new Error(`getArchive failed: ${err}`);
     }
     return Buffer.from(await res.arrayBuffer());
+  }
+
+  /** Streaming getArchive — returns a ReadableStream of the tar data without buffering. */
+  async getArchiveStream(containerName: string, containerPath: string): Promise<ReadableStream<Uint8Array>> {
+    const url = `${this.baseUrl}/containers/${encodeURIComponent(containerName)}/archive?path=${encodeURIComponent(containerPath)}`;
+    const res = await unixFetchStreaming(url, this.socket);
+    if (!res.ok) {
+      // Consume the stream to release resources
+      if (res.body) await res.body.cancel();
+      const err = `getArchiveStream failed: ${res.status} ${res.statusText}`;
+      throw new Error(err);
+    }
+    return res.body!;
   }
 
   async removeContainer(name: string, force = true): Promise<void> {

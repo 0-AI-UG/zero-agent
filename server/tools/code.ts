@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { tool } from "ai";
 import { ensureBackend } from "@/lib/execution/lifecycle.ts";
-import { writeToS3, readFromS3, deleteFromS3 } from "@/lib/s3.ts";
+import { writeToS3, readFromS3, deleteFromS3, writeStreamToS3 } from "@/lib/s3.ts";
 import { insertFile, getFileByS3Key, deleteFile as deleteFileRecord } from "@/db/queries/files.ts";
 import { reconcileToContainer, sha256Hex } from "@/lib/execution/workspace-sync.ts";
 import { getFolderByPath, createFolder as createFolderRecord } from "@/db/queries/folders.ts";
@@ -309,7 +309,7 @@ const BLOB_UPLOAD_DEBOUNCE_MS = 60_000;
 function persistBlobsAsync(
   backend: {
     listBlobDirs: (projectId: string) => Promise<string[]>;
-    saveBlobDir: (projectId: string, dir: string) => Promise<Buffer | null>;
+    saveBlobDir: (projectId: string, dir: string) => Promise<ReadableStream<Uint8Array> | null>;
   },
   projectId: string,
 ): void {
@@ -324,11 +324,11 @@ function persistBlobsAsync(
         if (now - last < BLOB_UPLOAD_DEBOUNCE_MS) continue;
         lastBlobUploadAt.set(key, now); // mark optimistically to coalesce concurrent calls
         try {
-          const buf = await backend.saveBlobDir(projectId, dir);
-          if (!buf) continue;
+          const stream = await backend.saveBlobDir(projectId, dir);
+          if (!stream) continue;
           const safe = dir.replace(/\//g, "__");
-          await writeToS3(`projects/${projectId}/.session/blobs/${safe}.tar.gz`, buf);
-          toolLog.info("blob dir persisted", { projectId, dir, sizeBytes: buf.byteLength });
+          await writeStreamToS3(`projects/${projectId}/.session/blobs/${safe}.tar.gz`, stream);
+          toolLog.info("blob dir persisted (streamed)", { projectId, dir });
         } catch (err) {
           // Reset the debounce so we can retry sooner
           lastBlobUploadAt.set(key, 0);

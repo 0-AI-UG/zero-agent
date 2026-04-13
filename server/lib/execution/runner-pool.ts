@@ -196,16 +196,16 @@ export class RunnerPool implements ExecutionBackend {
     return resolved.client.listBlobDirs(projectId);
   }
 
-  async saveBlobDir(projectId: string, dir: string): Promise<Buffer | null> {
+  async saveBlobDir(projectId: string, dir: string): Promise<ReadableStream<Uint8Array> | null> {
     const resolved = await this.resolveRunner(projectId);
     if (!resolved) return null;
     return resolved.client.saveBlobDir(projectId, dir);
   }
 
-  async restoreBlobDir(projectId: string, dir: string, data: Buffer): Promise<void> {
+  async restoreBlobDir(projectId: string, dir: string, data: ReadableStream<Uint8Array>, size?: number): Promise<void> {
     const resolved = await this.resolveRunner(projectId);
     if (!resolved) return;
-    return resolved.client.restoreBlobDir(projectId, dir, data);
+    return resolved.client.restoreBlobDir(projectId, dir, data, size);
   }
 
   async persistSystemSnapshot(projectId: string): Promise<void> {

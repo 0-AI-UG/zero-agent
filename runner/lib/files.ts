@@ -276,6 +276,30 @@ export async function saveSystemSnapshot(containerName: string): Promise<Buffer 
   }
 }
 
+/** Streaming variant — returns a ReadableStream of the snapshot gzip without buffering. */
+export async function saveSystemSnapshotStream(containerName: string): Promise<ReadableStream<Uint8Array> | null> {
+  try {
+    const result = await docker.exec(containerName, [
+      "bash", "-c",
+      `tar czf /tmp/system-snapshot.tar.gz -C / ${SYSTEM_SNAPSHOT_EXCLUDES} . 2>&1 || true`,
+    ], { workingDir: "/", timeout: 120_000 });
+
+    if (result.exitCode !== 0) {
+      fsLog.warn("system snapshot tar failed", { stderr: result.stderr });
+      return null;
+    }
+
+    const tarStream = await docker.getArchiveStream(containerName, "/tmp/system-snapshot.tar.gz");
+    docker.exec(containerName, ["rm", "-f", "/tmp/system-snapshot.tar.gz"], { workingDir: "/" }).catch(() => {});
+
+    // Strip the outer tar wrapper, stream just the inner .tar.gz content
+    return extractSingleFileStream(tarStream);
+  } catch (err) {
+    fsLog.warn("failed to save system snapshot (stream)", { error: String(err) });
+    return null;
+  }
+}
+
 export async function restoreSystemSnapshot(containerName: string, buffer: Buffer): Promise<boolean> {
   try {
     const wrappedTar = buildTar([{ path: "system-snapshot.tar.gz", data: buffer }]);
@@ -295,6 +319,30 @@ export async function restoreSystemSnapshot(containerName: string, buffer: Buffe
     return true;
   } catch (err) {
     fsLog.warn("failed to restore system snapshot", { error: String(err) });
+    return false;
+  }
+}
+
+/** Streaming variant — pipes snapshot data into the container without buffering. */
+export async function restoreSystemSnapshotStream(containerName: string, dataStream: ReadableStream<Uint8Array>, dataSize: number): Promise<boolean> {
+  try {
+    const tarStream = wrapInTarStream("system-snapshot.tar.gz", dataSize, dataStream);
+    await docker.putArchiveStream(containerName, "/tmp", tarStream);
+
+    const result = await docker.exec(containerName, [
+      "bash", "-c",
+      `tar xzf /tmp/system-snapshot.tar.gz -C / 2>/dev/null; rm -f /tmp/system-snapshot.tar.gz`,
+    ], { workingDir: "/", timeout: 120_000 });
+
+    if (result.exitCode !== 0) {
+      fsLog.warn("system snapshot restore (stream) failed", { stderr: result.stderr });
+      return false;
+    }
+
+    fsLog.info("system snapshot restored (stream)");
+    return true;
+  } catch (err) {
+    fsLog.warn("failed to restore system snapshot (stream)", { error: String(err) });
     return false;
   }
 }
@@ -355,6 +403,220 @@ export async function untarWorkspaceDir(containerName: string, dir: string, data
     fsLog.warn("untarWorkspaceDir failed", { dir, error: String(err) });
     return false;
   }
+}
+
+/** Streaming variant of tarWorkspaceDir — returns stream without buffering. */
+export async function tarWorkspaceDirStream(containerName: string, dir: string): Promise<ReadableStream<Uint8Array> | null> {
+  try {
+    const safe = safeBlobName(dir);
+    const target = `/tmp/blob-${safe}.tar.gz`;
+    const result = await docker.exec(containerName, [
+      "bash", "-c",
+      `cd /project && [ -e ${shellQuote(dir)} ] && tar czf ${shellQuote(target)} ${shellQuote(dir)} 2>&1 || exit 9`,
+    ], { workingDir: "/", timeout: 120_000 });
+
+    if (result.exitCode === 9) return null;
+    if (result.exitCode !== 0) {
+      fsLog.warn("blob tar (stream) failed", { dir, stderr: result.stderr });
+      return null;
+    }
+
+    const tarStream = await docker.getArchiveStream(containerName, target);
+    docker.exec(containerName, ["rm", "-f", target], { workingDir: "/" }).catch(() => {});
+    return extractSingleFileStream(tarStream);
+  } catch (err) {
+    fsLog.warn("tarWorkspaceDirStream failed", { dir, error: String(err) });
+    return null;
+  }
+}
+
+/** Streaming variant of untarWorkspaceDir — pipes data in without buffering. */
+export async function untarWorkspaceDirStream(containerName: string, dir: string, dataStream: ReadableStream<Uint8Array>, dataSize: number): Promise<boolean> {
+  try {
+    const safe = safeBlobName(dir);
+    const inner = `blob-${safe}.tar.gz`;
+    const tarStream = wrapInTarStream(inner, dataSize, dataStream);
+    await docker.putArchiveStream(containerName, "/tmp", tarStream);
+
+    const result = await docker.exec(containerName, [
+      "bash", "-c",
+      `mkdir -p /project && cd /project && tar xzf /tmp/${inner} 2>/dev/null; rm -f /tmp/${inner}`,
+    ], { workingDir: "/", timeout: 120_000 });
+
+    if (result.exitCode !== 0) {
+      fsLog.warn("blob untar (stream) failed", { dir, stderr: result.stderr });
+      return false;
+    }
+    return true;
+  } catch (err) {
+    fsLog.warn("untarWorkspaceDirStream failed", { dir, error: String(err) });
+    return false;
+  }
+}
+
+// -- Streaming tar helpers --
+
+/**
+ * Takes a Docker getArchive stream (tar containing a single file) and returns
+ * a stream of just the inner file's content, without buffering the entire tar.
+ *
+ * Docker getArchive wraps the file in a tar: 512-byte header + data + padding + end blocks.
+ * We parse the header from the first chunk(s), extract the file size, then pass through
+ * exactly that many bytes of content.
+ */
+export function extractSingleFileStream(tarStream: ReadableStream<Uint8Array>): ReadableStream<Uint8Array> {
+  const reader = tarStream.getReader();
+  let headerBuf: Uint8Array | null = null;
+  let headerOffset = 0;
+  let fileSize = -1;
+  let bytesEmitted = 0;
+
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) {
+            controller.close();
+            return;
+          }
+
+          let chunk = value;
+          // Phase 1: Collect 512-byte tar header
+          if (fileSize === -1) {
+            if (!headerBuf) headerBuf = new Uint8Array(512);
+            const needed = 512 - headerOffset;
+            const toCopy = Math.min(needed, chunk.byteLength);
+            headerBuf.set(chunk.subarray(0, toCopy), headerOffset);
+            headerOffset += toCopy;
+
+            if (headerOffset < 512) continue; // need more data for header
+
+            // Parse size from octal field at offset 124, length 12
+            const sizeStr = new TextDecoder().decode(headerBuf.subarray(124, 136)).replace(/\0/g, "").trim();
+            fileSize = parseInt(sizeStr, 8);
+            if (isNaN(fileSize) || fileSize <= 0) {
+              controller.close();
+              reader.releaseLock();
+              return;
+            }
+
+            // Remaining bytes after header in this chunk
+            chunk = chunk.subarray(toCopy);
+            headerBuf = null;
+            if (chunk.byteLength === 0) continue;
+          }
+
+          // Phase 2: Pass through file content
+          const remaining = fileSize - bytesEmitted;
+          if (remaining <= 0) {
+            controller.close();
+            reader.releaseLock();
+            return;
+          }
+
+          if (chunk.byteLength <= remaining) {
+            controller.enqueue(chunk);
+            bytesEmitted += chunk.byteLength;
+          } else {
+            controller.enqueue(chunk.subarray(0, remaining));
+            bytesEmitted += remaining;
+          }
+
+          if (bytesEmitted >= fileSize) {
+            controller.close();
+            reader.releaseLock();
+            return;
+          }
+          // Only pull one meaningful chunk per call for backpressure
+          return;
+        }
+      } catch (err) {
+        controller.error(err);
+        reader.releaseLock();
+      }
+    },
+    cancel() {
+      reader.releaseLock();
+      tarStream.cancel();
+    },
+  });
+}
+
+/**
+ * Wraps a raw data stream in a tar archive stream (single file entry).
+ * The file size must be known upfront (from Content-Length or stat).
+ * Produces: 512-byte tar header + data chunks + padding + 1024-byte end marker.
+ */
+export function wrapInTarStream(filename: string, dataSize: number, dataStream: ReadableStream<Uint8Array>): ReadableStream<Uint8Array> {
+  const reader = dataStream.getReader();
+  let headerSent = false;
+  let bytesWritten = 0;
+  let streamDone = false;
+
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        // First: emit tar header
+        if (!headerSent) {
+          const header = Buffer.alloc(512);
+          const nameBytes = Buffer.from(filename, "utf-8");
+          nameBytes.copy(header, 0, 0, Math.min(nameBytes.length, 100));
+          writeOctalHelper(header, 100, 8, 0o644);
+          writeOctalHelper(header, 108, 8, 0);
+          writeOctalHelper(header, 116, 8, 0);
+          writeOctalHelper(header, 124, 12, dataSize);
+          writeOctalHelper(header, 136, 12, Math.floor(Date.now() / 1000));
+          header[156] = 0x30; // '0' = regular file
+          Buffer.from("ustar\0", "ascii").copy(header, 257);
+          Buffer.from("00", "ascii").copy(header, 263);
+          // Checksum
+          for (let i = 148; i < 156; i++) header[i] = 0x20;
+          let checksum = 0;
+          for (let i = 0; i < 512; i++) checksum += header[i]!;
+          writeOctalHelper(header, 148, 7, checksum);
+          header[155] = 0x20;
+
+          controller.enqueue(new Uint8Array(header));
+          headerSent = true;
+          return;
+        }
+
+        // Stream data chunks
+        if (!streamDone) {
+          const { done, value } = await reader.read();
+          if (done) {
+            streamDone = true;
+          } else {
+            controller.enqueue(value);
+            bytesWritten += value.byteLength;
+            return;
+          }
+        }
+
+        // After data: emit padding + end blocks
+        reader.releaseLock();
+        const remainder = bytesWritten % 512;
+        const paddingSize = remainder > 0 ? 512 - remainder : 0;
+        // Padding to 512-byte boundary + 1024-byte end marker
+        const tail = Buffer.alloc(paddingSize + 1024);
+        controller.enqueue(new Uint8Array(tail));
+        controller.close();
+      } catch (err) {
+        controller.error(err);
+        reader.releaseLock();
+      }
+    },
+    cancel() {
+      reader.releaseLock();
+      dataStream.cancel();
+    },
+  });
+}
+
+function writeOctalHelper(buf: Buffer, offset: number, length: number, value: number): void {
+  const str = value.toString(8).padStart(length - 1, "0");
+  Buffer.from(str + "\0", "ascii").copy(buf, offset);
 }
 
 // -- Minimal tar builder/reader --

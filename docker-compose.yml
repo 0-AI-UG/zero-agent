@@ -50,6 +50,7 @@ services:
     environment:
       - RUNNER_API_KEY=${RUNNER_API_KEY:-}
       - DEFAULT_IMAGE=${SESSION_IMAGE:-ghcr.io/0-ai-ug/zero-session:latest}
+      - SERVER_URL=http://server:3000
       - IDLE_TIMEOUT_SECS=600
       - ZERO_RUNNER_SOCKET_DIR=/var/run/zero-runner
       - ZERO_RUNNER_SOCKET_VOLUME=zero-runner-sockets

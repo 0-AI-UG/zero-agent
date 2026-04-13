@@ -531,11 +531,17 @@ app.post("/api/admin/execution/disable", h(async (req: Request) => {
 }));
 app.post("/api/admin/execution/reconnect", h(async (req: Request) => {
   await requireAdmin(req);
-  const result = await reconcile().then(r => ({
-    success: r.healthy > 0,
-    error: r.healthy === 0 ? "No healthy runners available" : undefined,
-  }));
-  return Response.json(result, { status: result.success ? 200 : 500, headers: corsHeaders });
+  const r = await reconcile();
+  const success = r.healthy > 0;
+  if (!success) {
+    log.warn("reconnect failed", { healthy: r.healthy, total: r.total });
+  } else {
+    log.info("reconnect succeeded", { healthy: r.healthy, total: r.total });
+  }
+  return Response.json({
+    success,
+    error: success ? undefined : "No healthy runners available",
+  }, { status: success ? 200 : 500, headers: corsHeaders });
 }));
 app.get("/api/admin/runner/status", h(async (req: Request) => {
   await requireAdmin(req);
@@ -572,7 +578,12 @@ app.post("/api/app-token", h(async (req: Request) => {
 }));
 
 // S3 presigned file serving
-app.all("/api/s3/*", (c) => presignHandler.handleRequest(c.req.raw));
+// Clone the response so @hono/node-server doesn't mutate the shared corsHeaders
+// object when it sets Content-Length (which would corrupt all subsequent responses).
+app.all("/api/s3/*", async (c) => {
+  const res = await presignHandler.handleRequest(c.req.raw);
+  return new Response(res.body, { status: res.status, headers: new Headers(res.headers) });
+});
 
 // Reverse proxy for forwarded ports
 app.all("/_apps/:slug/*", (c) => {

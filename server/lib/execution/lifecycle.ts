@@ -68,6 +68,7 @@ export async function reconcile(): Promise<{ healthy: number; total: number }> {
   reconciling = (async () => {
     try {
       if (getSetting("SERVER_EXECUTION_ENABLED") !== "true") {
+        lifecycleLog.info("reconcile skipped - execution not enabled");
         await teardownInternal();
         return { healthy: 0, total: 0 };
       }

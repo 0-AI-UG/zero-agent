@@ -5,7 +5,7 @@
     "": {
       "name": "rednote-leads-agent",
       "dependencies": {
-        "@0-ai/s3lite": "^0.3.0",
+        "@0-ai/s3lite": "^0.4.0",
         "@ai-sdk/openai": "^3.0.51",
         "@ai-sdk/react": "^3.0.110",
         "@codemirror/lang-cpp": "^6.0.3",
@@ -167,7 +167,7 @@
     "esbuild",
   ],
   "packages": {
-    "@0-ai/s3lite": ["@0-ai/s3lite@0.3.0", "", {}, "sha512-QnPEy4y9Hk57U9K3GWLgj1X1viGO+sGkZVP/VMw8fG04X6F0WPtbwxksIP03cMzPHDdKHeXzBpKPQg74qlrTZg=="],
+    "@0-ai/s3lite": ["@0-ai/s3lite@0.4.0", "", {}, "sha512-+xQlo9QJ4LzkJ8VZLjrKOMiN00dK1WKCJifmg+Kh6M7O+qj8oTm+XSUaPq3X/Vht7KFlOj4wmtUPHPwGPigwuQ=="],
 
     "@ai-sdk/gateway": ["@ai-sdk/gateway@3.0.61", "", { "dependencies": { "@ai-sdk/provider": "3.0.8", "@ai-sdk/provider-utils": "4.0.17", "@vercel/oidc": "3.1.0" }, "peerDependencies": { "zod": "^3.25.76 || ^4.1.8" } }, "sha512-OT6SeORuOoqfABhntMJHmInblxE2DbBYvRTynVOGl6dCDDh0cNU1lJgknyDV698eQmfb6Um/94/rImgt0ZPjDA=="],
 

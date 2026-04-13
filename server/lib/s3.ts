@@ -99,6 +99,36 @@ export async function writeToS3(
   }
 }
 
+export function readStreamFromS3(s3Key: string): ReadableStream<Uint8Array> {
+  s3Log.debug("readStream", { s3Key });
+  const file = s3.file(s3Key);
+  return file.readStream();
+}
+
+export async function writeStreamToS3(s3Key: string, stream: ReadableStream<Uint8Array>): Promise<void> {
+  s3Log.info("writeStream", { s3Key });
+  try {
+    const file = s3.file(s3Key);
+    const size = await file.writeStream(stream);
+    s3Log.info("writeStream success", { s3Key, sizeBytes: size });
+  } catch (err) {
+    s3Log.error("writeStream failed", err, { s3Key });
+    throw err;
+  }
+}
+
+export function s3FileExists(s3Key: string): boolean {
+  return s3.file(s3Key).exists();
+}
+
+export function s3FileSize(s3Key: string): number {
+  try {
+    return s3.file(s3Key).stat().size;
+  } catch {
+    return 0;
+  }
+}
+
 export async function deleteFromS3(s3Key: string): Promise<void> {
   s3Log.info("delete", { s3Key });
   try {

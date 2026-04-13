@@ -17,7 +17,7 @@
   },
   "trustedDependencies": ["sharp", "bcrypt", "better-sqlite3", "esbuild"],
   "dependencies": {
-    "@0-ai/s3lite": "^0.3.0",
+    "@0-ai/s3lite": "^0.4.0",
     "@ai-sdk/openai": "^3.0.51",
     "@ai-sdk/react": "^3.0.110",
     "@codemirror/lang-cpp": "^6.0.3",
