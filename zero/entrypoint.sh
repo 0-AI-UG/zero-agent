@@ -4,7 +4,7 @@ set -e
 echo "[entrypoint] starting"
 
 # Start virtual display
-Xvfb :99 -screen 0 1920x1080x24 &
+Xvfb :99 -screen 0 1280x720x24 &
 export DISPLAY=:99
 
 # Wait for Xvfb to be ready
@@ -14,7 +14,7 @@ echo "[entrypoint] xvfb ready"
 # Start VNC server
 x11vnc -display :99 -nopw -forever -shared -rfbport 5900 2>/dev/null &
 
-# Start Chromium with remote debugging
+# Start Chromium with remote debugging (memory-optimized)
 chromium \
   --no-sandbox \
   --remote-debugging-port=9222 \
@@ -27,6 +27,12 @@ chromium \
   --disable-background-networking \
   --disable-sync \
   --disable-dbus \
+  --disable-gpu \
+  --disable-software-rasterizer \
+  --disable-extensions \
+  --disable-translate \
+  --js-flags="--max-old-space-size=256" \
+  --renderer-process-limit=2 \
   --user-data-dir=/tmp/chrome-profile \
   about:blank &
 

@@ -202,8 +202,8 @@ export class ContainerManager {
         env,
         binds,
         mounts,
-        memory: opts?.memory ?? 1024 * 1024 * 1024,
-        cpus: opts?.cpus ?? 2,
+        memory: opts?.memory ?? 512 * 1024 * 1024,
+        cpus: opts?.cpus ?? 1,
         pidsLimit: 512,
       });
 
