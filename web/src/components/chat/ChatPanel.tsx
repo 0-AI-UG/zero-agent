@@ -263,7 +263,6 @@ export function ChatPanel({ projectId, chatId, initialMessages, initialIsStreami
             regenerate={regenerate}
             project={project}
             starterSuggestions={starterSuggestions}
-            quickActions={quickActions}
             onSuggestion={handleSuggestion}
           />
         </ConversationContent>

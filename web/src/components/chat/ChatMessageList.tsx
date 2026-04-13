@@ -9,33 +9,14 @@ import {
   MessageContent,
 } from "@/components/ai/message";
 import { Shimmer } from "@/components/ai/shimmer";
-import { Suggestions, Suggestion } from "@/components/ai/suggestion";
+import { Suggestion } from "@/components/ai/suggestion";
 import { getToolActiveLabel } from "@/components/chat/ToolPartRenderer";
 import { ChatMessageItem, type ChatMessage } from "@/components/chat/ChatMessageItem";
-import { getQuickActionIcon } from "@/components/chat/QuickActionsManager";
-import { AlertCircleIcon, RefreshCcwIcon, PackageIcon, SearchIcon, TargetIcon } from "lucide-react";
+import { AlertCircleIcon, RefreshCcwIcon } from "lucide-react";
 import { useCallback, useRef, type ReactNode } from "react";
 import logoSvg from "@/logo-mark.svg";
 
 const HIDDEN_TOOLS = new Set(["progressCreate", "progressUpdate", "progressList", "searchFiles", "readFile", "loadSkill"]);
-
-const ONBOARDING_SUGGESTIONS = [
-  {
-    text: "Here's what I'm working on",
-    icon: <PackageIcon className="size-3.5" />,
-    description: "Describe your project or idea",
-  },
-  {
-    text: "Help me research...",
-    icon: <SearchIcon className="size-3.5" />,
-    description: "Find information on a topic",
-  },
-  {
-    text: "My goals for this project are...",
-    icon: <TargetIcon className="size-3.5" />,
-    description: "Set your objectives",
-  },
-];
 
 interface ChatMessageListProps {
   messages: ChatMessage[];
@@ -49,7 +30,6 @@ interface ChatMessageListProps {
   regenerate: () => void;
   project: { assistantName?: string; assistantDescription?: string } | undefined;
   starterSuggestions: Array<{ text: string; icon: ReactNode; description: string }>;
-  quickActions: unknown;
   onSuggestion: (suggestion: string) => void;
 }
 
@@ -64,7 +44,6 @@ export function ChatMessageList({
   regenerate,
   project,
   starterSuggestions,
-  quickActions,
   onSuggestion,
 }: ChatMessageListProps) {
   const handleCopy = useCallback((text: string) => {
@@ -123,8 +102,6 @@ export function ChatMessageList({
     return false;
   })();
 
-  const isOnboarding = messages.length === 1 && messages[0]?.role === "assistant" && !isStreaming;
-
   return (
     <>
       {messages.length === 0 && (
@@ -155,47 +132,7 @@ export function ChatMessageList({
           </Link>
         </div>
       )}
-      {isOnboarding ? (
-        <div className="flex flex-col items-center justify-center flex-1 min-h-[60vh] gap-6">
-          <div className="text-muted-foreground mb-2">
-            <img src={logoSvg} alt="Zero Agent" className="size-10" />
-          </div>
-          <div className="w-full max-w-2xl">
-            <ChatMessageItem
-              key={messages[0]!.id}
-              message={messages[0]!}
-              projectId={projectId}
-              chatId={chatId}
-              isLastMessage
-              isStreaming={isStreaming}
-              memberMap={memberMap}
-              isMultiMember={isMultiMember}
-              onCopy={handleCopy}
-              onRegenerate={stableRegenerate}
-            />
-          </div>
-          <Suggestions className="justify-center flex-wrap">
-            {((messages[0] as any).metadata?.onboardingSuggestions as Array<{ text: string; icon: string; description: string }> | undefined)?.map((s) => (
-              <Suggestion
-                key={s.text}
-                suggestion={s.text}
-                icon={getQuickActionIcon(s.icon)}
-                description={s.description}
-                onClick={onSuggestion}
-              />
-            )) ?? ONBOARDING_SUGGESTIONS.map((s) => (
-              <Suggestion
-                key={s.text}
-                suggestion={s.text}
-                icon={s.icon}
-                description={s.description}
-                onClick={onSuggestion}
-              />
-            ))}
-          </Suggestions>
-        </div>
-      ) : (
-        messages.map((message, index) => (
+      {messages.map((message, index) => (
           <ChatMessageItem
             key={message.id}
             message={message}
@@ -208,8 +145,7 @@ export function ChatMessageList({
             onCopy={handleCopy}
             onRegenerate={stableRegenerate}
           />
-        ))
-      )}
+      ))}
       {showThinking && (
         <Message from="assistant">
           <MessageContent>
