@@ -1,12 +1,6 @@
 "use client"
 
-import {
-  CircleCheckIcon,
-  InfoIcon,
-  Loader2Icon,
-  OctagonXIcon,
-  TriangleAlertIcon,
-} from "lucide-react"
+import { Loader2Icon } from "lucide-react"
 import { useTheme } from "next-themes"
 import { Toaster as Sonner, type ToasterProps } from "sonner"
 
@@ -23,10 +17,10 @@ const Toaster = ({ ...props }: ToasterProps) => {
       dismissible
       gap={8}
       icons={{
-        success: <CircleCheckIcon className="size-4" />,
-        info: <InfoIcon className="size-4" />,
-        warning: <TriangleAlertIcon className="size-4" />,
-        error: <OctagonXIcon className="size-4" />,
+        success: <></>,
+        info: <></>,
+        warning: <></>,
+        error: <></>,
         loading: <Loader2Icon className="size-4 animate-spin" />,
       }}
       toastOptions={{
@@ -37,10 +31,10 @@ const Toaster = ({ ...props }: ToasterProps) => {
           description: "!text-[13px] !text-muted-foreground !leading-relaxed",
           closeButton:
             "!bg-popover !border-border/60 !text-muted-foreground/60 hover:!text-foreground hover:!bg-muted !rounded-md",
-          success: "!border-l-4 !border-l-emerald-500",
-          error: "!border-l-4 !border-l-red-500",
-          warning: "!border-l-4 !border-l-amber-500",
-          info: "!border-l-4 !border-l-blue-500",
+          success: "",
+          error: "",
+          warning: "",
+          info: "",
         },
       }}
       style={
