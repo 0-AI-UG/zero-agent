@@ -23,6 +23,11 @@
       "secret": true
     },
     {
+      "key": "SERVER_URL",
+      "description": "URL of the main server (for proxying zero CLI requests from session containers)",
+      "required": true
+    },
+    {
       "key": "DEFAULT_IMAGE",
       "description": "Docker image for agent session containers",
       "default": "ghcr.io/0-ai-ug/zero-session:latest"
