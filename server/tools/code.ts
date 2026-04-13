@@ -388,8 +388,16 @@ export function createCodeTools(
 
         try {
           toolLog.info("bash:mem before ensureWorkspace", { rss: mem() });
-          const backend = await ensureWorkspace();
-          toolLog.info("bash:mem after ensureWorkspace", { rss: mem() });
+          const backend = await getBackend();
+          toolLog.info("bash:mem after getBackend", { rss: mem() });
+          await backend.ensureContainer(userId, projectId);
+          toolLog.info("bash:mem after ensureContainer", { rss: mem() });
+          await reconcileToContainer(projectId);
+          toolLog.info("bash:mem after reconcileToContainer", { rss: mem() });
+          if (!syncedProjects.has(projectId)) {
+            syncedProjects.add(projectId);
+            toolLog.info("workspace synced", { userId, projectId });
+          }
           markActivity(projectId);
 
           toolLog.info("bash:mem before runBash", { rss: mem() });
