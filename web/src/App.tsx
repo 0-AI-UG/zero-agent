@@ -61,6 +61,9 @@ export function App() {
               <Route path="services" element={<AppsPage />} />
               <Route path="skills" element={<SkillsPage />} />
               <Route path="settings" element={<SettingsPage />} />
+              <Route path="account" element={<AccountPage />} />
+              <Route path="admin" element={<AdminPage />} />
+              <Route path="help" element={<HelpPage />} />
             </Route>
           </Route>
 

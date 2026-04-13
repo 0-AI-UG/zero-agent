@@ -463,21 +463,21 @@ function ProjectSidebar({
             className="w-[var(--radix-dropdown-menu-trigger-width)]"
           >
             <DropdownMenuItem asChild>
-              <Link to="/account">
+              <Link to={`${basePath}/account`}>
                 <UserIcon />
                 Settings
               </Link>
             </DropdownMenuItem>
             {isAdmin && (
               <DropdownMenuItem asChild>
-                <Link to="/admin">
+                <Link to={`${basePath}/admin`}>
                   <ShieldIcon />
                   Admin
                 </Link>
               </DropdownMenuItem>
             )}
             <DropdownMenuItem asChild>
-              <Link to="/help">
+              <Link to={`${basePath}/help`}>
                 <CircleHelpIcon />
                 Help
               </Link>
