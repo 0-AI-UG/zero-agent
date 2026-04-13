@@ -3,12 +3,14 @@ import { useNavigate } from "react-router";
 import { useCurrentUser } from "@/api/admin";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { ShieldCheckIcon, CheckIcon, CopyIcon, ClipboardCheckIcon, FingerprintIcon, Trash2Icon, MoonIcon, SunIcon, MonitorIcon, PaletteIcon, UploadIcon, XIcon, ChevronLeftIcon } from "lucide-react";
+import { ShieldCheckIcon, CheckIcon, CopyIcon, ClipboardCheckIcon, FingerprintIcon, Trash2Icon, MoonIcon, SunIcon, MonitorIcon, PaletteIcon, UploadIcon, XIcon, ChevronLeftIcon, PencilIcon } from "lucide-react";
 import { totpSetup, totpConfirm, totpDisable, totpStatus } from "@/api/totp";
 import { passkeyRegisterOptions, passkeyRegisterVerify, passkeyList, passkeyDelete } from "@/api/passkeys";
 import { startRegistration } from "@simplewebauthn/browser";
 import { NotificationsCenter } from "@/components/settings/NotificationsCenter";
-import { useColorModeStore, type ColorMode } from "@/stores/color-mode";
+import { useColorModeStore, resolveColorMode, type ColorMode } from "@/stores/color-mode";
+import { validateThemeConfig, EXAMPLE_THEMES, type ThemeConfig, type ThemeColors } from "@/lib/theme-engine";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 
 const NAV_ITEMS = [
   { id: "general", label: "General" },
@@ -130,42 +132,91 @@ const COLOR_MODE_OPTIONS: { value: ColorMode; label: string; icon: typeof MoonIc
   { value: "system", label: "System", icon: MonitorIcon },
 ];
 
+const COLOR_FIELDS: { key: keyof ThemeColors; label: string }[] = [
+  { key: "background", label: "Background" },
+  { key: "foreground", label: "Text" },
+  { key: "accent", label: "Accent" },
+  { key: "muted", label: "Muted" },
+  { key: "border", label: "Border" },
+];
+
 function AppearanceSection() {
   const colorMode = useColorModeStore((s) => s.colorMode);
   const setColorMode = useColorModeStore((s) => s.setColorMode);
-  const customThemeName = useColorModeStore((s) => s.customThemeName);
+  const customTheme = useColorModeStore((s) => s.customTheme);
   const setCustomTheme = useColorModeStore((s) => s.setCustomTheme);
+  const setCustomThemeCss = useColorModeStore((s) => s.setCustomThemeCss);
+  const customThemeName = useColorModeStore((s) => s.customThemeName);
   const fileRef = useRef<HTMLInputElement>(null);
-  const [uploadError, setUploadError] = useState("");
+  const [error, setError] = useState("");
+  const [editing, setEditing] = useState<ThemeConfig | null>(null);
+  const isDark = resolveColorMode(colorMode) === "dark";
 
-  const handleThemeUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setUploadError("");
+  const handleJsonUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setError("");
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 50_000) {
-      setUploadError("File too large (max 50KB)");
-      return;
-    }
-    if (!file.name.endsWith(".css")) {
-      setUploadError("Only .css files are accepted");
-      return;
-    }
+    if (file.size > 50_000) { setError("File too large (max 50KB)"); return; }
+
     const reader = new FileReader();
     reader.onload = () => {
-      const css = reader.result as string;
-      if (css.includes("<script")) {
-        setUploadError("Invalid CSS file");
+      const text = reader.result as string;
+
+      if (file.name.endsWith(".css")) {
+        if (text.includes("<script")) { setError("Invalid CSS file"); return; }
+        if (!text.includes("--")) { setError("CSS must contain variable overrides"); return; }
+        setCustomThemeCss(text, file.name);
         return;
       }
-      if (!css.includes("--")) {
-        setUploadError("CSS file must contain CSS variable overrides (e.g. --background)");
-        return;
+
+      try {
+        const parsed = JSON.parse(text);
+        const result = validateThemeConfig(parsed);
+        if (!result.ok) { setError(result.error); return; }
+        setCustomTheme(result.config);
+      } catch {
+        setError("Invalid JSON file");
       }
-      setCustomTheme(css, file.name);
     };
     reader.readAsText(file);
     if (fileRef.current) fileRef.current.value = "";
   };
+
+  const applyPreset = (preset: ThemeConfig) => {
+    setCustomTheme(preset);
+    setError("");
+  };
+
+  const startEditing = () => {
+    if (customTheme) {
+      setEditing(structuredClone(customTheme));
+    } else {
+      setEditing(structuredClone(EXAMPLE_THEMES[0]!));
+    }
+  };
+
+  const saveEditing = () => {
+    if (!editing) return;
+    const result = validateThemeConfig(editing);
+    if (!result.ok) { setError(result.error); return; }
+    setCustomTheme(result.config);
+    setEditing(null);
+    setError("");
+  };
+
+  const updateEditColor = (mode: "light" | "dark", key: keyof ThemeColors, value: string) => {
+    if (!editing) return;
+    setEditing({
+      ...editing,
+      colors: {
+        ...editing.colors,
+        [mode]: { ...editing.colors[mode], [key]: value },
+      },
+    });
+  };
+
+  const activeName = customTheme?.name ?? customThemeName;
+  const activeColors = customTheme ? (isDark ? customTheme.colors.dark : customTheme.colors.light) : null;
 
   return (
     <section className="space-y-4">
@@ -194,44 +245,158 @@ function AppearanceSection() {
         </div>
 
         {/* Custom theme */}
-        <div className="space-y-2">
-          <p className="text-xs text-muted-foreground">Custom theme</p>
-          {uploadError && <p className="text-xs text-destructive">{uploadError}</p>}
-          {customThemeName ? (
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-2 px-3 py-2 rounded-md border bg-primary/5 text-sm">
-                <PaletteIcon className="size-3.5 text-primary" />
-                <span>{customThemeName}</span>
-              </div>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                onClick={() => setCustomTheme(null, null)}
-                aria-label="Remove custom theme"
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-muted-foreground">Theme</p>
+            {activeName && (
+              <button
+                onClick={() => { setCustomTheme(null); setCustomThemeCss(null, null); }}
+                className="text-[11px] text-muted-foreground hover:text-foreground transition-colors"
               >
-                <XIcon className="size-3.5 text-muted-foreground" />
-              </Button>
-            </div>
-          ) : (
-            <div>
-              <input
-                ref={fileRef}
-                type="file"
-                accept=".css"
-                onChange={handleThemeUpload}
-                className="hidden"
-              />
-              <Button variant="outline" size="sm" onClick={() => fileRef.current?.click()}>
-                <UploadIcon className="size-3.5 mr-1.5" />
-                Upload CSS
-              </Button>
-              <p className="text-[10px] text-muted-foreground mt-1.5">
-                Upload a .css file with CSS variable overrides to customize colors.
-              </p>
-            </div>
-          )}
+                Reset to default
+              </button>
+            )}
+          </div>
+          {error && <p className="text-xs text-destructive">{error}</p>}
+
+          {/* Theme grid — always visible */}
+          <div className="grid grid-cols-3 gap-3">
+            {EXAMPLE_THEMES.map((t) => {
+              const isSelected = customTheme?.name === t.name;
+              const colors = isDark ? t.colors.dark : t.colors.light;
+              return (
+                <button
+                  key={t.name}
+                  onClick={() => isSelected ? setCustomTheme(null) : applyPreset(t)}
+                  className={`group flex flex-col rounded-lg overflow-hidden transition-all ${
+                    isSelected
+                      ? "ring-2 ring-primary ring-offset-2 ring-offset-background"
+                      : "ring-1 ring-border hover:ring-primary/30"
+                  }`}
+                >
+                  {/* Color swatch strip */}
+                  <div className="flex h-16">
+                    {([colors.background, colors.foreground, colors.accent, colors.muted, colors.border] as const).map((c, i) => (
+                      <div key={i} className="flex-1" style={{ background: c }} />
+                    ))}
+                  </div>
+                  <div className="flex items-center justify-between px-3 py-2.5 bg-card">
+                    <span className={`text-xs font-medium transition-colors ${
+                      isSelected ? "text-foreground" : "text-muted-foreground group-hover:text-foreground"
+                    }`}>
+                      {t.name}
+                    </span>
+                    {isSelected && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setEditing(structuredClone(t)); }}
+                        className="text-muted-foreground hover:text-foreground transition-colors"
+                        aria-label="Edit theme"
+                      >
+                        <PencilIcon className="size-3" />
+                      </button>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Actions */}
+          <div className="flex gap-2 items-center">
+            <Button variant="outline" size="sm" onClick={startEditing}>
+              <PaletteIcon className="size-3.5 mr-1.5" />
+              Create Theme
+            </Button>
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".json,.css"
+              onChange={handleJsonUpload}
+              className="hidden"
+            />
+            <Button variant="outline" size="sm" onClick={() => fileRef.current?.click()}>
+              <UploadIcon className="size-3.5 mr-1.5" />
+              Upload
+            </Button>
+            <p className="text-[10px] text-muted-foreground">.json or .css</p>
+          </div>
         </div>
       </div>
+
+      {/* Theme editor dialog */}
+      <Dialog open={!!editing} onOpenChange={(open) => { if (!open) { setEditing(null); setError(""); } }}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Edit Theme</DialogTitle>
+          </DialogHeader>
+
+          {editing && (
+            <div className="space-y-5">
+              <div className="space-y-1.5">
+                <label className="text-xs text-muted-foreground">Theme name</label>
+                <Input
+                  value={editing.name}
+                  onChange={(e) => setEditing({ ...editing, name: e.target.value })}
+                  placeholder="My Theme"
+                />
+              </div>
+
+              {(["light", "dark"] as const).map((mode) => (
+                <div key={mode} className="space-y-3">
+                  <p className="text-sm font-medium capitalize">{mode} mode</p>
+                  <div className="grid grid-cols-5 gap-3">
+                    {COLOR_FIELDS.map(({ key, label }) => (
+                      <div key={key} className="space-y-1.5">
+                        <label className="text-xs text-muted-foreground">{label}</label>
+                        <div className="relative">
+                          <input
+                            type="color"
+                            value={editing.colors[mode][key]}
+                            onChange={(e) => updateEditColor(mode, key, e.target.value)}
+                            className="absolute inset-0 opacity-0 cursor-pointer"
+                          />
+                          <div
+                            className="h-10 rounded-lg border border-border cursor-pointer transition-shadow hover:ring-2 hover:ring-ring"
+                            style={{ background: editing.colors[mode][key] }}
+                          />
+                        </div>
+                        <input
+                          type="text"
+                          value={editing.colors[mode][key]}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            if (/^#[0-9a-fA-F]{0,6}$/.test(v)) updateEditColor(mode, key, v);
+                          }}
+                          className="w-full text-[11px] font-mono bg-transparent text-muted-foreground border-0 p-0 focus:outline-none"
+                          spellCheck={false}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+
+              {/* Preview strip */}
+              <div className="space-y-1.5">
+                <p className="text-xs text-muted-foreground">Preview</p>
+                <div className="flex rounded-lg overflow-hidden h-8">
+                  {(isDark
+                    ? [editing.colors.dark.background, editing.colors.dark.foreground, editing.colors.dark.accent, editing.colors.dark.muted, editing.colors.dark.border]
+                    : [editing.colors.light.background, editing.colors.light.foreground, editing.colors.light.accent, editing.colors.light.muted, editing.colors.light.border]
+                  ).map((c, i) => (
+                    <div key={i} className="flex-1" style={{ background: c }} />
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => { setEditing(null); setError(""); }}>Cancel</Button>
+            <Button onClick={saveEditing}>Apply Theme</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </section>
   );
 }

@@ -20,10 +20,11 @@
             if (stored === 'light') mode = 'light';
             else if (stored === 'system') mode = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
             var css = state && state.customThemeCss;
-            if (css) {
+            var theme = state && state.customTheme;
+            if (theme || css) {
               var s = document.createElement('style');
               s.id = 'custom-theme';
-              s.textContent = css;
+              s.textContent = css || '';
               document.head.appendChild(s);
             }
           }

@@ -1,14 +1,19 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import type { ThemeConfig } from "@/lib/theme-engine";
 
 export type ColorMode = "dark" | "light" | "system";
 
 interface ColorModeState {
   colorMode: ColorMode;
   setColorMode: (mode: ColorMode) => void;
+  /** User-defined JSON theme (replaces old raw CSS approach) */
+  customTheme: ThemeConfig | null;
+  setCustomTheme: (theme: ThemeConfig | null) => void;
+  /** Legacy: raw CSS string (kept for backward compat during migration) */
   customThemeCss: string | null;
   customThemeName: string | null;
-  setCustomTheme: (css: string | null, name: string | null) => void;
+  setCustomThemeCss: (css: string | null, name: string | null) => void;
 }
 
 export const useColorModeStore = create<ColorModeState>()(
@@ -16,9 +21,11 @@ export const useColorModeStore = create<ColorModeState>()(
     (set) => ({
       colorMode: "dark" as ColorMode,
       setColorMode: (colorMode) => set({ colorMode }),
+      customTheme: null as ThemeConfig | null,
+      setCustomTheme: (theme) => set({ customTheme: theme, customThemeCss: null, customThemeName: null }),
       customThemeCss: null as string | null,
       customThemeName: null as string | null,
-      setCustomTheme: (css, name) => set({ customThemeCss: css, customThemeName: name }),
+      setCustomThemeCss: (css, name) => set({ customThemeCss: css, customThemeName: name, customTheme: null }),
     }),
     { name: "color-mode-preference" },
   ),
