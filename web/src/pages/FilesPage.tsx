@@ -312,20 +312,6 @@ export function FilesPage() {
   const [isDragOver, setIsDragOver] = useState(false);
   const dragCounter = useRef(0);
 
-  // Storage info
-  const storageInfo = files
-    ? {
-        count: files.length,
-        totalSize: files.reduce((acc, f) => acc + (f.sizeBytes || 0), 0),
-      }
-    : null;
-
-  const formatBytes = (bytes: number) => {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  };
-
 
   const handleDropItem = useCallback(
     (itemId: string, itemType: "file" | "folder", targetPath: string) => {
@@ -505,8 +491,7 @@ export function FilesPage() {
             onBulkDelete={() => setBulkConfirmOpen(true)}
             isBulkDeleting={isBulkDeleting}
             onRangeSelect={rangeSelect}
-            storageSummary={storageInfo ? `${storageInfo.count} file${storageInfo.count !== 1 ? "s" : ""} · ${formatBytes(storageInfo.totalSize)}` : undefined}
-            breadcrumb={currentPath !== "/" ? <FolderBreadcrumbs currentPath={currentPath} onNavigate={navigateTo} onDropItem={handleDropItem} /> : undefined}
+            breadcrumb={<FolderBreadcrumbs currentPath={currentPath} onNavigate={navigateTo} onDropItem={handleDropItem} />}
           />
           )}
         </div>

@@ -40,7 +40,6 @@ interface FileListProps {
   onBulkDelete: () => void;
   isBulkDeleting?: boolean;
   onRangeSelect: (ids: { fileIds: string[]; folderIds: string[] }, additive: boolean) => void;
-  storageSummary?: string;
   breadcrumb?: React.ReactNode;
 }
 
@@ -69,7 +68,6 @@ export function FileList({
   onBulkDelete,
   isBulkDeleting,
   onRangeSelect,
-  storageSummary,
   breadcrumb,
 }: FileListProps) {
   const anchorIndexRef = useRef<number | null>(null);
@@ -249,15 +247,9 @@ export function FileList({
         </div>
       ) : (
       <div className="px-4 py-2 flex items-center justify-between">
-        {breadcrumb ? (
-          <div className="text-muted-foreground/70 min-w-0 overflow-hidden">
-            {breadcrumb}
-          </div>
-        ) : (
-          <span className="text-xs text-muted-foreground tabular-nums">
-            {totalItems} item{totalItems !== 1 ? "s" : ""}{storageSummary ? ` · ${storageSummary}` : ""}
-          </span>
-        )}
+        <div className="text-muted-foreground/70 min-w-0 overflow-hidden">
+          {breadcrumb}
+        </div>
         <Select
           value={sortBy}
           onValueChange={(v) =>
