@@ -524,7 +524,7 @@ list(): ContainerInfo[] {
     finally { resolve!(); }
   }
 
-  private async waitForCdp(host: string, port: number, maxWaitMs = 15_000): Promise<void> {
+  private async waitForCdp(host: string, port: number, maxWaitMs = 30_000): Promise<void> {
     const start = Date.now();
     while (Date.now() - start < maxWaitMs) {
       try {
