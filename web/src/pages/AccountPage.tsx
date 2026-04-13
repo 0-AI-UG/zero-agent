@@ -260,7 +260,7 @@ function AppearanceSection() {
           {error && <p className="text-xs text-destructive">{error}</p>}
 
           {/* Theme grid — always visible */}
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {EXAMPLE_THEMES.map((t) => {
               const isSelected = customTheme?.name === t.name;
               const colors = isDark ? t.colors.dark : t.colors.light;
