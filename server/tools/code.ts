@@ -383,24 +383,12 @@ export function createCodeTools(
         background: z.boolean().optional().describe("Run the command as a background process. Returns immediately with the PID. Use for long-running servers and processes that should keep running."),
       }),
       execute: async function* ({ command, timeout, background }) {
-        const mem = () => Math.round(process.memoryUsage().rss / 1024 / 1024);
-        toolLog.info("bash", { userId, projectId, command, background, rss: mem() });
+        toolLog.info("bash", { userId, projectId, command, background });
 
         try {
-          toolLog.info("bash:mem before ensureWorkspace", { rss: mem() });
-          const backend = await getBackend();
-          toolLog.info("bash:mem after getBackend", { rss: mem() });
-          await backend.ensureContainer(userId, projectId);
-          toolLog.info("bash:mem after ensureContainer", { rss: mem() });
-          await reconcileToContainer(projectId);
-          toolLog.info("bash:mem after reconcileToContainer", { rss: mem() });
-          if (!syncedProjects.has(projectId)) {
-            syncedProjects.add(projectId);
-            toolLog.info("workspace synced", { userId, projectId });
-          }
+          const backend = await ensureWorkspace();
           markActivity(projectId);
 
-          toolLog.info("bash:mem before runBash", { rss: mem() });
           const result = await backend.runBash(
             userId,
             projectId,
@@ -408,7 +396,6 @@ export function createCodeTools(
             timeout,
             background,
           );
-          toolLog.info("bash:mem after runBash", { rss: mem() });
 
           if (!result || typeof result !== "object") {
             toolLog.error("bash: backend returned invalid result", null, { userId, projectId, result });
@@ -442,18 +429,14 @@ export function createCodeTools(
           }
 
           // Kick off blob-dir persistence (debounced, non-blocking)
-          toolLog.info("bash:mem before persistBlobsAsync", { rss: mem() });
           persistBlobsAsync(backend, projectId);
-          toolLog.info("bash:mem after persistBlobsAsync", { rss: mem() });
 
           // Build the sync diff (changed + deleted files together)
-          toolLog.info("bash:mem before buildSyncChanges", { rss: mem() });
           const { changes, buildErrors } = await buildSyncChanges(
             projectId,
             result.changedFiles ?? [],
             result.deletedFiles ?? [],
           );
-          toolLog.info("bash:mem after buildSyncChanges", { rss: mem() });
 
           if (changes.length === 0) {
             yield {

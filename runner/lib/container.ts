@@ -110,7 +110,7 @@ export class ContainerManager {
     if (existing) {
       existing.lastUsedAt = Date.now();
       mgrLog.debug("reusing existing container", { name, ip: existing.ip });
-      return { name, ip: existing.ip, status: "running", createdAt: existing.createdAt, lastUsedAt: existing.lastUsedAt };
+      return { name, ip: existing.ip, status: "running", created: false, createdAt: existing.createdAt, lastUsedAt: existing.lastUsedAt };
     }
 
     if (this.containers.size >= MAX_CONTAINERS) {
@@ -125,7 +125,7 @@ export class ContainerManager {
       await inflight;
       const s = this.containers.get(name);
       if (!s) throw new Error("Container creation failed");
-      return { name, ip: s.ip, status: "running", createdAt: s.createdAt, lastUsedAt: s.lastUsedAt };
+      return { name, ip: s.ip, status: "running", created: false, createdAt: s.createdAt, lastUsedAt: s.lastUsedAt };
     }
 
     let resolve: () => void;
@@ -243,7 +243,7 @@ export class ContainerManager {
 
       mgrLog.info("container created", { name, containerId: containerId.slice(0, 12), ip, totalMs: Date.now() - startTime });
 
-      return { name, ip, status: "running", createdAt: state.createdAt, lastUsedAt: state.lastUsedAt };
+      return { name, ip, status: "running", created: true, createdAt: state.createdAt, lastUsedAt: state.lastUsedAt };
     } catch (err) {
       // Capture container logs before teardown to diagnose startup failures
       const containerLogs = await docker.getContainerLogs(name, 50).catch(() => "(no logs)");
@@ -303,7 +303,7 @@ export class ContainerManager {
   get(name: string): ContainerInfo | null {
     const state = this.containers.get(name);
     if (!state) return null;
-    return { name, ip: state.ip, status: "running", createdAt: state.createdAt, lastUsedAt: state.lastUsedAt };
+    return { name, ip: state.ip, status: "running", created: false, createdAt: state.createdAt, lastUsedAt: state.lastUsedAt };
   }
 
 list(): ContainerInfo[] {
@@ -311,6 +311,7 @@ list(): ContainerInfo[] {
       name: s.name,
       ip: s.ip,
       status: "running",
+      created: false,
       createdAt: s.createdAt,
       lastUsedAt: s.lastUsedAt,
     }));

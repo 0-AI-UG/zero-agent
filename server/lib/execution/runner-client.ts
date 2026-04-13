@@ -114,64 +114,57 @@ export class RunnerClient implements ExecutionBackend {
   }
 
   async ensureContainer(userId: string, projectId: string): Promise<void> {
-    const mem = () => Math.round(process.memoryUsage().rss / 1024 / 1024);
     const name = this.containerName(projectId);
-    const existed = this.sessionCache.has(projectId);
-    clientLog.info("ensureContainer:mem before POST /containers", { projectId, existed, rss: mem() });
-    const result = await this.json<{ name: string; ip: string; status: string }>(`/containers`, {
+    const result = await this.json<{ name: string; ip: string; status: string; created?: boolean }>(`/containers`, {
       method: "POST",
       body: JSON.stringify({ name }),
       timeout: 60_000,
     });
-    clientLog.info("ensureContainer:mem after POST /containers", { projectId, rss: mem() });
     this.sessionCache.set(projectId, {
       info: { sessionId: projectId, containerIp: result.ip, containerName: name, userId },
       expiresAt: Date.now() + RunnerClient.SESSION_CACHE_TTL,
     });
 
-    // First time seeing this container in this process - try to restore the
-    // system snapshot + workspace blob dirs from S3.
-    if (!existed) {
-      clientLog.info("ensureContainer:mem before snapshot restore", { projectId, rss: mem() });
-      try {
-        const buffer = await readBinaryFromS3(`containers/${projectId}/system.tar.gz`);
-        clientLog.info("ensureContainer:mem after readBinaryFromS3 snapshot", { projectId, rss: mem(), snapshotBytes: buffer?.byteLength ?? 0 });
-        if (buffer && buffer.byteLength > 0) {
-          await this.request(`/containers/${encodeURIComponent(name)}/files/snapshot`, {
-            method: "PUT",
-            body: new Uint8Array(buffer),
-            timeout: 120_000,
-            headers: { "Content-Type": "application/gzip" },
-          });
-          clientLog.info("system snapshot restored from S3", { projectId, sizeBytes: buffer.byteLength, rss: mem() });
-        }
-      } catch {
-        clientLog.info("ensureContainer:mem snapshot not found (ok)", { projectId, rss: mem() });
-      }
+    // Only restore snapshots/blobs when the runner actually created a new
+    // container. Previously we used an in-memory `existed` flag that reset on
+    // every server restart, causing a 391MB snapshot to be buffered into memory
+    // even though the container was already running — triggering OOM on small VPS.
+    if (!result.created) return;
 
-      // Restore workspace blob dirs in parallel
-      clientLog.info("ensureContainer:mem before blob restore", { projectId, rss: mem() });
-      try {
-        const prefix = `projects/${projectId}/.session/blobs/`;
-        const keys = await listS3Files(prefix);
-        clientLog.info("ensureContainer:mem blob keys listed", { projectId, rss: mem(), blobCount: keys.length });
-        await Promise.all(keys.map(async (key) => {
-          try {
-            const filename = key.slice(prefix.length);
-            const dir = filename.replace(/\.tar\.gz$/, "").replace(/__/g, "/");
-            if (!dir) return;
-            const buf = await readBinaryFromS3(key);
-            if (!buf || buf.byteLength === 0) return;
-            await this.restoreBlobDir(projectId, dir, buf);
-            clientLog.info("blob dir restored", { projectId, dir, sizeBytes: buf.byteLength });
-          } catch (err) {
-            clientLog.warn("blob restore failed", { projectId, key, error: String(err) });
-          }
-        }));
-      } catch {
-        // No blob dirs in S3 yet - fine.
+    try {
+      const buffer = await readBinaryFromS3(`containers/${projectId}/system.tar.gz`);
+      if (buffer && buffer.byteLength > 0) {
+        await this.request(`/containers/${encodeURIComponent(name)}/files/snapshot`, {
+          method: "PUT",
+          body: new Uint8Array(buffer),
+          timeout: 120_000,
+          headers: { "Content-Type": "application/gzip" },
+        });
+        clientLog.info("system snapshot restored from S3", { projectId, sizeBytes: buffer.byteLength });
       }
-      clientLog.info("ensureContainer:mem after blob restore", { projectId, rss: mem() });
+    } catch {
+      // First-time projects have no snapshot - silently skip.
+    }
+
+    // Restore workspace blob dirs in parallel
+    try {
+      const prefix = `projects/${projectId}/.session/blobs/`;
+      const keys = await listS3Files(prefix);
+      await Promise.all(keys.map(async (key) => {
+        try {
+          const filename = key.slice(prefix.length);
+          const dir = filename.replace(/\.tar\.gz$/, "").replace(/__/g, "/");
+          if (!dir) return;
+          const buf = await readBinaryFromS3(key);
+          if (!buf || buf.byteLength === 0) return;
+          await this.restoreBlobDir(projectId, dir, buf);
+          clientLog.info("blob dir restored", { projectId, dir, sizeBytes: buf.byteLength });
+        } catch (err) {
+          clientLog.warn("blob restore failed", { projectId, key, error: String(err) });
+        }
+      }));
+    } catch {
+      // No blob dirs in S3 yet - fine.
     }
   }
 

@@ -54,6 +54,7 @@ export interface ContainerInfo {
   name: string;
   ip: string;
   status: string;
+  created: boolean;
   createdAt: number;
   lastUsedAt: number;
 }
