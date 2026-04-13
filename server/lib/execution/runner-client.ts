@@ -3,6 +3,7 @@
  * Implements ExecutionBackend so tools don't need to know whether
  * execution is local or remote.
  */
+import http from "node:http";
 import type { BrowserAction, BrowserResult } from "@/lib/browser/protocol.ts";
 import type {
   ExecutionBackend, BashResult, ExecResult, SessionInfo, ContainerListEntry,
@@ -74,6 +75,69 @@ export class RunnerClient implements ExecutionBackend {
     return parsed as T;
   }
 
+  /**
+   * Stream a ReadableStream body to the runner using Node.js http.request.
+   * Unlike fetch, this pipes chunks directly without buffering the whole body,
+   * keeping memory usage constant regardless of payload size.
+   */
+  private streamUpload(
+    path: string,
+    stream: ReadableStream<Uint8Array>,
+    size: number,
+    timeout: number,
+  ): Promise<void> {
+    const url = new URL(`${this.baseUrl}/api/v1${path}`);
+    return new Promise<void>((resolve, reject) => {
+      const req = http.request(
+        {
+          hostname: url.hostname,
+          port: url.port || 80,
+          path: url.pathname + url.search,
+          method: "PUT",
+          headers: {
+            "Authorization": `Bearer ${this.apiKey}`,
+            "Content-Type": "application/gzip",
+            "Content-Length": String(size),
+          },
+          timeout,
+        },
+        (res) => {
+          // Consume response body to free the socket
+          res.resume();
+          if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+            resolve();
+          } else {
+            reject(new Error(`Stream upload failed: ${res.statusCode}`));
+          }
+        },
+      );
+
+      req.on("error", reject);
+      req.on("timeout", () => {
+        req.destroy(new Error("Stream upload timed out"));
+      });
+
+      // Pipe the ReadableStream through the request in chunks
+      const reader = stream.getReader();
+      (async () => {
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            const ok = req.write(value);
+            if (!ok) {
+              // Back-pressure: wait for drain before writing more
+              await new Promise<void>((r) => req.once("drain", r));
+            }
+          }
+          req.end();
+        } catch (err) {
+          req.destroy(err instanceof Error ? err : new Error(String(err)));
+        }
+      })();
+    });
+  }
+
   // -- Lifecycle --
 
   async healthCheck(): Promise<boolean> {
@@ -136,38 +200,42 @@ export class RunnerClient implements ExecutionBackend {
       if (s3FileExists(snapshotKey)) {
         const size = s3FileSize(snapshotKey);
         const stream = readStreamFromS3(snapshotKey);
-        await this.request(`/containers/${encodeURIComponent(name)}/files/snapshot`, {
-          method: "PUT",
-          body: stream,
-          duplex: "half",
-          timeout: 120_000,
-          headers: { "Content-Type": "application/gzip", "Content-Length": String(size) },
-        } as any);
+        await this.streamUpload(
+          `/containers/${encodeURIComponent(name)}/files/snapshot`,
+          stream,
+          size,
+          120_000,
+        );
         clientLog.info("system snapshot restored from S3 (streamed)", { projectId, sizeBytes: size });
       }
     } catch {
       // First-time projects have no snapshot - silently skip.
     }
 
-    // Restore workspace blob dirs in parallel (streamed)
+    // Restore workspace blob dirs sequentially to avoid parallel memory spikes
     try {
       const prefix = `projects/${projectId}/.session/blobs/`;
       const keys = await listS3Files(prefix);
-      await Promise.all(keys.map(async (key) => {
+      for (const key of keys) {
         try {
           const filename = key.slice(prefix.length);
           const dir = filename.replace(/\.tar\.gz$/, "").replace(/__/g, "/");
-          if (!dir) return;
-          if (!s3FileExists(key)) return;
+          if (!dir) continue;
+          if (!s3FileExists(key)) continue;
           const size = s3FileSize(key);
-          if (size === 0) return;
+          if (size === 0) continue;
           const stream = readStreamFromS3(key);
-          await this.restoreBlobDirStream(projectId, dir, stream, size);
+          await this.streamUpload(
+            `/containers/${encodeURIComponent(name)}/files/blob?dir=${encodeURIComponent(dir)}`,
+            stream,
+            size,
+            180_000,
+          );
           clientLog.info("blob dir restored (streamed)", { projectId, dir, sizeBytes: size });
         } catch (err) {
           clientLog.warn("blob restore failed", { projectId, key, error: String(err) });
         }
-      }));
+      }
     } catch {
       // No blob dirs in S3 yet - fine.
     }
@@ -208,17 +276,11 @@ export class RunnerClient implements ExecutionBackend {
 
   async restoreBlobDir(projectId: string, dir: string, data: ReadableStream<Uint8Array>, size?: number): Promise<void> {
     const name = this.containerName(projectId);
-    const headers: Record<string, string> = { "Content-Type": "application/gzip" };
-    if (size !== undefined) headers["Content-Length"] = String(size);
-    await this.request(
+    await this.streamUpload(
       `/containers/${encodeURIComponent(name)}/files/blob?dir=${encodeURIComponent(dir)}`,
-      {
-        method: "PUT",
-        body: data,
-        duplex: "half",
-        timeout: 180_000,
-        headers,
-      } as any,
+      data,
+      size ?? 0,
+      180_000,
     );
   }
 
