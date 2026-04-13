@@ -10,7 +10,7 @@ const procs = [
     cwd: "web",
     stdio: "inherit",
   }),
-  spawn("node", ["--import", "tsx/esm", "--env-file=.env", "server/index.ts"], {
+  spawn("node", ["--max-old-space-size=8192", "--import", "tsx/esm", "--env-file=.env", "server/index.ts"], {
     stdio: "inherit",
     env: { ...process.env },
   }),
