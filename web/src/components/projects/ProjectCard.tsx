@@ -56,7 +56,10 @@ export function ProjectCard({ project }: ProjectCardProps) {
       >
         <CardHeader className="px-4 py-3.5">
           <div className="flex items-start justify-between gap-2">
-            <CardTitle className="text-base truncate">{project.name}</CardTitle>
+            <CardTitle className="text-base truncate flex items-center gap-1.5">
+              {project.isStarred && <StarIcon className="size-3.5 fill-yellow-500 text-yellow-500 shrink-0" />}
+              {project.name}
+            </CardTitle>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button

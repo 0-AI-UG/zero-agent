@@ -7,7 +7,7 @@ import { CreateProjectDialog } from "@/components/projects/CreateProjectDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { MailIcon, SearchIcon } from "lucide-react";
+import { ArchiveIcon, ChevronDownIcon, MailIcon, SearchIcon } from "lucide-react";
 import { EmptyProjectsIllustration } from "@/components/ui/illustrations";
 
 export function DashboardPage() {
@@ -18,6 +18,7 @@ export function DashboardPage() {
   const declineInvitation = useDeclineInvitation();
   const canCreateProjects = currentUser?.canCreateProjects !== false;
   const [search, setSearch] = useState("");
+  const [showArchived, setShowArchived] = useState(false);
 
   const filtered = useMemo(() => {
     if (!projects) return [];
@@ -33,6 +34,11 @@ export function DashboardPage() {
       : active;
     return list.sort((a, b) => (a.isStarred === b.isStarred ? 0 : a.isStarred ? -1 : 1));
   }, [projects, search]);
+
+  const archived = useMemo(() => {
+    if (!projects) return [];
+    return projects.filter((p) => p.isArchived);
+  }, [projects]);
 
   return (
     <div className="flex flex-col h-full">
@@ -149,6 +155,26 @@ export function DashboardPage() {
                 No projects matching &quot;{search}&quot;
               </p>
             )}
+
+          {archived.length > 0 && (
+            <div>
+              <button
+                onClick={() => setShowArchived(!showArchived)}
+                className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
+              >
+                <ArchiveIcon className="size-4" />
+                Archived ({archived.length})
+                <ChevronDownIcon className={`size-4 transition-transform ${showArchived ? "rotate-180" : ""}`} />
+              </button>
+              {showArchived && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+                  {archived.map((project) => (
+                    <ProjectCard key={project.id} project={project} />
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>
