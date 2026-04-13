@@ -512,7 +512,7 @@ export function SpreadsheetTable({
               {/* Add column header */}
               {editable && (
                 <th
-                  className="p-0 border-r border-border/40 bg-muted/60 w-0"
+                  className="p-0 border-r border-border/40"
                   style={{ backgroundColor: "var(--muted)" }}
                 >
                   <button
