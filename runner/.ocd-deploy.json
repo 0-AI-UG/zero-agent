@@ -23,9 +23,9 @@
       "secret": true
     },
     {
-      "key": "SESSION_IMAGE",
+      "key": "DEFAULT_IMAGE",
       "description": "Docker image for agent session containers",
-      "default": "ghcr.io/cero-ai/zero-session:latest"
+      "default": "ghcr.io/0-AI-UG/zero-session:latest"
     },
     {
       "key": "IDLE_TIMEOUT_SECS",
