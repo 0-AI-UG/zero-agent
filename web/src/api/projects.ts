@@ -12,6 +12,8 @@ export interface Project {
   assistantName: string;
   assistantDescription: string;
   assistantIcon: string;
+  isStarred: boolean;
+  isArchived: boolean;
   role: "owner" | "member" | "admin";
   memberCount: number;
   createdAt: string;
@@ -68,6 +70,38 @@ export function useUpdateProject(id: string) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(id) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.projects.all });
+    },
+  });
+}
+
+export function useStarProject() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, isStarred }: { id: string; isStarred: boolean }) => {
+      const res = await apiFetch<{ project: Project }>(`/projects/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({ isStarred }),
+      });
+      return res.project;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.projects.all });
+    },
+  });
+}
+
+export function useArchiveProject() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, isArchived }: { id: string; isArchived: boolean }) => {
+      const res = await apiFetch<{ project: Project }>(`/projects/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({ isArchived }),
+      });
+      return res.project;
+    },
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.projects.all });
     },
   });

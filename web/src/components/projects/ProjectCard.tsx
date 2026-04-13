@@ -10,7 +10,7 @@ import {
   UsersIcon,
 } from "lucide-react";
 import type { Project } from "@/api/projects";
-import { useDeleteProject } from "@/api/projects";
+import { useDeleteProject, useStarProject, useArchiveProject } from "@/api/projects";
 import {
   Card,
   CardDescription,
@@ -44,6 +44,8 @@ export function ProjectCard({ project }: ProjectCardProps) {
   const navigate = useNavigate();
   const [confirmOpen, setConfirmOpen] = useState(false);
   const deleteProject = useDeleteProject();
+  const starProject = useStarProject();
+  const archiveProject = useArchiveProject();
   const basePath = `/projects/${project.id}`;
 
   return (
@@ -68,18 +70,22 @@ export function ProjectCard({ project }: ProjectCardProps) {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
-                <DropdownMenuItem>
-                  <StarIcon />
-                  Star
+                <DropdownMenuItem
+                  onClick={() => starProject.mutate({ id: project.id, isStarred: !project.isStarred })}
+                >
+                  <StarIcon className={project.isStarred ? "fill-current" : ""} />
+                  {project.isStarred ? "Unstar" : "Star"}
                 </DropdownMenuItem>
                 <DropdownMenuItem>
                   <PencilIcon />
                   Edit details
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => archiveProject.mutate({ id: project.id, isArchived: !project.isArchived })}
+                >
                   <ArchiveIcon />
-                  Archive
+                  {project.isArchived ? "Unarchive" : "Archive"}
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   variant="destructive"

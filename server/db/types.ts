@@ -41,6 +41,8 @@ export interface ProjectRow {
   assistant_name: string;
   assistant_description: string;
   assistant_icon: string;
+  is_starred: number;
+  is_archived: number;
   created_at: string;
   updated_at: string;
 }

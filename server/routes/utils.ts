@@ -71,6 +71,8 @@ export function formatProject(row: ProjectRow, opts?: { role?: string; memberCou
     assistantName: row.assistant_name,
     assistantDescription: row.assistant_description,
     assistantIcon: row.assistant_icon,
+    isStarred: row.is_starred === 1,
+    isArchived: row.is_archived === 1,
     role: opts?.role ?? "owner",
     memberCount: opts?.memberCount ?? 1,
     createdAt: toUTC(row.created_at),

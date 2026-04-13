@@ -41,6 +41,8 @@ db.exec(`
     assistant_name            TEXT NOT NULL DEFAULT 'Zero Agent',
     assistant_description     TEXT NOT NULL DEFAULT 'Ask me anything - I can browse the web, manage files, run code, and automate tasks.',
     assistant_icon            TEXT NOT NULL DEFAULT 'message',
+    is_starred                INTEGER NOT NULL DEFAULT 0,
+    is_archived               INTEGER NOT NULL DEFAULT 0,
     created_at                TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at                TEXT NOT NULL DEFAULT (datetime('now'))
   )
@@ -569,6 +571,19 @@ db.exec(`
     created_at    TEXT NOT NULL DEFAULT (datetime('now'))
   )
 `);
+
+// Idempotently add is_starred / is_archived for installs that pre-date the columns.
+{
+  const cols = db
+    .prepare("PRAGMA table_info(projects)")
+    .all() as { name: string }[];
+  if (!cols.some((c) => c.name === "is_starred")) {
+    db.exec("ALTER TABLE projects ADD COLUMN is_starred INTEGER NOT NULL DEFAULT 0");
+  }
+  if (!cols.some((c) => c.name === "is_archived")) {
+    db.exec("ALTER TABLE projects ADD COLUMN is_archived INTEGER NOT NULL DEFAULT 0");
+  }
+}
 
 // ── Indexes ──
 

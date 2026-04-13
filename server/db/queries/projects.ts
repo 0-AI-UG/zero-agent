@@ -50,7 +50,7 @@ export function getProjectById(id: string): ProjectRow | null {
 
 export function updateProject(
   id: string,
-  fields: { name?: string; description?: string; automationEnabled?: boolean; syncGatingEnabled?: boolean; showSkillsInFiles?: boolean; assistantName?: string; assistantDescription?: string; assistantIcon?: string },
+  fields: { name?: string; description?: string; automationEnabled?: boolean; syncGatingEnabled?: boolean; showSkillsInFiles?: boolean; assistantName?: string; assistantDescription?: string; assistantIcon?: string; isStarred?: boolean; isArchived?: boolean },
 ): ProjectRow {
   const sets: string[] = [];
   const values: (string | number)[] = [];
@@ -86,6 +86,14 @@ export function updateProject(
   if (fields.assistantIcon !== undefined) {
     sets.push("assistant_icon = ?");
     values.push(fields.assistantIcon);
+  }
+  if (fields.isStarred !== undefined) {
+    sets.push("is_starred = ?");
+    values.push(fields.isStarred ? 1 : 0);
+  }
+  if (fields.isArchived !== undefined) {
+    sets.push("is_archived = ?");
+    values.push(fields.isArchived ? 1 : 0);
   }
 
   sets.push("updated_at = datetime('now')");

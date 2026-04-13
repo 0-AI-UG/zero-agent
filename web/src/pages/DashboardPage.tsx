@@ -21,13 +21,17 @@ export function DashboardPage() {
 
   const filtered = useMemo(() => {
     if (!projects) return [];
-    if (!search.trim()) return projects;
-    const q = search.toLowerCase();
-    return projects.filter(
-      (p) =>
-        p.name.toLowerCase().includes(q) ||
-        p.description?.toLowerCase().includes(q)
-    );
+    const active = projects.filter((p) => !p.isArchived);
+    const list = search.trim()
+      ? active.filter((p) => {
+          const q = search.toLowerCase();
+          return (
+            p.name.toLowerCase().includes(q) ||
+            p.description?.toLowerCase().includes(q)
+          );
+        })
+      : active;
+    return list.sort((a, b) => (a.isStarred === b.isStarred ? 0 : a.isStarred ? -1 : 1));
   }, [projects, search]);
 
   return (
