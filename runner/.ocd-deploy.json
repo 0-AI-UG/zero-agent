@@ -25,7 +25,7 @@
     {
       "key": "DEFAULT_IMAGE",
       "description": "Docker image for agent session containers",
-      "default": "ghcr.io/0-AI-UG/zero-session:latest"
+      "default": "ghcr.io/0-ai-ug/zero-session:latest"
     },
     {
       "key": "IDLE_TIMEOUT_SECS",
