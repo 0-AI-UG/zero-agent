@@ -10,14 +10,21 @@
 
   html {
     background: var(--background);
+    overflow: hidden;
+    height: 100%;
   }
 
   body {
-    @apply min-w-[320px] min-h-screen m-0 bg-background text-foreground;
+    @apply min-w-[320px] m-0 bg-background text-foreground;
+    height: 100dvh;
+    overflow: hidden;
+    box-sizing: border-box;
     padding-top: env(safe-area-inset-top, 0);
     padding-bottom: env(safe-area-inset-bottom, 0);
     padding-left: env(safe-area-inset-left, 0);
     padding-right: env(safe-area-inset-right, 0);
+    /* Prevent iOS Safari from scrolling the page when focusing inputs */
+    overscroll-behavior: none;
   }
 }
 
@@ -37,6 +44,7 @@
   --accentSolidHover: var(--foreground);
   --accentText: var(--foreground);
   --accentTextContrast: var(--foreground);
+  --basePageBg: var(--background);
   --baseBase: var(--background);
   --baseBg: var(--background);
   --baseBgHover: var(--accent);
@@ -67,6 +75,7 @@
   --accentSolidHover: var(--foreground);
   --accentText: var(--foreground);
   --accentTextContrast: var(--foreground);
+  --basePageBg: var(--background);
   --baseBase: var(--background);
   --baseBg: var(--background);
   --baseBgHover: var(--accent);
@@ -183,4 +192,12 @@
   background-repeat: no-repeat;
   background-size: 100% 40px, 100% 40px, 100% 14px, 100% 14px;
   background-attachment: local, local, scroll, scroll;
+}
+
+/* ── Remove sonner default colored left bar from toasts ── */
+[data-sonner-toast][data-type="success"],
+[data-sonner-toast][data-type="error"],
+[data-sonner-toast][data-type="warning"],
+[data-sonner-toast][data-type="info"] {
+  border-left: none !important;
 }

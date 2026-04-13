@@ -169,7 +169,7 @@ function MobileProjectHeader({ projectName, projectId }: { projectName: string; 
   };
 
   return (
-    <header className="shrink-0 h-10 flex items-center px-3 gap-1.5 bg-background border-b border-border/30 md:hidden">
+    <header className="sticky top-0 z-40 shrink-0 h-10 flex items-center px-3 gap-1.5 bg-background border-b border-border/30 md:hidden">
       <Button variant="ghost" size="icon-sm" onClick={() => setOpenMobile(true)} aria-label="Open menu">
         <MenuIcon className="size-4" />
       </Button>
@@ -682,7 +682,7 @@ export function ProjectLayout() {
 
   if (projectLoading) {
     return (
-      <div className="flex h-screen items-center justify-center">
+      <div className="flex h-full items-center justify-center">
         <Loader size={20} />
       </div>
     );
@@ -690,7 +690,7 @@ export function ProjectLayout() {
 
   if (!project) {
     return (
-      <div className="flex h-screen flex-col items-center justify-center gap-3">
+      <div className="flex h-full flex-col items-center justify-center gap-3">
         <p className="text-sm text-muted-foreground">Project not found</p>
         <Button variant="outline" size="sm" onClick={() => navigate("/")}>
           Back to projects
@@ -700,7 +700,7 @@ export function ProjectLayout() {
   }
 
   return (
-    <SidebarProvider className="h-screen">
+    <SidebarProvider className="h-full min-h-0">
       <ProjectSidebar projectId={projectId!} projectName={project.name} />
       <SidebarInset>
         <div className="flex min-w-0 flex-col h-full overflow-hidden">

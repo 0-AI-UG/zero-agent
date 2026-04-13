@@ -98,7 +98,7 @@ function SidebarContent({
       </div>
 
       {/* Profile section at bottom */}
-      <div className="px-3 py-2 border-t border-border/40">
+      <div className="px-3 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] border-t border-border/40">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button className="flex items-center gap-2.5 w-full px-2 py-1.5 rounded-lg text-sm hover:bg-accent/50 transition-colors text-left">
@@ -178,9 +178,9 @@ export function DashboardLayout() {
   };
 
   return (
-    <div className="flex h-screen flex-col md:flex-row">
+    <div className="flex h-full flex-col md:flex-row">
       {/* Mobile header */}
-      <header className="shrink-0 h-10 flex items-center px-3 gap-2 bg-background border-b border-border/30 md:hidden">
+      <header className="sticky top-0 z-40 shrink-0 h-10 flex items-center px-3 gap-2 bg-background border-b border-border/30 md:hidden">
         <Button variant="ghost" size="icon-sm" onClick={() => setMobileOpen(true)} aria-label="Open menu">
           <svg viewBox="0 0 16 16" fill="none" className="size-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
             <line x1="2" y1="5.5" x2="14" y2="5.5" />
