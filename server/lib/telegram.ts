@@ -375,7 +375,9 @@ export async function downloadTelegramFile(
   try {
     const res = await fetch(url);
     if (!res.ok) return null;
-    return Buffer.from(await res.arrayBuffer());
+    // Telegram caps file downloads at 20MB. Use bytes() to avoid an extra
+    // ArrayBuffer → Buffer copy that doubles peak memory for large photos.
+    return Buffer.from(await res.bytes());
   } catch {
     tgLog.error("failed to download telegram file", undefined, { fileId });
     return null;

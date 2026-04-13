@@ -407,12 +407,12 @@ async function runAgentTurn(
       const buffer = await downloadTelegramFile(token, best.file_id);
       if (buffer) {
         try {
-          const metadata = await sharp(buffer).metadata();
-          let pipeline = sharp(buffer);
+          const instance = sharp(buffer);
+          const metadata = await instance.metadata();
           if (metadata.width && metadata.width > 1024) {
-            pipeline = pipeline.resize(1024, undefined, { fit: "inside" });
+            instance.resize(1024, undefined, { fit: "inside" });
           }
-          const resized = await pipeline.jpeg({ quality: 80 }).toBuffer();
+          const resized = await instance.jpeg({ quality: 80 }).toBuffer();
           imageData = { base64: resized.toString("base64"), mediaType: "image/jpeg" };
         } catch {
           imageData = { base64: buffer.toString("base64"), mediaType: "image/jpeg" };

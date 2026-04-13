@@ -91,13 +91,10 @@ export function fileRoutes(mgr: ContainerManager) {
     async restoreSnapshot(req: Request, name: string): Promise<Response> {
       try {
         const contentLength = parseInt(req.headers.get("Content-Length") ?? "0", 10);
-        if (contentLength > 0 && req.body) {
-          const ok = await mgr.restoreSnapshotStream(name, req.body as ReadableStream<Uint8Array>, contentLength);
-          return Response.json({ ok });
+        if (!contentLength || !req.body) {
+          return Response.json({ error: "Content-Length header required" }, { status: 411 });
         }
-        // Fallback for requests without Content-Length
-        const data = Buffer.from(await req.arrayBuffer());
-        const ok = await mgr.restoreSnapshot(name, data);
+        const ok = await mgr.restoreSnapshotStream(name, req.body as ReadableStream<Uint8Array>, contentLength);
         return Response.json({ ok });
       } catch (err) {
         return Response.json({ error: String(err) }, { status: 500 });
@@ -132,13 +129,10 @@ export function fileRoutes(mgr: ContainerManager) {
         const dir = url.searchParams.get("dir");
         if (!dir) return Response.json({ error: "missing ?dir" }, { status: 400 });
         const contentLength = parseInt(req.headers.get("Content-Length") ?? "0", 10);
-        if (contentLength > 0 && req.body) {
-          const ok = await mgr.restoreBlobStream(name, dir, req.body as ReadableStream<Uint8Array>, contentLength);
-          return Response.json({ ok });
+        if (!contentLength || !req.body) {
+          return Response.json({ error: "Content-Length header required" }, { status: 411 });
         }
-        // Fallback for requests without Content-Length
-        const data = Buffer.from(await req.arrayBuffer());
-        const ok = await mgr.restoreBlob(name, dir, data);
+        const ok = await mgr.restoreBlobStream(name, dir, req.body as ReadableStream<Uint8Array>, contentLength);
         return Response.json({ ok });
       } catch (err) {
         return Response.json({ error: String(err) }, { status: 500 });
