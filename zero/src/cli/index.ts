@@ -7,6 +7,7 @@
  * Step 1 only ships the dispatcher and a `health` command for end-to-end
  * verification. Subsequent steps add real subcommands.
  */
+import path from "node:path";
 import { printError, printJson } from "./format.ts";
 import { call } from "../sdk/client.ts";
 import { webCommand } from "./commands/web.ts";
@@ -20,6 +21,8 @@ import { messageCommand } from "./commands/message.ts";
 import { embedCommand } from "./commands/embed.ts";
 import { searchCommand } from "./commands/search.ts";
 import { experimentCommand } from "./commands/experiment.ts";
+
+const ZERO_ROOT = path.dirname(path.dirname(import.meta.dirname));
 
 const HELP = `zero - agent toolkit CLI
 
@@ -41,6 +44,9 @@ Groups (added by migration steps):
   experiment       create, start, evaluate, status, stop, list
 
 Run 'zero <group> --help' for details. All commands support --json.
+
+Source: ${ZERO_ROOT}/src/
+Full reference: ${ZERO_ROOT}/USAGE.md
 `;
 
 async function main(argv: string[]): Promise<number> {

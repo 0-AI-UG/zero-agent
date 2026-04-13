@@ -97,6 +97,9 @@ async function buildSystemPrompt(project: {
     sections.push(toolIndex);
   }
 
+  // ── Zero CLI ──
+  sections.push(`Use the \`zero\` CLI (via bash) or SDK (installed in global node_modules: \`import { web, browser, llm, ... } from "zero"\` in bun scripts) for web search, fetching pages, browser automation, image generation, scheduling, messaging the user, credentials, port forwarding, and LLM calls. Run \`zero --help\` for usage. Don't install other tools when zero already covers it.`);
+
   // ── Response Style ──
   sections.push(`Never expose internal thinking. Just act and respond concisely. Never print credentials - use shell substitution.`);
 
