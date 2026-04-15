@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { ThemeConfig } from "@/lib/theme-engine";
+import { themeConfigToCss, type ThemeConfig } from "@/lib/theme-engine";
 
 export type ColorMode = "dark" | "light" | "system";
 
@@ -22,12 +22,24 @@ export const useColorModeStore = create<ColorModeState>()(
       colorMode: "dark" as ColorMode,
       setColorMode: (colorMode) => set({ colorMode }),
       customTheme: null as ThemeConfig | null,
-      setCustomTheme: (theme) => set({ customTheme: theme, customThemeCss: null, customThemeName: null }),
+      setCustomTheme: (theme) =>
+        set({
+          customTheme: theme,
+          customThemeCss: theme ? themeConfigToCss(theme) : null,
+          customThemeName: theme ? theme.name : null,
+        }),
       customThemeCss: null as string | null,
       customThemeName: null as string | null,
       setCustomThemeCss: (css, name) => set({ customThemeCss: css, customThemeName: name, customTheme: null }),
     }),
-    { name: "color-mode-preference" },
+    {
+      name: "color-mode-preference",
+      onRehydrateStorage: () => (state) => {
+        if (state?.customTheme && !state.customThemeCss) {
+          state.setCustomTheme(state.customTheme);
+        }
+      },
+    },
   ),
 );
 
