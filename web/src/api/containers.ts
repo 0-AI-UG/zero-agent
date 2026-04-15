@@ -46,7 +46,9 @@ export function useChatContainerStatus(projectId: string, chatId: string) {
 
 
 export interface BrowserScreenshot {
-  base64: string;
+  hash: string;
+  contentType: string;
+  size: number;
   title: string;
   url: string;
   timestamp: number;

@@ -490,14 +490,60 @@ app.get("/api/projects/:projectId/chats/:chatId/container", h(async (req: Reques
   return Response.json({ status: running ? "running" : "none" }, { headers: corsHeaders });
 }));
 
-// Latest browser screenshot for a project's session
+// Latest browser screenshot for a project's session.
+// Returns a ref ({hash, contentType, title, url, timestamp}) instead of the
+// base64 blob. The bytes are written to the content-addressed blob store;
+// the frontend loads the image via `/api/blobs/:hash` so the base64 never
+// enters the server's long-lived heap and identical frames dedupe for free.
 app.get("/api/projects/:projectId/chats/:chatId/browser-screenshot", h(async (req: Request) => {
+  await authenticateRequest(req);
   const projectId = (req as any).params.projectId;
+  const ifNoneMatch = (req.headers.get("if-none-match") ?? "").replace(/^"|"$/g, "");
   const screenshot = await getLocalBackend()?.getLatestScreenshot(projectId) ?? null;
   if (!screenshot) {
     return Response.json({ screenshot: null }, { headers: corsHeaders });
   }
-  return Response.json({ screenshot }, { headers: corsHeaders });
+  const { putBlob } = await import("@/lib/media/blob-store.ts");
+  const bytes = Buffer.from(screenshot.base64, "base64");
+  const { hash, size, contentType } = await putBlob(bytes, "image/jpeg");
+  if (ifNoneMatch === hash) {
+    return new Response(null, { status: 304, headers: { ...corsHeaders, ETag: `"${hash}"` } });
+  }
+  return Response.json(
+    {
+      screenshot: {
+        hash,
+        contentType,
+        size,
+        title: screenshot.title,
+        url: screenshot.url,
+        timestamp: screenshot.timestamp,
+      },
+    },
+    { headers: { ...corsHeaders, ETag: `"${hash}"` } },
+  );
+}));
+
+// Content-addressed blob serving. Long-cacheable (hash is the content).
+app.get("/api/blobs/:hash", h(async (req: Request) => {
+  await authenticateRequest(req);
+  const hash = (req as any).params.hash as string;
+  if (!/^[0-9a-f]{64}$/.test(hash)) {
+    return Response.json({ error: "invalid hash" }, { status: 400, headers: corsHeaders });
+  }
+  const { getBlob } = await import("@/lib/media/blob-store.ts");
+  const entry = await getBlob(hash);
+  if (!entry) {
+    return Response.json({ error: "not found" }, { status: 404, headers: corsHeaders });
+  }
+  return new Response(new Uint8Array(entry.bytes).buffer as ArrayBuffer, {
+    headers: {
+      ...corsHeaders,
+      "Content-Type": entry.contentType,
+      "Cache-Control": "private, max-age=31536000, immutable",
+      ETag: `"${hash}"`,
+    },
+  });
 }));
 
 // Execution lifecycle (admin)
@@ -564,6 +610,7 @@ app.get("/api/debug/mem", h(async (req: Request) => {
     externalMB: fmt(mem.external),
     arrayBuffersMB: fmt(mem.arrayBuffers),
     ...chatSceneStats(),
+    blobs: (await import("@/lib/media/blob-store.ts")).blobStoreStats(),
   }, { headers: corsHeaders });
 }));
 
