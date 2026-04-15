@@ -110,19 +110,19 @@ Current MVP state is captured at the bottom of this document. Everything above t
 - **Per-project / per-chat batch policy gate.** Plan originally flagged "should Telegram users get to use their own Claude subscription?" — for now the CLI backend is enabled wherever the chat's configured model points at a `claude-code/*` or `codex/*` row. The "shared bot should not borrow a user's subscription" case is a per-tenant config decision and has no operators yet; the simplest gate lands in §14 (feature flag + per-deployment `ENABLE_CLI_BACKENDS`), not here. Leaving as a TODO in the batch entry points was judged unnecessary since the registry dispatch is the natural seam.
 - **Integration fixtures for batch runs.** Added to §13 (testing) scope — see the canned-event integration test bullet there.
 
-## 8. Tool-card rendering polish
+## 8. Tool-card rendering polish — ✅ SHIPPED (branch `feat/cli-tool-cards`)
 
-**Problem:** Claude's `Read`/`Edit`/`Bash`/`Task`/`Glob`/`Grep`/`TodoWrite`/`WebFetch` all render through the generic `StatusLine` fallback in the frontend. Usable but ugly.
+**Shipped:**
+- **Router switch on capitalized CLI tool names.** `web/src/components/chat/tool-cards/index.tsx` now dispatches `Bash` / `Edit` / `MultiEdit` / `Read` / `Write` / `Task` / `TodoWrite` to dedicated cards. Keeps the existing lowercase-name branches (`bash`, `writeFile`, `displayFile`, `agent`, `forwardPort`, `finishPlanning`) untouched so OpenRouter tool calls render as before.
+- **`Bash` → `BashCard` reuse.** The CLI tool-output is typically a raw string rather than `{stdout, stderr, exit_code}`; the router wraps it as `{stdout: text}` (or `{error: text}` on `output-error`) so `BashCard` renders it verbatim.
+- **`Edit` / `MultiEdit` → new `EditDiffCard`.** Renders Claude's `old_string` / `new_string` as a stacked deletion-then-addition diff, and handles Codex's `changes: [{path, before, after, kind}]` shape when it arrives under the same `Edit` name. Heading shows file path and, for multi-change, the count.
+- **`Read` / `Write` → new `CliFileCard` (two exports).** Expandable path + numbered-line preview. `Read` uses the tool output string; `Write` previews the `content` input. `WriteFileCard` itself was left unchanged — it's still the right render for OpenRouter `writeFile` outputs that carry a `fileId`. Instead, `CliWriteCard` renders a **"direct write"** badge to flag that the CLI bypassed the S3 sync-approval flow.
+- **`Task` → new `CliTaskCard`.** Single-task collapsible modeled on `ParallelSubagentCard`'s `TaskRow`, showing the subagent type + description in the header and the markdown-rendered result body on expand.
+- **`TodoWrite` → new `CliTodoCard`.** Check/loading/circle glyphs per item, completed count, line-through for finished entries. Accepts Claude's `{todos}` and Codex's `{items}` shapes.
+- **`tool-config.ts` entries added.** Capitalized CLI names get labels / icons / detail strings so the `StatusLine` fallback for `Glob` / `Grep` / `WebFetch` / `WebSearch` stops reading as "Working / Done" and surfaces the pattern / URL / query as the detail pill.
+- **`BackendBadge` on assistant messages.** New `web/src/components/chat/BackendBadge.tsx`; `MessageRow` renders it once per assistant message when `message.metadata.modelId` starts with `claude-code/` or `codex/`. The tooltip explains why the approval UI is absent ("writes are applied directly in the container and bypass the S3 approval flow").
 
-**Work:**
-- Add dedicated cards for the high-frequency ones:
-  - `Bash` → reuse existing `BashCard` (same shape).
-  - `Edit` → diff-style card showing old_string/new_string (new component).
-  - `Read` / `Write` → reuse `DisplayFileCard` / `WriteFileCard` with output-shape guards.
-  - `Task` → sub-agent card, similar to existing `ParallelSubagentCard`.
-  - `TodoWrite` → list/check UI.
-- Guard `WriteFileCard` for absence of `fileId` — CLI writes bypass the S3 sync-approval path. Render a "direct write" badge instead of approval UI.
-- Add a "backend" badge on each assistant message header so users understand why approval UI is absent.
+**Verification:** `bun run tsc --noEmit` in `web/` returns only pre-existing errors (shadcn ref noise, `bun-plugin-tailwind`, `@simplewebauthn/browser`, `ImportMeta.hot`, `GithubIcon`). No new errors in any touched file. The full Bun bundle can't be built in this worktree because `bun-plugin-tailwind` isn't installed — a pre-existing condition, not caused by this session. Browser click-through was not performed in this session (no live model credentials / container handy) — smoke-test deferred to the next person who runs against a CLI-backed chat.
 
 ## 9. Streaming robustness + resource limits — ✅ SHIPPED (branch `feat/cli-batch-streaming-robustness`)
 
@@ -153,7 +153,7 @@ Current MVP state is captured at the bottom of this document. Everything above t
 - **Integration test for progress-checkpoint → crash → recover flow.** Needs the same mock runner harness §13 deferred. Pair it with the §13 integration slice; both use the same fixture.
 - **Tunable intervals.** `PROGRESS_TOOL_USE_INTERVAL = 3` and `PROGRESS_TIMER_MS = 15_000` are reasonable defaults. If ops feedback shows they're too chatty (many checkpoint upserts for long turns) or too coarse (users losing visible progress), expose as env vars — not worth the knob today.
 
-**Next:** §8 (tool-card rendering polish) is frontend-only and independent; good for parallel work. §11 + §12 (observability + security) bundle well together since both pass through `runPostChatHooks` / `cliLog` / idle-reap. §13's integration + E2E slices can now be built on top of the checkpoint plumbing that landed here.
+**Next:** §11 + §12 (observability + security) bundle well together since both pass through `runPostChatHooks` / `cliLog` / idle-reap. §13's integration + E2E slices can now be built on top of the checkpoint plumbing that landed here.
 
 ## 11. Observability
 

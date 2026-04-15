@@ -1,7 +1,9 @@
 import {
   DownloadIcon,
   FileTextIcon,
+  GlobeIcon,
   ImageIcon,
+  ListTodoIcon,
   NetworkIcon,
   PencilIcon,
   TerminalSquareIcon,
@@ -26,6 +28,19 @@ const TOOL_CONFIG: Record<string, ToolConfig> = {
   bash: { label: "Ran command", activeLabel: "Running command", icon: TerminalSquareIcon },
   forwardPort: { label: "Forwarded port", activeLabel: "Forwarding port", icon: NetworkIcon },
   finishPlanning: { label: "Plan ready", activeLabel: "Preparing plan", icon: FileTextIcon },
+
+  // CLI-backend tool names (Claude Code / Codex emit capitalized names)
+  Bash: { label: "Ran command", activeLabel: "Running command", icon: TerminalSquareIcon },
+  Read: { label: "Read file", activeLabel: "Reading file", icon: FileTextIcon },
+  Write: { label: "Wrote file", activeLabel: "Writing file", icon: PencilIcon },
+  Edit: { label: "Edited file", activeLabel: "Editing file", icon: PencilIcon },
+  MultiEdit: { label: "Edited file", activeLabel: "Editing file", icon: PencilIcon },
+  Glob: { label: "Searched files", activeLabel: "Searching files", icon: SearchIcon },
+  Grep: { label: "Searched text", activeLabel: "Searching text", icon: SearchIcon },
+  WebFetch: { label: "Fetched web page", activeLabel: "Fetching web page", icon: GlobeIcon },
+  WebSearch: { label: "Searched the web", activeLabel: "Searching the web", icon: GlobeIcon },
+  Task: { label: "Sub-agent done", activeLabel: "Running sub-agent", icon: SparklesIcon },
+  TodoWrite: { label: "Updated todos", activeLabel: "Updating todos", icon: ListTodoIcon },
 };
 
 const FALLBACK: ToolConfig = {
@@ -52,6 +67,29 @@ export function getToolDetail(toolName: string, input: unknown): string | null {
     case "editFile":
     case "displayFile":
       return typeof inp.path === "string" ? inp.path : null;
+    case "Read":
+    case "Write":
+    case "Edit":
+    case "MultiEdit":
+      return typeof inp.file_path === "string" ? inp.file_path : null;
+    case "Glob":
+      return typeof inp.pattern === "string" ? inp.pattern : null;
+    case "Grep":
+      return typeof inp.pattern === "string" ? inp.pattern : null;
+    case "WebFetch":
+    case "WebSearch":
+      return typeof inp.url === "string"
+        ? inp.url
+        : typeof inp.query === "string"
+          ? inp.query
+          : null;
+    case "Task":
+      return typeof inp.description === "string" ? inp.description : null;
+    case "Bash": {
+      const cmd = (inp as { command?: unknown }).command;
+      if (typeof cmd !== "string" || !cmd) return null;
+      return cmd.length > 60 ? cmd.slice(0, 60) + "…" : cmd;
+    }
     case "agent": {
       const tasks = inp.tasks as unknown[] | undefined;
       if (!tasks) return null;

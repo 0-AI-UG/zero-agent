@@ -10,6 +10,7 @@ import {
 } from "@/components/chat-ui/MessageShell";
 import { Markdown } from "@/components/chat-ui/Markdown";
 import { ToolCard, HIDDEN_TOOLS } from "./tool-cards";
+import { BackendBadge } from "./BackendBadge";
 
 type Part = Message["parts"][number];
 
@@ -120,9 +121,11 @@ function MessageRowInner({
   const timestamp = (message as { createdAt?: number }).createdAt;
   const isDone = !(isStreaming && isLastMessage);
   const showToolbar = role === "assistant" && isDone;
+  const modelId = message.metadata?.modelId;
 
   return (
     <>
+      {role === "assistant" && <BackendBadge modelId={modelId} />}
       {parts.map((part, i) => {
         const key = `${message.id}-${i}`;
         if (isToolUIPart(part)) {
