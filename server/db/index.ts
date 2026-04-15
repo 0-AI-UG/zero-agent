@@ -511,68 +511,6 @@ db.exec(`
   )
 `);
 
-// ── Snapshot & Experiment tables ──
-
-db.exec(`
-  CREATE TABLE IF NOT EXISTS file_snapshots (
-    id          TEXT PRIMARY KEY,
-    project_id  TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    label       TEXT NOT NULL DEFAULT '',
-    file_count  INTEGER NOT NULL DEFAULT 0,
-    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
-  )
-`);
-
-db.exec(`
-  CREATE TABLE IF NOT EXISTS file_snapshot_entries (
-    id          TEXT PRIMARY KEY,
-    snapshot_id TEXT NOT NULL REFERENCES file_snapshots(id) ON DELETE CASCADE,
-    file_path   TEXT NOT NULL,
-    s3_key      TEXT NOT NULL,
-    filename    TEXT NOT NULL,
-    folder_path TEXT NOT NULL,
-    mime_type   TEXT NOT NULL,
-    size_bytes  INTEGER NOT NULL DEFAULT 0,
-    hash        TEXT NOT NULL DEFAULT ''
-  )
-`);
-
-db.exec(`
-  CREATE TABLE IF NOT EXISTS experiments (
-    id                   TEXT PRIMARY KEY,
-    project_id           TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    name                 TEXT NOT NULL,
-    metric_pattern       TEXT NOT NULL,
-    direction            TEXT NOT NULL DEFAULT 'minimize',
-    instructions_path    TEXT,
-    target_path          TEXT,
-    schedule             TEXT NOT NULL DEFAULT 'every 10m',
-    baseline_metric      REAL,
-    best_metric          REAL,
-    best_snapshot_id     TEXT,
-    baseline_snapshot_id TEXT,
-    iteration_count      INTEGER NOT NULL DEFAULT 0,
-    status               TEXT NOT NULL DEFAULT 'created',
-    created_at           TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at           TEXT NOT NULL DEFAULT (datetime('now'))
-  )
-`);
-
-db.exec(`
-  CREATE TABLE IF NOT EXISTS experiment_results (
-    id            TEXT PRIMARY KEY,
-    experiment_id TEXT NOT NULL REFERENCES experiments(id) ON DELETE CASCADE,
-    iteration     INTEGER NOT NULL,
-    status        TEXT NOT NULL,
-    metric        REAL,
-    best_at_time  REAL,
-    description   TEXT NOT NULL DEFAULT '',
-    notes         TEXT NOT NULL DEFAULT '',
-    snapshot_id   TEXT,
-    created_at    TEXT NOT NULL DEFAULT (datetime('now'))
-  )
-`);
-
 // Idempotently add is_starred / is_archived for installs that pre-date the columns.
 {
   const cols = db
@@ -625,11 +563,6 @@ db.exec(`CREATE INDEX IF NOT EXISTS idx_pending_responses_target ON pending_resp
 db.exec(`CREATE INDEX IF NOT EXISTS idx_pending_responses_expires ON pending_responses(status, expires_at)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_pending_responses_group ON pending_responses(group_id, status)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_tg_notif_msgs_pending ON telegram_notification_messages(pending_response_id)`);
-db.exec(`CREATE INDEX IF NOT EXISTS idx_file_snapshots_project ON file_snapshots(project_id, created_at)`);
-db.exec(`CREATE INDEX IF NOT EXISTS idx_file_snapshot_entries_snapshot ON file_snapshot_entries(snapshot_id)`);
-db.exec(`CREATE INDEX IF NOT EXISTS idx_experiments_project ON experiments(project_id, status)`);
-db.exec(`CREATE INDEX IF NOT EXISTS idx_experiment_results_experiment ON experiment_results(experiment_id, iteration)`);
-
 runMessageShapeMigration(db);
 
 // ── Seed models from JSON if table is empty ──
