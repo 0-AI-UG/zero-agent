@@ -75,16 +75,7 @@ Current MVP state is captured at the bottom of this document. Everything above t
 
 **Verification:** `bun run typecheck` shows only the two pre-existing `RunnerPool` errors (missing `streamExecInContainer`) that the instructions called out; no new server-side type errors. Web typecheck has only pre-existing shadcn `ref` type mismatches — none in the new files.
 
-**Next:** §5 (ToS review) is still the policy/legal gate. §6 (Codex backend) picks up the Codex login stubs. §7 (batch parity) and §9 (resource limits) are the next code-side blockers before hosted rollout.
-
-## 5. ToS / licensing review
-
-**Problem:** Anthropic Max and ChatGPT subscription ToS restrict "serving" the subscription. Hosted multi-tenant SaaS may violate; self-hosted single-tenant typically does not.
-
-**Work:**
-- Legal review before enabling CLI backends on hosted deployments.
-- If self-host-only: gate the feature flag to single-tenant instances (check user count / deployment type at boot; log a warning in multi-tenant mode).
-- Update terms of service + user-facing disclosure: "You are responsible for complying with Anthropic/OpenAI subscription terms when using these backends."
+**Next:** §6 (Codex backend) picks up the Codex login stubs. §7 (batch parity) and §9 (resource limits) are the next code-side blockers before hosted rollout.
 
 ## 6. Codex backend
 
