@@ -7,6 +7,18 @@ export function getMessagesByChat(chatId: string): MessageRow[] {
   ).all(chatId) as MessageRow[];
 }
 
+/**
+ * Tail: last N messages in chronological order. Used by the WS scene
+ * subscribe path so we never load an entire chat's history just to paint
+ * the first frame.
+ */
+export function getMessagesByChatTail(chatId: string, limit: number): MessageRow[] {
+  const rows = db.prepare(
+    "SELECT * FROM messages WHERE chat_id = ? ORDER BY ROWID DESC LIMIT ?",
+  ).all(chatId, limit) as MessageRow[];
+  return rows.reverse();
+}
+
 const insertOne = db.prepare(
   "INSERT OR REPLACE INTO messages (id, project_id, chat_id, role, content, user_id) VALUES (?, ?, ?, ?, ?, ?)",
 );
