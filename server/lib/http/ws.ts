@@ -8,6 +8,7 @@ import { getMessagesByChat } from "@/db/queries/messages.ts";
 import { log } from "@/lib/utils/logger.ts";
 import { isChatWsMessage, handleChatMessage } from "@/lib/http/ws-chat.ts";
 import { listPendingSyncsForChat } from "@/lib/sync-approval.ts";
+import { subscribeBrowser, unsubscribeBrowser } from "@/lib/http/ws-browser.ts";
 import type { Message } from "@/lib/messages/types.ts";
 
 const wsLog = log.child({ module: "ws" });
@@ -384,6 +385,12 @@ function handleMessage(ws: WebSocket, meta: ConnectionMeta, msg: any) {
     case "refreshToken":
       handleRefreshToken(ws, meta, msg.token);
       break;
+    case "subscribeBrowser":
+      if (typeof msg.projectId === "string") subscribeBrowser(ws, msg.projectId);
+      break;
+    case "unsubscribeBrowser":
+      unsubscribeBrowser(ws, typeof msg.projectId === "string" ? msg.projectId : undefined);
+      break;
   }
 }
 
@@ -506,6 +513,7 @@ function handleDisconnect(ws: WebSocket, meta: ConnectionMeta) {
   const { projectId } = meta;
   leaveChat(ws, meta);
   leaveProject(ws, meta);
+  unsubscribeBrowser(ws);
   connections.delete(ws);
   if (projectId) broadcastPresence(projectId);
   wsLog.debug("ws disconnected", { userId: meta.userId });

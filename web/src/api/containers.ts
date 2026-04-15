@@ -1,6 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 import { apiFetch } from "./client";
 import { queryKeys } from "@/lib/query-keys";
+import { send, subscribe } from "@/lib/ws";
 
 export interface ContainerEntry {
   sessionId: string;
@@ -54,23 +56,27 @@ export interface BrowserScreenshot {
   timestamp: number;
 }
 
-export function useBrowserScreenshot(projectId: string, chatId: string, enabled: boolean) {
-  return useQuery({
-    queryKey: queryKeys.containers.browserScreenshot(projectId, chatId),
-    queryFn: async () => {
-      const res = await apiFetch<{ screenshot: BrowserScreenshot | null }>(
-        `/projects/${projectId}/chats/${chatId}/browser-screenshot`,
-      );
-      return res.screenshot;
-    },
-    // 5s poll only when the preview is actually visible; pause entirely when
-    // the tab is backgrounded. Screenshots are visual affordance — missing a
-    // frame costs nothing.
-    refetchInterval: enabled ? 5_000 : false,
-    refetchIntervalInBackground: false,
-    staleTime: 0,
-    enabled: enabled && !!projectId && !!chatId,
-  });
+/**
+ * Browser-preview is now server-pushed over WS: we subscribe while the
+ * popover is open and receive a `browser.screenshot` frame only when the
+ * hash changes. No polling on the client; the server dedupes by hash.
+ */
+export function useBrowserScreenshot(projectId: string, _chatId: string, enabled: boolean) {
+  const [data, setData] = useState<BrowserScreenshot | null>(null);
+  useEffect(() => {
+    if (!enabled || !projectId) return;
+    send({ type: "subscribeBrowser", projectId });
+    const off = subscribe((msg) => {
+      if (msg?.type === "browser.screenshot" && msg.projectId === projectId) {
+        setData(msg.screenshot as BrowserScreenshot);
+      }
+    });
+    return () => {
+      off();
+      send({ type: "unsubscribeBrowser", projectId });
+    };
+  }, [projectId, enabled]);
+  return { data };
 }
 
 export function useDestroyContainer() {
