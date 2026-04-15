@@ -185,6 +185,7 @@ import {
   handleTestRunner,
 } from "@/routes/runners.ts";
 import { requireAdmin, authenticateRequest } from "@/lib/auth/auth.ts";
+import { verifyProjectAccess } from "@/routes/utils.ts";
 import { mountCliHandlers } from "@/cli-handlers/index.ts";
 import { db } from "@/db/index.ts";
 
@@ -490,14 +491,71 @@ app.get("/api/projects/:projectId/chats/:chatId/container", h(async (req: Reques
   return Response.json({ status: running ? "running" : "none" }, { headers: corsHeaders });
 }));
 
-// Latest browser screenshot for a project's session
+// Latest browser screenshot for a project's session.
+// Returns a ref ({hash, contentType, title, url, timestamp}) instead of the
+// base64 blob. The bytes are written to the content-addressed blob store;
+// the frontend loads the image via `/api/blobs/:hash` so the base64 never
+// enters the server's long-lived heap and identical frames dedupe for free.
 app.get("/api/projects/:projectId/chats/:chatId/browser-screenshot", h(async (req: Request) => {
+  const { userId } = await authenticateRequest(req);
   const projectId = (req as any).params.projectId;
+  verifyProjectAccess(projectId, userId);
+  const ifNoneMatch = (req.headers.get("if-none-match") ?? "").replace(/^"|"$/g, "");
   const screenshot = await getLocalBackend()?.getLatestScreenshot(projectId) ?? null;
   if (!screenshot) {
     return Response.json({ screenshot: null }, { headers: corsHeaders });
   }
-  return Response.json({ screenshot }, { headers: corsHeaders });
+  const { putBlob } = await import("@/lib/media/blob-store.ts");
+  const bytes = Buffer.from(screenshot.base64, "base64");
+  const { hash, size, contentType } = await putBlob(bytes, "image/jpeg", projectId);
+  if (ifNoneMatch === hash) {
+    return new Response(null, { status: 304, headers: { ...corsHeaders, ETag: `"${hash}"` } });
+  }
+  return Response.json(
+    {
+      screenshot: {
+        hash,
+        contentType,
+        size,
+        title: screenshot.title,
+        url: screenshot.url,
+        timestamp: screenshot.timestamp,
+      },
+    },
+    { headers: { ...corsHeaders, ETag: `"${hash}"` } },
+  );
+}));
+
+// Content-addressed blob serving, scoped to a project the caller is a member of.
+// Scoping is enforced via an in-memory ownership index populated at `putBlob`
+// sites (screenshots, exec overflow). A bare `/api/blobs/:hash` route would be
+// usable by any authenticated user who obtained a hash — so we require the
+// caller to prove project membership and the blob to have been associated with
+// that project.
+app.get("/api/projects/:projectId/blobs/:hash", h(async (req: Request) => {
+  const { userId } = await authenticateRequest(req);
+  const projectId = (req as any).params.projectId as string;
+  verifyProjectAccess(projectId, userId);
+  const hash = (req as any).params.hash as string;
+  if (!/^[0-9a-f]{64}$/.test(hash)) {
+    return Response.json({ error: "invalid hash" }, { status: 400, headers: corsHeaders });
+  }
+  const { getBlob, blobOwnedBy } = await import("@/lib/media/blob-store.ts");
+  if (!blobOwnedBy(hash, projectId)) {
+    return Response.json({ error: "not found" }, { status: 404, headers: corsHeaders });
+  }
+  const entry = await getBlob(hash);
+  if (!entry) {
+    return Response.json({ error: "not found" }, { status: 404, headers: corsHeaders });
+  }
+  return new Response(new Uint8Array(entry.bytes).buffer as ArrayBuffer, {
+    headers: {
+      ...corsHeaders,
+      "Content-Type": entry.contentType,
+      "Cache-Control": "private, max-age=31536000, immutable",
+      ETag: `"${hash}"`,
+    },
+  });
 }));
 
 // Execution lifecycle (admin)
@@ -548,6 +606,23 @@ app.get("/api/capabilities", h((req: Request) => {
     serverBrowser: hasDocker,
     appDeployments: hasDocker,
     theme: getSetting("UI_THEME") ?? "default",
+  }, { headers: corsHeaders });
+}));
+
+// Lightweight memory/process debug. Auth required; returns only counts, no user data.
+app.get("/api/debug/mem", h(async (req: Request) => {
+  await authenticateRequest(req);
+  const mem = process.memoryUsage();
+  const fmt = (b: number) => Math.round(b / 1024 / 1024);
+  return Response.json({
+    uptimeSec: Math.round(process.uptime()),
+    rssMB: fmt(mem.rss),
+    heapUsedMB: fmt(mem.heapUsed),
+    heapTotalMB: fmt(mem.heapTotal),
+    externalMB: fmt(mem.external),
+    arrayBuffersMB: fmt(mem.arrayBuffers),
+    ...chatSceneStats(),
+    blobs: (await import("@/lib/media/blob-store.ts")).blobStoreStats(),
   }, { headers: corsHeaders });
 }));
 
@@ -616,7 +691,8 @@ import { getRequestListener } from "@hono/node-server";
 const honoListener = getRequestListener(app.fetch);
 const nodeServer = createHttpServer(honoListener);
 
-import { attachWebSocketServer, closeWebSocketServer } from "@/lib/http/ws.ts";
+import { attachWebSocketServer, closeWebSocketServer, shedChatScenes, chatSceneStats } from "@/lib/http/ws.ts";
+import { shedBackgroundTasks } from "@/lib/agent/background-task-store.ts";
 import { startWsBridge, startBackgroundBridge } from "@/lib/http/ws-bridge.ts";
 import { initBackgroundTaskListeners } from "@/lib/agent/background-task-store.ts";
 import { initBackgroundResume } from "@/lib/agent/background-resume.ts";
@@ -668,10 +744,16 @@ startupExpirySweep();
 // UI flips the card.
 recoverSyncOrphansOnStartup();
 
-// ── Heap monitoring (every 60s) ──
+// ── Heap monitoring + self-defense (every 60s) ──
+// heap cap is 400MB (--max-old-space-size=400). Above 300MB we aggressively
+// drop recoverable caches (chat scenes, stale background tasks) as a last
+// line of defense before V8 OOMs.
+const HEAP_SHED_THRESHOLD_MB = 300;
+let lastShedAt = 0;
 const _heapMonitor = setInterval(() => {
   const mem = process.memoryUsage();
   const fmt = (b: number) => (b / 1024 / 1024).toFixed(1);
+  const heapUsedMB = mem.heapUsed / 1024 / 1024;
   log.info("heap", {
     rss: fmt(mem.rss) + "MB",
     heapUsed: fmt(mem.heapUsed) + "MB",
@@ -679,6 +761,13 @@ const _heapMonitor = setInterval(() => {
     external: fmt(mem.external) + "MB",
     arrayBuffers: fmt(mem.arrayBuffers) + "MB",
   });
+  if (heapUsedMB > HEAP_SHED_THRESHOLD_MB && Date.now() - lastShedAt > 60_000) {
+    lastShedAt = Date.now();
+    const scenes = shedChatScenes();
+    const tasks = shedBackgroundTasks();
+    log.warn("heap pressure: shed caches", { heapUsedMB: heapUsedMB.toFixed(0), scenes, tasks });
+    if (typeof (globalThis as any).gc === "function") (globalThis as any).gc();
+  }
 }, 60_000);
 if (typeof _heapMonitor === "object" && "unref" in _heapMonitor) _heapMonitor.unref();
 

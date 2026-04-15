@@ -1,11 +1,11 @@
 /**
  * `useWsChat(chatId)` — realtime chat hook.
  *
- * The server owns chat state and pushes a full `chat.scene` frame on every
- * change. A single WS subscriber writes each frame into a module-scoped Map;
- * components read via `useSyncExternalStore`. No reducer, no local state,
- * no seq, no replay — TCP ordering + complete snapshots make frames
- * idempotent.
+ * The server pushes a single `chat.snapshot` on subscribe, then per-message
+ * `chat.message` deltas and `chat.streamBegin` / `chat.streamEnd` status
+ * frames. We keep a module-scoped Map of scenes and write deltas into it;
+ * components read via `useSyncExternalStore`. TCP ordering means deltas
+ * are idempotent against the most recent snapshot.
  */
 import { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
 import { send, subscribe } from "@/lib/ws";
@@ -46,21 +46,64 @@ const scenes = new Map<string, Scene>();
 const listeners = new Map<string, Set<() => void>>();
 let wired = false;
 
+function notify(chatId: string) {
+  const subs = listeners.get(chatId);
+  if (subs) for (const cb of subs) cb();
+}
+
+function upsertMessage(scene: Scene, message: Message): Scene {
+  const messages = scene.messages.slice();
+  const idx = messages.findIndex((m) => m.id === message.id);
+  if (idx >= 0) messages[idx] = message;
+  else messages.push(message);
+  return { ...scene, messages };
+}
+
 function ensureWired() {
   if (wired) return;
   wired = true;
   subscribe((msg) => {
     if (!msg || typeof msg !== "object") return;
-    if (msg.type !== "chat.scene") return;
-    if (typeof msg.chatId !== "string") return;
-    scenes.set(msg.chatId, {
-      messages: Array.isArray(msg.messages) ? (msg.messages as Message[]) : [],
-      isStreaming: !!msg.isStreaming,
-      streamId: typeof msg.streamId === "string" ? msg.streamId : undefined,
-      error: typeof msg.error === "string" ? msg.error : undefined,
-    });
-    const subs = listeners.get(msg.chatId);
-    if (subs) for (const cb of subs) cb();
+    const chatId = typeof msg.chatId === "string" ? msg.chatId : null;
+    if (!chatId) return;
+    const current = scenes.get(chatId) ?? EMPTY_SCENE;
+    switch (msg.type) {
+      case "chat.snapshot": {
+        scenes.set(chatId, {
+          messages: Array.isArray(msg.messages) ? (msg.messages as Message[]) : [],
+          isStreaming: !!msg.isStreaming,
+          streamId: typeof msg.streamId === "string" ? msg.streamId : undefined,
+          error: typeof msg.error === "string" ? msg.error : undefined,
+        });
+        notify(chatId);
+        return;
+      }
+      case "chat.message": {
+        if (!msg.message?.id) return;
+        scenes.set(chatId, upsertMessage(current, msg.message as Message));
+        notify(chatId);
+        return;
+      }
+      case "chat.streamBegin": {
+        scenes.set(chatId, {
+          ...current,
+          isStreaming: true,
+          streamId: typeof msg.streamId === "string" ? msg.streamId : undefined,
+          error: undefined,
+        });
+        notify(chatId);
+        return;
+      }
+      case "chat.streamEnd": {
+        scenes.set(chatId, {
+          ...current,
+          isStreaming: false,
+          error: typeof msg.error === "string" ? msg.error : undefined,
+        });
+        notify(chatId);
+        return;
+      }
+    }
   });
 }
 

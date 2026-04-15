@@ -6,6 +6,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { useBrowserScreenshot } from "@/api/containers";
+import { useBlobUrl } from "@/hooks/use-blob-url";
 
 interface BrowserPreviewProps {
   projectId: string;
@@ -14,6 +15,7 @@ interface BrowserPreviewProps {
 
 export function BrowserPreview({ projectId, chatId }: BrowserPreviewProps) {
   const { data: screenshot } = useBrowserScreenshot(projectId, chatId, true);
+  const imgUrl = useBlobUrl(screenshot?.hash, projectId);
 
   return (
     <Popover>
@@ -27,13 +29,13 @@ export function BrowserPreview({ projectId, chatId }: BrowserPreviewProps) {
         </Button>
       </PopoverTrigger>
       <PopoverContent align="start" side="top" className="w-auto max-w-lg p-0 overflow-hidden">
-        {screenshot ? (
+        {screenshot && imgUrl ? (
           <div>
             <div className="px-3 py-1.5 border-b text-xs text-muted-foreground truncate">
               {screenshot.title || "Browser"}
             </div>
             <img
-              src={`data:image/jpeg;base64,${screenshot.base64}`}
+              src={imgUrl}
               alt={screenshot.title ?? "Browser"}
               className="max-h-80 w-auto"
             />

@@ -1,6 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 import { apiFetch } from "./client";
 import { queryKeys } from "@/lib/query-keys";
+import { send, subscribe } from "@/lib/ws";
 
 export interface ContainerEntry {
   sessionId: string;
@@ -22,7 +24,8 @@ export function useContainers() {
       const res = await apiFetch<{ containers: ContainerEntry[] }>("/admin/containers");
       return res.containers;
     },
-    refetchInterval: 5_000,
+    refetchInterval: 15_000,
+    refetchIntervalInBackground: false,
     staleTime: 0,
   });
 }
@@ -36,7 +39,8 @@ export function useChatContainerStatus(projectId: string, chatId: string) {
       );
       return res;
     },
-    refetchInterval: 10_000,
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
     staleTime: 0,
     enabled: !!projectId && !!chatId,
   });
@@ -44,25 +48,35 @@ export function useChatContainerStatus(projectId: string, chatId: string) {
 
 
 export interface BrowserScreenshot {
-  base64: string;
+  hash: string;
+  contentType: string;
+  size: number;
   title: string;
   url: string;
   timestamp: number;
 }
 
-export function useBrowserScreenshot(projectId: string, chatId: string, enabled: boolean) {
-  return useQuery({
-    queryKey: queryKeys.containers.browserScreenshot(projectId, chatId),
-    queryFn: async () => {
-      const res = await apiFetch<{ screenshot: BrowserScreenshot | null }>(
-        `/projects/${projectId}/chats/${chatId}/browser-screenshot`,
-      );
-      return res.screenshot;
-    },
-    refetchInterval: enabled ? 2_000 : false,
-    staleTime: 0,
-    enabled: enabled && !!projectId && !!chatId,
-  });
+/**
+ * Browser-preview is now server-pushed over WS: we subscribe while the
+ * popover is open and receive a `browser.screenshot` frame only when the
+ * hash changes. No polling on the client; the server dedupes by hash.
+ */
+export function useBrowserScreenshot(projectId: string, _chatId: string, enabled: boolean) {
+  const [data, setData] = useState<BrowserScreenshot | null>(null);
+  useEffect(() => {
+    if (!enabled || !projectId) return;
+    send({ type: "subscribeBrowser", projectId });
+    const off = subscribe((msg) => {
+      if (msg?.type === "browser.screenshot" && msg.projectId === projectId) {
+        setData(msg.screenshot as BrowserScreenshot);
+      }
+    });
+    return () => {
+      off();
+      send({ type: "unsubscribeBrowser", projectId });
+    };
+  }, [projectId, enabled]);
+  return { data };
 }
 
 export function useDestroyContainer() {

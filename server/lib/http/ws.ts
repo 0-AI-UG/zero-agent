@@ -4,10 +4,11 @@ import { verifyToken, type TokenPayload } from "@/lib/auth/auth.ts";
 import { isProjectMember } from "@/db/queries/members.ts";
 import { getUserById } from "@/db/queries/users.ts";
 import { getProjectById } from "@/db/queries/projects.ts";
-import { getMessagesByChat } from "@/db/queries/messages.ts";
+import { getMessagesByChatTail } from "@/db/queries/messages.ts";
 import { log } from "@/lib/utils/logger.ts";
 import { isChatWsMessage, handleChatMessage } from "@/lib/http/ws-chat.ts";
 import { listPendingSyncsForChat } from "@/lib/sync-approval.ts";
+import { subscribeBrowser, unsubscribeBrowser } from "@/lib/http/ws-browser.ts";
 import type { Message } from "@/lib/messages/types.ts";
 
 const wsLog = log.child({ module: "ws" });
@@ -36,47 +37,93 @@ const chatViewers = new Map<string, Set<WebSocket>>();
 
 // ── Chat scenes ──
 //
-// Per-chat authoritative state for streaming turns. The agent loop
-// (`ws-entrypoint.ts`) mutates these via `beginChatStream` / `publishChatMessage`
-// / `endChatStream`; each mutation broadcasts the full scene to current
-// viewers. Survives across turns so late subscribers get the most recent
-// state on `viewChat`.
+// Per-chat streaming state. Scenes hold metadata and a small in-flight
+// working set of messages that belong to the current turn (and thus
+// aren't in the DB yet). On a viewer joining, we send one snapshot
+// (tail of DB + in-flight overlay); every subsequent message is a
+// `chat.message` delta. That keeps serialization cost O(delta) rather
+// than O(history) per viewer per tick.
 
 interface ChatScene {
   chatId: string;
   isStreaming: boolean;
   streamId?: string;
-  messages: Message[];
+  /** In-flight messages for the current turn, keyed by id. Cleared on stream end. */
+  working: Map<string, Message>;
   error?: string;
+  lastAccessAt: number;
 }
 
 const chatScenes = new Map<string, ChatScene>();
 
-/** Lazily materialize the scene for a chat, hydrating from DB on first touch. */
+const CHAT_SCENE_MAX = 50;
+const CHAT_SCENE_IDLE_MS = 60 * 60 * 1000; // 1h
+const SNAPSHOT_TAIL_LIMIT = 200;
+
+function touchScene(s: ChatScene) {
+  s.lastAccessAt = Date.now();
+}
+
 function getOrCreateScene(chatId: string): ChatScene {
   let s = chatScenes.get(chatId);
-  if (s) return s;
-  const messages: Message[] = [];
-  for (const row of getMessagesByChat(chatId)) {
-    let m: Message | null;
-    try {
-      m = JSON.parse(row.content) as Message;
-    } catch {
-      continue;
-    }
-    if (!m?.id || (m.parts?.length ?? 0) === 0) continue;
-    messages.push(m);
+  if (s) {
+    touchScene(s);
+    return s;
   }
-  s = { chatId, isStreaming: false, messages };
+  s = { chatId, isStreaming: false, working: new Map(), lastAccessAt: Date.now() };
   chatScenes.set(chatId, s);
+  if (chatScenes.size > CHAT_SCENE_MAX) evictChatScenes();
   return s;
 }
 
-function sceneFrame(s: ChatScene): WsBroadcastMessage {
+function evictChatScenes() {
+  const now = Date.now();
+  const candidates: ChatScene[] = [];
+  for (const s of chatScenes.values()) {
+    if (s.isStreaming) continue;
+    if ((chatViewers.get(s.chatId)?.size ?? 0) > 0) continue;
+    candidates.push(s);
+  }
+  candidates.sort((a, b) => a.lastAccessAt - b.lastAccessAt);
+  const target = Math.max(0, chatScenes.size - CHAT_SCENE_MAX);
+  for (let i = 0; i < target && i < candidates.length; i++) {
+    const c = candidates[i];
+    if (c) chatScenes.delete(c.chatId);
+  }
+  for (const s of candidates) {
+    if (now - s.lastAccessAt > CHAT_SCENE_IDLE_MS) chatScenes.delete(s.chatId);
+  }
+}
+
+let chatSceneSweeper: ReturnType<typeof setInterval> | null = null;
+
+/**
+ * Build a fresh snapshot for a joining viewer: tail of persisted messages
+ * from the DB, then any in-flight working messages overlaid on top (by id).
+ */
+function buildSnapshot(chatId: string): WsBroadcastMessage {
+  const s = getOrCreateScene(chatId);
+  const tail: Message[] = [];
+  const byId = new Map<string, Message>();
+  for (const row of getMessagesByChatTail(chatId, SNAPSHOT_TAIL_LIMIT)) {
+    let m: Message | null;
+    try { m = JSON.parse(row.content) as Message; } catch { continue; }
+    if (!m?.id || (m.parts?.length ?? 0) === 0) continue;
+    tail.push(m);
+    byId.set(m.id, m);
+  }
+  for (const [id, m] of s.working) {
+    if (byId.has(id)) {
+      const idx = tail.findIndex((x) => x.id === id);
+      if (idx >= 0) tail[idx] = m;
+    } else {
+      tail.push(m);
+    }
+  }
   return {
-    type: "chat.scene",
-    chatId: s.chatId,
-    messages: s.messages,
+    type: "chat.snapshot",
+    chatId,
+    messages: tail,
     isStreaming: s.isStreaming,
     streamId: s.streamId,
     error: s.error,
@@ -89,19 +136,34 @@ export function beginChatStream(
   streamId?: string,
 ): void {
   const s = getOrCreateScene(chatId);
-  s.messages = initialMessages.filter((m): m is Message => !!m?.id);
   s.streamId = streamId;
   s.isStreaming = true;
   s.error = undefined;
-  broadcastToChat(chatId, sceneFrame(s));
+  s.working.clear();
+  // Only the newest message is truly in-flight (typically the user turn that
+  // hasn't been committed yet). Earlier messages in `initialMessages` are
+  // already persisted and will be served from the DB tail in `buildSnapshot`;
+  // mirroring them in `working` would reintroduce the history-shaped memory
+  // footprint this whole scene rewrite was meant to eliminate.
+  const last = initialMessages[initialMessages.length - 1];
+  if (last?.id) s.working.set(last.id, last);
+  broadcastToChat(chatId, {
+    type: "chat.streamBegin",
+    chatId,
+    streamId,
+  });
+  // Emit a delta for the newest seed message so already-subscribed viewers
+  // see it right away without a full snapshot replay.
+  if (last?.id) {
+    broadcastToChat(chatId, { type: "chat.message", chatId, message: last });
+  }
 }
 
 export function publishChatMessage(chatId: string, message: Message): void {
   const s = getOrCreateScene(chatId);
-  const idx = s.messages.findIndex((m) => m.id === message.id);
-  if (idx >= 0) s.messages[idx] = message;
-  else s.messages.push(message);
-  broadcastToChat(chatId, sceneFrame(s));
+  if (!message?.id) return;
+  s.working.set(message.id, message);
+  broadcastToChat(chatId, { type: "chat.message", chatId, message });
 }
 
 export function endChatStream(
@@ -112,7 +174,15 @@ export function endChatStream(
   const s = getOrCreateScene(chatId);
   s.isStreaming = false;
   s.error = reason === "error" ? error ?? "Stream ended with an error" : undefined;
-  broadcastToChat(chatId, sceneFrame(s));
+  // Release the in-flight working set. DB is authoritative from here on; a
+  // late viewer's snapshot will rebuild from the tail.
+  s.working.clear();
+  broadcastToChat(chatId, {
+    type: "chat.streamEnd",
+    chatId,
+    reason,
+    error: s.error,
+  });
 }
 
 export function isChatStreaming(chatId: string): boolean {
@@ -220,11 +290,30 @@ export function attachWebSocketServer(server: HttpServer) {
     }
   }, 30_000);
 
+  chatSceneSweeper = setInterval(evictChatScenes, 5 * 60 * 1000);
+
   wss.on("close", () => {
     clearInterval(pingInterval);
+    if (chatSceneSweeper) clearInterval(chatSceneSweeper);
+    chatSceneSweeper = null;
   });
 
   wsLog.info("websocket server attached");
+}
+
+/** Heap-pressure hook: drop idle scenes aggressively. */
+export function shedChatScenes(): number {
+  const before = chatScenes.size;
+  for (const s of [...chatScenes.values()]) {
+    if (s.isStreaming) continue;
+    if ((chatViewers.get(s.chatId)?.size ?? 0) > 0) continue;
+    chatScenes.delete(s.chatId);
+  }
+  return before - chatScenes.size;
+}
+
+export function chatSceneStats() {
+  return { scenes: chatScenes.size, viewers: chatViewers.size, connections: connections.size };
 }
 
 export function closeWebSocketServer() {
@@ -328,6 +417,22 @@ function handleMessage(ws: WebSocket, meta: ConnectionMeta, msg: any) {
     case "refreshToken":
       handleRefreshToken(ws, meta, msg.token);
       break;
+    case "subscribeBrowser":
+      if (typeof msg.projectId === "string") {
+        // Only allow subscribing to the project the socket has already joined
+        // (which went through handleJoin's membership check). This prevents
+        // authenticated users from reading screenshots of projects they're
+        // not a member of by providing an arbitrary projectId.
+        if (meta.projectId !== msg.projectId) {
+          send(ws, { type: "error", message: "Join project before subscribing to browser" });
+          break;
+        }
+        subscribeBrowser(ws, msg.projectId);
+      }
+      break;
+    case "unsubscribeBrowser":
+      unsubscribeBrowser(ws, typeof msg.projectId === "string" ? msg.projectId : undefined);
+      break;
   }
 }
 
@@ -378,10 +483,10 @@ function handleViewChat(ws: WebSocket, meta: ConnectionMeta, chatId: string) {
   }
   chatViewers.get(chatId)!.add(ws);
 
-  // Send the current scene. `getOrCreateScene` lazily hydrates from DB on
-  // first touch, so this is the same `sceneFrame(...)` any mutation would
-  // broadcast. Subsequent updates reach this socket via `broadcastToChat`.
-  send(ws, sceneFrame(getOrCreateScene(chatId)));
+  // Send a snapshot (DB tail + in-flight overlay). After this, the viewer
+  // only receives `chat.message` / `chat.streamBegin` / `chat.streamEnd`
+  // deltas — full scene frames are no longer broadcast per tick.
+  send(ws, buildSnapshot(chatId));
 
   // Seed the joining socket with any still-pending sync approvals for this
   // chat. Replaces the client's mount-time HTTP GET /api/sync/:id fetch.
@@ -450,6 +555,7 @@ function handleDisconnect(ws: WebSocket, meta: ConnectionMeta) {
   const { projectId } = meta;
   leaveChat(ws, meta);
   leaveProject(ws, meta);
+  unsubscribeBrowser(ws);
   connections.delete(ws);
   if (projectId) broadcastPresence(projectId);
   wsLog.debug("ws disconnected", { userId: meta.userId });

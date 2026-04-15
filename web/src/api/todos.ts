@@ -37,6 +37,7 @@ export function useTodos(
     queryKey: queryKeys.todos.byChat(projectId, chatId ?? ""),
     queryFn: () => fetchTodos(projectId, chatId),
     enabled: !!projectId && !!chatId,
-    refetchInterval: opts?.polling ? 3000 : false,
+    refetchInterval: opts?.polling ? 10_000 : false,
+    refetchIntervalInBackground: false,
   });
 }

@@ -5,6 +5,19 @@ function escapeLike(value: string): string {
   return value.replace(/[%_\\]/g, "\\$&");
 }
 
+// Per-project file-mutation version counter. Bumped on every write/delete
+// so higher layers (workspace-sync.ts) can cache derived manifests without
+// re-querying the files table on every tool call.
+const projectFileVersion = new Map<string, number>();
+
+function bumpVersion(projectId: string): void {
+  projectFileVersion.set(projectId, (projectFileVersion.get(projectId) ?? 0) + 1);
+}
+
+export function getProjectFileVersion(projectId: string): number {
+  return projectFileVersion.get(projectId) ?? 0;
+}
+
 export function insertFile(
   projectId: string,
   s3Key: string,
@@ -23,6 +36,7 @@ export function insertFile(
     db.prepare(
       "UPDATE files SET filename = ?, mime_type = ?, size_bytes = ?, folder_path = ?, hash = ? WHERE id = ?",
     ).run(filename, mimeType, sizeBytes, folderPath, hash, existing.id);
+    bumpVersion(projectId);
     return db.prepare(
       "SELECT * FROM files WHERE id = ?",
     ).get(existing.id) as FileRow;
@@ -33,6 +47,7 @@ export function insertFile(
     "INSERT INTO files (id, project_id, s3_key, filename, mime_type, size_bytes, folder_path, hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
   ).run(id, projectId, s3Key, filename, mimeType, sizeBytes, folderPath, hash);
 
+  bumpVersion(projectId);
   return db.prepare(
     "SELECT * FROM files WHERE id = ?",
   ).get(id) as FileRow;
@@ -70,12 +85,15 @@ export function deleteFilesByFolderPath(
   db.prepare(
     "DELETE FROM files WHERE project_id = ? AND folder_path LIKE ? ESCAPE '\\'",
   ).run(projectId, `${escapeLike(folderPath)}%`);
+  bumpVersion(projectId);
 }
 
 export function updateFileFolderPath(id: string, folderPath: string): FileRow {
+  const row = db.prepare("SELECT project_id FROM files WHERE id = ?").get(id) as { project_id?: string } | undefined;
   db.prepare(
     "UPDATE files SET folder_path = ? WHERE id = ?",
   ).run(folderPath, id);
+  if (row?.project_id) bumpVersion(row.project_id);
   return db.prepare("SELECT * FROM files WHERE id = ?").get(id) as FileRow;
 }
 
@@ -100,14 +118,18 @@ export function getFileByS3Key(projectId: string, s3Key: string): FileRow | null
 }
 
 export function updateFileSize(id: string, sizeBytes: number): FileRow {
+  const row = db.prepare("SELECT project_id FROM files WHERE id = ?").get(id) as { project_id?: string } | undefined;
   db.prepare(
     "UPDATE files SET size_bytes = ? WHERE id = ?",
   ).run(sizeBytes, id);
+  if (row?.project_id) bumpVersion(row.project_id);
   return db.prepare("SELECT * FROM files WHERE id = ?").get(id) as FileRow;
 }
 
 export function updateFileHash(id: string, hash: string): void {
+  const row = db.prepare("SELECT project_id FROM files WHERE id = ?").get(id) as { project_id?: string } | undefined;
   db.prepare("UPDATE files SET hash = ? WHERE id = ?").run(hash, id);
+  if (row?.project_id) bumpVersion(row.project_id);
 }
 
 export function getAllProjectFiles(projectId: string): FileRow[] {
@@ -115,7 +137,9 @@ export function getAllProjectFiles(projectId: string): FileRow[] {
 }
 
 export function deleteFile(id: string): void {
+  const row = db.prepare("SELECT project_id FROM files WHERE id = ?").get(id) as { project_id?: string } | undefined;
   db.prepare("DELETE FROM files WHERE id = ?").run(id);
+  if (row?.project_id) bumpVersion(row.project_id);
 }
 
 export function getSkillFiles(projectId: string): FileRow[] {

@@ -10,6 +10,7 @@ import type {
 } from "./backend-interface.ts";
 import { listS3Files, readStreamFromS3, writeStreamToS3, s3FileExists, s3FileSize } from "@/lib/s3.ts";
 import { fetchWithTimeout } from "@/lib/utils/deferred.ts";
+import { capExecResult } from "@/lib/execution/exec-caps.ts";
 import { log } from "@/lib/utils/logger.ts";
 
 const clientLog = log.child({ module: "runner-client" });
@@ -26,6 +27,14 @@ export class RunnerClient implements ExecutionBackend {
   constructor(baseUrl: string, apiKey: string) {
     this.baseUrl = baseUrl.replace(/\/$/, "");
     this.apiKey = apiKey;
+    // Periodic sweep of expired sessionCache entries. Without this, entries
+    // for abandoned projects sit resident indefinitely until a destroy/read.
+    setInterval(() => {
+      const now = Date.now();
+      for (const [k, v] of this.sessionCache) {
+        if (now >= v.expiresAt) this.sessionCache.delete(k);
+      }
+    }, 2 * 60 * 1000).unref();
   }
 
   private async request(path: string, init?: RequestInit & { timeout?: number }): Promise<Response> {
@@ -456,9 +465,10 @@ export class RunnerClient implements ExecutionBackend {
       changedFiles = readResult.files;
     }
 
+    const capped = await capExecResult(stdout, stderr, projectId);
     return {
-      stdout,
-      stderr,
+      stdout: capped.stdout,
+      stderr: capped.stderr,
       exitCode: typeof result.exitCode === "number" ? result.exitCode : -1,
       ...(changedFiles && changedFiles.length > 0 ? { changedFiles } : {}),
       ...(changes.deleted.length > 0 ? { deletedFiles: changes.deleted } : {}),
@@ -491,11 +501,13 @@ export class RunnerClient implements ExecutionBackend {
 
   async execInContainer(projectId: string, cmd: string[], opts?: { timeout?: number; workingDir?: string }): Promise<ExecResult> {
     const name = this.containerName(projectId);
-    return this.json<ExecResult>(`/containers/${encodeURIComponent(name)}/exec`, {
+    const raw = await this.json<ExecResult>(`/containers/${encodeURIComponent(name)}/exec`, {
       method: "POST",
       body: JSON.stringify({ cmd, timeout: opts?.timeout, workingDir: opts?.workingDir }),
       timeout: (opts?.timeout ?? 120_000) + 10_000,
     });
+    const capped = await capExecResult(raw.stdout ?? "", raw.stderr ?? "", projectId);
+    return { stdout: capped.stdout, stderr: capped.stderr, exitCode: raw.exitCode };
   }
 
   // -- Port checks --
