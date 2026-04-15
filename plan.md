@@ -139,14 +139,21 @@ Current MVP state is captured at the bottom of this document. Everything above t
 - **Container cgroup memory bump for Claude Code.** Default is 512 MiB (`runner/lib/container.ts`) which is tight for Claude Code on large workspaces. Bumping it is a per-deployment tuning call — flagged in §15 (ops runbook) instead of hard-coding a new default.
 - **Integration test for abort propagation.** Belongs under §13 (testing), not worth spinning up a runner-mock here.
 
-## 10. Checkpointing + crash recovery
+## 10. Checkpointing + crash recovery — ✅ SHIPPED (branch `feat/cli-checkpointing-crash-recovery`)
 
-**Problem:** MVP writes one checkpoint at step 0. OpenRouter path saves per-step checkpoints via `onTurnEnd`. Claude backend can't because it doesn't have equivalent turn-level hooks.
+**Shipped:**
+- **Periodic progress checkpoints inside both CLI backends' streaming path.** `driveTurn` in `claude-code-backend.ts` and `codex-backend.ts` now sets up a progress saver while a turn is in flight. Triggers: every 3 fully-materialized tool invocations (`tool-call` reaching `input-available` or `tool-output` emission) OR a 15s timer tick, whichever fires first. Messages saved = `[...priorMessages, assistantMessage]`, so on crash recovery the user sees their partial response (streamed text + completed tool calls), not just the user prompt. `step_number` increments per save so the interrupted-marker message reports meaningful progress.
+- **Metadata preserved across upserts.** The step-0 `saveCheckpoint` metadata (`streamId` + `backend`) is now computed once (`progressCheckpointMeta`) and threaded into `driveTurn` via a new optional `progressCheckpointMeta` field on `TurnContext`. Progress saves pass the same metadata so the checkpoint row upsert doesn't drop it.
+- **Batch path intentionally unchanged.** Batch turns are non-interactive (scheduled tasks, Telegram); the incremental saves don't surface to a UI. Keeping step-0-only avoids the complexity without losing anything user-visible.
+- **Recovery policy confirmed.** The existing `server/lib/durability/recovery.ts#recoverInterruptedRuns` (called from `server/index.ts` on startup) already iterates all active `agent_checkpoints`, appends an `⚠ interrupted at step N due to a server restart` marker to each chat, and deletes the checkpoint. This applies uniformly to OpenRouter and CLI checkpoints — no CLI-specific code path needed. Subprocess lifecycle on crash: the runner's exec-stream HTTP response closes, the runner kills the docker exec, the CLI subprocess dies. We don't try to resume a detached subprocess — the user's next turn hits `--resume` and Claude/Codex rehydrates from its own on-disk session state.
 
-**Work:**
-- Drive checkpoint saves on a timer + on every N `tool-use` events. Good-enough granularity for crash recovery.
-- On server restart with an in-flight CLI run: the claude subprocess in the container survives (or not, depending on lifecycle). Define recovery policy — probably "emit error frame on restart and mark stream ended, user retries."
-- Files: `claude-code-backend.ts` checkpoint loop.
+**Verification:** `bun run typecheck` (server) shows only the two pre-existing `RunnerPool.streamExecInContainer` errors. Web `tsc --noEmit` shows only pre-existing shadcn `ref` noise. `vitest run server/lib/backends/cli` — 50/50 passing (stream-json-adapter + turn-loop unit layer).
+
+**Deferred (under §10):**
+- **Integration test for progress-checkpoint → crash → recover flow.** Needs the same mock runner harness §13 deferred. Pair it with the §13 integration slice; both use the same fixture.
+- **Tunable intervals.** `PROGRESS_TOOL_USE_INTERVAL = 3` and `PROGRESS_TIMER_MS = 15_000` are reasonable defaults. If ops feedback shows they're too chatty (many checkpoint upserts for long turns) or too coarse (users losing visible progress), expose as env vars — not worth the knob today.
+
+**Next:** §8 (tool-card rendering polish) is frontend-only and independent; good for parallel work. §11 + §12 (observability + security) bundle well together since both pass through `runPostChatHooks` / `cliLog` / idle-reap. §13's integration + E2E slices can now be built on top of the checkpoint plumbing that landed here.
 
 ## 11. Observability
 

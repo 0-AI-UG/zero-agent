@@ -78,7 +78,12 @@ interface TurnContext {
   abortSignal: AbortSignal;
   runId: string;
   onPart?: () => void;
+  /** See claude-code-backend.ts — progress checkpointing gate. */
+  progressCheckpointMeta?: Record<string, unknown>;
 }
+
+const PROGRESS_TOOL_USE_INTERVAL = 3;
+const PROGRESS_TIMER_MS = 15_000;
 
 async function driveTurn(
   ctx: TurnContext,
@@ -103,6 +108,24 @@ async function driveTurn(
 
   const partIndexById = new Map<string, number>();
   const callIndexByCallId = new Map<string, number>();
+
+  let progressStep = 1;
+  let toolUsesSinceSave = 0;
+  const saveProgress = () => {
+    if (!ctx.progressCheckpointMeta) return;
+    toolUsesSinceSave = 0;
+    saveCheckpoint({
+      runId: ctx.runId,
+      chatId,
+      projectId: project.id,
+      stepNumber: progressStep++,
+      messages: [...priorMessages, assistantMessage],
+      metadata: ctx.progressCheckpointMeta,
+    });
+  };
+  const progressTimer = ctx.progressCheckpointMeta
+    ? setInterval(saveProgress, PROGRESS_TIMER_MS)
+    : null;
 
   const storedSessionId = getBackendSessionId(chatId);
   let sessionMode: "resume" | "new" = storedSessionId ? "resume" : "new";
@@ -151,6 +174,13 @@ async function driveTurn(
           for (const part of r.parts) {
             foldPartIntoMessage(assistantMessage, part, partIndexById, callIndexByCallId);
             ctx.onPart?.();
+            if (
+              (part.type === "tool-call" && part.state === "input-available") ||
+              part.type === "tool-output"
+            ) {
+              toolUsesSinceSave += 1;
+              if (toolUsesSinceSave >= PROGRESS_TOOL_USE_INTERVAL) saveProgress();
+            }
           }
           if (r.usage) {
             totalUsage.inputTokens = r.usage.inputTokens;
@@ -166,23 +196,27 @@ async function driveTurn(
     sawAnyEvent = result.sawAnyEvent;
   };
 
-  await runOnce(sessionMode, sessionId);
+  try {
+    await runOnce(sessionMode, sessionId);
 
-  if (sessionMode === "resume" && !sawAnyEvent && (endReason as string) === "error") {
-    cliLog.warn("codex exec resume failed, retrying as fresh session", {
-      chatId,
-      oldSessionId: sessionId,
-      prevError: endError,
-    });
-    endReason = "completed";
-    endError = undefined;
-    sessionMode = "new";
-    sessionId = null;
-    // Re-assemble system prompt for the fresh-session retry (first attempt
-    // skipped it because it thought the session was being resumed).
-    const fresh = await assembleSys();
-    prompt = buildPrompt(userText, fresh);
-    await runOnce("new", null);
+    if (sessionMode === "resume" && !sawAnyEvent && (endReason as string) === "error") {
+      cliLog.warn("codex exec resume failed, retrying as fresh session", {
+        chatId,
+        oldSessionId: sessionId,
+        prevError: endError,
+      });
+      endReason = "completed";
+      endError = undefined;
+      sessionMode = "new";
+      sessionId = null;
+      // Re-assemble system prompt for the fresh-session retry (first attempt
+      // skipped it because it thought the session was being resumed).
+      const fresh = await assembleSys();
+      prompt = buildPrompt(userText, fresh);
+      await runOnce("new", null);
+    }
+  } finally {
+    if (progressTimer) clearInterval(progressTimer);
   }
 
   return { endReason, endError, sessionId, sessionMode };
@@ -224,13 +258,18 @@ async function runStreamingStep(input: StreamingStepInput): Promise<void> {
     return;
   }
 
+  const progressCheckpointMeta = {
+    ...(checkpointMetadata ?? {}),
+    streamId,
+    backend: "codex",
+  };
   saveCheckpoint({
     runId,
     chatId,
     projectId: project.id,
     stepNumber: 0,
     messages: priorMessages,
-    metadata: { ...(checkpointMetadata ?? {}), streamId, backend: "codex" },
+    metadata: progressCheckpointMeta,
   });
   registerRun({ runId, chatId, projectId: project.id, startedAt: Date.now() });
   beginStream(chatId, priorMessages, streamId);
@@ -250,6 +289,7 @@ async function runStreamingStep(input: StreamingStepInput): Promise<void> {
         language: input.language, onlySkills: input.onlySkills, planMode: input.planMode,
         abortSignal, runId,
         onPart: () => publishMessage(chatId, assistantMessage),
+        progressCheckpointMeta,
       },
       assistantMessage,
       totalUsage,

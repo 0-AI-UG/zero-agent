@@ -80,7 +80,16 @@ interface TurnContext {
   runId: string;
   // Output sinks — set on streaming path, unset on batch path.
   onPart?: () => void;
+  // Progress checkpointing — set on streaming path so partial assistant
+  // state survives a server crash. Left unset for batch (non-interactive,
+  // nothing to recover into a UI).
+  progressCheckpointMeta?: Record<string, unknown>;
 }
+
+/** Save a progress checkpoint every N tool-use events. */
+const PROGRESS_TOOL_USE_INTERVAL = 3;
+/** Also save a progress checkpoint every 15s while a turn is in flight. */
+const PROGRESS_TIMER_MS = 15_000;
 
 /** Shared turn driver used by both the streaming and batch entry points. */
 async function driveTurn(
@@ -106,6 +115,27 @@ async function driveTurn(
 
   const partIndexById = new Map<string, number>();
   const callIndexByCallId = new Map<string, number>();
+
+  // Progress checkpointer — bumps step_number each save so recovery can
+  // report "interrupted at step N" meaningfully. Gated on streaming path
+  // presence via progressCheckpointMeta.
+  let progressStep = 1;
+  let toolUsesSinceSave = 0;
+  const saveProgress = () => {
+    if (!ctx.progressCheckpointMeta) return;
+    toolUsesSinceSave = 0;
+    saveCheckpoint({
+      runId: ctx.runId,
+      chatId,
+      projectId: project.id,
+      stepNumber: progressStep++,
+      messages: [...priorMessages, assistantMessage],
+      metadata: ctx.progressCheckpointMeta,
+    });
+  };
+  const progressTimer = ctx.progressCheckpointMeta
+    ? setInterval(saveProgress, PROGRESS_TIMER_MS)
+    : null;
 
   // Resolve session: reuse stored id (resume) or mint a fresh UUID. We persist
   // the fresh id eagerly so a crashed mid-turn still leaves a resumable state
@@ -156,6 +186,16 @@ async function driveTurn(
           for (const part of r.parts) {
             foldPartIntoMessage(assistantMessage, part, partIndexById, callIndexByCallId);
             ctx.onPart?.();
+            // Count each fully-materialized tool invocation toward the
+            // progress-save threshold. `input-available` fires once the
+            // args are parsed; `tool-output` fires on completion.
+            if (
+              (part.type === "tool-call" && part.state === "input-available") ||
+              part.type === "tool-output"
+            ) {
+              toolUsesSinceSave += 1;
+              if (toolUsesSinceSave >= PROGRESS_TOOL_USE_INTERVAL) saveProgress();
+            }
           }
           if (r.usage) {
             totalUsage.inputTokens = r.usage.inputTokens;
@@ -171,23 +211,27 @@ async function driveTurn(
     sawAnyEvent = result.sawAnyEvent;
   };
 
-  await runOnce(sessionMode, sessionId);
+  try {
+    await runOnce(sessionMode, sessionId);
 
-  // Auto-fallback: a resume that never produced any assistant event and
-  // exited non-zero typically means the session file is gone (container
-  // rebuilt or user wiped ~/.claude). Retry once as a fresh session.
-  if (sessionMode === "resume" && !sawAnyEvent && (endReason as string) === "error") {
-    cliLog.warn("claude --resume failed, retrying as fresh session", {
-      chatId,
-      oldSessionId: sessionId,
-      prevError: endError,
-    });
-    endReason = "completed";
-    endError = undefined;
-    sessionId = crypto.randomUUID();
-    sessionMode = "new";
-    setBackendSessionId(chatId, sessionId);
-    await runOnce("new", sessionId);
+    // Auto-fallback: a resume that never produced any assistant event and
+    // exited non-zero typically means the session file is gone (container
+    // rebuilt or user wiped ~/.claude). Retry once as a fresh session.
+    if (sessionMode === "resume" && !sawAnyEvent && (endReason as string) === "error") {
+      cliLog.warn("claude --resume failed, retrying as fresh session", {
+        chatId,
+        oldSessionId: sessionId,
+        prevError: endError,
+      });
+      endReason = "completed";
+      endError = undefined;
+      sessionId = crypto.randomUUID();
+      sessionMode = "new";
+      setBackendSessionId(chatId, sessionId);
+      await runOnce("new", sessionId);
+    }
+  } finally {
+    if (progressTimer) clearInterval(progressTimer);
   }
 
   return { endReason, endError, sessionId, sessionMode };
@@ -229,13 +273,18 @@ async function runStreamingStep(input: StreamingStepInput): Promise<void> {
     return;
   }
 
+  const progressCheckpointMeta = {
+    ...(checkpointMetadata ?? {}),
+    streamId,
+    backend: "claude-code",
+  };
   saveCheckpoint({
     runId,
     chatId,
     projectId: project.id,
     stepNumber: 0,
     messages: priorMessages,
-    metadata: { ...(checkpointMetadata ?? {}), streamId, backend: "claude-code" },
+    metadata: progressCheckpointMeta,
   });
   registerRun({ runId, chatId, projectId: project.id, startedAt: Date.now() });
   beginStream(chatId, priorMessages, streamId);
@@ -255,6 +304,7 @@ async function runStreamingStep(input: StreamingStepInput): Promise<void> {
         language: input.language, onlySkills: input.onlySkills, planMode: input.planMode,
         abortSignal, runId,
         onPart: () => publishMessage(chatId, assistantMessage),
+        progressCheckpointMeta,
       },
       assistantMessage,
       totalUsage,
