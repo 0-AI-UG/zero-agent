@@ -564,6 +564,60 @@ export class DockerClient {
     }
   }
 
+  /**
+   * Streaming exec. No stdin — pass the prompt as a CLI arg. Streams
+   * stdout/stderr frames via `onFrame` as Docker returns them. Resolves
+   * with the process exit code after the stream closes.
+   */
+  async execStream(
+    containerName: string,
+    cmd: string[],
+    opts: {
+      workingDir?: string;
+      onFrame: (f: { type: "stdout" | "stderr"; data: Uint8Array }) => void;
+      abortSignal?: AbortSignal;
+    },
+  ): Promise<number> {
+    const createRes = await this.fetch(
+      `/containers/${encodeURIComponent(containerName)}/exec`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          Cmd: cmd,
+          AttachStdin: false,
+          AttachStdout: true,
+          AttachStderr: true,
+          Tty: false,
+          WorkingDir: opts.workingDir ?? "/project",
+        }),
+      },
+    );
+    if (!createRes.ok) {
+      throw new Error(`Failed to create exec: ${await createRes.text()}`);
+    }
+    const { Id: execId } = (await createRes.json()) as { Id: string };
+
+    const startRes = await unixFetchStreaming(
+      `${this.baseUrl}/exec/${execId}/start`,
+      this.socket,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ Detach: false, Tty: false }),
+      },
+    );
+    if (!startRes.ok) {
+      throw new Error(`Failed to start exec: ${await startRes.text()}`);
+    }
+
+    await demuxDockerStreamIncremental(startRes.body!, opts.onFrame, opts.abortSignal);
+
+    const inspectRes = await this.fetch(`/exec/${execId}/json`);
+    const inspectData = (await inspectRes.json()) as { ExitCode: number };
+    return inspectData.ExitCode ?? 0;
+  }
+
   // -- List / Filter --
 
   async listContainers(opts?: { all?: boolean; filters?: Record<string, string[]> }): Promise<Array<{ Id: string; Names: string[]; State: string }>> {
@@ -667,6 +721,57 @@ function demuxDockerStream(data: Uint8Array): { stdout: string; stderr: string }
     stdout: decoder.decode(concatUint8Arrays(stdoutChunks)),
     stderr: decoder.decode(concatUint8Arrays(stderrChunks)),
   };
+}
+
+/**
+ * Incrementally demux Docker's multiplexed exec stream. Emits stdout/stderr
+ * frames as they arrive. Honors abortSignal by cancelling the stream.
+ */
+async function demuxDockerStreamIncremental(
+  body: ReadableStream<Uint8Array>,
+  onFrame: (f: { type: "stdout" | "stderr"; data: Uint8Array }) => void,
+  abortSignal?: AbortSignal,
+): Promise<void> {
+  const reader = body.getReader();
+  let buf = new Uint8Array(0);
+  const onAbort = () => {
+    reader.cancel().catch(() => {});
+  };
+  abortSignal?.addEventListener("abort", onAbort);
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value.length === 0) continue;
+      // Append
+      const merged = new Uint8Array(buf.length + value.length);
+      merged.set(buf, 0);
+      merged.set(value, buf.length);
+      buf = merged;
+
+      let offset = 0;
+      while (offset + 8 <= buf.length) {
+        const streamType = buf[offset]!;
+        const size =
+          (buf[offset + 4]! << 24) |
+          (buf[offset + 5]! << 16) |
+          (buf[offset + 6]! << 8) |
+          buf[offset + 7]!;
+        if (offset + 8 + size > buf.length) break;
+        const payload = buf.subarray(offset + 8, offset + 8 + size);
+        if (streamType === 1) {
+          onFrame({ type: "stdout", data: payload });
+        } else if (streamType === 2) {
+          onFrame({ type: "stderr", data: payload });
+        }
+        offset += 8 + size;
+      }
+      buf = buf.subarray(offset);
+    }
+  } finally {
+    abortSignal?.removeEventListener("abort", onAbort);
+    reader.releaseLock();
+  }
 }
 
 function parseDockerLogs(data: Uint8Array): string {

@@ -6,7 +6,7 @@
 import http from "node:http";
 import type { BrowserAction, BrowserResult } from "@/lib/browser/protocol.ts";
 import type {
-  ExecutionBackend, BashResult, ExecResult, SessionInfo, ContainerListEntry,
+  ExecutionBackend, BashResult, ExecResult, SessionInfo, ContainerListEntry, StreamExecFrame,
 } from "./backend-interface.ts";
 import { listS3Files, readStreamFromS3, writeStreamToS3, s3FileExists, s3FileSize } from "@/lib/s3.ts";
 import { fetchWithTimeout } from "@/lib/utils/deferred.ts";
@@ -496,6 +496,59 @@ export class RunnerClient implements ExecutionBackend {
       body: JSON.stringify({ cmd, timeout: opts?.timeout, workingDir: opts?.workingDir }),
       timeout: (opts?.timeout ?? 120_000) + 10_000,
     });
+  }
+
+  /**
+   * Stream a long-running command's output as newline-delimited JSON frames.
+   * Connects to the runner's `/exec-stream` endpoint and yields parsed frames
+   * until the terminal `{type:"exit"}` frame arrives (or the caller aborts).
+   */
+  async *streamExecInContainer(
+    projectId: string,
+    cmd: string[],
+    opts?: { workingDir?: string; abortSignal?: AbortSignal },
+  ): AsyncIterable<StreamExecFrame> {
+    const name = this.containerName(projectId);
+    const controller = new AbortController();
+    opts?.abortSignal?.addEventListener("abort", () => controller.abort());
+
+    const res = await fetch(`${this.baseUrl}/api/v1/containers/${encodeURIComponent(name)}/exec-stream`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${this.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ cmd, workingDir: opts?.workingDir }),
+      signal: controller.signal,
+    });
+    if (!res.ok || !res.body) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`Runner exec-stream failed ${res.status}: ${text}`);
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        let newline: number;
+        while ((newline = buf.indexOf("\n")) !== -1) {
+          const line = buf.slice(0, newline);
+          buf = buf.slice(newline + 1);
+          if (!line) continue;
+          try {
+            yield JSON.parse(line) as StreamExecFrame;
+          } catch (err) {
+            clientLog.warn("exec-stream parse error", { line: line.slice(0, 200), error: String(err) });
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
   }
 
   // -- Port checks --

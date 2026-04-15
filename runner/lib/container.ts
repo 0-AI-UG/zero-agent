@@ -334,6 +334,21 @@ list(): ContainerInfo[] {
     return docker.exec(name, cmd, opts);
   }
 
+  async execStream(
+    name: string,
+    cmd: string[],
+    opts: {
+      workingDir?: string;
+      onFrame: (f: { type: "stdout" | "stderr"; data: Uint8Array }) => void;
+      abortSignal?: AbortSignal;
+    },
+  ): Promise<number> {
+    const state = this.containers.get(name);
+    if (!state) throw new Error(`Container "${name}" not found`);
+    state.lastUsedAt = Date.now();
+    return docker.execStream(name, cmd, opts);
+  }
+
   async bash(name: string, command: string, opts?: { timeout?: number; workingDir?: string }): Promise<ExecResult> {
     const state = this.containers.get(name);
     if (!state) throw new Error(`Container "${name}" not found`);

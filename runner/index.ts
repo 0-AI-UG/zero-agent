@@ -9,6 +9,7 @@ import { ContainerManager } from "./lib/container.ts";
 import { validateAuth, unauthorized } from "./lib/auth.ts";
 import { containerRoutes } from "./routes/containers.ts";
 import { execRoutes } from "./routes/exec.ts";
+import { execStreamRoutes } from "./routes/exec-stream.ts";
 import { browserRoutes } from "./routes/browser.ts";
 import { fileRoutes } from "./routes/files.ts";
 import { proxyRoute } from "./routes/proxy.ts";
@@ -22,6 +23,7 @@ const mgr = new ContainerManager();
 
 const containers = containerRoutes(mgr);
 const exec = execRoutes(mgr);
+const execStream = execStreamRoutes(mgr);
 const browser = browserRoutes(mgr);
 const files = fileRoutes(mgr);
 const proxy = proxyRoute(mgr);
@@ -85,6 +87,9 @@ function matchRoute(method: string, pathname: string): { handler: (req: Request)
   }
   if (method === "POST" && sub === "/bash") {
     return { handler: (req) => exec.bash(req, name!) };
+  }
+  if (method === "POST" && sub === "/exec-stream") {
+    return { handler: (req) => execStream.stream(req, name!) };
   }
 
   // Browser

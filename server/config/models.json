@@ -209,6 +209,42 @@
         ],
         "allow_fallbacks": true
       }
+    },
+    {
+      "id": "claude-code/sonnet",
+      "name": "Claude Code — Sonnet",
+      "provider": "claude-code",
+      "inferenceProvider": "claude-code",
+      "description": "Runs the Claude Code CLI inside your workspace using your own Claude subscription. File edits, shell, and agent tools are handled by the CLI.",
+      "contextWindow": 200000,
+      "pricing": {
+        "input": 0,
+        "output": 0
+      },
+      "tags": [
+        "byo-subscription",
+        "coding",
+        "agent"
+      ],
+      "multimodal": true
+    },
+    {
+      "id": "claude-code/opus",
+      "name": "Claude Code — Opus",
+      "provider": "claude-code",
+      "inferenceProvider": "claude-code",
+      "description": "Claude Opus via the Claude Code CLI, using your own subscription.",
+      "contextWindow": 200000,
+      "pricing": {
+        "input": 0,
+        "output": 0
+      },
+      "tags": [
+        "byo-subscription",
+        "premium",
+        "reasoning"
+      ],
+      "multimodal": true
     }
   ]
 }
