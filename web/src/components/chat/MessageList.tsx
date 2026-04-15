@@ -27,10 +27,10 @@ interface MessageListProps {
 }
 
 /**
- * Shimmer shows while streaming AND the assistant has no visible in-flight
- * part. Hidden tools, empty text, and non-image files don't render anything,
- * so they shouldn't suppress the indicator. A completed tool call also means
- * the model is thinking about its next step with no active part to show it.
+ * Shimmer shows while streaming AND nothing on screen is already shimmering.
+ * A running tool card shimmers itself, so we suppress only in that case.
+ * Text parts are static once rendered, completed tools are static, and
+ * invisible parts render nothing — all of those need the indicator on top.
  */
 function shimmerLabel(messages: Message[], isStreaming: boolean): string | null {
   if (!isStreaming) return null;
@@ -47,8 +47,11 @@ function shimmerLabel(messages: Message[], isStreaming: boolean): string | null 
     }
   }
   if (!lastVisible) return "Thinking";
-  if (isToolUIPart(lastVisible) && lastVisible.state === "output-available") return "Thinking";
-  return null;
+  if (isToolUIPart(lastVisible)) {
+    const s = lastVisible.state;
+    if (s === "input-streaming" || s === "input-available") return null;
+  }
+  return "Thinking";
 }
 
 export function MessageList({
