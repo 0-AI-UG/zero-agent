@@ -11,6 +11,7 @@ import {
   type CliAuthStatus,
 } from "@/api/cli-auth";
 import { ClaudeLoginModal } from "./ClaudeLoginModal";
+import { CodexLoginModal } from "./CodexLoginModal";
 
 interface CliSubscriptionsPanelProps {
   projectId: string;
@@ -20,7 +21,7 @@ export function CliSubscriptionsPanel({ projectId }: CliSubscriptionsPanelProps)
   const [status, setStatus] = useState<{ claude: CliAuthStatus; codex: CliAuthStatus } | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showLogin, setShowLogin] = useState<"claude" | null>(null);
+  const [showLogin, setShowLogin] = useState<"claude" | "codex" | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -36,7 +37,7 @@ export function CliSubscriptionsPanel({ projectId }: CliSubscriptionsPanelProps)
 
   useEffect(() => { void refresh(); }, [refresh]);
 
-  const handleLogout = async (provider: "claude") => {
+  const handleLogout = async (provider: "claude" | "codex") => {
     try {
       await logoutCliAuth(provider, projectId);
       await refresh();
@@ -72,14 +73,22 @@ export function CliSubscriptionsPanel({ projectId }: CliSubscriptionsPanelProps)
 
       <ProviderRow
         title="Codex"
-        description="OpenAI ChatGPT / Codex subscription (not yet available — ships with the Codex backend)."
+        description="OpenAI ChatGPT / Codex subscription."
         loading={loading}
         status={status?.codex}
-        disabled
+        onLogin={() => setShowLogin("codex")}
+        onLogout={() => handleLogout("codex")}
       />
 
       {showLogin === "claude" && (
         <ClaudeLoginModal
+          projectId={projectId}
+          onClose={() => { setShowLogin(null); void refresh(); }}
+          onSuccess={() => { void refresh(); }}
+        />
+      )}
+      {showLogin === "codex" && (
+        <CodexLoginModal
           projectId={projectId}
           onClose={() => { setShowLogin(null); void refresh(); }}
           onSuccess={() => { void refresh(); }}

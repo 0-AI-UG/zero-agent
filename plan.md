@@ -77,15 +77,27 @@ Current MVP state is captured at the bottom of this document. Everything above t
 
 **Next:** §6 (Codex backend) picks up the Codex login stubs. §7 (batch parity) and §9 (resource limits) are the next code-side blockers before hosted rollout.
 
-## 6. Codex backend
+## 6. Codex backend — ✅ SHIPPED (branch `worktree-cli-codex-backend`)
 
-**Problem:** Only Claude Code implemented in MVP.
+**Shipped:**
+- `server/lib/backends/cli/codex-backend.ts` — mirrors `claude-code-backend.ts`: `codex exec --json --skip-git-repo-check --full-auto` per turn, working-dir `/project`. Session continuity via `thread_id` (emitted on `thread.started`) persisted to `chats.backend_session_id`; subsequent turns use `codex exec resume <id>`. Same auto-fallback as Claude: if `resume` exits non-zero with zero events, retry once as a fresh session (re-assembling system prompt on retry — see below).
+- Event adapter extended in `stream-json-adapter.ts` with `codexEventToParts`. Covers `thread.started`, `turn.started/completed/failed`, `error`, and `item.{started,updated,completed}` for item types `agent_message`, `reasoning`, `command_execution`, `file_change`, `mcp_tool_call`, `web_search`, `todo_list`, `error`. Each tool-ish item becomes a `tool-call` Part that upgrades to `output-available` / `output-error` on `item.completed`. Event shapes confirmed against `openai/codex` repo `codex-rs/exec/src/exec_events.rs`.
+- Provider + backend registration: `server/lib/providers/codex.ts`, wired in both registries. Model rows `codex/gpt-5-codex` and `codex/gpt-5` added to `server/config/models.json`.
+- System-prompt injection: Codex has no `--append-system-prompt` equivalent, so `assembleCliSystemPrompt` output is prepended to the user turn wrapped in `<workspace_context>…</workspace_context>`. Only on fresh sessions — resumed turns skip it (Codex already has the context from turn 1). The retry path re-assembles when it demotes resume → new.
+- Per-user `/root/.codex` volume: `runner/lib/container.ts` now mounts both `claude-home-<userId>` and `codex-home-<userId>`. Volumes are ensured on-demand. Dockerfile installs `@openai/codex` alongside `@anthropic-ai/claude-code`.
+- Codex login flow: `server/lib/backends/cli/auth/codex-oauth.ts` drives `codex login --device-auth` via the runner auth-exec primitive built in §4. Device-auth prints a URL + one-time code and polls the OpenAI auth server — no stdin needed after launch, so the frontend flow is simpler than Claude's (user visits URL, enters code, CLI exits 0 on its own). `codex login status` drives the status check; `codex logout` + removing `/root/.codex/auth.json` on logout.
+- Routes: `server/routes/cli-auth.ts` 501 stubs for `provider=codex` lifted; stream/stdin/cancel now dispatch on provider.
+- Frontend: `web/src/components/settings/CodexLoginModal.tsx` — near-identical to `ClaudeLoginModal.tsx` but presents the device code prominently instead of a token input. `CliSubscriptionsPanel.tsx`'s Codex row enabled with real login/logout. (Shared-hook extraction skipped — two users of the pattern; the duplication is small and the flows diverge on stdin vs no-stdin UI, so premature.)
 
-**Work:**
-- `server/lib/backends/cli/codex-backend.ts` — mirror `claude-code-backend.ts`. Codex's current CLI uses `codex exec --json` (confirm against installed version). Per-message invocation, working-dir state.
-- Event vocab differs — extend `stream-json-adapter.ts` with a `codexEventToParts` function (or put in a sibling file).
-- Register in providers + backends registries; add `codex/gpt-5` model rows.
-- Codex auth flow (§4 applied to Codex).
+**Verification:** `bun run typecheck` server-side shows only the two pre-existing `RunnerPool.streamExecInContainer` errors. Web `tsc --noEmit` shows no errors in the new files (only pre-existing shadcn `ref` and missing-module noise).
+
+**Deferred (under §6, not shipped here):**
+- Batch mode for Codex — both CLI backends throw on `runBatchStep`. Lives in §7 for both.
+- Codex-specific tool-card rendering (§8) — currently uses generic StatusLine fallback just like Claude Code does. Revisit together.
+- Codex `prompt-assembly.ts` tuning — the SOUL.md and skills index were authored for Claude; may be worth a Codex-flavored variant. Low priority.
+- `lastVerifiedAt` staleness / mid-turn 401 re-auth UX — same §11 observability deferral as for Claude.
+
+**Next:** §7 (batch parity) is the next code-side blocker — without it, CLI backends can't serve scheduled tasks or Telegram replies. §9 (resource limits) follows.
 
 ## 7. Batch-mode parity
 
