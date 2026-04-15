@@ -749,18 +749,26 @@ recoverSyncOrphansOnStartup();
 // drop recoverable caches (chat scenes, stale background tasks) as a last
 // line of defense before V8 OOMs.
 const HEAP_SHED_THRESHOLD_MB = 300;
+const HEAP_MONITOR_INTERVAL_MS = Number(process.env.HEAP_MONITOR_INTERVAL_MS ?? 5_000);
 let lastShedAt = 0;
+let lastHeapLogMB = 0;
 const _heapMonitor = setInterval(() => {
   const mem = process.memoryUsage();
   const fmt = (b: number) => (b / 1024 / 1024).toFixed(1);
   const heapUsedMB = mem.heapUsed / 1024 / 1024;
-  log.info("heap", {
-    rss: fmt(mem.rss) + "MB",
-    heapUsed: fmt(mem.heapUsed) + "MB",
-    heapTotal: fmt(mem.heapTotal) + "MB",
-    external: fmt(mem.external) + "MB",
-    arrayBuffers: fmt(mem.arrayBuffers) + "MB",
-  });
+  // Always log on spike (>25MB change) or every ~60s baseline; otherwise stay quiet.
+  const spike = Math.abs(heapUsedMB - lastHeapLogMB) > 25;
+  const baseline = Date.now() % 60_000 < HEAP_MONITOR_INTERVAL_MS;
+  if (spike || baseline) {
+    log.info("heap", {
+      rss: fmt(mem.rss) + "MB",
+      heapUsed: fmt(mem.heapUsed) + "MB",
+      heapTotal: fmt(mem.heapTotal) + "MB",
+      external: fmt(mem.external) + "MB",
+      arrayBuffers: fmt(mem.arrayBuffers) + "MB",
+    });
+    lastHeapLogMB = heapUsedMB;
+  }
   if (heapUsedMB > HEAP_SHED_THRESHOLD_MB && Date.now() - lastShedAt > 60_000) {
     lastShedAt = Date.now();
     const scenes = shedChatScenes();
@@ -768,7 +776,7 @@ const _heapMonitor = setInterval(() => {
     log.warn("heap pressure: shed caches", { heapUsedMB: heapUsedMB.toFixed(0), scenes, tasks });
     if (typeof (globalThis as any).gc === "function") (globalThis as any).gc();
   }
-}, 60_000);
+}, HEAP_MONITOR_INTERVAL_MS);
 if (typeof _heapMonitor === "object" && "unref" in _heapMonitor) _heapMonitor.unref();
 
 // ── Periodic vector pruning (every 30 min) ──

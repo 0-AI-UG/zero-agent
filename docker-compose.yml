@@ -21,8 +21,8 @@ services:
     depends_on:
       - runner
     restart: unless-stopped
-    mem_limit: 600m
-    memswap_limit: 600m
+    mem_limit: 1200m
+    memswap_limit: 1200m
 
   # Build-only helper for the session image used by the runner to spawn
   # agent containers. Lives under the `build` profile so it never starts
