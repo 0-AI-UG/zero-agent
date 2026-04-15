@@ -2,12 +2,14 @@ import { Link } from "react-router";
 import { AlertCircleIcon, RefreshCcwIcon } from "lucide-react";
 import { useCallback, useRef, type ReactNode } from "react";
 import type { Message } from "@/lib/messages";
+import { isToolUIPart, getToolName } from "@/lib/messages";
 import { Button } from "@/components/ui/button";
 import { ConversationEmptyState } from "@/components/chat-ui/Conversation";
 import { MessageShell } from "@/components/chat-ui/MessageShell";
 import { Shimmer } from "@/components/chat-ui/Shimmer";
 import { Suggestion } from "@/components/chat-ui/Suggestion";
 import { MessageRow } from "./MessageRow";
+import { HIDDEN_TOOLS } from "./tool-cards";
 import logoSvg from "@/logo-mark.svg";
 
 interface MessageListProps {
@@ -25,17 +27,28 @@ interface MessageListProps {
 }
 
 /**
- * Shimmer shows only while streaming AND the assistant has nothing yet
- * (or is actively compacting). Once the assistant has produced parts,
- * each part's own component (ToolCard, streaming Markdown, …) owns the
- * activity indicator — no second shimmer below.
+ * Shimmer shows while streaming AND the assistant has no visible in-flight
+ * part. Hidden tools, empty text, and non-image files don't render anything,
+ * so they shouldn't suppress the indicator. A completed tool call also means
+ * the model is thinking about its next step with no active part to show it.
  */
 function shimmerLabel(messages: Message[], isStreaming: boolean): string | null {
   if (!isStreaming) return null;
   const last = messages.at(-1);
   if (!last || last.role !== "assistant") return "Thinking";
   if (last.metadata?.compacting) return "Compacting conversation";
-  if (last.parts.length === 0) return "Thinking";
+
+  const lastVisible = [...last.parts].reverse().find((p) => {
+    if (isToolUIPart(p)) return !HIDDEN_TOOLS.has(getToolName(p));
+    if (p.type === "text") return p.text.length > 0;
+    if (p.type === "file") {
+      const mt = (p as { mediaType?: string }).mediaType;
+      return typeof mt === "string" && mt.startsWith("image/");
+    }
+    return false;
+  });
+  if (!lastVisible) return "Thinking";
+  if (isToolUIPart(lastVisible) && lastVisible.state === "output-available") return "Thinking";
   return null;
 }
 
