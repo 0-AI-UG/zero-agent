@@ -97,16 +97,18 @@ Current MVP state is captured at the bottom of this document. Everything above t
 - Codex `prompt-assembly.ts` tuning — the SOUL.md and skills index were authored for Claude; may be worth a Codex-flavored variant. Low priority.
 - `lastVerifiedAt` staleness / mid-turn 401 re-auth UX — same §11 observability deferral as for Claude.
 
-**Next:** §7 (batch parity) is the next code-side blocker — without it, CLI backends can't serve scheduled tasks or Telegram replies. §9 (resource limits) follows.
+**Next:** §13 (testing) — with §7 and §9 shipped, the code surface for the streaming + batch CLI paths is effectively frozen; adding tests before §10/§11/§12 churn on the same files keeps regressions cheap to detect.
 
-## 7. Batch-mode parity
+## 7. Batch-mode parity — ✅ SHIPPED (branch `feat/cli-batch-streaming-robustness`)
 
-**Problem:** `claude-code-backend.ts` throws on `runBatchStep`. Autonomous tasks (scheduled runs, Telegram replies) can't use CLI backends.
+**Shipped:**
+- New shared helper `server/lib/backends/cli/turn-loop.ts` — `consumeStreamJsonFrames()` drives the per-turn fold loop (frame reading, NDJSON line split, JSON parse, timeout, output byte cap, heartbeat skipping, abort propagation). Both backends' streaming and batch paths now route through the same helper via a `driveTurn` wrapper per backend.
+- `claude-code-backend.ts` + `codex-backend.ts` `runBatchStep` implementations: buffer the adapter output into `assistantMessage.parts`, no WS publish, return a `BatchStepResult` with `assistantParts`, `text`, `totalUsage`, `runId`, `chatId`. Accept both `prompt` (autonomous) and `messages` (Telegram) shapes, mirroring the OpenRouter batch entrypoint. Checkpoints are written at step 0 with `backend` + `batch: true` metadata and deleted on success / persisted on error via the shared hook plumbing.
+- Auto-fallback (resume → new session) works on the batch path too: same inner `runOnce` helper is reused; Codex re-assembles the system prompt on the demoted retry.
 
-**Work:**
-- Implement `runBatchStep` by consuming the same async iterable as streaming but buffering into a single `assistantParts` result. No WS publish.
-- Decide: should Telegram users get to use their own Claude subscription? Likely yes for consumer, no for shared bot — introduce a per-chat / per-project policy.
-- Files: extend `claude-code-backend.ts`, test with existing autonomous task fixtures.
+**Deferred (under §7):**
+- **Per-project / per-chat batch policy gate.** Plan originally flagged "should Telegram users get to use their own Claude subscription?" — for now the CLI backend is enabled wherever the chat's configured model points at a `claude-code/*` or `codex/*` row. The "shared bot should not borrow a user's subscription" case is a per-tenant config decision and has no operators yet; the simplest gate lands in §14 (feature flag + per-deployment `ENABLE_CLI_BACKENDS`), not here. Leaving as a TODO in the batch entry points was judged unnecessary since the registry dispatch is the natural seam.
+- **Integration fixtures for batch runs.** Added to §13 (testing) scope — see the canned-event integration test bullet there.
 
 ## 8. Tool-card rendering polish
 
@@ -122,17 +124,20 @@ Current MVP state is captured at the bottom of this document. Everything above t
 - Guard `WriteFileCard` for absence of `fileId` — CLI writes bypass the S3 sync-approval path. Render a "direct write" badge instead of approval UI.
 - Add a "backend" badge on each assistant message header so users understand why approval UI is absent.
 
-## 9. Streaming robustness + resource limits
+## 9. Streaming robustness + resource limits — ✅ SHIPPED (branch `feat/cli-batch-streaming-robustness`)
 
-**Problem:** MVP assumes the happy path. Production needs:
+**Shipped:**
+- **Per-turn hard timeout (10 min default).** `consumeStreamJsonFrames` starts a `setTimeout` that aborts the inner controller on expiry. The abort propagates into the runner fetch → `req.signal` → docker exec kill. On expiry, `endReason="error"` with a descriptive `endError`; any in-flight tool-call Parts are finalized as `output-error` via the existing `finalizePendingToolCalls` catch path if the aborted exec raises.
+- **Per-turn stdout byte cap (50 MB default).** Counter incremented per `stdout` frame; exceeding the cap aborts the inner controller and sets `endReason="error"`.
+- **Runner heartbeat.** `runner/routes/exec-stream.ts` now emits `{type:"heartbeat", t}` every 10s for the lifetime of the exec. Client-side `consumeStreamJsonFrames` ignores these without counting them as an "event" (so resume→new auto-fallback still fires when the CLI produced nothing). Purpose: keep proxies from closing the idle HTTP chunked response, and surface a dead server-side socket fast.
+- **Container not reaped during live exec.** `runner/lib/container.ts#execStream` now bumps `busyCount` for the duration of the stream so the idle reaper doesn't destroy a container while a CLI subprocess is mid-turn.
+- **Orphan CLI reap via container idle-reap.** The existing idle-reap (`IDLE_TIMEOUT_SECS`, default 600s) destroys the whole container after idle, which inherently kills any orphan `claude` / `codex` subprocess inside it. Finer-grained "kill the subprocess but keep the container" reaping isn't implemented — the container reap is already the cleanup path, so it would just duplicate work.
+- **Abort propagation chain documented.** Verified end-to-end in code:  WS close → server streaming handler's `AbortSignal` → `driveTurn` `runOnce` inner `AbortController` → `RunnerClient.streamExecInContainer` fetch signal → `runner/routes/exec-stream.ts` `req.signal` → `ContainerManager.execStream` → `docker.execStream` exec kill. The chain is short-circuited by any of: per-turn timeout, output byte cap, or parent abort.
+- **NDJSON framing confirmed safe.** Both `claude -p --output-format=stream-json --verbose` and `codex exec --json` use `JSON.stringify` semantics for their output, which escapes literal newlines in string values as `\n`. Splitting on raw `\n` is correct. Documented as a code comment in `turn-loop.ts`; revisit only if a CLI starts emitting non-JSON sentinel lines.
 
-**Work:**
-- **Timeout:** hard cap per turn (e.g. 10 min). Kill the exec stream if exceeded, finalize any in-flight tool-call Parts as output-error.
-- **Memory:** container cgroup memory limit applies to CLI subprocess. Claude Code can be memory-hungry — bump container limit or document minimum.
-- **Output cap:** cap total stdout bytes per turn (e.g. 50MB) to prevent runaway log-fill. Terminate if exceeded.
-- **Runner disconnect:** if the runner WS/HTTP connection dies mid-stream, the subprocess continues inside the container. Add a heartbeat (frame every N seconds) and a cleanup path that kills orphans by scanning for `claude` processes in idle containers.
-- **Abort semantics:** verify `abortSignal` propagation all the way from WS close → server handler → RunnerClient → runner route → docker exec kill. Integration test.
-- **NDJSON framing:** runner currently splits by `\n`. If Claude emits a JSON object containing an embedded `\n` in a string value, the line-splitter breaks — confirm Claude never does this, or switch to length-prefixed framing.
+**Deferred (under §9):**
+- **Container cgroup memory bump for Claude Code.** Default is 512 MiB (`runner/lib/container.ts`) which is tight for Claude Code on large workspaces. Bumping it is a per-deployment tuning call — flagged in §15 (ops runbook) instead of hard-coding a new default.
+- **Integration test for abort propagation.** Belongs under §13 (testing), not worth spinning up a runner-mock here.
 
 ## 10. Checkpointing + crash recovery
 

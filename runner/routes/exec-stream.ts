@@ -6,8 +6,16 @@
  *
  * Client abort (connection close) signals cancellation — the runner kills
  * the exec stream and the Docker socket read completes.
+ *
+ * Heartbeat: while the CLI subprocess is running, the route emits
+ * `{type:"heartbeat", t}` every 10s. Downstream readers ignore these (see
+ * `server/lib/backends/cli/turn-loop.ts`); the point is to keep the HTTP
+ * chunked response alive through any idle proxy/keepalive window and to
+ * fail-fast when the socket is dead on the server side.
  */
 import type { ContainerManager } from "../lib/container.ts";
+
+const HEARTBEAT_INTERVAL_MS = 10_000;
 
 export function execStreamRoutes(mgr: ContainerManager) {
   return {
@@ -29,9 +37,19 @@ export function execStreamRoutes(mgr: ContainerManager) {
         async start(ctrl) {
           const encoder = new TextEncoder();
           const decoder = new TextDecoder();
+          let closed = false;
           const emit = (obj: unknown) => {
-            ctrl.enqueue(encoder.encode(JSON.stringify(obj) + "\n"));
+            if (closed) return;
+            try {
+              ctrl.enqueue(encoder.encode(JSON.stringify(obj) + "\n"));
+            } catch {
+              // Stream closed underneath us (client disconnect). The abort
+              // listener on `req.signal` will kill the docker exec; nothing
+              // more to do here.
+              closed = true;
+            }
           };
+          const heartbeat = setInterval(() => emit({ type: "heartbeat", t: Date.now() }), HEARTBEAT_INTERVAL_MS);
           try {
             const exitCode = await mgr.execStream(name, body.cmd!, {
               workingDir: body.workingDir,
@@ -44,7 +62,9 @@ export function execStreamRoutes(mgr: ContainerManager) {
           } catch (err) {
             emit({ type: "error", message: String(err) });
           } finally {
-            ctrl.close();
+            clearInterval(heartbeat);
+            closed = true;
+            try { ctrl.close(); } catch { /* already closed */ }
           }
         },
         cancel() {
