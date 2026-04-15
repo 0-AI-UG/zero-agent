@@ -75,41 +75,6 @@ export const ScheduleRemoveInput = z
   .object({ taskId: NonEmpty(64) })
   .strict();
 
-// -- experiment --
-export const ExperimentCreateInput = z
-  .object({
-    name: NonEmpty(200),
-    metricPattern: NonEmpty(500),
-    direction: z.enum(["minimize", "maximize"]).optional(),
-    instructionsPath: z.string().min(1).max(500).optional(),
-    targetPath: z.string().min(1).max(500).optional(),
-    schedule: z.string().min(1).max(200).optional(),
-  })
-  .strict();
-
-export const ExperimentStartInput = z
-  .object({ id: NonEmpty(64) })
-  .strict();
-
-export const ExperimentEvaluateInput = z
-  .object({
-    id: NonEmpty(64),
-    output: z.string().min(0).max(100_000),
-    description: z.string().min(0).max(2000).optional(),
-    notes: z.string().min(0).max(8000).optional(),
-  })
-  .strict();
-
-export const ExperimentStatusInput = z
-  .object({ id: NonEmpty(64) })
-  .strict();
-
-export const ExperimentStopInput = z
-  .object({ id: NonEmpty(64) })
-  .strict();
-
-export const ExperimentListInput = z.object({}).strict();
-
 // -- image --
 export const ImageGenerateInput = z
   .object({
@@ -288,9 +253,3 @@ export type MessageSendInputT = z.infer<typeof MessageSendInput>;
 export type MessageResponseInputT = z.infer<typeof MessageResponseInput>;
 export type EmbedInputT = z.infer<typeof EmbedInput>;
 export type SearchInputT = z.infer<typeof SearchInput>;
-export type ExperimentCreateInputT = z.infer<typeof ExperimentCreateInput>;
-export type ExperimentStartInputT = z.infer<typeof ExperimentStartInput>;
-export type ExperimentEvaluateInputT = z.infer<typeof ExperimentEvaluateInput>;
-export type ExperimentStatusInputT = z.infer<typeof ExperimentStatusInput>;
-export type ExperimentStopInputT = z.infer<typeof ExperimentStopInput>;
-export type ExperimentListInputT = z.infer<typeof ExperimentListInput>;

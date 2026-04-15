@@ -20,7 +20,6 @@ import { llmCommand } from "./commands/llm.ts";
 import { messageCommand } from "./commands/message.ts";
 import { embedCommand } from "./commands/embed.ts";
 import { searchCommand } from "./commands/search.ts";
-import { experimentCommand } from "./commands/experiment.ts";
 
 const ZERO_ROOT = path.dirname(path.dirname(import.meta.dirname));
 
@@ -41,7 +40,6 @@ Groups (added by migration steps):
   message          send a message to the user (Telegram + push)
   embed            generate vector embeddings
   search           vector search over project files, memory, and messages
-  experiment       create, start, evaluate, status, stop, list
 
 Run 'zero <group> --help' for details. All commands support --json.
 
@@ -86,8 +84,6 @@ async function main(argv: string[]): Promise<number> {
         return await embedCommand(rest);
       case "search":
         return await searchCommand(rest);
-      case "experiment":
-        return await experimentCommand(rest);
       default:
         process.stderr.write(`zero: unknown group "${group}"\n${HELP}`);
         return 2;

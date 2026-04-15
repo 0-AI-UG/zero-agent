@@ -323,58 +323,6 @@ export interface SyncApprovalBlobRow {
   created_at: string;
 }
 
-export interface FileSnapshotRow {
-  id: string;
-  project_id: string;
-  label: string;
-  file_count: number;
-  created_at: string;
-}
-
-export interface FileSnapshotEntryRow {
-  id: string;
-  snapshot_id: string;
-  file_path: string;
-  s3_key: string;
-  filename: string;
-  folder_path: string;
-  mime_type: string;
-  size_bytes: number;
-  hash: string;
-}
-
-export interface ExperimentRow {
-  id: string;
-  project_id: string;
-  name: string;
-  metric_pattern: string;
-  direction: "minimize" | "maximize";
-  instructions_path: string | null;
-  target_path: string | null;
-  schedule: string;
-  baseline_metric: number | null;
-  best_metric: number | null;
-  best_snapshot_id: string | null;
-  baseline_snapshot_id: string | null;
-  iteration_count: number;
-  status: "created" | "running" | "stopped";
-  created_at: string;
-  updated_at: string;
-}
-
-export interface ExperimentResultRow {
-  id: string;
-  experiment_id: string;
-  iteration: number;
-  status: "kept" | "discarded" | "error" | "baseline";
-  metric: number | null;
-  best_at_time: number | null;
-  description: string;
-  notes: string;
-  snapshot_id: string | null;
-  created_at: string;
-}
-
 export interface TelegramNotificationMessageRow {
   id: string;
   pending_response_id: string;
