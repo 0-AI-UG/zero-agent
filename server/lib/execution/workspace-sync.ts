@@ -9,12 +9,24 @@
  * state.
  */
 import { createHash } from "node:crypto";
-import { getAllProjectFiles, updateFileHash } from "@/db/queries/files.ts";
+import { getAllProjectFiles, updateFileHash, getProjectFileVersion } from "@/db/queries/files.ts";
 import { readBinaryFromS3 } from "@/lib/s3.ts";
 import { getLocalBackend } from "./lifecycle.ts";
 import { log } from "@/lib/utils/logger.ts";
 
 const syncLog = log.child({ module: "workspace-sync" });
+
+// Cached desired manifests per project. Invalidated by a monotonic version
+// counter bumped by file-mutation queries (insertFile, updateFileHash,
+// deleteFile, …). Subsequent reconciles within the same version reuse the
+// cached Map — a large project no longer walks every row per tool call.
+interface CachedManifest {
+  version: number;
+  manifest: Map<string, DesiredEntry>;
+  builtAt: number;
+}
+const manifestCache = new Map<string, CachedManifest>();
+const MANIFEST_CACHE_MAX = 32;
 
 export function sha256Hex(buf: Buffer): string {
   return createHash("sha256").update(buf).digest("hex");
@@ -32,21 +44,45 @@ interface DesiredEntry {
  * an empty string here, which guarantees the diff will mark them as needing
  * a push and the actual content will be backfilled.
  */
-function buildDesiredManifest(projectId: string, subpath: string): Map<string, DesiredEntry> {
+function buildFullManifest(projectId: string): Map<string, DesiredEntry> {
   const files = getAllProjectFiles(projectId);
   const out = new Map<string, DesiredEntry>();
-  // subpath is a runner-side absolute path (e.g. /project). DB paths are
-  // workspace-relative - we only filter when the caller asked for a sub-tree.
-  const wantPrefix = stripWorkspacePrefix(subpath);
-
   for (const f of files) {
     const rel = f.folder_path === "/"
       ? f.filename
       : f.folder_path.slice(1) + f.filename;
-    if (wantPrefix && !rel.startsWith(wantPrefix)) continue;
     out.set(rel, { fileId: f.id, s3Key: f.s3_key, hash: f.hash ?? "" });
   }
   return out;
+}
+
+function buildDesiredManifest(projectId: string, subpath: string): Map<string, DesiredEntry> {
+  const version = getProjectFileVersion(projectId);
+  let cached = manifestCache.get(projectId);
+  if (!cached || cached.version !== version) {
+    cached = { version, manifest: buildFullManifest(projectId), builtAt: Date.now() };
+    manifestCache.set(projectId, cached);
+    if (manifestCache.size > MANIFEST_CACHE_MAX) {
+      // Evict oldest by builtAt.
+      let oldest: string | null = null;
+      let oldestAt = Infinity;
+      for (const [k, v] of manifestCache) {
+        if (v.builtAt < oldestAt) { oldest = k; oldestAt = v.builtAt; }
+      }
+      if (oldest && oldest !== projectId) manifestCache.delete(oldest);
+    }
+  }
+  const wantPrefix = stripWorkspacePrefix(subpath);
+  if (!wantPrefix) return cached.manifest;
+  const filtered = new Map<string, DesiredEntry>();
+  for (const [rel, entry] of cached.manifest) {
+    if (rel.startsWith(wantPrefix)) filtered.set(rel, entry);
+  }
+  return filtered;
+}
+
+export function invalidateManifestCache(projectId: string): void {
+  manifestCache.delete(projectId);
 }
 
 /**
