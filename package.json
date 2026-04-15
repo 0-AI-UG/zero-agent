@@ -11,7 +11,7 @@
     "dev": "tsx dev.ts",
     "build": "bun --filter web build",
     "compile": "tsx build.ts",
-    "start": "NODE_ENV=production node --max-old-space-size=512 --import tsx/esm server/index.ts",
+    "start": "NODE_ENV=production node --import tsx/esm server/index.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
