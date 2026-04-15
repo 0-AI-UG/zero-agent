@@ -28,10 +28,6 @@ const subs = new Map<string, Subscription>();
 
 const TICK_MS = 3_000;
 
-function send(ws: WebSocket, msg: unknown) {
-  if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
-}
-
 async function tick(projectId: string): Promise<void> {
   const s = subs.get(projectId);
   if (!s || s.subscribers.size === 0) return;
@@ -42,7 +38,7 @@ async function tick(projectId: string): Promise<void> {
     const shot = (await backend?.getLatestScreenshot(projectId)) ?? null;
     if (!shot?.base64) return;
     const bytes = Buffer.from(shot.base64, "base64");
-    const { hash, size, contentType } = await putBlob(bytes, "image/jpeg");
+    const { hash, size, contentType } = await putBlob(bytes, "image/jpeg", projectId);
     if (hash === s.lastHash) return;
     s.lastHash = hash;
     const frame = {

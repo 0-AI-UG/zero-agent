@@ -62,14 +62,19 @@ function buildDesiredManifest(projectId: string, subpath: string): Map<string, D
   if (!cached || cached.version !== version) {
     cached = { version, manifest: buildFullManifest(projectId), builtAt: Date.now() };
     manifestCache.set(projectId, cached);
-    if (manifestCache.size > MANIFEST_CACHE_MAX) {
-      // Evict oldest by builtAt.
+    // Evict oldest-by-builtAt entries until we're under the cap. Skip the
+    // just-inserted projectId so we don't immediately discard the entry we
+    // came here to build; loop so the cap is always enforced even when the
+    // current project happens to be the oldest.
+    while (manifestCache.size > MANIFEST_CACHE_MAX) {
       let oldest: string | null = null;
       let oldestAt = Infinity;
       for (const [k, v] of manifestCache) {
+        if (k === projectId) continue;
         if (v.builtAt < oldestAt) { oldest = k; oldestAt = v.builtAt; }
       }
-      if (oldest && oldest !== projectId) manifestCache.delete(oldest);
+      if (!oldest) break;
+      manifestCache.delete(oldest);
     }
   }
   const wantPrefix = stripWorkspacePrefix(subpath);

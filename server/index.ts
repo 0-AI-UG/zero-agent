@@ -185,6 +185,7 @@ import {
   handleTestRunner,
 } from "@/routes/runners.ts";
 import { requireAdmin, authenticateRequest } from "@/lib/auth/auth.ts";
+import { verifyProjectAccess } from "@/routes/utils.ts";
 import { mountCliHandlers } from "@/cli-handlers/index.ts";
 import { db } from "@/db/index.ts";
 
@@ -496,8 +497,9 @@ app.get("/api/projects/:projectId/chats/:chatId/container", h(async (req: Reques
 // the frontend loads the image via `/api/blobs/:hash` so the base64 never
 // enters the server's long-lived heap and identical frames dedupe for free.
 app.get("/api/projects/:projectId/chats/:chatId/browser-screenshot", h(async (req: Request) => {
-  await authenticateRequest(req);
+  const { userId } = await authenticateRequest(req);
   const projectId = (req as any).params.projectId;
+  verifyProjectAccess(projectId, userId);
   const ifNoneMatch = (req.headers.get("if-none-match") ?? "").replace(/^"|"$/g, "");
   const screenshot = await getLocalBackend()?.getLatestScreenshot(projectId) ?? null;
   if (!screenshot) {
@@ -505,7 +507,7 @@ app.get("/api/projects/:projectId/chats/:chatId/browser-screenshot", h(async (re
   }
   const { putBlob } = await import("@/lib/media/blob-store.ts");
   const bytes = Buffer.from(screenshot.base64, "base64");
-  const { hash, size, contentType } = await putBlob(bytes, "image/jpeg");
+  const { hash, size, contentType } = await putBlob(bytes, "image/jpeg", projectId);
   if (ifNoneMatch === hash) {
     return new Response(null, { status: 304, headers: { ...corsHeaders, ETag: `"${hash}"` } });
   }
@@ -524,14 +526,24 @@ app.get("/api/projects/:projectId/chats/:chatId/browser-screenshot", h(async (re
   );
 }));
 
-// Content-addressed blob serving. Long-cacheable (hash is the content).
-app.get("/api/blobs/:hash", h(async (req: Request) => {
-  await authenticateRequest(req);
+// Content-addressed blob serving, scoped to a project the caller is a member of.
+// Scoping is enforced via an in-memory ownership index populated at `putBlob`
+// sites (screenshots, exec overflow). A bare `/api/blobs/:hash` route would be
+// usable by any authenticated user who obtained a hash — so we require the
+// caller to prove project membership and the blob to have been associated with
+// that project.
+app.get("/api/projects/:projectId/blobs/:hash", h(async (req: Request) => {
+  const { userId } = await authenticateRequest(req);
+  const projectId = (req as any).params.projectId as string;
+  verifyProjectAccess(projectId, userId);
   const hash = (req as any).params.hash as string;
   if (!/^[0-9a-f]{64}$/.test(hash)) {
     return Response.json({ error: "invalid hash" }, { status: 400, headers: corsHeaders });
   }
-  const { getBlob } = await import("@/lib/media/blob-store.ts");
+  const { getBlob, blobOwnedBy } = await import("@/lib/media/blob-store.ts");
+  if (!blobOwnedBy(hash, projectId)) {
+    return Response.json({ error: "not found" }, { status: 404, headers: corsHeaders });
+  }
   const entry = await getBlob(hash);
   if (!entry) {
     return Response.json({ error: "not found" }, { status: 404, headers: corsHeaders });
@@ -597,7 +609,7 @@ app.get("/api/capabilities", h((req: Request) => {
   }, { headers: corsHeaders });
 }));
 
-// Lightweight memory/process debug. No auth — returns only counts, no user data.
+// Lightweight memory/process debug. Auth required; returns only counts, no user data.
 app.get("/api/debug/mem", h(async (req: Request) => {
   await authenticateRequest(req);
   const mem = process.memoryUsage();

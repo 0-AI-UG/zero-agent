@@ -140,23 +140,20 @@ export function beginChatStream(
   s.isStreaming = true;
   s.error = undefined;
   s.working.clear();
-  // Seed working set with any messages the caller considers in-flight for
-  // this turn. `ws-chat.ts` passes full prior history + the new user turn;
-  // only the new user turn is truly "in-flight" (not yet persisted), but
-  // keeping them indexed by id is cheap and guarantees a late subscriber's
-  // snapshot is consistent even if the DB write lags.
-  for (const m of initialMessages) {
-    if (m?.id) s.working.set(m.id, m);
-  }
+  // Only the newest message is truly in-flight (typically the user turn that
+  // hasn't been committed yet). Earlier messages in `initialMessages` are
+  // already persisted and will be served from the DB tail in `buildSnapshot`;
+  // mirroring them in `working` would reintroduce the history-shaped memory
+  // footprint this whole scene rewrite was meant to eliminate.
+  const last = initialMessages[initialMessages.length - 1];
+  if (last?.id) s.working.set(last.id, last);
   broadcastToChat(chatId, {
     type: "chat.streamBegin",
     chatId,
     streamId,
   });
-  // Emit a delta for the newest seed message (typically the user turn) so
-  // viewers that were already subscribed see it right away without a full
-  // snapshot replay.
-  const last = initialMessages[initialMessages.length - 1];
+  // Emit a delta for the newest seed message so already-subscribed viewers
+  // see it right away without a full snapshot replay.
   if (last?.id) {
     broadcastToChat(chatId, { type: "chat.message", chatId, message: last });
   }
@@ -421,7 +418,17 @@ function handleMessage(ws: WebSocket, meta: ConnectionMeta, msg: any) {
       handleRefreshToken(ws, meta, msg.token);
       break;
     case "subscribeBrowser":
-      if (typeof msg.projectId === "string") subscribeBrowser(ws, msg.projectId);
+      if (typeof msg.projectId === "string") {
+        // Only allow subscribing to the project the socket has already joined
+        // (which went through handleJoin's membership check). This prevents
+        // authenticated users from reading screenshots of projects they're
+        // not a member of by providing an arbitrary projectId.
+        if (meta.projectId !== msg.projectId) {
+          send(ws, { type: "error", message: "Join project before subscribing to browser" });
+          break;
+        }
+        subscribeBrowser(ws, msg.projectId);
+      }
       break;
     case "unsubscribeBrowser":
       unsubscribeBrowser(ws, typeof msg.projectId === "string" ? msg.projectId : undefined);

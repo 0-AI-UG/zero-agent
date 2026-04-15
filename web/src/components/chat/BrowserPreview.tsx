@@ -15,7 +15,7 @@ interface BrowserPreviewProps {
 
 export function BrowserPreview({ projectId, chatId }: BrowserPreviewProps) {
   const { data: screenshot } = useBrowserScreenshot(projectId, chatId, true);
-  const imgUrl = useBlobUrl(screenshot?.hash);
+  const imgUrl = useBlobUrl(screenshot?.hash, projectId);
 
   return (
     <Popover>

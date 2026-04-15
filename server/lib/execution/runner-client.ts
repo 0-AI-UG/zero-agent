@@ -465,7 +465,7 @@ export class RunnerClient implements ExecutionBackend {
       changedFiles = readResult.files;
     }
 
-    const capped = await capExecResult(stdout, stderr);
+    const capped = await capExecResult(stdout, stderr, projectId);
     return {
       stdout: capped.stdout,
       stderr: capped.stderr,
@@ -506,7 +506,7 @@ export class RunnerClient implements ExecutionBackend {
       body: JSON.stringify({ cmd, timeout: opts?.timeout, workingDir: opts?.workingDir }),
       timeout: (opts?.timeout ?? 120_000) + 10_000,
     });
-    const capped = await capExecResult(raw.stdout ?? "", raw.stderr ?? "");
+    const capped = await capExecResult(raw.stdout ?? "", raw.stderr ?? "", projectId);
     return { stdout: capped.stdout, stderr: capped.stderr, exitCode: raw.exitCode };
   }
 

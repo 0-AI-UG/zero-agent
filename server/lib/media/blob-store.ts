@@ -29,8 +29,16 @@ interface BlobMeta {
 }
 
 const meta = new Map<string, BlobMeta>();
+/**
+ * Project-ownership index. A hash may belong to multiple projects (identical
+ * frames dedupe across projects); a caller fetching a blob must be a member
+ * of at least one owning project. Populated at `putBlob` sites; lost on
+ * restart (scoped fetches will 403 until the blob is re-put, which is fine
+ * given blobs are transient).
+ */
+const ownership = new Map<string, Set<string>>();
 let totalBytes = 0;
-let initialized = false;
+let initPromise: Promise<void> | null = null;
 
 function shardPath(hash: string): { dir: string; file: string; sidecar: string } {
   const shard = hash.slice(0, 2);
@@ -41,8 +49,12 @@ function shardPath(hash: string): { dir: string; file: string; sidecar: string }
 }
 
 async function init(): Promise<void> {
-  if (initialized) return;
-  initialized = true;
+  if (initPromise) return initPromise;
+  initPromise = doInit();
+  return initPromise;
+}
+
+async function doInit(): Promise<void> {
   await mkdir(BLOB_DIR, { recursive: true });
   try {
     const shards = await readdir(BLOB_DIR);
@@ -103,15 +115,34 @@ async function removeInternal(hash: string): Promise<void> {
   try { await unlink(file); } catch {}
   try { await unlink(sidecar); } catch {}
   meta.delete(hash);
+  ownership.delete(hash);
   totalBytes -= entry.size;
+}
+
+/** Returns true iff the blob was `putBlob`'d with at least one of the given projectIds. */
+export function blobOwnedByAny(hash: string, projectIds: Iterable<string>): boolean {
+  const owners = ownership.get(hash);
+  if (!owners || owners.size === 0) return false;
+  for (const pid of projectIds) if (owners.has(pid)) return true;
+  return false;
+}
+
+export function blobOwnedBy(hash: string, projectId: string): boolean {
+  return ownership.get(hash)?.has(projectId) ?? false;
 }
 
 export async function putBlob(
   bytes: Uint8Array,
   contentType: string,
+  projectId?: string,
 ): Promise<{ hash: string; size: number; contentType: string }> {
   await init();
   const hash = sha256(bytes);
+  if (projectId) {
+    let owners = ownership.get(hash);
+    if (!owners) { owners = new Set(); ownership.set(hash, owners); }
+    owners.add(projectId);
+  }
   const existing = meta.get(hash);
   if (existing) {
     existing.lastAccess = Date.now();
