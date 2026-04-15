@@ -36,8 +36,7 @@ export const useColorModeStore = create<ColorModeState>()(
       name: "color-mode-preference",
       onRehydrateStorage: () => (state) => {
         if (state?.customTheme && !state.customThemeCss) {
-          state.customThemeCss = themeConfigToCss(state.customTheme);
-          state.customThemeName = state.customTheme.name;
+          state.setCustomTheme(state.customTheme);
         }
       },
     },
