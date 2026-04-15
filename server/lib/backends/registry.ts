@@ -10,6 +10,7 @@ import { log } from "@/lib/utils/logger.ts";
 import type { AgentBackend, AgentBackendId } from "./types.ts";
 import { openrouterBackend } from "./llm/openrouter-backend.ts";
 import { claudeCodeBackend } from "./cli/claude-code-backend.ts";
+import { codexBackend } from "./cli/codex-backend.ts";
 
 const bLog = log.child({ module: "backends" });
 
@@ -18,6 +19,7 @@ const DEFAULT_BACKEND_ID: AgentBackendId = "openrouter";
 const BACKENDS: Record<string, AgentBackend> = {
   [openrouterBackend.id]: openrouterBackend,
   [claudeCodeBackend.id]: claudeCodeBackend,
+  [codexBackend.id]: codexBackend,
 };
 
 export function registerBackend(backend: AgentBackend): void {

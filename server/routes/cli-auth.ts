@@ -25,6 +25,9 @@ import {
 } from "@/lib/backends/cli/auth/claude-oauth.ts";
 import {
   startCodexAuth,
+  subscribeCodexAuth,
+  writeCodexAuthStdin,
+  cancelCodexAuth,
   getCodexAuthStatus,
   logoutCodex,
 } from "@/lib/backends/cli/auth/codex-oauth.ts";
@@ -79,9 +82,7 @@ export async function handleStream(request: Request, provider: string, sessionId
   try {
     const prov = parseProvider(provider);
     await authenticateRequest(request);
-    if (prov !== "claude") {
-      return Response.json({ error: "Codex login is not yet available" }, { status: 501, headers: corsHeaders });
-    }
+    const subscribe = prov === "claude" ? subscribeClaudeAuth : subscribeCodexAuth;
 
     const stream = new ReadableStream<Uint8Array>({
       start(ctrl) {
@@ -89,7 +90,7 @@ export async function handleStream(request: Request, provider: string, sessionId
         const emit = (obj: unknown) => {
           try { ctrl.enqueue(encoder.encode(JSON.stringify(obj) + "\n")); } catch {}
         };
-        const sub = subscribeClaudeAuth(sessionId, (f) => {
+        const sub = subscribe(sessionId, (f) => {
           emit(f);
           if (f.type === "exit") {
             try { ctrl.close(); } catch {}
@@ -129,14 +130,12 @@ export async function handleStdin(request: Request, provider: string, sessionId:
   try {
     const prov = parseProvider(provider);
     await authenticateRequest(request);
-    if (prov !== "claude") {
-      return Response.json({ error: "Codex login is not yet available" }, { status: 501, headers: corsHeaders });
-    }
     const body = (await request.json()) as { data?: string };
     if (typeof body.data !== "string") {
       return Response.json({ error: "data must be a string" }, { status: 400, headers: corsHeaders });
     }
-    const ok = await writeClaudeAuthStdin(sessionId, body.data);
+    const write = prov === "claude" ? writeClaudeAuthStdin : writeCodexAuthStdin;
+    const ok = await write(sessionId, body.data);
     if (!ok) return Response.json({ error: "session closed or missing" }, { status: 404, headers: corsHeaders });
     return Response.json({ ok: true }, { headers: corsHeaders });
   } catch (error) {
@@ -146,9 +145,10 @@ export async function handleStdin(request: Request, provider: string, sessionId:
 
 export async function handleCancel(request: Request, provider: string, sessionId: string): Promise<Response> {
   try {
-    parseProvider(provider);
+    const prov = parseProvider(provider);
     await authenticateRequest(request);
-    await cancelClaudeAuth(sessionId);
+    const cancel = prov === "claude" ? cancelClaudeAuth : cancelCodexAuth;
+    await cancel(sessionId);
     return Response.json({ ok: true }, { headers: corsHeaders });
   } catch (error) {
     return handleError(error);

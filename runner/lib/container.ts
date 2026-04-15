@@ -114,9 +114,9 @@ export class ContainerManager {
     memory?: number;
     cpus?: number;
     network?: string;
-    /** When set, mount per-user named volume `claude-home-<userId>` at `/root/.claude`
-     *  so Claude Code / Codex credentials persist across container rebuilds and are
-     *  scoped to the user (never shared between users). */
+    /** When set, mount per-user named volumes at `/root/.claude` (Claude Code)
+     *  and `/root/.codex` (Codex) so BYO credentials persist across container
+     *  rebuilds and are scoped to the user (never shared between users). */
     userId?: string;
   }): Promise<ContainerInfo> {
     const existing = this.containers.get(name);
@@ -195,19 +195,25 @@ export class ContainerManager {
     const binds = [`${sessionHostDir}:${CONTAINER_SOCKET_DIR}`];
     let mounts: DockerMount[] | undefined = undefined;
 
-    // Per-user persistent CLI auth volume. Scoped to the user (never shared
-    // across users), mounted into every container they own at /root/.claude.
-    // This holds `credentials.json` and session state for the Claude Code
-    // / Codex CLIs, so logging in once from the settings UI persists even
-    // when containers are destroyed and recreated.
+    // Per-user persistent CLI auth volumes. Scoped to the user (never shared
+    // across users). `/root/.claude` holds Claude Code credentials; `/root/.codex`
+    // holds Codex credentials + session state. Logging in once via the Settings
+    // UI persists even when containers are destroyed and recreated.
     if (opts?.userId) {
       const claudeHomeVolume = `claude-home-${opts.userId}`;
+      const codexHomeVolume = `codex-home-${opts.userId}`;
       try {
         const { docker } = await import("./docker-client.ts");
-        await docker.ensureVolume(claudeHomeVolume);
-        mounts = [{ Type: "volume", Source: claudeHomeVolume, Target: "/root/.claude" }];
+        await Promise.all([
+          docker.ensureVolume(claudeHomeVolume),
+          docker.ensureVolume(codexHomeVolume),
+        ]);
+        mounts = [
+          { Type: "volume", Source: claudeHomeVolume, Target: "/root/.claude" },
+          { Type: "volume", Source: codexHomeVolume, Target: "/root/.codex" },
+        ];
       } catch (err) {
-        mgrLog.warn("failed to prepare claude-home volume", { userId: opts.userId, error: String(err) });
+        mgrLog.warn("failed to prepare per-user CLI home volumes", { userId: opts.userId, error: String(err) });
       }
     }
 

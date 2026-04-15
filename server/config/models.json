@@ -245,6 +245,42 @@
         "reasoning"
       ],
       "multimodal": true
+    },
+    {
+      "id": "codex/gpt-5-codex",
+      "name": "Codex — GPT-5 Codex",
+      "provider": "codex",
+      "inferenceProvider": "codex",
+      "description": "Runs the OpenAI Codex CLI inside your workspace using your own ChatGPT/Codex subscription. File edits, shell, and agent tools are handled by the CLI.",
+      "contextWindow": 200000,
+      "pricing": {
+        "input": 0,
+        "output": 0
+      },
+      "tags": [
+        "byo-subscription",
+        "coding",
+        "agent"
+      ],
+      "multimodal": true
+    },
+    {
+      "id": "codex/gpt-5",
+      "name": "Codex — GPT-5",
+      "provider": "codex",
+      "inferenceProvider": "codex",
+      "description": "GPT-5 via the Codex CLI, using your own subscription.",
+      "contextWindow": 200000,
+      "pricing": {
+        "input": 0,
+        "output": 0
+      },
+      "tags": [
+        "byo-subscription",
+        "premium",
+        "reasoning"
+      ],
+      "multimodal": true
     }
   ]
 }

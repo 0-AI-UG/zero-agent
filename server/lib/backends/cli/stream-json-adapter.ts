@@ -135,3 +135,182 @@ function stringifyContent(c: unknown): string {
 function numberOr0(v: unknown): number {
   return typeof v === "number" && Number.isFinite(v) ? v : 0;
 }
+
+// ── Codex ────────────────────────────────────────────────────────────────
+//
+// Codex's `codex exec --json` emits JSONL with the shape:
+//
+//   {type: "thread.started", thread_id}
+//   {type: "turn.started"}
+//   {type: "item.started" | "item.updated" | "item.completed",
+//     item: { id, type: "agent_message" | "reasoning" | "command_execution" |
+//                        "file_change" | "mcp_tool_call" | "web_search" |
+//                        "todo_list" | "error", ... }}
+//   {type: "turn.completed", usage: {input_tokens, cached_input_tokens, output_tokens}}
+//   {type: "turn.failed", error: {message}}
+//   {type: "error", message}
+//
+// We fold each item type into canonical `Part`s. `id` is the stable slot key
+// for tool-calls; `item.started` emits a `tool-call` in `input-available` state,
+// `item.completed` upgrades it to `output-available` / `output-error`.
+
+export interface CodexAdapterResult extends AdapterResult {
+  /** Set when a `thread.started` event is seen — caller persists as session id. */
+  threadId?: string;
+}
+
+export function codexEventToParts(event: unknown): CodexAdapterResult {
+  if (!event || typeof event !== "object") return { parts: [] };
+  const ev = event as Record<string, unknown>;
+
+  if (ev.type === "thread.started") {
+    return { parts: [], threadId: typeof ev.thread_id === "string" ? ev.thread_id : undefined };
+  }
+
+  if (ev.type === "turn.completed") {
+    const usage = (ev.usage as Record<string, unknown> | undefined) ?? {};
+    return {
+      parts: [],
+      usage: {
+        inputTokens: numberOr0(usage.input_tokens),
+        outputTokens: numberOr0(usage.output_tokens),
+        reasoningTokens: 0,
+        cachedInputTokens: numberOr0(usage.cached_input_tokens),
+      },
+    };
+  }
+
+  if (ev.type === "turn.failed") {
+    const err = (ev.error as { message?: string } | undefined) ?? {};
+    return { parts: [], errorText: err.message ?? "turn failed" };
+  }
+
+  if (ev.type === "error") {
+    return { parts: [], errorText: typeof ev.message === "string" ? ev.message : "codex stream error" };
+  }
+
+  // item events — .started / .updated / .completed
+  if (ev.type === "item.started" || ev.type === "item.updated" || ev.type === "item.completed") {
+    const item = ev.item as Record<string, unknown> | undefined;
+    if (!item) return { parts: [] };
+    const completed = ev.type === "item.completed";
+    return { parts: codexItemToParts(item, completed) };
+  }
+
+  return { parts: [] };
+}
+
+function codexItemToParts(item: Record<string, unknown>, completed: boolean): Part[] {
+  const id = typeof item.id === "string" ? item.id : "";
+  const itemType = typeof item.type === "string" ? item.type : "";
+
+  switch (itemType) {
+    case "agent_message": {
+      const text = typeof item.text === "string" ? item.text : "";
+      return text ? [{ type: "text", text }] : [];
+    }
+    case "reasoning": {
+      const text = typeof item.text === "string" ? item.text : "";
+      return text ? [{ type: "reasoning", text }] : [];
+    }
+    case "command_execution": {
+      const command = typeof item.command === "string" ? item.command : "";
+      const status = typeof item.status === "string" ? item.status : "";
+      const output = typeof item.aggregated_output === "string" ? item.aggregated_output : "";
+      const exitCode = typeof item.exit_code === "number" ? item.exit_code : undefined;
+      const call: Part = {
+        type: "tool-call",
+        callId: id,
+        name: "Bash",
+        arguments: { command },
+        state: completed ? (status === "failed" ? "output-error" : "output-available") : "input-available",
+      };
+      if (!completed) return [call];
+      const errorText = status === "failed" || status === "declined"
+        ? `status=${status}${exitCode != null ? `, exit=${exitCode}` : ""}`
+        : undefined;
+      return [
+        call,
+        {
+          type: "tool-output",
+          callId: id,
+          output: output || (exitCode != null ? `exit ${exitCode}` : ""),
+          errorText,
+        },
+      ];
+    }
+    case "file_change": {
+      const changes = Array.isArray(item.changes) ? item.changes : [];
+      const status = typeof item.status === "string" ? item.status : "";
+      const call: Part = {
+        type: "tool-call",
+        callId: id,
+        name: "Edit",
+        arguments: { changes },
+        state: completed ? (status === "failed" ? "output-error" : "output-available") : "input-available",
+      };
+      if (!completed) return [call];
+      return [
+        call,
+        {
+          type: "tool-output",
+          callId: id,
+          output: changes,
+          errorText: status === "failed" ? "patch apply failed" : undefined,
+        },
+      ];
+    }
+    case "mcp_tool_call": {
+      const server = typeof item.server === "string" ? item.server : "";
+      const tool = typeof item.tool === "string" ? item.tool : "mcp";
+      const status = typeof item.status === "string" ? item.status : "";
+      const call: Part = {
+        type: "tool-call",
+        callId: id,
+        name: server ? `${server}.${tool}` : tool,
+        arguments: (item.arguments as Record<string, unknown>) ?? {},
+        state: completed ? (status === "failed" ? "output-error" : "output-available") : "input-available",
+      };
+      if (!completed) return [call];
+      const result = item.result as { content?: unknown; structured_content?: unknown } | undefined;
+      const err = item.error as { message?: string } | undefined;
+      return [
+        call,
+        {
+          type: "tool-output",
+          callId: id,
+          output: result?.structured_content ?? result?.content ?? err?.message ?? "",
+          errorText: err?.message,
+        },
+      ];
+    }
+    case "web_search": {
+      const query = typeof item.query === "string" ? item.query : "";
+      const call: Part = {
+        type: "tool-call",
+        callId: id,
+        name: "WebSearch",
+        arguments: { query },
+        state: completed ? "output-available" : "input-available",
+      };
+      if (!completed) return [call];
+      return [call, { type: "tool-output", callId: id, output: { query } }];
+    }
+    case "todo_list": {
+      const items = Array.isArray(item.items) ? item.items : [];
+      return [{
+        type: "tool-call",
+        callId: id,
+        name: "TodoWrite",
+        arguments: { todos: items },
+        state: "output-available",
+      }, { type: "tool-output", callId: id, output: items }];
+    }
+    case "error": {
+      const message = typeof item.message === "string" ? item.message : "error";
+      return [{ type: "text", text: `⚠️ ${message}` }];
+    }
+    default:
+      return [];
+  }
+}
