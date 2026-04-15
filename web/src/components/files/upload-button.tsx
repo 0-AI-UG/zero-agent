@@ -1,17 +1,16 @@
 import { useRef } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { UploadIcon } from "lucide-react";
+import { FolderUpIcon, FileUpIcon, UploadIcon, ChevronDownIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { apiFetch } from "@/api/client";
-import { queryKeys } from "@/lib/query-keys";
-import { toast } from "sonner";
-import type { FileItem } from "@/hooks/use-files";
-
-const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
-
-function defaultFolderForFile(_file: File, currentPath: string): string {
-  return currentPath;
-}
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  entriesFromFileList,
+  useUploadFiles,
+} from "@/hooks/use-upload-files";
 
 interface UploadButtonProps {
   projectId: string;
@@ -20,90 +19,59 @@ interface UploadButtonProps {
 }
 
 export function UploadButton({ projectId, currentPath, compact }: UploadButtonProps) {
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const queryClient = useQueryClient();
+  const filesInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
+  const { upload, isUploading } = useUploadFiles(projectId);
 
-  const uploadMutation = useMutation({
-    mutationFn: async (file: File) => {
-      const folderPath = defaultFolderForFile(file, currentPath);
-
-      // 1. Request presigned upload URL
-      const res = await apiFetch<{
-        url: string;
-        s3Key: string;
-        file: FileItem;
-      }>(`/projects/${projectId}/files/upload`, {
-        method: "POST",
-        body: JSON.stringify({
-          filename: file.name,
-          mimeType: file.type || "application/octet-stream",
-          folderPath,
-          sizeBytes: file.size,
-        }),
-      });
-
-      // 2. Upload directly to S3
-      const uploadRes = await fetch(res.url, {
-        method: "PUT",
-        headers: { "Content-Type": file.type || "application/octet-stream" },
-        body: file,
-      });
-
-      if (!uploadRes.ok) {
-        // Clean up the pre-created file record on upload failure
-        await apiFetch(`/projects/${projectId}/files/${res.file.id}`, {
-          method: "DELETE",
-        }).catch(() => {});
-        throw new Error("S3 upload failed");
-      }
-
-      return res.file;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.files.byProject(projectId),
-      });
-      toast.success("File uploaded.");
-    },
-    onError: () => {
-      toast.error("Upload failed. Please try again.");
-    },
-  });
-
-  function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (file.size > MAX_FILE_SIZE) {
-      toast.error("File too large. Maximum size is 50 MB.");
-      return;
-    }
-
-    uploadMutation.mutate(file);
-
-    // Reset input so the same file can be selected again
+  function handleFiles(e: React.ChangeEvent<HTMLInputElement>) {
+    const list = e.target.files;
+    if (!list || list.length === 0) return;
+    void upload(entriesFromFileList(list), currentPath);
     e.target.value = "";
   }
 
   return (
     <>
-      <Button
-        variant="outline"
-        size={compact ? "icon" : "sm"}
-        className={compact ? "h-8 w-8" : undefined}
-        onClick={() => fileInputRef.current?.click()}
-        disabled={uploadMutation.isPending}
-        title="Upload"
-      >
-        <UploadIcon className={compact ? "h-4 w-4" : "h-4 w-4 mr-1"} />
-        {!compact && (uploadMutation.isPending ? "Uploading..." : "Upload")}
-      </Button>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="outline"
+            size={compact ? "icon" : "sm"}
+            className={compact ? "h-8 w-8" : undefined}
+            disabled={isUploading}
+            title="Upload"
+          >
+            <UploadIcon className={compact ? "h-4 w-4" : "h-4 w-4 mr-1"} />
+            {!compact && (isUploading ? "Uploading..." : "Upload")}
+            {!compact && <ChevronDownIcon className="h-3.5 w-3.5 ml-1 opacity-60" />}
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onSelect={() => filesInputRef.current?.click()}>
+            <FileUpIcon className="h-4 w-4 mr-2" />
+            Upload files
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => folderInputRef.current?.click()}>
+            <FolderUpIcon className="h-4 w-4 mr-2" />
+            Upload folder
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
       <input
-        ref={fileInputRef}
+        ref={filesInputRef}
         type="file"
+        multiple
         className="hidden"
-        onChange={handleFileSelect}
-        accept="image/*,.pdf,.csv,.txt,.json,.md,.xlsx,.xls"
+        onChange={handleFiles}
+      />
+      <input
+        ref={folderInputRef}
+        type="file"
+        multiple
+        className="hidden"
+        onChange={handleFiles}
+        // Non-standard attrs for folder picking — cast via any-like approach
+        {...({ webkitdirectory: "", directory: "" } as Record<string, string>)}
       />
     </>
   );

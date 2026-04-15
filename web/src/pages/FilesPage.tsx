@@ -36,6 +36,7 @@ import { queryKeys } from "@/lib/query-keys";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useCreateFile } from "@/hooks/use-create-file";
+import { entriesFromDataTransfer, useUploadFiles } from "@/hooks/use-upload-files";
 
 export function FilesPage() {
   const { projectId } = useParams<{ projectId: string }>();
@@ -311,6 +312,16 @@ export function FilesPage() {
   // Drag overlay state
   const [isDragOver, setIsDragOver] = useState(false);
   const dragCounter = useRef(0);
+  const { upload: uploadDropped, isUploading: isDropUploading } = useUploadFiles(projectId!);
+
+  const handleExternalDrop = useCallback(
+    async (dt: DataTransfer) => {
+      const entries = await entriesFromDataTransfer(dt);
+      if (entries.length === 0) return;
+      await uploadDropped(entries, currentPath);
+    },
+    [uploadDropped, currentPath],
+  );
 
 
   const handleDropItem = useCallback(
@@ -364,6 +375,9 @@ export function FilesPage() {
         e.preventDefault();
         dragCounter.current = 0;
         setIsDragOver(false);
+        if (e.dataTransfer.types.includes("Files")) {
+          void handleExternalDrop(e.dataTransfer);
+        }
       }}
     >
       {/* Drag overlay */}
@@ -371,8 +385,16 @@ export function FilesPage() {
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm border-2 border-dashed border-primary rounded-lg">
           <div className="flex flex-col items-center gap-2 text-primary">
             <UploadIcon className="size-8" />
-            <p className="text-sm font-medium">Drop files to upload</p>
+            <p className="text-sm font-medium">
+              Drop files or folders to upload
+              {currentPath !== "/" ? ` to ${currentPath}` : ""}
+            </p>
           </div>
+        </div>
+      )}
+      {isDropUploading && !isDragOver && (
+        <div className="absolute bottom-4 right-4 z-40 rounded-md border bg-background px-3 py-2 text-xs shadow-md">
+          Uploading...
         </div>
       )}
 
