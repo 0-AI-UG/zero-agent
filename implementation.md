@@ -4,9 +4,9 @@ Continuation plan for the `feat/cli-inference-backends` branch. Each numbered
 section in `plan.md` describes the full requirements; this file groups them
 into coherent work sessions and fixes a suggested execution order.
 
-**Done so far (merged into `feat/cli-inference-backends`):** §1, §3, §4, §6, §7, §9, §10, §13 unit layer (Sessions A + B + C). §5 dropped.
+**Done so far (merged into `feat/cli-inference-backends`):** §1, §3, §4, §6, §7, §8, §9, §10, §13 unit layer (Sessions A + B + C + D). §5 dropped.
 
-**Next session:** D (§8 — tool-card rendering polish, frontend-only) or E (§11 + §12 — observability + security hardening). §13's integration + E2E slices remain deferred — the checkpoint plumbing §10 added can serve as a seam for the integration harness when §13 returns.
+**Next session:** E (§11 + §12 — observability + security hardening), then F (§14 + §15 — rollout flag + docs). §13's integration + E2E slices remain deferred — the checkpoint plumbing §10 added can serve as a seam for the integration harness when §13 returns.
 
 **General workflow per session:**
 1. Create a fresh worktree off `feat/cli-inference-backends` (reset --hard inside if the auto-branch picks main).
@@ -64,21 +64,13 @@ into coherent work sessions and fixes a suggested execution order.
 
 ---
 
-## Session D — §8: tool-card rendering polish
+## Session D — §8: tool-card rendering polish — ✅ SHIPPED (branch `feat/cli-tool-cards`)
 
-**Plan reference:** plan.md §8.
+**Plan reference:** plan.md §8 (full shipped/deferred breakdown lives there).
 
-**Frontend-only session.** Claude / Codex both emit `Read`, `Edit`, `Bash`, `Task`, `Glob`, `Grep`, `TodoWrite`, `WebFetch` via generic `StatusLine` fallback — usable but ugly.
+**Shipped:** Dispatch on capitalized tool names in `web/src/components/chat/tool-cards/index.tsx`; new `EditDiffCard`, `CliFileCard` (Read + Write with "direct write" badge), `CliTaskCard`, `CliTodoCard`; `tool-config.ts` entries for the rest; `BackendBadge` rendered once per assistant message in `MessageRow.tsx` keyed on `modelId` prefix.
 
-**Scope:**
-- `Bash` → reuse existing `BashCard`.
-- `Edit` → new diff-style card showing old_string/new_string.
-- `Read` / `Write` → reuse `DisplayFileCard` / `WriteFileCard`; guard `WriteFileCard` for missing `fileId` and render a "direct write" badge (CLI writes bypass the S3 sync-approval path).
-- `Task` → sub-agent card similar to existing `ParallelSubagentCard`.
-- `TodoWrite` → list/check UI.
-- Add a "backend" badge on each assistant message header so users understand why approval UI is absent for CLI-backed turns.
-
-**Files to touch:** `web/src/components/chat/cards/` (new + existing), `web/src/components/chat/MessageHeader.tsx` (or equivalent).
+**Verification:** `bun run tsc --noEmit` (web) — only pre-existing errors (shadcn refs, `bun-plugin-tailwind`, `@simplewebauthn/browser`, `ImportMeta.hot`, `GithubIcon`). Browser smoke-test deferred — no live CLI credentials in this session. Full bundle build blocked by pre-existing missing `bun-plugin-tailwind` package.
 
 ---
 
@@ -138,9 +130,9 @@ Optional perf. Don't bundle with anything. Revisit only if measurements show col
 
 ## Suggested order
 
-1. **Session A** (§7 + §9) — unblocks hosted rollout (batch mode + safety limits).
-2. **Session B** (§13) — test coverage before more code churn.
-3. **Session C** (§10) — crash recovery after tests exist to validate it.
-4. **Session D** (§8) — frontend polish, independent of the above.
-5. **Session E** (§11 + §12) — observability once the code surface is stable.
+1. ~~**Session A** (§7 + §9)~~ — shipped.
+2. ~~**Session B** (§13 unit)~~ — shipped.
+3. ~~**Session C** (§10)~~ — shipped.
+4. ~~**Session D** (§8)~~ — shipped.
+5. **Session E** (§11 + §12) — observability once the code surface is stable. **NEXT**
 6. **Session F** (§14 + §15) — flag + docs, last so the docs describe shipped reality.

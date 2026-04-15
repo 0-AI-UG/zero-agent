@@ -9,6 +9,10 @@ import { DisplayFileCard } from "./DisplayFileCard";
 import { ParallelSubagentCard } from "./ParallelSubagentCard";
 import { PlanReviewCard } from "./PlanReviewCard";
 import { StatusLine } from "./StatusLine";
+import { EditDiffCard } from "./EditDiffCard";
+import { CliReadCard, CliWriteCard } from "./CliFileCard";
+import { CliTaskCard } from "./CliTaskCard";
+import { CliTodoCard } from "./CliTodoCard";
 import { HIDDEN_TOOLS } from "./tool-config";
 
 export { getToolActiveLabel, HIDDEN_TOOLS } from "./tool-config";
@@ -18,6 +22,26 @@ type Part = Message["parts"][number];
 interface Ctx {
   projectId?: string;
   chatId?: string;
+}
+
+function outputAsString(output: unknown): string {
+  if (output == null) return "";
+  if (typeof output === "string") return output;
+  if (Array.isArray(output)) {
+    return output
+      .map((b) =>
+        typeof b === "object" && b && "text" in b
+          ? String((b as { text?: unknown }).text ?? "")
+          : String(b),
+      )
+      .join("");
+  }
+  if (typeof output === "object") {
+    const o = output as { text?: unknown; content?: unknown };
+    if (typeof o.text === "string") return o.text;
+    if (typeof o.content === "string") return o.content;
+  }
+  return "";
 }
 
 /**
@@ -31,9 +55,13 @@ export const ToolCard = memo(
     if (HIDDEN_TOOLS.has(toolName)) return null;
 
     const isLoading = part.state === "input-streaming" || part.state === "input-available";
-    const hasOutput = part.state === "output-available";
+    const hasOutput = part.state === "output-available" || part.state === "output-error";
+    const hasError = part.state === "output-error";
     const args = part.arguments as Record<string, unknown> | undefined;
-    const output = part.output as Record<string, unknown> | undefined;
+    const rawOutput = part.output;
+    const output = (rawOutput && typeof rawOutput === "object" && !Array.isArray(rawOutput))
+      ? (rawOutput as Record<string, unknown>)
+      : undefined;
 
     if (toolName === "agent" && part.state !== "input-streaming") {
       return (
@@ -55,6 +83,46 @@ export const ToolCard = memo(
           isPending={isLoading}
         />
       );
+    }
+
+    // ── CLI-backend tools (Claude Code / Codex emit capitalized names) ──────
+    if (toolName === "Bash") {
+      if (!hasOutput) return <StatusLine toolName={toolName} state={part.state} args={args} />;
+      const text = outputAsString(rawOutput);
+      return (
+        <BashCard
+          output={hasError ? { error: text || "failed" } : { stdout: text }}
+          command={(args?.command as string) ?? undefined}
+        />
+      );
+    }
+
+    if (toolName === "Edit" || toolName === "MultiEdit") {
+      return <EditDiffCard args={args} hasError={hasError} />;
+    }
+
+    if (toolName === "Read") {
+      if (!hasOutput) return <StatusLine toolName={toolName} state={part.state} args={args} />;
+      return <CliReadCard args={args} output={rawOutput} hasError={hasError} />;
+    }
+
+    if (toolName === "Write") {
+      return <CliWriteCard args={args} hasError={hasError} />;
+    }
+
+    if (toolName === "Task") {
+      return (
+        <CliTaskCard
+          args={args}
+          output={rawOutput}
+          isRunning={isLoading}
+          hasError={hasError}
+        />
+      );
+    }
+
+    if (toolName === "TodoWrite") {
+      return <CliTodoCard args={args} />;
     }
 
     if (hasOutput && output) {
