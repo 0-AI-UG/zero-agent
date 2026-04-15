@@ -23,19 +23,55 @@ const store = new Map<string, Map<string, BackgroundTaskEntry>>();
 // runId → parentChatId (reverse lookup for event handlers)
 const runIdToChat = new Map<string, string>();
 
-const STALE_TTL_MS = 60 * 60 * 1000; // 1 hour
+const STALE_TTL_MS = 60 * 60 * 1000; // 1 hour after delivery
+const HARD_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours regardless of delivery
+const MAX_PER_CHAT = 20;
 
 function cleanupStale() {
   const now = Date.now();
   for (const [chatId, tasks] of store) {
     for (const [runId, entry] of tasks) {
-      if (entry.delivered && entry.completedAt && now - entry.completedAt > STALE_TTL_MS) {
+      const delivered = entry.delivered && entry.completedAt && now - entry.completedAt > STALE_TTL_MS;
+      const hardExpired = now - entry.startedAt > HARD_TTL_MS;
+      if (delivered || hardExpired) {
         tasks.delete(runId);
         runIdToChat.delete(runId);
       }
     }
+    // Per-chat cap: drop oldest entries if too many.
+    if (tasks.size > MAX_PER_CHAT) {
+      const sorted = [...tasks.entries()].sort((a, b) => a[1].startedAt - b[1].startedAt);
+      const toRemove = tasks.size - MAX_PER_CHAT;
+      for (let i = 0; i < toRemove && i < sorted.length; i++) {
+        const entry = sorted[i];
+        if (!entry) continue;
+        tasks.delete(entry[0]);
+        runIdToChat.delete(entry[0]);
+      }
+    }
     if (tasks.size === 0) store.delete(chatId);
   }
+}
+
+// Sweep on interval (15 min) so long-lived servers reclaim memory even if
+// readers never call getUndeliveredResults/getAllTasks.
+setInterval(cleanupStale, 15 * 60 * 1000).unref();
+
+/** Heap-pressure hook: aggressively drop everything older than 30 minutes. */
+export function shedBackgroundTasks(): number {
+  const now = Date.now();
+  let removed = 0;
+  for (const [chatId, tasks] of store) {
+    for (const [runId, entry] of tasks) {
+      if (now - entry.startedAt > 30 * 60 * 1000) {
+        tasks.delete(runId);
+        runIdToChat.delete(runId);
+        removed++;
+      }
+    }
+    if (tasks.size === 0) store.delete(chatId);
+  }
+  return removed;
 }
 
 export function registerBackgroundTask(

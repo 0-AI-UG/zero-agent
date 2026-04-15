@@ -551,6 +551,22 @@ app.get("/api/capabilities", h((req: Request) => {
   }, { headers: corsHeaders });
 }));
 
+// Lightweight memory/process debug. No auth — returns only counts, no user data.
+app.get("/api/debug/mem", h(async (req: Request) => {
+  await authenticateRequest(req);
+  const mem = process.memoryUsage();
+  const fmt = (b: number) => Math.round(b / 1024 / 1024);
+  return Response.json({
+    uptimeSec: Math.round(process.uptime()),
+    rssMB: fmt(mem.rss),
+    heapUsedMB: fmt(mem.heapUsed),
+    heapTotalMB: fmt(mem.heapTotal),
+    externalMB: fmt(mem.external),
+    arrayBuffersMB: fmt(mem.arrayBuffers),
+    ...chatSceneStats(),
+  }, { headers: corsHeaders });
+}));
+
 // Short-lived token for /_apps/* browser navigation
 app.post("/api/app-token", h(async (req: Request) => {
   const { userId, username } = await authenticateRequest(req);
@@ -616,7 +632,8 @@ import { getRequestListener } from "@hono/node-server";
 const honoListener = getRequestListener(app.fetch);
 const nodeServer = createHttpServer(honoListener);
 
-import { attachWebSocketServer, closeWebSocketServer } from "@/lib/http/ws.ts";
+import { attachWebSocketServer, closeWebSocketServer, shedChatScenes, chatSceneStats } from "@/lib/http/ws.ts";
+import { shedBackgroundTasks } from "@/lib/agent/background-task-store.ts";
 import { startWsBridge, startBackgroundBridge } from "@/lib/http/ws-bridge.ts";
 import { initBackgroundTaskListeners } from "@/lib/agent/background-task-store.ts";
 import { initBackgroundResume } from "@/lib/agent/background-resume.ts";
@@ -668,10 +685,16 @@ startupExpirySweep();
 // UI flips the card.
 recoverSyncOrphansOnStartup();
 
-// ── Heap monitoring (every 60s) ──
+// ── Heap monitoring + self-defense (every 60s) ──
+// heap cap is 400MB (--max-old-space-size=400). Above 300MB we aggressively
+// drop recoverable caches (chat scenes, stale background tasks) as a last
+// line of defense before V8 OOMs.
+const HEAP_SHED_THRESHOLD_MB = 300;
+let lastShedAt = 0;
 const _heapMonitor = setInterval(() => {
   const mem = process.memoryUsage();
   const fmt = (b: number) => (b / 1024 / 1024).toFixed(1);
+  const heapUsedMB = mem.heapUsed / 1024 / 1024;
   log.info("heap", {
     rss: fmt(mem.rss) + "MB",
     heapUsed: fmt(mem.heapUsed) + "MB",
@@ -679,6 +702,13 @@ const _heapMonitor = setInterval(() => {
     external: fmt(mem.external) + "MB",
     arrayBuffers: fmt(mem.arrayBuffers) + "MB",
   });
+  if (heapUsedMB > HEAP_SHED_THRESHOLD_MB && Date.now() - lastShedAt > 60_000) {
+    lastShedAt = Date.now();
+    const scenes = shedChatScenes();
+    const tasks = shedBackgroundTasks();
+    log.warn("heap pressure: shed caches", { heapUsedMB: heapUsedMB.toFixed(0), scenes, tasks });
+    if (typeof (globalThis as any).gc === "function") (globalThis as any).gc();
+  }
 }, 60_000);
 if (typeof _heapMonitor === "object" && "unref" in _heapMonitor) _heapMonitor.unref();
 

@@ -154,7 +154,8 @@ export function useRunnerStatus() {
     queryFn: async () => {
       return apiFetch<{ connected: boolean; containers: number }>("/admin/runner/status");
     },
-    refetchInterval: 10_000,
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
   });
 }
 

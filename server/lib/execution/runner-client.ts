@@ -26,6 +26,14 @@ export class RunnerClient implements ExecutionBackend {
   constructor(baseUrl: string, apiKey: string) {
     this.baseUrl = baseUrl.replace(/\/$/, "");
     this.apiKey = apiKey;
+    // Periodic sweep of expired sessionCache entries. Without this, entries
+    // for abandoned projects sit resident indefinitely until a destroy/read.
+    setInterval(() => {
+      const now = Date.now();
+      for (const [k, v] of this.sessionCache) {
+        if (now >= v.expiresAt) this.sessionCache.delete(k);
+      }
+    }, 2 * 60 * 1000).unref();
   }
 
   private async request(path: string, init?: RequestInit & { timeout?: number }): Promise<Response> {

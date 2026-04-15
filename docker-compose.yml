@@ -20,6 +20,9 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-info}
     depends_on:
       - runner
+    restart: unless-stopped
+    mem_limit: 600m
+    memswap_limit: 600m
 
   # Build-only helper for the session image used by the runner to spawn
   # agent containers. Lives under the `build` profile so it never starts
@@ -67,6 +70,9 @@ services:
       - "host.docker.internal:host-gateway"
     ports:
       - "3100:3100"
+    restart: unless-stopped
+    mem_limit: 1500m
+    memswap_limit: 1500m
 
 volumes:
   data:

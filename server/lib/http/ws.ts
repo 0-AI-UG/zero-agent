@@ -48,14 +48,27 @@ interface ChatScene {
   streamId?: string;
   messages: Message[];
   error?: string;
+  lastAccessAt: number;
 }
 
 const chatScenes = new Map<string, ChatScene>();
 
+// Hard cap + idle TTL keep chatScenes from growing unboundedly on a
+// long-running server. Streaming scenes are never evicted.
+const CHAT_SCENE_MAX = 50;
+const CHAT_SCENE_IDLE_MS = 60 * 60 * 1000; // 1h
+
+function touchScene(s: ChatScene) {
+  s.lastAccessAt = Date.now();
+}
+
 /** Lazily materialize the scene for a chat, hydrating from DB on first touch. */
 function getOrCreateScene(chatId: string): ChatScene {
   let s = chatScenes.get(chatId);
-  if (s) return s;
+  if (s) {
+    touchScene(s);
+    return s;
+  }
   const messages: Message[] = [];
   for (const row of getMessagesByChat(chatId)) {
     let m: Message | null;
@@ -67,10 +80,34 @@ function getOrCreateScene(chatId: string): ChatScene {
     if (!m?.id || (m.parts?.length ?? 0) === 0) continue;
     messages.push(m);
   }
-  s = { chatId, isStreaming: false, messages };
+  s = { chatId, isStreaming: false, messages, lastAccessAt: Date.now() };
   chatScenes.set(chatId, s);
+  if (chatScenes.size > CHAT_SCENE_MAX) evictChatScenes();
   return s;
 }
+
+function evictChatScenes() {
+  // Evict idle, non-streaming, no-viewers scenes first; oldest-access first.
+  const now = Date.now();
+  const candidates: ChatScene[] = [];
+  for (const s of chatScenes.values()) {
+    if (s.isStreaming) continue;
+    if ((chatViewers.get(s.chatId)?.size ?? 0) > 0) continue;
+    candidates.push(s);
+  }
+  candidates.sort((a, b) => a.lastAccessAt - b.lastAccessAt);
+  const target = Math.max(0, chatScenes.size - CHAT_SCENE_MAX);
+  for (let i = 0; i < target && i < candidates.length; i++) {
+    const c = candidates[i];
+    if (c) chatScenes.delete(c.chatId);
+  }
+  for (const s of candidates) {
+    if (now - s.lastAccessAt > CHAT_SCENE_IDLE_MS) chatScenes.delete(s.chatId);
+  }
+}
+
+// Periodic idle sweep. Cleared by closeWebSocketServer().
+let chatSceneSweeper: ReturnType<typeof setInterval> | null = null;
 
 function sceneFrame(s: ChatScene): WsBroadcastMessage {
   return {
@@ -220,11 +257,30 @@ export function attachWebSocketServer(server: HttpServer) {
     }
   }, 30_000);
 
+  chatSceneSweeper = setInterval(evictChatScenes, 5 * 60 * 1000);
+
   wss.on("close", () => {
     clearInterval(pingInterval);
+    if (chatSceneSweeper) clearInterval(chatSceneSweeper);
+    chatSceneSweeper = null;
   });
 
   wsLog.info("websocket server attached");
+}
+
+/** Heap-pressure hook: drop idle scenes aggressively. */
+export function shedChatScenes(): number {
+  const before = chatScenes.size;
+  for (const s of [...chatScenes.values()]) {
+    if (s.isStreaming) continue;
+    if ((chatViewers.get(s.chatId)?.size ?? 0) > 0) continue;
+    chatScenes.delete(s.chatId);
+  }
+  return before - chatScenes.size;
+}
+
+export function chatSceneStats() {
+  return { scenes: chatScenes.size, viewers: chatViewers.size, connections: connections.size };
 }
 
 export function closeWebSocketServer() {

@@ -22,7 +22,8 @@ export function useContainers() {
       const res = await apiFetch<{ containers: ContainerEntry[] }>("/admin/containers");
       return res.containers;
     },
-    refetchInterval: 5_000,
+    refetchInterval: 15_000,
+    refetchIntervalInBackground: false,
     staleTime: 0,
   });
 }
@@ -36,7 +37,8 @@ export function useChatContainerStatus(projectId: string, chatId: string) {
       );
       return res;
     },
-    refetchInterval: 10_000,
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
     staleTime: 0,
     enabled: !!projectId && !!chatId,
   });
@@ -59,7 +61,11 @@ export function useBrowserScreenshot(projectId: string, chatId: string, enabled:
       );
       return res.screenshot;
     },
-    refetchInterval: enabled ? 2_000 : false,
+    // 5s poll only when the preview is actually visible; pause entirely when
+    // the tab is backgrounded. Screenshots are visual affordance — missing a
+    // frame costs nothing.
+    refetchInterval: enabled ? 5_000 : false,
+    refetchIntervalInBackground: false,
     staleTime: 0,
     enabled: enabled && !!projectId && !!chatId,
   });
