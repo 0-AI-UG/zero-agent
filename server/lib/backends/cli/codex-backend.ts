@@ -63,6 +63,7 @@ import type {
 import { codexEventToParts } from "./stream-json-adapter.ts";
 import { assembleCliSystemPrompt } from "./prompt-assembly.ts";
 import { consumeStreamJsonFrames } from "./turn-loop.ts";
+import { recordTurn, emitAlert } from "./metrics.ts";
 
 const cliLog = log.child({ module: "backend:codex" });
 
@@ -274,6 +275,7 @@ async function runStreamingStep(input: StreamingStepInput): Promise<void> {
   registerRun({ runId, chatId, projectId: project.id, startedAt: Date.now() });
   beginStream(chatId, priorMessages, streamId);
   publishMessage(chatId, assistantMessage);
+  recordTurn("codex", "started");
 
   const totalUsage = { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, cachedInputTokens: 0 };
 
@@ -325,6 +327,14 @@ async function runStreamingStep(input: StreamingStepInput): Promise<void> {
       sessionMode: sessionModeFinal,
       endReason,
     });
+    if (endReason === "error") {
+      emitAlert("codex turn exited with error", {
+        backend: "codex",
+        chatId,
+        runId,
+        endError,
+      });
+    }
   } catch (err) {
     if (abortSignal.aborted) {
       endReason = "aborted";
@@ -332,6 +342,12 @@ async function runStreamingStep(input: StreamingStepInput): Promise<void> {
       endReason = "error";
       endError = err instanceof Error ? err.message : String(err);
       cliLog.error("codex stream errored", err, { chatId, runId });
+      emitAlert("codex stream threw", {
+        backend: "codex",
+        chatId,
+        runId,
+        endError,
+      });
     }
     persistCheckpointOnError(runId, chatId);
     finalizePendingToolCalls(assistantMessage, endReason === "aborted" ? "Interrupted" : endError ?? "Stream ended with an error");
@@ -355,6 +371,10 @@ async function runStreamingStep(input: StreamingStepInput): Promise<void> {
     endStream(chatId, endReason, endError);
     deleteCheckpoint(runId);
     deregisterRun(runId);
+    recordTurn(
+      "codex",
+      endReason === "completed" ? "completed" : endReason === "aborted" ? "aborted" : "errored",
+    );
   }
 }
 
@@ -414,6 +434,7 @@ async function runBatchStep(input: BatchStepInput): Promise<BatchStepResult> {
     },
   });
   registerRun({ runId, chatId, projectId: project.id, startedAt: Date.now() });
+  recordTurn("codex", "started");
 
   const totalUsage = { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, cachedInputTokens: 0 };
   const controller = new AbortController();
@@ -450,6 +471,7 @@ async function runBatchStep(input: BatchStepInput): Promise<BatchStepResult> {
       taskName,
     });
 
+    recordTurn("codex", "completed");
     return {
       runId,
       text,
@@ -461,7 +483,14 @@ async function runBatchStep(input: BatchStepInput): Promise<BatchStepResult> {
     };
   } catch (err) {
     cliLog.error("codex batch errored", err, { chatId, runId });
+    emitAlert("codex batch threw", {
+      backend: "codex",
+      chatId,
+      runId,
+      endError: err instanceof Error ? err.message : String(err),
+    });
     persistCheckpointOnError(runId, chatId);
+    recordTurn("codex", "errored");
     throw err;
   } finally {
     deleteCheckpoint(runId);

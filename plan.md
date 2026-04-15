@@ -153,26 +153,35 @@ Current MVP state is captured at the bottom of this document. Everything above t
 - **Integration test for progress-checkpoint → crash → recover flow.** Needs the same mock runner harness §13 deferred. Pair it with the §13 integration slice; both use the same fixture.
 - **Tunable intervals.** `PROGRESS_TOOL_USE_INTERVAL = 3` and `PROGRESS_TIMER_MS = 15_000` are reasonable defaults. If ops feedback shows they're too chatty (many checkpoint upserts for long turns) or too coarse (users losing visible progress), expose as env vars — not worth the knob today.
 
-**Next:** §11 + §12 (observability + security) bundle well together since both pass through `runPostChatHooks` / `cliLog` / idle-reap. §13's integration + E2E slices can now be built on top of the checkpoint plumbing that landed here.
+**Next:** §14 + §15 (rollout flag + documentation) — last session, so docs describe shipped reality. §13's integration + E2E slices remain deferred.
 
-## 11. Observability
+## 11. Observability — ✅ SHIPPED (branch `feat/cli-observability-security`)
 
-**Problem:** No metrics on CLI-backed chat success/failure, subprocess exit codes, turn durations, token usage per user.
+**Shipped:**
+- **Counters module** `server/lib/backends/cli/metrics.ts` — in-process `Map<"<backend>:<event>", number>` with `started | completed | aborted | errored` events. `recordTurn("claude-code", …)` / `recordTurn("codex", …)` called from the streaming + batch entry points in each backend. Snapshot emitted every 60s via `metricsLog.info("cli-turn-counters", snapshot)` for log-scraper aggregation. Timer is `.unref()`'d so it doesn't pin the event loop.
+- **Usage tracking** — already correctly wired. `runPostChatHooks` receives `modelId: model ?? "claude-code" | "codex"`; the streaming/batch `model` field is the full `claude-code/sonnet` / `codex/gpt-5` id, so `insertUsageLog` keys on the exact prefix dashboards need. No code change required.
+- **Alerts as structured log lines.** No dedicated alerting surface exists in the codebase; the minimal convention is `{ alert: true, … }` on the relevant warn line. Emitted from:
+  - CLI turn error path via `emitAlert("<backend> turn exited with error", …)` on non-zero exit, and on the catch path for stream throws + batch throws.
+  - Runner `exec-stream` 5xx in `server/lib/execution/runner-client.ts` — tagged `alert: true` before re-throwing.
+  - OAuth: `claude-oauth.ts` + `codex-oauth.ts` stream-error warn lines tagged `alert: true, provider: "claude" | "codex"`.
 
-**Work:**
-- Structured logs already in place (`cliLog` child logger).
-- Add counters: turns started / completed / aborted / errored by backend id.
-- Usage tracking: Claude's `result` event carries `usage` — persist into existing usage-logging hook with `modelId: claude-code/*` so dashboards differentiate.
-- Alert on: exit code ≠ 0 rate > threshold, runner `exec-stream` 5xx rate, OAuth failure rate.
+**Deferred (under §11):**
+- **Prometheus / push-gateway integration.** Not worth adding until there's an ops target to push to; snapshots + alert-tagged logs are the seam.
+- **Mid-turn 401 re-auth UX.** Same deferral as in §4 / §6 — would need structured backend error classification, not in scope here.
 
-## 12. Security hardening
+## 12. Security hardening — ✅ SHIPPED (branch `feat/cli-observability-security`)
 
-**Work:**
-- **Credential leakage:** audit all logs — ensure prompts, stdin, or process env never log credentials. Claude Code tokens live in `~/.claude/credentials.json` inside a per-user volume. Never read that file from server-side code.
-- **Container escape surface:** CLI is arbitrary code inside the user's container. Already sandboxed by existing container setup — verify claude's shell access doesn't break out.
-- **Prompt injection via RAG:** if RAG pulls user content into the system prompt, standard prompt-injection defenses apply. Document a policy for which sources are trusted.
-- **Resource abuse:** a malicious user can burn their own Claude subscription quickly — not our problem — but can also hold a long-running subprocess pinning a container slot. Idle-reap timeout (existing mechanism) must apply to claude processes too.
-- **Rate limits:** per-user concurrent-chat cap, per-chat turn rate-limit.
+**Shipped:**
+- **Credential-leak audit.** Confirmed no server-side code reads `/root/.claude/credentials.json` or `/root/.codex/auth.json`. They are only created (by `claude setup-token` / `codex login`) and deleted (`logout` paths in `auth/{claude,codex}-oauth.ts`) inside the user's container. CLI backend logs never include prompt bodies or stdin bytes — only lengths and error strings (`prompt-assembly.ts` warn lines, `claude-code-backend.ts:156`, `codex-backend.ts:140`). Runner `exec-stream` does not log the `cmd` argv (so the `-p <prompt>` vector cannot leak). The one exception (`runner/lib/auth-exec.ts:83`) logs the auth cmd's first 80 chars — `claude setup-token` / `codex login --device-auth` — non-sensitive.
+- **Rate limits.** `chatSendRateLimiter` (30 turns / 60 s per userId) added in `server/lib/http/rate-limit.ts` and enforced in `ws-chat.ts` at `chat.send` + `chat.regenerate` entry. Per-chat concurrency is already 1 (`chatIsStreaming` guard), so this closes the "same user firing many chats rapidly" hole. Per-user concurrent-chat cap not added separately — with per-chat concurrency = 1 and a per-user turn limit, a user's concurrent CLI subprocess count is bounded by 30/min.
+- **Idle-reap applies to CLI subprocesses.** Verified in `runner/lib/container.ts`: `busyCount` is bumped inside `execStream()` (§9) for the life of the stream, and the idle reaper destroys the whole container after `IDLE_TIMEOUT_SECS` (default 600s) of zero `busyCount` — taking any orphan `claude` / `codex` subprocess with it. No finer-grained subprocess reap needed — the container is the reap unit.
+- **Container-escape surface.** CLI backends run `claude -p …` / `codex exec …` inside the user's existing sandbox (`/project` cwd, per-user `claude-home-<userId>` + `codex-home-<userId>` volumes, the same Docker isolation OpenRouter's tool path uses). Claude's Bash tool can execute arbitrary commands in that container — by design, same as our `bash` tool — so the blast radius is the container, not the host. Not a regression vs. the OpenRouter path.
+- **Prompt-injection policy documented.** `prompt-assembly.ts` merges into the system prompt: (1) **trusted** — SOUL.md, project metadata, skills-index entries from `server/skills/**`, language directive, plan-mode framing (all author-controlled); (2) **untrusted** — RAG memories + file-path lists from `retrieveRagContext`, which can contain user-supplied content. Policy: RAG content must not be used to grant the agent privileged tools. This matches the OpenRouter path — same retriever feeds both system prompts. No new trust boundaries introduced by the CLI backends.
+
+**Deferred (under §12):**
+- **Per-user concurrent-chat cap (separate limiter).** `chatIsStreaming` + turn rate-limit is judged sufficient today; revisit if users open many chats in parallel to bypass the 30/min cap.
+- **Explicit prompt-injection test** for a malicious memory attempting to override the system prompt. Belongs in §13's integration slice.
+- **Volume cleanup on user deletion** — still open from §4. Not re-done here; the credential audit confirmed the current deletion path is safe (row deleted, volume leaks but is scoped to the user).
 
 ## 13. Testing — 🟡 UNIT SHIPPED; INTEGRATION + E2E DEFERRED (branch `feat/cli-testing`)
 

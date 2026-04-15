@@ -110,7 +110,7 @@ export async function startClaudeAuth(opts: StartAuthOpts): Promise<{ sessionId:
         }
       }
     } catch (err) {
-      authLog.warn("auth stream ended with error", { sessionId, error: String(err) });
+      authLog.warn("auth stream ended with error", { alert: true, provider: "claude", sessionId, error: String(err) });
       const f: AuthExecFrame = { type: "error", message: String(err) };
       session.replay.push(f);
       for (const sub of session.subscribers) {

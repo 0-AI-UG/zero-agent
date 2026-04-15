@@ -4,9 +4,9 @@ Continuation plan for the `feat/cli-inference-backends` branch. Each numbered
 section in `plan.md` describes the full requirements; this file groups them
 into coherent work sessions and fixes a suggested execution order.
 
-**Done so far (merged into `feat/cli-inference-backends`):** §1, §3, §4, §6, §7, §8, §9, §10, §13 unit layer (Sessions A + B + C + D). §5 dropped.
+**Done so far (merged into `feat/cli-inference-backends`):** §1, §3, §4, §6, §7, §8, §9, §10, §11, §12, §13 unit layer (Sessions A + B + C + D + E). §5 dropped.
 
-**Next session:** E (§11 + §12 — observability + security hardening), then F (§14 + §15 — rollout flag + docs). §13's integration + E2E slices remain deferred — the checkpoint plumbing §10 added can serve as a seam for the integration harness when §13 returns.
+**Next session:** F (§14 + §15 — rollout flag + docs). §13's integration + E2E slices remain deferred — the checkpoint plumbing §10 added can serve as a seam for the integration harness when §13 returns.
 
 **General workflow per session:**
 1. Create a fresh worktree off `feat/cli-inference-backends` (reset --hard inside if the auto-branch picks main).
@@ -74,25 +74,9 @@ into coherent work sessions and fixes a suggested execution order.
 
 ---
 
-## Session E — §11 + §12: observability + security hardening
+## Session E — §11 + §12: observability + security hardening — ✅ SHIPPED (branch `feat/cli-observability-security`)
 
-**Bundle rationale:** both pass through the same hook points (`runPostChatHooks`, `cliLog`, container idle-reap) and are small touches across many files — cheaper to share the mental model in one session than re-build context twice.
-
-**Plan references:** plan.md §11 (observability), §12 (security hardening).
-
-**Scope — §11:**
-- Counters: turns started / completed / aborted / errored by backend id.
-- Usage tracking: persist Claude's `result.usage` and Codex's `turn.completed.usage` into the existing usage-logging hook with `modelId: claude-code/*` and `codex/*` so dashboards differentiate.
-- Alerts: exit code ≠ 0 rate, runner `exec-stream` 5xx rate, OAuth failure rate. Wire into whichever alerting surface already exists.
-
-**Scope — §12:**
-- Credential-leak audit: grep all logs for paths that could include prompt / stdin / env values; never read `/root/.claude/credentials.json` or `/root/.codex/auth.json` from server-side code.
-- Verify container-escape surface: CLI shell access shouldn't break out of the existing sandbox.
-- Prompt-injection policy: document which RAG sources are trusted and where user content enters the system prompt.
-- Idle-reap for CLI subprocesses: ensure the existing idle-reap mechanism applies to `claude` / `codex` processes inside containers.
-- Rate limits: per-user concurrent-chat cap, per-chat turn rate-limit.
-
-**Files to touch:** `server/lib/backends/cli/{claude-code,codex}-backend.ts`, `server/lib/agent-step/hooks.ts`, `server/lib/utils/logger.ts`, runner idle-reap code, rate-limit middleware.
+See plan.md §11 / §12 for the full shipped/deferred breakdown. Key touches: new `server/lib/backends/cli/metrics.ts` (counters + `emitAlert`), `alert: true` tags on runner-client 5xx and OAuth stream errors, `chatSendRateLimiter` (30/min per user) added to `rate-limit.ts` and enforced in `ws-chat.ts`, security audit documented in plan.md (credential audit, idle-reap confirmation, prompt-injection policy, container-escape surface).
 
 ---
 
@@ -134,5 +118,5 @@ Optional perf. Don't bundle with anything. Revisit only if measurements show col
 2. ~~**Session B** (§13 unit)~~ — shipped.
 3. ~~**Session C** (§10)~~ — shipped.
 4. ~~**Session D** (§8)~~ — shipped.
-5. **Session E** (§11 + §12) — observability once the code surface is stable. **NEXT**
-6. **Session F** (§14 + §15) — flag + docs, last so the docs describe shipped reality.
+5. ~~**Session E** (§11 + §12)~~ — shipped.
+6. **Session F** (§14 + §15) — flag + docs, last so the docs describe shipped reality. **NEXT**
