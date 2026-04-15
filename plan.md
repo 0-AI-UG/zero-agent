@@ -31,15 +31,23 @@ Current MVP state is captured at the bottom of this document. Everything above t
 - Claude CLI: use `--input-format=stream-json` with `stream-json` user events fed over stdin, one subprocess per chat, held in `session-manager.ts`.
 - Only worth doing after §1 works — session continuity via `--resume` may be sufficient.
 
-## 3. RAG / skills / system-prompt injection
+## 3. RAG / skills / system-prompt injection — ✅ DONE (branch `worktree-cli-rag-system-prompt`)
 
-**Problem:** MVP passes only the raw user message. The existing agent loop injects RAG context (vector-searched memories + file paths + past messages), skills index, language preference, identity (SOUL.md), plan-mode framing. None of that reaches the CLI today.
+**Shipped:**
+- New helper `server/lib/backends/cli/prompt-assembly.ts` — `assembleCliSystemPrompt({ project, messages, language, onlySkills, planMode })` returns a single string for `--append-system-prompt`. Parity with `buildSystemPrompt` in `server/lib/agent/agent.ts`: identity (SOUL.md, 20KB cap) + project/date, language directive (zh), skills index, `zero` CLI hint, no-internal-thinking rule, plan-mode framing, RAG memories/files.
+- Skills pre-expanded inline: `loadSkill` doesn't work on the CLI path, so gated skills (passing `checkGating`) have their full instructions + bundled file list injected as `### Skill: <name>` sections, bodies capped at 8KB each.
+- RAG: `retrieveRagContext` called against the last user text; memories + file-path list appended as two `## Relevant …` blocks. Tolerates embedding failures (empty context).
+- Length budget: 100KB hard cap on the append string. Shed order when over budget — (1) skill bodies (keep index), (2) RAG blocks, (3) SOUL.md truncation. Final hard slice as a last resort.
+- Wired into `claude-code-backend.ts`: assembled before `buildClaudeCmd`, passed via a new `--append-system-prompt <str>` arg. Assembly failure falls back to bare prompt with a warn log.
+- Note on append-system-prompt length: `claude --help` documents no explicit cap; the string rides on argv. Linux ARG_MAX is ~2MB, macOS ~256KB. 100KB leaves ample headroom for the rest of argv + any future growth.
 
-**Work:**
-- Reuse `createAgent` / `prepareStep` to build the system prompt + context block, then concatenate into `--append-system-prompt`.
-- Guard: Claude Code truncates append-system-prompt at some limit (check current value) — need a length budget + compaction strategy distinct from OpenRouter's 85% rule since Claude manages its own context window.
-- Skills that take the form of `loadSkill` tool calls don't translate — convert them into inline system-prompt sections on CLI path (pre-expanded).
-- Files: new helper `server/lib/backends/cli/prompt-assembly.ts` that wraps `createAgent.systemPrompt` + RAG context for CLI delivery.
+**Deferred:**
+- Tool index — intentionally omitted. Claude brings its own tools (Read/Edit/Bash/…); our OpenRouter tool names would be misleading. Revisit if §8 (tool-card polish) shows users conflating backends.
+- Per-turn `prepareStep` equivalent — compaction + orphan-patching + background-notification injection don't translate to Claude's self-managed context window. `--resume` (§1) handles continuity; Claude does its own compaction internally.
+- HEARTBEAT.md injection (batch-only feature) — wait for §7 (batch-mode parity) to land first.
+- `initialReadPaths` read-guard seeding — Claude's Read tool has no equivalent guard; not applicable.
+
+**Next:** §4 (per-user OAuth / BYO subscription). §5 (ToS review) is a policy/legal gate that should run in parallel with §4 since it blocks hosted rollout. §6 (Codex backend) becomes cheaper once §4 lands because it can reuse the OAuth plumbing — sequence it after §4.
 
 ## 4. Per-user OAuth (BYO subscription)
 
