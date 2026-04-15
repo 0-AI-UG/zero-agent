@@ -1,3 +1,4 @@
+import { unlinkSync } from "node:fs";
 import { VectorClient } from "@0-ai/s3lite/vectors";
 import type { QueryResult, SparseVector } from "@0-ai/s3lite/vectors";
 import { embed } from "@/lib/openrouter/embed.ts";
@@ -60,8 +61,23 @@ let _client: VectorClient | null = null;
 
 function getClient(): VectorClient {
   if (!_client) {
+    const dbPath = process.env.VECTOR_DB_PATH ?? "./data/vectors.db";
+    // s3lite <=0.6.0 writes only the bare PID into the vector-store lock file,
+    // so across container restarts a PID-20 → PID-20 collision makes it think
+    // the lock is still held. We run single-process per container, so any
+    // pre-existing lock at startup is guaranteed stale — clear it.
+    try {
+      unlinkSync(`${dbPath}-vdata.lock`);
+      vecLog.info("cleared stale vector lock", { path: `${dbPath}-vdata.lock` });
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+        vecLog.warn("failed to clear stale vector lock", {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
     _client = new VectorClient({
-      path: process.env.VECTOR_DB_PATH ?? "./data/vectors.db",
+      path: dbPath,
       storage: "disk",
       diskCacheSize: 10_000,
     });
@@ -329,21 +345,35 @@ export function keywordSearch(
   }));
 }
 
-/** Delete all vectors for a specific source within a collection. */
+/**
+ * Delete all vectors for a specific source within a collection.
+ * Best-effort: failures (e.g. DB lock contention) are logged but not thrown,
+ * since orphaned vectors are reaped later by `pruneOrphanedMessageVectors`
+ * and callers (file delete, re-embed) should not fail when cleanup can't run.
+ */
 export function deleteVectorsBySource(
   projectId: string,
   collection: string,
   sourceId: string,
 ): void {
-  const client = getClient();
-  const indexName = `project:${projectId}`;
-  if (!client.getIndex(indexName)) return;
+  try {
+    const client = getClient();
+    const indexName = `project:${projectId}`;
+    if (!client.getIndex(indexName)) return;
 
-  const prefix = `${collection}:${sourceId}:`;
-  const { keys } = client.listVectors(indexName, { prefix, maxKeys: 10000 });
-  if (keys.length > 0) {
-    client.deleteVectors(indexName, keys);
-    vecLog.debug("deleted vectors", { projectId, collection, sourceId, count: keys.length });
+    const prefix = `${collection}:${sourceId}:`;
+    const { keys } = client.listVectors(indexName, { prefix, maxKeys: 10000 });
+    if (keys.length > 0) {
+      client.deleteVectors(indexName, keys);
+      vecLog.debug("deleted vectors", { projectId, collection, sourceId, count: keys.length });
+    }
+  } catch (err) {
+    vecLog.warn("deleteVectorsBySource failed; leaving orphans for pruner", {
+      projectId,
+      collection,
+      sourceId,
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 }
 

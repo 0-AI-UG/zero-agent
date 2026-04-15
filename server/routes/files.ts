@@ -225,16 +225,18 @@ export async function handleDeleteFile(request: Request): Promise<Response> {
       throw new NotFoundError("File not found");
     }
 
-    // Delete from S3
-    await deleteFromS3(file.s3_key);
-    if (file.thumbnail_s3_key) {
-      await deleteFromS3(file.thumbnail_s3_key).catch(() => {});
-    }
-
-    // Delete metadata, FTS index, and vector embeddings
+    // Delete metadata first so the file is gone from the user's view even if
+    // downstream cleanup (S3, vectors) fails. Vector cleanup is best-effort.
     removeFileIndex(id);
     deleteVectorsBySource(projectId, "file", id);
     deleteFileRecord(id);
+
+    await deleteFromS3(file.s3_key).catch((err) => {
+      routeLog.warn("deleteFromS3 failed", { s3Key: file.s3_key, error: err instanceof Error ? err.message : String(err) });
+    });
+    if (file.thumbnail_s3_key) {
+      await deleteFromS3(file.thumbnail_s3_key).catch(() => {});
+    }
     await reconcileToContainer(projectId);
     events.emit("file.deleted", { projectId, path: file.folder_path, filename: file.filename });
 
