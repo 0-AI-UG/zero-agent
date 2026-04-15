@@ -99,7 +99,7 @@ export async function startCodexAuth(opts: StartAuthOpts): Promise<{ sessionId: 
         }
       }
     } catch (err) {
-      authLog.warn("codex auth stream ended with error", { sessionId, error: String(err) });
+      authLog.warn("codex auth stream ended with error", { alert: true, provider: "codex", sessionId, error: String(err) });
       const f: AuthExecFrame = { type: "error", message: String(err) };
       session.replay.push(f);
       for (const sub of session.subscribers) {

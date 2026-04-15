@@ -523,6 +523,15 @@ export class RunnerClient implements ExecutionBackend {
     });
     if (!res.ok || !res.body) {
       const text = await res.text().catch(() => "");
+      if (res.status >= 500) {
+        // Tag 5xx for log-scraping alert aggregation (plan.md §11).
+        clientLog.warn("runner exec-stream 5xx", {
+          alert: true,
+          status: res.status,
+          projectId,
+          body: text.slice(0, 500),
+        });
+      }
       throw new Error(`Runner exec-stream failed ${res.status}: ${text}`);
     }
 
