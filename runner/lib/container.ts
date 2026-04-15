@@ -114,6 +114,10 @@ export class ContainerManager {
     memory?: number;
     cpus?: number;
     network?: string;
+    /** When set, mount per-user named volume `claude-home-<userId>` at `/root/.claude`
+     *  so Claude Code / Codex credentials persist across container rebuilds and are
+     *  scoped to the user (never shared between users). */
+    userId?: string;
   }): Promise<ContainerInfo> {
     const existing = this.containers.get(name);
     if (existing) {
@@ -155,6 +159,7 @@ export class ContainerManager {
     memory?: number;
     cpus?: number;
     network?: string;
+    userId?: string;
   }): Promise<ContainerInfo> {
     const startTime = Date.now();
     const image = opts?.image ?? DEFAULT_IMAGE;
@@ -188,7 +193,23 @@ export class ContainerManager {
     // work everywhere.
     const sessionHostDir = `${this.hostSocketDir}/${name}`;
     const binds = [`${sessionHostDir}:${CONTAINER_SOCKET_DIR}`];
-    const mounts: DockerMount[] | undefined = undefined;
+    let mounts: DockerMount[] | undefined = undefined;
+
+    // Per-user persistent CLI auth volume. Scoped to the user (never shared
+    // across users), mounted into every container they own at /root/.claude.
+    // This holds `credentials.json` and session state for the Claude Code
+    // / Codex CLIs, so logging in once from the settings UI persists even
+    // when containers are destroyed and recreated.
+    if (opts?.userId) {
+      const claudeHomeVolume = `claude-home-${opts.userId}`;
+      try {
+        const { docker } = await import("./docker-client.ts");
+        await docker.ensureVolume(claudeHomeVolume);
+        mounts = [{ Type: "volume", Source: claudeHomeVolume, Target: "/root/.claude" }];
+      } catch (err) {
+        mgrLog.warn("failed to prepare claude-home volume", { userId: opts.userId, error: String(err) });
+      }
+    }
 
     try {
       await docker.removeContainer(name).catch(() => {});

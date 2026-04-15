@@ -24,6 +24,11 @@ export type StreamExecFrame =
   | { type: "exit"; code: number }
   | { type: "error"; message: string };
 
+export type AuthExecFrame =
+  | { type: "stdout"; data: string }
+  | { type: "exit"; code: number }
+  | { type: "error"; message: string };
+
 export interface SessionInfo {
   sessionId: string;
   containerIp: string;
@@ -74,6 +79,24 @@ export interface ExecutionBackend {
     cmd: string[],
     opts?: { workingDir?: string; abortSignal?: AbortSignal },
   ): AsyncIterable<StreamExecFrame>;
+
+  /**
+   * Interactive auth-exec session. Used by the per-user CLI login flows
+   * (Claude Code, Codex) which need a TTY plus bidirectional stdin/stdout
+   * to drive `claude setup-token` / `codex login` etc.
+   */
+  startAuthExec(
+    projectId: string,
+    cmd: string[],
+    opts?: { workingDir?: string; env?: string[] },
+  ): Promise<{ sessionId: string }>;
+  streamAuthExec(
+    projectId: string,
+    sessionId: string,
+    opts?: { abortSignal?: AbortSignal },
+  ): AsyncIterable<AuthExecFrame>;
+  writeAuthExecStdin(projectId: string, sessionId: string, data: string): Promise<void>;
+  cancelAuthExec(projectId: string, sessionId: string): Promise<void>;
 
   /** Check if a port inside a container is accepting connections. */
   checkPort(projectId: string, port: number): Promise<boolean>;

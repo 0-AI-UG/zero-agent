@@ -97,11 +97,6 @@ export function SetupPage() {
     e.preventDefault();
     setError(null);
 
-    if (!openrouterApiKey) {
-      setError("OpenRouter API key is required.");
-      return;
-    }
-
     setLoading(true);
     try {
       const result = await completeSetup({
@@ -251,15 +246,18 @@ export function SetupPage() {
                   <div className="text-sm text-destructive">{error}</div>
                 )}
                 <div className="space-y-2">
-                  <Label htmlFor="setup-api-key">OpenRouter API Key</Label>
+                  <Label htmlFor="setup-api-key">OpenRouter API Key (optional)</Label>
                   <Input
                     id="setup-api-key"
                     type="password"
                     value={openrouterApiKey}
                     onChange={(e) => setOpenrouterApiKey(e.target.value)}
-                    required
                     placeholder="sk-or-..."
                   />
+                  <p className="text-xs text-muted-foreground">
+                    Skip to link a Claude Code or Codex subscription later from
+                    Settings → CLI Subscriptions.
+                  </p>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="setup-model">Model (optional)</Label>
