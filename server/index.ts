@@ -169,11 +169,6 @@ import {
 import { handleSetupStatus, handleSetupComplete } from "@/routes/setup.ts";
 import { handleGetSettings, handleUpdateSettings } from "@/routes/settings.ts";
 import {
-  handleCodexImport,
-  handleCodexStatus,
-  handleCodexDisconnect,
-} from "@/routes/oauth.ts";
-import {
   handleListEnabledModels,
   handleListAllModels,
   handleCreateModel,
@@ -454,11 +449,6 @@ app.get("/api/sync/:id", h(handleSyncStatus));
 // Settings
 app.get("/api/settings", h(handleGetSettings));
 app.put("/api/settings/:key", h(handleUpdateSettings));
-
-// OAuth - Codex inference provider
-app.get("/api/oauth/codex/status", h(handleCodexStatus));
-app.post("/api/oauth/codex/import", h(handleCodexImport));
-app.post("/api/oauth/codex/disconnect", h(handleCodexDisconnect));
 
 // Credentials (saved logins)
 app.get("/api/projects/:projectId/credentials", h(handleListCredentials));

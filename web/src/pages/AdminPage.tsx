@@ -86,9 +86,6 @@ import {
   useDeleteRunner,
   useTestRunner,
   useReconnectRunner,
-  useCodexStatus,
-  useCodexDisconnect,
-  useCodexImport,
   type AdminUser,
   type Runner,
 } from "@/api/admin";
@@ -341,7 +338,6 @@ function InstanceSettingsSection() {
   const { data: settings } = useAdminSettings();
   const updateSettings = useUpdateSettings();
   const queryClient = useQueryClient();
-  const activeProvider = settings?.INFERENCE_PROVIDER ?? "openrouter";
   const activeTheme = settings?.UI_THEME ?? "default";
 
   return (
@@ -351,35 +347,6 @@ function InstanceSettingsSection() {
         <h3 className="text-sm font-semibold">Instance Settings</h3>
       </div>
       <div className="rounded-lg border p-4 space-y-4">
-        <div className="space-y-2">
-          <label className="text-sm font-medium">Inference Provider</label>
-          <p className="text-xs text-muted-foreground">
-            Active backend for chat. Embeddings and image generation always fall back to OpenRouter when the active provider doesn't support them.
-          </p>
-          <Select
-            value={activeProvider}
-            onValueChange={(value) => {
-              updateSettings.mutate(
-                { INFERENCE_PROVIDER: value },
-                {
-                  onSuccess: () => toast.success("Inference provider updated"),
-                  onError: (err) => toast.error(err.message),
-                },
-              );
-            }}
-          >
-            <SelectTrigger className="h-8 w-full text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="openrouter">OpenRouter</SelectItem>
-              <SelectItem value="codex">ChatGPT (Codex OAuth)</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        {activeProvider === "codex" && <CodexConnectionCard />}
-
         <div className="space-y-2">
           <label className="text-sm font-medium">UI Theme</label>
           <p className="text-xs text-muted-foreground">
@@ -439,85 +406,6 @@ function InstanceSettingsSection() {
         />
       </div>
     </section>
-  );
-}
-
-function CodexConnectionCard() {
-  const { data: status, refetch } = useCodexStatus();
-  const disconnect = useCodexDisconnect();
-  const importMut = useCodexImport();
-  const [authJson, setAuthJson] = useState("");
-
-  const handleImport = () => {
-    const value = authJson.trim();
-    if (!value) {
-      toast.error("Paste the contents of ~/.codex/auth.json first");
-      return;
-    }
-    importMut.mutate(value, {
-      onSuccess: (data) => {
-        setAuthJson("");
-        toast.success(
-          `Connected${data.accountEmail ? ` as ${data.accountEmail}` : ""}`,
-        );
-        refetch();
-      },
-      onError: (err) => toast.error(err.message),
-    });
-  };
-
-  return (
-    <div className="rounded border p-3 space-y-2">
-      <div className="text-xs font-medium">ChatGPT subscription</div>
-      {status?.connected ? (
-        <div className="space-y-2">
-          <p className="text-xs text-muted-foreground">
-            Connected{status.accountEmail ? ` as ${status.accountEmail}` : ""}.
-            {status.expiresAt
-              ? ` Token expires ${new Date(status.expiresAt).toLocaleString()}.`
-              : ""}
-          </p>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() =>
-              disconnect.mutate(undefined, {
-                onSuccess: () => {
-                  toast.success("Disconnected");
-                  refetch();
-                },
-                onError: (err) => toast.error(err.message),
-              })
-            }
-          >
-            Disconnect
-          </Button>
-        </div>
-      ) : (
-        <div className="space-y-2">
-          <p className="text-xs text-muted-foreground">
-            Run <code>codex login</code> on a machine with a browser, then paste the
-            contents of <code>~/.codex/auth.json</code> here.
-          </p>
-          <textarea
-            aria-label="codex auth.json contents"
-            placeholder='{ "auth_mode": "chatgpt", "tokens": { ... } }'
-            className="h-32 w-full rounded border bg-background px-2 py-1 text-xs font-mono"
-            value={authJson}
-            onChange={(e) => setAuthJson(e.target.value)}
-            spellCheck={false}
-          />
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={handleImport}
-            disabled={importMut.isPending}
-          >
-            Import
-          </Button>
-        </div>
-      )}
-    </div>
   );
 }
 
