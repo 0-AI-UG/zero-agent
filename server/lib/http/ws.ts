@@ -9,7 +9,7 @@ import { log } from "@/lib/utils/logger.ts";
 import { isChatWsMessage, handleChatMessage } from "@/lib/http/ws-chat.ts";
 import { listPendingSyncsForChat } from "@/lib/sync-approval.ts";
 import { subscribeBrowser, unsubscribeBrowser } from "@/lib/http/ws-browser.ts";
-import type { Message } from "@/lib/messages/types.ts";
+import type { Message, Part } from "@/lib/messages/types.ts";
 
 const wsLog = log.child({ module: "ws" });
 
@@ -52,7 +52,20 @@ interface ChatScene {
   working: Map<string, Message>;
   error?: string;
   lastAccessAt: number;
+  /**
+   * Broadcast coalescer. During tool-call argument streaming the agent can
+   * emit thousands of content-only deltas per second; serializing the whole
+   * message on every delta caused runaway heap growth. We publish structural
+   * changes immediately and trail content-only changes on a short timer so
+   * at most one snapshot is emitted per {@link COALESCE_INTERVAL_MS} window.
+   */
+  pendingMessage: Message | null;
+  pendingTimer: ReturnType<typeof setTimeout> | null;
+  /** Per-message-id structural signature of the last broadcast snapshot. */
+  lastSignatures: Map<string, string>;
 }
+
+const COALESCE_INTERVAL_MS = 60;
 
 const chatScenes = new Map<string, ChatScene>();
 
@@ -70,7 +83,15 @@ function getOrCreateScene(chatId: string): ChatScene {
     touchScene(s);
     return s;
   }
-  s = { chatId, isStreaming: false, working: new Map(), lastAccessAt: Date.now() };
+  s = {
+    chatId,
+    isStreaming: false,
+    working: new Map(),
+    lastAccessAt: Date.now(),
+    pendingMessage: null,
+    pendingTimer: null,
+    lastSignatures: new Map(),
+  };
   chatScenes.set(chatId, s);
   if (chatScenes.size > CHAT_SCENE_MAX) evictChatScenes();
   return s;
@@ -139,6 +160,13 @@ export function beginChatStream(
   s.streamId = streamId;
   s.isStreaming = true;
   s.error = undefined;
+  // Discard any stale coalescer state from a prior turn before we start.
+  if (s.pendingTimer) {
+    clearTimeout(s.pendingTimer);
+    s.pendingTimer = null;
+  }
+  s.pendingMessage = null;
+  s.lastSignatures.clear();
   s.working.clear();
   // Only the newest message is truly in-flight (typically the user turn that
   // hasn't been committed yet). Earlier messages in `initialMessages` are
@@ -159,11 +187,78 @@ export function beginChatStream(
   }
 }
 
+/**
+ * Cheap structural fingerprint of a message. Changes only when a renderer
+ * would need to update layout (new part, tool-call state transition, metadata
+ * attached). Content-only growth within a part does not change the signature,
+ * so intra-token deltas get coalesced.
+ */
+function messageSignature(m: Message): string {
+  const parts: string[] = [];
+  for (const p of m.parts as Part[]) {
+    // A part's identity for signature purposes is its type plus any discrete
+    // lifecycle field it carries. This covers today's parts (tool-call has
+    // `state`; search/generation parts have `status`) without enumerating
+    // them. Content fields like `text` or `arguments` are deliberately
+    // ignored — that's what we want to coalesce.
+    const lifecycle =
+      (p as { state?: string }).state ?? (p as { status?: string }).status ?? "";
+    parts.push(lifecycle ? `${p.type}:${lifecycle}` : p.type);
+  }
+  return `${parts.length}|${parts.join(",")}|${m.metadata ? "m" : ""}`;
+}
+
+function emitChatMessage(chatId: string, message: Message): void {
+  broadcastToChat(chatId, { type: "chat.message", chatId, message });
+}
+
+/**
+ * Flush any coalesced pending snapshot immediately. Safe to call when
+ * there's nothing pending.
+ */
+function flushPendingBroadcast(s: ChatScene): void {
+  if (s.pendingTimer) {
+    clearTimeout(s.pendingTimer);
+    s.pendingTimer = null;
+  }
+  const pending = s.pendingMessage;
+  if (!pending) return;
+  s.pendingMessage = null;
+  s.lastSignatures.set(pending.id, messageSignature(pending));
+  emitChatMessage(s.chatId, pending);
+}
+
 export function publishChatMessage(chatId: string, message: Message): void {
   const s = getOrCreateScene(chatId);
   if (!message?.id) return;
   s.working.set(message.id, message);
-  broadcastToChat(chatId, { type: "chat.message", chatId, message });
+
+  const sig = messageSignature(message);
+  const prev = s.lastSignatures.get(message.id);
+
+  if (prev !== sig) {
+    // Structural change: any prior coalesced snapshot is stale — drop it and
+    // emit this one immediately so renderers see the transition without lag.
+    if (s.pendingTimer) {
+      clearTimeout(s.pendingTimer);
+      s.pendingTimer = null;
+    }
+    s.pendingMessage = null;
+    s.lastSignatures.set(message.id, sig);
+    emitChatMessage(chatId, message);
+    return;
+  }
+
+  // Content-only delta: stash the latest snapshot and schedule a trailing
+  // flush. The stream loop mutates `message` in place, so we hold exactly
+  // one reference to the live object — no extra retention.
+  s.pendingMessage = message;
+  if (!s.pendingTimer) {
+    s.pendingTimer = setTimeout(() => {
+      const scene = chatScenes.get(chatId);
+      if (scene) flushPendingBroadcast(scene);
+    }, COALESCE_INTERVAL_MS);
+  }
 }
 
 export function endChatStream(
@@ -174,6 +269,10 @@ export function endChatStream(
   const s = getOrCreateScene(chatId);
   s.isStreaming = false;
   s.error = reason === "error" ? error ?? "Stream ended with an error" : undefined;
+  // Drain any coalesced snapshot so clients never see a terminal stream
+  // envelope with stale content behind it.
+  flushPendingBroadcast(s);
+  s.lastSignatures.clear();
   // Release the in-flight working set. DB is authoritative from here on; a
   // late viewer's snapshot will rebuild from the tail.
   s.working.clear();
