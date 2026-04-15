@@ -6,7 +6,7 @@ import {
   ArtifactContent,
   ArtifactActions,
   ArtifactAction,
-} from "@/components/ai/artifact";
+} from "@/components/chat-ui/Artifact";
 import { usePresignedUrl } from "@/hooks/use-presigned-url";
 
 interface FileArtifactProps {

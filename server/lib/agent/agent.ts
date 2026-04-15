@@ -1,10 +1,18 @@
-import { ToolLoopAgent, stepCountIs, type StopCondition } from "ai";
-import { getChatModel, createChatModel, getEnrichModel } from "@/lib/providers/index.ts";
+import { stepCountIs } from "@openrouter/sdk/lib/stop-conditions.js";
+import type { StopCondition, Tool } from "@openrouter/sdk/lib/tool-types.js";
+import {
+  getChatModelId,
+  resolveChatModelId,
+  getEnrichModelId,
+} from "@/lib/providers/index.ts";
 import { createToolset } from "@/tools/registry.ts";
 import { getSkillSummaries } from "@/lib/skills/loader.ts";
 import { buildSkillsIndex } from "@/lib/skills/injector.ts";
 import { createAgentTool } from "@/tools/agent.ts";
-import { createCompactPrepareStep } from "@/lib/conversation/compact-conversation.ts";
+import {
+  createCompactPrepareStep,
+  type PrepareStepFn,
+} from "@/lib/conversation/compact-conversation.ts";
 import { createPlanningTools } from "@/tools/planning.ts";
 import { readFromS3 } from "@/lib/s3.ts";
 import { log } from "@/lib/utils/logger.ts";
@@ -57,6 +65,30 @@ export interface AgentOptions {
   planMode?: boolean;
 }
 
+/**
+ * Handle returned by `createAgent`. A passive configuration bundle — the
+ * entrypoints in `agent-step/index.ts` wire these fields into `callModel`
+ * from `@openrouter/sdk`.
+ */
+export interface AgentHandle {
+  /** OpenRouter model ID. */
+  model: string;
+  /** System-prompt string. */
+  systemPrompt: string;
+  /** Tools in the order they're exposed to the model. */
+  tools: readonly Tool[];
+  /** Tool-loop stop conditions. */
+  stopWhen: ReadonlyArray<StopCondition<readonly Tool[]>>;
+  /** Per-turn message/system rewriter (compaction, orphan patching, background notifications). */
+  prepareStep: PrepareStepFn;
+  /** Fired after each step with the step number and cumulative response messages. */
+  onStepFinish: (stepNumber: number, responseMessages: Array<{ role: string; content: unknown }>) => void;
+  /** Copy of the input options for downstream consumers that want to re-instantiate tools. */
+  options: AgentOptions;
+  /** Project reference (used by sub-agent spawner). */
+  project: ProjectForAgent;
+}
+
 async function buildSystemPrompt(project: {
   id: string;
   name: string;
@@ -80,30 +112,24 @@ async function buildSystemPrompt(project: {
 
   const sections: string[] = [];
 
-  // ── Opening ──
   sections.push(`${identity} Project: "${project.name}". Date: ${today}.`);
 
   if (language === "zh") {
     sections.push("Write all responses and generated content in Chinese unless the user explicitly asks for another language.");
   }
 
-  // ── Skills ──
   if (skillsIndex) {
     sections.push(`## Skills\n\n${skillsIndex}`);
   }
 
-  // ── Tool index ──
   if (toolIndex) {
     sections.push(toolIndex);
   }
 
-  // ── Zero CLI ──
   sections.push(`Use the \`zero\` CLI (via bash) or SDK (installed in global node_modules: \`import { web, browser, llm, ... } from "zero"\` in bun scripts) for web search, fetching pages, browser automation, image generation, scheduling, messaging the user, credentials, port forwarding, and LLM calls. Run \`zero --help\` for usage. Don't install other tools when zero already covers it.`);
 
-  // ── Response Style ──
   sections.push(`Never expose internal thinking. Just act and respond concisely. Never print credentials - use shell substitution.`);
 
-  // ── Plan Mode ──
   if (options.planMode) {
     sections.push(`## Plan Mode
 
@@ -123,7 +149,6 @@ If the user asks to revise the plan and no specific feedback is provided (empty 
 Do NOT implement anything. Focus only on exploration and planning.`);
   }
 
-  // ── RAG sections (last - they change every turn, keep the prefix cacheable) ──
   if (options.relevantMemories?.length) {
     const memLines = options.relevantMemories.map((m) => `- ${m.content}`).join("\n");
     sections.push(`## Relevant Memories (auto-retrieved)\n\n${memLines}`);
@@ -144,14 +169,21 @@ async function readProjectFile(projectId: string, filename: string): Promise<str
   }
 }
 
-export async function createAgent(project: ProjectForAgent, options: AgentOptions = {}) {
-  agentLog.info("creating agent", { projectId: project.id, projectName: project.name, disabledTools: options.disabledTools });
+export async function createAgent(
+  project: ProjectForAgent,
+  options: AgentOptions = {},
+): Promise<AgentHandle> {
+  agentLog.info("creating agent", {
+    projectId: project.id,
+    projectName: project.name,
+    disabledTools: options.disabledTools,
+  });
 
   const soulMd = await readProjectFile(project.id, "SOUL.md");
 
   let stepCount = 0;
 
-  const { tools, toolIndex } = createToolset(project.id, {
+  const { tools: baseTools, toolIndex } = createToolset(project.id, {
     chatId: options.chatId,
     userId: options.userId,
     onlyTools: options.onlyTools,
@@ -162,78 +194,84 @@ export async function createAgent(project: ProjectForAgent, options: AgentOption
     autonomous: options.autonomous,
   });
 
-  // Plan mode - inject finishPlanning tool
+  const tools: Tool[] = [...baseTools];
+
+  // Plan mode - append finishPlanning tool.
   if (options.planMode && options.chatId && options.userId) {
     const planningTools = createPlanningTools(project.id, {
       chatId: options.chatId,
       userId: options.userId,
       projectName: project.name,
     });
-    Object.assign(tools, planningTools);
+    for (const t of planningTools) tools.push(t as unknown as Tool);
   }
 
-  // Sub-agent spawner - also gets the full toolset via createToolset internally
-  tools.agent = createAgentTool(project.id, {
-    userId: options.userId,
+  // Sub-agent spawner.
+  tools.push(
+    createAgentTool(project.id, {
+      userId: options.userId,
+      projectId: project.id,
+      projectName: project.name,
+      onlyTools: options.onlyTools,
+      modelId: options.model,
+      chatId: options.chatId,
+    }) as unknown as Tool,
+  );
+
+  // Remove disabled tools.
+  const disabled = new Set(options.disabledTools ?? []);
+  const filtered = disabled.size
+    ? tools.filter((t) => !disabled.has(t.function.name))
+    : tools;
+
+  const model = options.fast
+    ? getEnrichModelId()
+    : options.model
+      ? resolveChatModelId(options.model)
+      : getChatModelId();
+
+  const stopConditions = [stepCountIs(options.maxSteps ?? 100)];
+
+  const systemPrompt = await buildSystemPrompt(
+    { id: project.id, name: project.name },
+    {
+      ...options,
+      toolIndex,
+      preloadedFiles: { soulMd },
+    },
+  );
+
+  const prepareStep = createCompactPrepareStep({
+    contextWindow: options.contextWindow ?? 128_000,
     projectId: project.id,
-    projectName: project.name,
-    onlyTools: options.onlyTools,
-    modelId: options.model,
+    runId: options.runId,
     chatId: options.chatId,
   });
 
-  // Remove disabled tools
-  for (const name of options.disabledTools ?? []) {
-    delete tools[name];
-  }
-
-  const model = options.fast
-    ? getEnrichModel()
-    : options.model ? createChatModel(options.model) : getChatModel();
-
-  const stopConditions: StopCondition<any>[] = [
-    stepCountIs(options.maxSteps ?? 100),
-  ];
-
-  return new ToolLoopAgent({
-    model,
-    stopWhen: stopConditions,
-    instructions: {
-      role: "system",
-      content: await buildSystemPrompt({
-        id: project.id,
-        name: project.name,
-      }, {
-        ...options,
-        toolIndex,
-        preloadedFiles: { soulMd },
-      }),
-      providerOptions: {
-        anthropic: { cacheControl: { type: "ephemeral" } },
-      },
-    },
-    tools,
-    prepareStep: createCompactPrepareStep({
-      contextWindow: options.contextWindow ?? 128_000,
+  const onStepFinish: AgentHandle["onStepFinish"] = (
+    stepNumber,
+    responseMessages,
+  ) => {
+    stepCount = stepNumber;
+    const m = process.memoryUsage();
+    agentLog.info("step finished", {
       projectId: project.id,
-      runId: options.runId,
-      chatId: options.chatId,
-    }),
-    onStepFinish: async ({ toolCalls, response }) => {
-      stepCount++;
-      const toolNames = toolCalls.filter((tc): tc is NonNullable<typeof tc> => !!tc).map((tc) => tc.toolName);
-      const m = process.memoryUsage();
-      agentLog.info("step finished", {
-        projectId: project.id,
-        step: stepCount,
-        toolCount: toolCalls.length,
-        tools: toolNames,
-        heapMB: (m.heapUsed / 1048576).toFixed(0),
-        extMB: (m.external / 1048576).toFixed(0),
-      });
+      step: stepCount,
+      responseMessageCount: responseMessages.length,
+      heapMB: (m.heapUsed / 1048576).toFixed(0),
+      extMB: (m.external / 1048576).toFixed(0),
+    });
+    options.onStepCheckpoint?.(stepNumber, responseMessages);
+  };
 
-      // Notify checkpoint callback with this step's response messages
-      options.onStepCheckpoint?.(stepCount, response.messages);
-    },
-  });
+  return {
+    model,
+    systemPrompt,
+    tools: filtered,
+    stopWhen: stopConditions as ReadonlyArray<StopCondition<readonly Tool[]>>,
+    prepareStep,
+    onStepFinish,
+    options,
+    project,
+  };
 }

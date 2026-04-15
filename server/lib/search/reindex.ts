@@ -1,7 +1,7 @@
 import { deleteProjectIndex, ensureIndex, putProjectVectors, isEmbeddingConfigured, chunkText, textToSparseVector } from "@/lib/search/vectors.ts";
 import { readFromS3 } from "@/lib/s3.ts";
-import { embedMany } from "ai";
-import { getEmbeddingModel } from "@/lib/providers/index.ts";
+import { embed } from "@/lib/openrouter/embed.ts";
+import { getEmbeddingModelId } from "@/lib/providers/index.ts";
 import { log } from "@/lib/utils/logger.ts";
 import { db } from "@/db/index.ts";
 import type { SparseVector } from "@0-ai/s3lite/vectors";
@@ -101,12 +101,7 @@ const MESSAGE_PAGE_SIZE = 200;
 const MESSAGE_MAX = 1000;
 
 async function embedValues(values: string[]): Promise<number[][]> {
-  const { embeddings } = await embedMany({
-    model: getEmbeddingModel(),
-    values,
-    abortSignal: AbortSignal.timeout(30_000),
-  });
-  return embeddings;
+  return embed(values, { model: getEmbeddingModelId() });
 }
 
 function storeVectors(projectId: string, vectors: VectorEntry[], indexReset: { done: boolean }): void {

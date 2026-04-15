@@ -37,23 +37,34 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       # Per-container Unix sockets the `zero` CLI/SDK connects to. This
       # is a Docker **named volume**, not a host bind-mount: its backing
-      # storage lives inside the Linux VM on Docker Desktop/macOS, which
-      # is the only way AF_UNIX sockets survive being shared between the
-      # runner container and sibling session containers on macOS.
+      # storage lives inside the Linux VM on Docker Desktop/macOS/OrbStack,
+      # which is the only way AF_UNIX sockets survive being shared between
+      # the runner container and sibling session containers on macOS.
       #
-      # Session containers receive a subpath mount of this same volume
-      # (VolumeOptions.Subpath = <session-name>), so each session only
-      # sees its own socket file. The volume name must match
-      # ZERO_RUNNER_SOCKET_VOLUME below so the runner can pass it to
-      # dockerd when creating session containers.
+      # The runner resolves this volume's host Mountpoint at startup
+      # (docker volume inspect) and hands `<mountpoint>/<session-name>`
+      # to dockerd as a plain bind source for each session container.
+      # This works on every Docker version; auto-detected from the
+      # runner's own mounts, so ZERO_RUNNER_SOCKET_VOLUME is optional.
       - zero-runner-sockets:/var/run/zero-runner
     environment:
       - RUNNER_API_KEY=${RUNNER_API_KEY:-}
       - DEFAULT_IMAGE=${SESSION_IMAGE:-ghcr.io/0-ai-ug/zero-session:latest}
-      - SERVER_URL=http://server:3000
+      # Where the runner calls back into the server. Defaults to
+      # host.docker.internal (dev: server runs on the host as `bun dev`).
+      # Override via .env when the server runs inside compose
+      # (SERVER_URL=http://server:3000) or is reachable over the public
+      # network (SERVER_URL=https://your.app).
+      - SERVER_URL=${SERVER_URL:-http://host.docker.internal:3000}
       - IDLE_TIMEOUT_SECS=600
       - ZERO_RUNNER_SOCKET_DIR=/var/run/zero-runner
       - ZERO_RUNNER_SOCKET_VOLUME=zero-runner-sockets
+    # Make host.docker.internal resolve to the host's gateway IP on
+    # Linux (Docker Desktop / OrbStack already provide this hostname,
+    # but plain linux dockerd needs the host-gateway mapping). Harmless
+    # where it's already defined.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "3100:3100"
 

@@ -2,6 +2,7 @@ import Database from "better-sqlite3";
 import { nanoid } from "nanoid";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
+import { runMessageShapeMigration } from "@/db/migrate-message-shape.ts";
 const DB_PATH = process.env.DB_PATH || "./data/app.db";
 
 mkdirSync(dirname(DB_PATH), { recursive: true });
@@ -628,6 +629,8 @@ db.exec(`CREATE INDEX IF NOT EXISTS idx_file_snapshots_project ON file_snapshots
 db.exec(`CREATE INDEX IF NOT EXISTS idx_file_snapshot_entries_snapshot ON file_snapshot_entries(snapshot_id)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_experiments_project ON experiments(project_id, status)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_experiment_results_experiment ON experiment_results(experiment_id, iteration)`);
+
+runMessageShapeMigration(db);
 
 // ── Seed models from JSON if table is empty ──
 

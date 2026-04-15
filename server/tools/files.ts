@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { tool, generateText } from "ai";
+import { tool } from "@openrouter/sdk/lib/tool.js";
+import { generateText } from "@/lib/openrouter/text.ts";
 import { getFileByS3Key, insertFile } from "@/db/queries/files.ts";
 import { createFolder as createFolderRecord, getFolderByPath } from "@/db/queries/folders.ts";
 import { readFromS3, readBinaryFromS3, writeToS3, s3 } from "@/lib/s3.ts";
@@ -11,7 +12,7 @@ import { indexFileContent } from "@/db/queries/search.ts";
 import { embedAndStore } from "@/lib/search/vectors.ts";
 import { log } from "@/lib/utils/logger.ts";
 import { isModelMultimodal } from "@/config/models.ts";
-import { getVisionModel } from "@/lib/providers/index.ts";
+import { getVisionModelId } from "@/lib/providers/index.ts";
 import { reconcileToContainer, sha256Hex } from "@/lib/execution/workspace-sync.ts";
 import sharp from "sharp";
 
@@ -120,8 +121,9 @@ export function createFileTools(projectId: string, options?: { chatId?: string; 
 
   const readPaths = new Set<string>(options?.initialReadPaths);
 
-  return {
-    readFile: tool({
+  return [
+    tool({
+      name: "readFile",
       description:
         "Read a file from project storage. Supports text and images. Must read before editing.",
       inputSchema: z.object({
@@ -159,15 +161,28 @@ export function createFileTools(projectId: string, options?: { chatId?: string; 
             if (modelId && !isModelMultimodal(modelId)) {
               toolLog.info("readFile image captioning", { projectId, path, modelId });
               const base64 = resized.toString("base64");
+              // TODO phase 1 follow-up: the canonical Message shape does not yet
+              // model multimodal image parts for inputs. Once converters.ts
+              // supports image content, replace the data-URL prompt below with a
+              // proper image part. For now we inline the image as a data URL so
+              // OpenRouter-hosted vision models still receive the bytes.
+              const dataUrl = `data:${mediaType};base64,${base64}`;
               const { text: caption } = await generateText({
-                model: getVisionModel(),
-                messages: [{
-                  role: "user",
-                  content: [
-                    { type: "text", text: "Describe this image in detail. Include all visible text, layout, colors, and key elements." },
-                    { type: "image", image: base64, mediaType },
-                  ],
-                }],
+                model: getVisionModelId(modelId),
+                messages: [
+                  {
+                    id: "caption-req",
+                    role: "user",
+                    parts: [
+                      {
+                        type: "text",
+                        text:
+                          "Describe this image in detail. Include all visible text, layout, colors, and key elements.\n\n" +
+                          dataUrl,
+                      },
+                    ],
+                  },
+                ],
               });
               toolLog.info("readFile image captioned", { projectId, path, captionLength: caption.length });
               return { path, type: "caption" as const, caption };
@@ -213,30 +228,14 @@ export function createFileTools(projectId: string, options?: { chatId?: string; 
           throw err;
         }
       },
-      toModelOutput({ output }: { output: any }): any {
-        if (output?.type === "caption" && typeof output.caption === "string") {
-          return {
-            type: "text" as const,
-            value: `Image file: ${output.path}\n\n[Image description]\n${output.caption}`,
-          };
-        }
-        if (output?.type === "image" && typeof output.base64 === "string") {
-          return {
-            type: "content" as const,
-            value: [
-              { type: "text" as const, text: `Image file: ${output.path}` },
-              { type: "image-data" as const, data: output.base64 as string, mediaType: output.mediaType as string },
-            ],
-          };
-        }
-        return {
-          type: "text" as const,
-          value: JSON.stringify(output),
-        };
-      },
+      // TODO phase 1: readFile returns `{ type: "image", base64, mediaType }` for
+      // images when the model is multimodal. AI-SDK formerly used `toModelOutput`
+      // to surface this as a content part; in OpenRouter SDK the mapping will be
+      // handled by the loop's items-stream adapter (another subagent's scope).
     }),
 
-    writeFile: tool({
+    tool({
+      name: "writeFile",
       description:
         "Create or overwrite a file in project storage. Must read first before overwriting.",
       inputSchema: z.object({
@@ -320,7 +319,8 @@ export function createFileTools(projectId: string, options?: { chatId?: string; 
       },
     }),
 
-    editFile: tool({
+    tool({
+      name: "editFile",
       description:
         "Edit a file via search-and-replace (oldText/newText) or line-range replacement (startLine/endLine/newText). Must readFile first.",
       inputSchema: z.object({
@@ -417,7 +417,8 @@ export function createFileTools(projectId: string, options?: { chatId?: string; 
       },
     }),
 
-    displayFile: tool({
+    tool({
+      name: "displayFile",
       description:
         "Display a file inline in chat for the user to see. Does not read contents - use readFile for that.",
       inputSchema: z.object({
@@ -448,5 +449,5 @@ export function createFileTools(projectId: string, options?: { chatId?: string; 
         };
       },
     }),
-  };
+  ];
 }

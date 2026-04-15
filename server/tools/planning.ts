@@ -5,15 +5,16 @@
  * Uses the pending-responses system so the blocking semantics, timeout,
  * and multi-channel resolution all come for free.
  */
-import { generateId, tool } from "ai";
-import type { UIMessage } from "ai";
+import { tool } from "@openrouter/sdk/lib/tool.js";
+import { generateId } from "@/db/index.ts";
+import type { Message } from "@/lib/messages/types.ts";
 import { z } from "zod";
 import { readFromS3 } from "@/lib/s3.ts";
 import { createPendingGroup } from "@/lib/pending-responses/store.ts";
 import { NOTIFICATION_KINDS } from "@/lib/notifications/kinds.ts";
 import { broadcastToProject } from "@/lib/http/ws.ts";
 import { log } from "@/lib/utils/logger.ts";
-import { requestAbort, createAbortController, clearAbortController } from "@/lib/http/resumable-stream.ts";
+import { requestAbort, createAbortController, clearAbortController } from "@/lib/http/chat-aborts.ts";
 import { insertChat } from "@/db/queries/chats.ts";
 import { saveChatMessages } from "@/db/queries/messages.ts";
 import { getProjectById } from "@/db/queries/projects.ts";
@@ -28,8 +29,9 @@ export function createPlanningTools(
   projectId: string,
   options: { chatId: string; userId: string; projectName: string },
 ) {
-  return {
-    finishPlanning: tool({
+  return [
+    tool({
+      name: "finishPlanning",
       description:
         "Call when the plan is ready for user review. Blocks until the user decides to implement or alter the plan.",
       inputSchema: z.object({
@@ -111,11 +113,10 @@ export function createPlanningTools(
           // Insert the user message into the DB so the frontend sees it on load.
           const userMsgId = generateId();
           const userText = `Implement the plan at ${planFilePath}`;
-          const userMessage: UIMessage = {
+          const userMessage: Message = {
             id: userMsgId,
             role: "user",
             parts: [{ type: "text", text: userText }],
-
           };
           saveChatMessages(projectId, newChat.id, [
             { id: userMsgId, role: "user", content: JSON.stringify(userMessage) },
@@ -134,16 +135,13 @@ export function createPlanningTools(
               messages: [userMessage],
               abortSignal: abortController.signal,
               streamId,
-              notifyAsUserId: "__plan_implement__",
-              notifyAsUsername: "Plan implementation",
-            }).then(async (response) => {
-              if (response.body) {
-                await response.body.pipeTo(new WritableStream());
-              }
-            }).catch((err) => {
-              planLog.error("plan implementation stream failed", err, { chatId: newChat.id });
-              clearAbortController(newChat.id);
-            });
+            })
+              .catch((err) => {
+                planLog.error("plan implementation stream failed", err, { chatId: newChat.id });
+              })
+              .finally(() => {
+                clearAbortController(newChat.id);
+              });
           }
 
           broadcastToProject(projectId, {
@@ -179,5 +177,5 @@ export function createPlanningTools(
         };
       },
     }),
-  };
+  ];
 }

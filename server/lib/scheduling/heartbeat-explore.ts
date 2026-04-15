@@ -1,6 +1,6 @@
-import { generateText } from "ai";
-import type { UIMessage } from "ai";
-import { getEnrichModel } from "@/lib/providers/index.ts";
+import { generateText } from "@/lib/openrouter/text.ts";
+import type { Message } from "@/lib/messages/types.ts";
+import { getEnrichModelId } from "@/lib/providers/index.ts";
 import { readFromS3, writeToS3 } from "@/lib/s3.ts";
 import { extractConversationText } from "@/lib/conversation/message-utils.ts";
 import { log } from "@/lib/utils/logger.ts";
@@ -45,7 +45,7 @@ function renderHeartbeat(before: string, items: string[]): string {
  */
 export async function detectExploreItems(
   projectId: string,
-  messages: UIMessage[],
+  messages: Message[],
 ): Promise<void> {
   const conversationText = extractConversationText(messages, 10);
 
@@ -74,7 +74,7 @@ export async function detectExploreItems(
 
   const callLLM = () =>
     generateText({
-      model: getEnrichModel(),
+      model: getEnrichModelId(),
       system: `You identify knowledge gaps and unanswered questions from conversations that an AI agent could investigate autonomously during its next heartbeat check.
 
 Output format: one item per line, prefixed with "- [ ] "
@@ -84,7 +84,7 @@ Rules:
 - Don't duplicate items already in the heartbeat checklist
 - Max 2 new items
 - If no meaningful gaps exist, output exactly: NONE`,
-      prompt: `## Current heartbeat checklist
+      messages: `## Current heartbeat checklist
 ${existingText}
 
 ## Recent conversation

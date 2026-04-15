@@ -41,7 +41,7 @@ import {
 } from "@/db/queries/pending-responses.ts";
 import { getProjectMembers } from "@/db/queries/members.ts";
 import type { PendingResponseRow } from "@/db/types.ts";
-import { broadcastToProject } from "@/lib/http/ws.ts";
+import { broadcastToProject, broadcastToChat } from "@/lib/http/ws.ts";
 import { log } from "@/lib/utils/logger.ts";
 
 const syncLog = log.child({ module: "sync-approval" });
@@ -200,6 +200,19 @@ export function registerPendingSync(
     source: opts.source,
     changes: metaChanges,
   });
+
+  // Mirror to the chat room so chat subscribers (the new WS chat transport)
+  // see inline sync cards immediately without needing the project-wide
+  // broadcast. Verdicts come back via the `chat.approve` WS handler.
+  if (opts.chatId) {
+    broadcastToChat(opts.chatId, {
+      type: "chat.sync.created",
+      chatId: opts.chatId,
+      syncId,
+      source: opts.source,
+      changes: metaChanges,
+    });
+  }
 
   // All sibling row ids - included in resolved/rejected broadcasts so any
   // UI keyed off a non-canonical id (push click, Telegram action) still
@@ -408,4 +421,47 @@ export function getSyncRow(id: string): PendingResponseRow | null {
   const row = getPendingResponseById(id);
   if (!row || row.kind !== NOTIFICATION_KINDS.SYNC_APPROVAL) return null;
   return row;
+}
+
+export interface PendingSyncForChat {
+  syncId: string;
+  source: string;
+  changes: SyncChangeMeta[];
+}
+
+/**
+ * Pending (unresolved) sync_approval rows whose payload references `chatId`.
+ * Used by `handleViewChat` to seed a freshly-connecting tab with any open
+ * approvals it would otherwise only learn about via a missed WS event.
+ * Deduped to the canonical row per group.
+ */
+export function listPendingSyncsForChat(chatId: string): PendingSyncForChat[] {
+  const rows = getPendingResponsesByKindAndStatus(
+    NOTIFICATION_KINDS.SYNC_APPROVAL,
+    "pending",
+  );
+  const seenGroups = new Set<string>();
+  const out: PendingSyncForChat[] = [];
+  for (const row of rows) {
+    if (!row.payload) continue;
+    let payload: { chatId?: string; source?: string; changes?: SyncChangeMeta[] };
+    try {
+      payload = JSON.parse(row.payload);
+    } catch {
+      continue;
+    }
+    if (payload.chatId !== chatId) continue;
+    const groupKey = row.group_id ?? row.id;
+    if (seenGroups.has(groupKey)) continue;
+    seenGroups.add(groupKey);
+    const canonicalId = row.group_id
+      ? (canonicalSyncIdByGroup.get(row.group_id) ?? row.id)
+      : row.id;
+    out.push({
+      syncId: canonicalId,
+      source: payload.source ?? "unknown",
+      changes: payload.changes ?? [],
+    });
+  }
+  return out;
 }

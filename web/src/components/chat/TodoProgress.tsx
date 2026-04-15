@@ -1,5 +1,5 @@
-import type { UIMessage } from "ai";
-import { isToolUIPart, getToolName } from "ai";
+import type { Message } from "@/lib/messages";
+import { isToolUIPart, getToolName } from "@/lib/messages";
 import { useMemo, useState } from "react";
 import {
   CheckCircle2Icon,
@@ -22,7 +22,7 @@ interface Todo {
  * progressCreate outputs: { id, title, status }
  * progressUpdate outputs: { id, title, status }
  */
-function extractTodos(messages: UIMessage[]): Todo[] {
+function extractTodos(messages: Message[]): Todo[] {
   const todosMap = new Map<string, Todo>();
 
   for (const msg of messages) {
@@ -67,7 +67,7 @@ const STATUS_COLOR = {
   failed: "text-destructive",
 };
 
-export function TodoProgress({ messages }: { messages: UIMessage[] }) {
+export function TodoProgress({ messages }: { messages: Message[] }) {
   const [collapsed, setCollapsed] = useState(false);
   const todos = useMemo(() => extractTodos(messages), [messages]);
 

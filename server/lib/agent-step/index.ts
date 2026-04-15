@@ -1,345 +1,45 @@
 /**
- * Shared entry points for running a single "agent step" - one turn of
- * ToolLoopAgent execution with all of zero-agent's RAG, checkpointing,
- * usage-logging, and post-run hooks wired up.
+ * Shared entry points for running a single "agent step" — one top-level
+ * invocation of the OpenRouter SDK `callModel` loop with all of
+ * zero-agent's RAG, checkpointing, usage-logging, and post-run hooks wired
+ * up.
  *
- * Two variants are exposed:
+ *  - `runAgentStepStreaming` — WS-publishing streaming path (web chat).
+ *    Delegates to `ws-entrypoint.ts` which folds `getItemsStream` items
+ *    into the per-`chatId` scene in `ws.ts` and persists on finish via
+ *    shared post-run hooks. Returns a Promise that resolves once the
+ *    stream has completed, errored, or been aborted.
  *
- *  - `runAgentStepStreaming` - SSE/UIStream response, used by the web chat
- *    route. Takes a `UIMessage[]` history + abort signal and returns a
- *    fetch `Response`.
- *
- *  - `runAgentStepBatch` - non-streaming `agent.generate(...)` run, used
- *    by autonomous tasks, Telegram, and any future chat provider. Returns
- *    a plain result object; the caller decides how to persist it.
+ *  - `runAgentStepBatch` — non-streaming path (autonomous tasks,
+ *    Telegram). Calls `callModel` and awaits the final response.
  */
-import {
-  createAgentUIStreamResponse,
-  createUIMessageStream,
-  createUIMessageStreamResponse,
-  generateId,
-  smoothStream,
-} from "ai";
-import type { UIMessage } from "ai";
+import { callModel } from "@openrouter/sdk/funcs/call-model.js";
+import { streamItemToPart } from "@/lib/messages/converters.ts";
+import type { Part, Message } from "@/lib/messages/types.ts";
 
 import { createAgent } from "@/lib/agent/agent.ts";
+import { getOpenRouterClient } from "@/lib/openrouter/client.ts";
 import { getModelContextWindow } from "@/config/models.ts";
-import { corsHeaders } from "@/lib/http/cors.ts";
 import { log } from "@/lib/utils/logger.ts";
-import { events } from "@/lib/scheduling/events.ts";
-import { ConflictError } from "@/lib/utils/errors.ts";
+import { generateId } from "@/db/index.ts";
 
-import {
-  streamContext,
-  setActiveStreamId,
-  clearActiveStreamId,
-  getActiveStreamId,
-  clearAbortController,
-} from "@/lib/http/resumable-stream.ts";
-import { notifyStreamStarted, notifyStreamEnded } from "@/lib/http/ws-bridge.ts";
 import { isShuttingDown, registerRun, deregisterRun } from "@/lib/durability/shutdown.ts";
 import { saveCheckpoint, deleteCheckpoint } from "@/lib/durability/checkpoint.ts";
 
-import {
-  checkUserTokenLimit,
-  extractReadPathsFromUIMessages,
-  retrieveRagContext,
-  willCompactionTrigger,
-} from "./context.ts";
-import { runPostChatHooks, persistCheckpointOnError } from "./hooks.ts";
-import { stepsToUIParts } from "./serialize.ts";
+import { messagesToProviderInput } from "@/lib/messages/converters.ts";
+import { getRoutingForModel } from "@/lib/providers/index.ts";
 import type { StreamingStepInput, BatchStepInput, BatchStepResult } from "./types.ts";
+import { stepsToUIParts } from "./serialize.ts";
+import { runStreamingAgent } from "./ws-entrypoint.ts";
 
 const stepLog = log.child({ module: "agent-step" });
 
-function heapMB(): string {
-  const m = process.memoryUsage();
-  return `heap=${(m.heapUsed / 1048576).toFixed(0)}MB ext=${(m.external / 1048576).toFixed(0)}MB arr=${(m.arrayBuffers / 1048576).toFixed(0)}MB`;
-}
-
 // ────────────────────────────────────────────────────────────────────────
-//  Streaming variant (web chat)
+//  Streaming variant (web chat) — WS scene broadcast
 // ────────────────────────────────────────────────────────────────────────
 
-/**
- * Returns a synthetic one-shot UIMessage stream that just echoes a system
- * message (used by the token-limit rejection path so the UI renders a
- * normal assistant reply instead of an error toast).
- */
-function oneShotSystemMessage(text: string): Response {
-  return createUIMessageStreamResponse({
-    headers: corsHeaders,
-    stream: createUIMessageStream({
-      execute({ writer }) {
-        const id = generateId();
-        writer.write({ type: "text-start", id });
-        writer.write({ type: "text-delta", id, delta: text });
-        writer.write({ type: "text-end", id });
-      },
-    }),
-  });
-}
-
-export async function runAgentStepStreaming(input: StreamingStepInput): Promise<Response> {
-  const start = Date.now();
-  const {
-    project,
-    chatId,
-    userId,
-    username,
-    model,
-    language,
-    disabledTools,
-    planMode,
-    messages: rawMessages,
-    abortSignal,
-    streamId,
-    notifyAsUserId,
-    notifyAsUsername,
-  } = input;
-
-  let runId: string | undefined;
-
-  try {
-    // Reject new requests during shutdown.
-    if (isShuttingDown()) {
-      stepLog.warn("rejecting chat request - server shutting down", {
-        projectId: project.id,
-        chatId,
-      });
-      return Response.json(
-        { error: "Server is shutting down" },
-        { status: 503, headers: corsHeaders },
-      );
-    }
-
-    // Reject if another stream is already active for this chat.
-    if (getActiveStreamId(chatId)) {
-      throw new ConflictError("Another member is already sending a message in this chat");
-    }
-
-    // Per-user token limit.
-    const rejection = checkUserTokenLimit(userId);
-    if (rejection) {
-      stepLog.warn("chat rejected - token limit reached", {
-        userId,
-        used: rejection.used,
-        limit: rejection.limit,
-      });
-      return oneShotSystemMessage(rejection.message);
-    }
-
-    // Drop empty-parts messages - the frontend sometimes leaves behind an
-    // empty assistant placeholder when a stream is aborted before any
-    // deltas arrive, and validateUIMessages would reject it.
-    const messages = rawMessages.filter((m) => (m.parts?.length ?? 0) > 0);
-    stepLog.info("starting agent stream", {
-      projectId: project.id,
-      chatId,
-      messageCount: messages.length,
-      language,
-      mem: heapMB(),
-    });
-
-    // Seed the read-guard from history and retrieve RAG context.
-    const readPaths = extractReadPathsFromUIMessages(messages);
-    const latestUserMsg = [...messages].reverse().find((m) => m.role === "user");
-    const latestUserText = (
-      latestUserMsg?.parts?.find((p: { type: string }) => p.type === "text") as
-        | { type: "text"; text: string }
-        | undefined
-    )?.text;
-    const { relevantMemories, relevantFiles } = await retrieveRagContext(
-      project.id,
-      latestUserText,
-    );
-
-    // Create the agent.
-    const cw = model ? getModelContextWindow(model) : 128_000;
-    runId = generateId();
-    stepLog.info("creating agent", { mem: heapMB() });
-    const agent = await createAgent(project, {
-      model,
-      language,
-      disabledTools,
-      planMode,
-      chatId,
-      userId,
-      contextWindow: cw,
-      initialReadPaths: readPaths,
-      relevantMemories,
-      relevantFiles,
-      runId,
-      onStepCheckpoint: (stepNumber, responseMessages) => {
-        saveCheckpoint({
-          runId: runId!,
-          chatId,
-          projectId: project.id,
-          stepNumber,
-          messages: responseMessages,
-          metadata: { userId, model, streamId, inputMessageCount: messages.length },
-        });
-      },
-    });
-
-    // Predict compaction so we can emit a flag early in the stream.
-    const willCompact = willCompactionTrigger(messages, cw);
-
-    // Emit message.received for the latest user message.
-    if (latestUserMsg) {
-      events.emit("message.received", {
-        chatId,
-        projectId: project.id,
-        content: latestUserText ?? "",
-        userId: userId ?? "",
-      });
-    }
-
-    setActiveStreamId(chatId, streamId);
-    notifyStreamStarted(
-      project.id,
-      chatId,
-      notifyAsUserId ?? userId ?? "",
-      notifyAsUsername ?? username ?? "",
-    );
-
-    // Save initial checkpoint so crash recovery knows this run was in-progress.
-    saveCheckpoint({
-      runId,
-      chatId,
-      projectId: project.id,
-      stepNumber: 0,
-      messages,
-      metadata: { userId, model, streamId },
-    });
-
-    registerRun({ runId, chatId, projectId: project.id, startedAt: Date.now() });
-    stepLog.info("agent ready, starting stream", { mem: heapMB() });
-
-    // Track per-step and cumulative usage.
-    let lastStepUsage: Record<string, number> = {};
-    const totalUsage = {
-      inputTokens: 0,
-      outputTokens: 0,
-      reasoningTokens: 0,
-      cachedInputTokens: 0,
-    };
-
-    return createAgentUIStreamResponse({
-      agent,
-      uiMessages: messages,
-      abortSignal,
-      headers: corsHeaders,
-      generateMessageId: generateId,
-      experimental_transform: smoothStream({
-        delayInMs: 15,
-        chunking: new Intl.Segmenter("zh", { granularity: "word" }),
-      }),
-      consumeSseStream: async ({ stream }) => {
-        await streamContext.createNewResumableStream(streamId, () => stream);
-      },
-      onStepFinish: ({ usage }) => {
-        lastStepUsage = {
-          inputTokens: usage.inputTokens ?? 0,
-          outputTokens: usage.outputTokens ?? 0,
-          reasoningTokens: usage.reasoningTokens ?? 0,
-          cachedInputTokens: usage.cachedInputTokens ?? 0,
-        };
-        totalUsage.inputTokens += usage.inputTokens ?? 0;
-        totalUsage.outputTokens += usage.outputTokens ?? 0;
-        totalUsage.reasoningTokens += usage.reasoningTokens ?? 0;
-        totalUsage.cachedInputTokens += usage.cachedInputTokens ?? 0;
-      },
-      messageMetadata: ({ part }) => {
-        if (part.type === "start" && willCompact) {
-          return { compacting: true };
-        }
-        if (part.type === "finish") {
-          return {
-            modelId: model,
-            usage: part.totalUsage,
-            lastStepUsage,
-            contextTokens:
-              (lastStepUsage.inputTokens ?? 0) + (lastStepUsage.cachedInputTokens ?? 0),
-          };
-        }
-      },
-      onFinish: ({ messages: rawFinished, isAborted }) => {
-        clearActiveStreamId(chatId);
-        clearAbortController(chatId);
-        notifyStreamEnded(project.id, chatId);
-
-        // When aborted, mark any in-flight tool parts as failed so they
-        // persist correctly and don't appear as "loading" on reload.
-        const finalMessages = isAborted
-          ? rawFinished.map((m) => {
-              if (m.role !== "assistant") return m;
-              const hasLoading = m.parts?.some(
-                (p: any) => p.toolCallId && (p.state === "input-streaming" || p.state === "input-available"),
-              );
-              if (!hasLoading) return m;
-              return {
-                ...m,
-                parts: m.parts.map((p: any) =>
-                  p.toolCallId && (p.state === "input-streaming" || p.state === "input-available")
-                    ? { ...p, state: "output-error", errorText: "Interrupted" }
-                    : p,
-                ),
-              };
-            })
-          : rawFinished;
-
-        const durationMs = Date.now() - start;
-        if (isAborted) {
-          stepLog.warn("stream aborted", { projectId: project.id, chatId, durationMs });
-        } else {
-          stepLog.info("stream finished", {
-            projectId: project.id,
-            chatId,
-            messageCount: finalMessages.length,
-            durationMs,
-          });
-        }
-
-        runPostChatHooks(finalMessages as UIMessage[], {
-          projectId: project.id,
-          chatId,
-          userId,
-          modelId: model,
-          runId,
-          start,
-          totalUsage,
-        });
-
-        // Emit message.sent for the last assistant message.
-        const lastAssistantMsg = [...finalMessages].reverse().find((m) => m.role === "assistant");
-        if (lastAssistantMsg) {
-          const textPart = lastAssistantMsg.parts?.find(
-            (p: { type: string }) => p.type === "text",
-          ) as { type: "text"; text: string } | undefined;
-          events.emit("message.sent", {
-            chatId,
-            projectId: project.id,
-            content: textPart?.text ?? "",
-          });
-        }
-
-      },
-    });
-  } catch (error) {
-    // Clear active stream so retries aren't blocked.
-    clearActiveStreamId(chatId);
-    clearAbortController(chatId);
-
-    // Persist any accumulated agent work from checkpoint before cleaning up.
-    persistCheckpointOnError(runId, chatId);
-    if (runId) {
-      deleteCheckpoint(runId);
-      deregisterRun(runId);
-    }
-
-    throw error;
-  }
+export function runAgentStepStreaming(input: StreamingStepInput): Promise<void> {
+  return runStreamingAgent(input);
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -371,11 +71,13 @@ export async function runAgentStepBatch(input: BatchStepInput): Promise<BatchSte
     throw new Error("runAgentStepBatch: provide either `prompt` or `messages`");
   }
 
+  if (isShuttingDown()) {
+    throw new Error("Server is shutting down");
+  }
+
   const runId = input.runId ?? generateId();
   const cw = model ? getModelContextWindow(model) : 128_000;
 
-  // Track cumulative response-messages so the error path can recover
-  // partial work from the latest checkpoint snapshot.
   let latestResponseMessages: Array<{ role: string; content: unknown }> = [];
 
   // Build the augmented prompt (prompt + RAG contextBlock).
@@ -387,7 +89,7 @@ export async function runAgentStepBatch(input: BatchStepInput): Promise<BatchSte
     ...(taskName ? { taskName } : {}),
   };
 
-  const agent = await createAgent(project, {
+  const handle = await createAgent(project, {
     model,
     language,
     disabledTools,
@@ -416,7 +118,7 @@ export async function runAgentStepBatch(input: BatchStepInput): Promise<BatchSte
     },
   });
 
-  // Save the initial checkpoint so crash recovery sees this run.
+  // Initial checkpoint so crash recovery sees the run.
   saveCheckpoint({
     runId,
     chatId,
@@ -425,32 +127,92 @@ export async function runAgentStepBatch(input: BatchStepInput): Promise<BatchSte
     messages:
       fullPrompt != null
         ? [{ role: "user", content: fullPrompt }]
-        : ((priorMessages ?? []) as Array<{ role: string; content: unknown }>),
+        : ((priorMessages ?? []) as unknown as Array<{ role: string; content: unknown }>),
     metadata,
   });
 
   registerRun({ runId, chatId, projectId: project.id, startedAt: Date.now() });
 
+  // Build the initial message list and provider input.
+  let currentMessages: Message[];
+  if (fullPrompt != null) {
+    currentMessages = [
+      { id: generateId(), role: "user", parts: [{ type: "text", text: fullPrompt }] },
+    ];
+  } else {
+    currentMessages = [...(priorMessages ?? [])];
+  }
+
+  // Run prepareStep once up front so compaction/orphan-patching/notifications
+  // are applied before the first turn. (Mid-turn compaction is covered by
+  // onTurnStart/FieldOrAsyncFunction in a future iteration.)
+  const prepared = await handle.prepareStep({ stepNumber: 0, messages: currentMessages });
+  if (prepared?.messages) currentMessages = prepared.messages;
+
+  const client = getOpenRouterClient();
+  const routing = getRoutingForModel(handle.model);
+
   try {
-    const result = fullPrompt != null
-      ? await agent.generate({ prompt: fullPrompt })
-      : await agent.generate({ messages: priorMessages! });
+    const result = callModel(
+      client,
+      {
+        model: handle.model,
+        instructions: prepared?.system ?? handle.systemPrompt,
+        input: messagesToProviderInput(currentMessages) as never,
+        tools: handle.tools as never,
+        stopWhen: handle.stopWhen as never,
+        cacheControl: { instructions: { type: "ephemeral" } } as never,
+        ...(routing ? { extraBody: { provider: routing } } : {}),
+        onTurnEnd: (ctx: { numberOfTurns: number }, response: unknown) => {
+          const stepNumber = ctx.numberOfTurns;
+          const items = Array.isArray((response as { output?: unknown }).output)
+            ? ((response as { output: unknown[] }).output as unknown[])
+            : [];
+          const responseMessages = items.map((item, idx) => ({
+            role: (item as { role?: string })?.role ?? "assistant",
+            content: item,
+            _seq: idx,
+          }));
+          handle.onStepFinish(stepNumber, responseMessages);
+        },
+      } as never,
+    );
 
-    latestResponseMessages = result.response.messages as Array<{
-      role: string;
-      content: unknown;
-    }>;
+    const text = await result.getText();
+    const response = await result.getResponse();
 
-    const text = result.text || "";
-    const assistantParts = stepsToUIParts(result.steps as any[], text);
+    // Fold response output items into canonical Parts for persistence.
+    const parts: Part[] = [];
+    const outputItems = Array.isArray((response as any).output) ? (response as any).output : [];
+    for (const item of outputItems) {
+      const p = streamItemToPart(item as never);
+      if (p) parts.push(p);
+    }
+    if (text && !parts.some((p) => p.type === "text")) {
+      parts.push({ type: "text", text });
+    }
 
-    const usage = result.totalUsage ?? {};
+    const usage = (response as any).usage ?? {};
     const totalUsage = {
-      inputTokens: usage.inputTokens ?? 0,
-      outputTokens: usage.outputTokens ?? 0,
-      reasoningTokens: usage.reasoningTokens ?? 0,
-      cachedInputTokens: usage.cachedInputTokens ?? 0,
+      inputTokens: usage.inputTokens ?? usage.prompt_tokens ?? 0,
+      outputTokens: usage.outputTokens ?? usage.completion_tokens ?? 0,
+      reasoningTokens:
+        usage.outputTokensDetails?.reasoningTokens ??
+        usage.reasoningTokens ??
+        0,
+      cachedInputTokens:
+        usage.inputTokensDetails?.cachedTokens ??
+        usage.cachedInputTokens ??
+        0,
     };
+
+    latestResponseMessages = outputItems.map((item: unknown, idx: number) => ({
+      role: (item as { role?: string })?.role ?? "assistant",
+      content: item,
+      _seq: idx,
+    }));
+
+    const assistantParts = parts.length ? parts : stepsToUIParts([], text);
 
     const durationMs = Date.now() - start;
     stepLog.info("batch run finished", {
@@ -467,13 +229,10 @@ export async function runAgentStepBatch(input: BatchStepInput): Promise<BatchSte
       assistantParts,
       totalUsage,
       responseMessages: latestResponseMessages,
-      steps: result.steps,
+      steps: [],
       chatId,
     };
   } finally {
-    // Clean up checkpoints / run registration. Partial-work persistence is
-    // the caller's responsibility (autonomous has its own checkpoint-text
-    // recovery that pre-dates full tool-part persistence).
     deleteCheckpoint(runId);
     deregisterRun(runId);
   }

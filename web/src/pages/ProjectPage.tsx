@@ -2,8 +2,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { useParams, useNavigate } from "react-router";
 import { ChatPanel } from "@/components/chat/ChatPanel";
 import { useChats, useCreateChat } from "@/api/chats";
-import { useMessages } from "@/api/messages";
-import { Loader } from "@/components/ai/loader";
+import { Loader } from "@/components/chat-ui/Loader";
 
 export function ProjectPage() {
   const { projectId, chatId } = useParams<{
@@ -35,13 +34,6 @@ export function ProjectPage() {
     }
   }, [chatId, chats, chatsLoading, createChat.isPending, projectId, navigate]);
 
-  const { data: messagesData, isLoading: messagesLoading } = useMessages(
-    projectId!,
-    chatId ?? "",
-  );
-  const initialMessages = messagesData?.messages;
-  const initialIsStreaming = messagesData?.isStreaming ?? false;
-
   const activeChat = useMemo(
     () => chats?.find((c) => c.id === chatId),
     [chats, chatId],
@@ -49,7 +41,7 @@ export function ProjectPage() {
   const isAutonomous = activeChat?.isAutonomous ?? false;
   const chatSource = activeChat?.source ?? null;
 
-  if (!chatId || chatsLoading || messagesLoading) {
+  if (!chatId || chatsLoading) {
     return (
       <div className="flex h-full items-center justify-center">
         <Loader size={16} />
@@ -62,8 +54,6 @@ export function ProjectPage() {
       key={chatId}
       projectId={projectId!}
       chatId={chatId}
-      initialMessages={initialMessages}
-      initialIsStreaming={initialIsStreaming}
       isAutonomous={isAutonomous}
       source={chatSource}
     />

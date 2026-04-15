@@ -8,7 +8,7 @@
  *   - previously-read-path seeding
  *   - agent instantiation with checkpoint wiring
  */
-import type { UIMessage } from "ai";
+import type { Message, ToolCallPart } from "@/lib/messages/types.ts";
 import { getFileById } from "@/db/queries/files.ts";
 import { semanticSearch, isEmbeddingConfigured, embedValue } from "@/lib/search/vectors.ts";
 import { getUserTokenTotal } from "@/db/queries/usage-logs.ts";
@@ -52,17 +52,15 @@ export function checkUserTokenLimit(userId: string | undefined): TokenLimitRejec
  * Walk prior UIMessages and collect file paths the agent has already
  * read/written so the read-guard can be seeded.
  */
-export function extractReadPathsFromUIMessages(messages: UIMessage[]): string[] {
+export function extractReadPathsFromUIMessages(messages: Message[]): string[] {
   const out: string[] = [];
   for (const msg of messages) {
     for (const part of msg.parts ?? []) {
-      if (typeof part.type === "string" && part.type.startsWith("tool-")) {
-        const toolName = part.type.slice(5);
-        const input = (part as { input?: { path?: unknown } }).input;
-        if ((toolName === "readFile" || toolName === "writeFile") && typeof input?.path === "string") {
-          out.push(input.path);
-        }
-      }
+      if (part.type !== "tool-call") continue;
+      const tc = part as ToolCallPart;
+      if (tc.name !== "readFile" && tc.name !== "writeFile") continue;
+      const args = tc.arguments as { path?: unknown } | undefined;
+      if (typeof args?.path === "string") out.push(args.path);
     }
   }
   return out;
@@ -187,7 +185,7 @@ export async function readHeartbeatChecklist(projectId: string): Promise<string 
  * character-based heuristic.
  */
 export function willCompactionTrigger(
-  messages: UIMessage[],
+  messages: Message[],
   contextWindow: number,
 ): boolean {
   let estimatedTokens = 0;

@@ -1,7 +1,7 @@
 import { VectorClient } from "@0-ai/s3lite/vectors";
 import type { QueryResult, SparseVector } from "@0-ai/s3lite/vectors";
-import { embedMany } from "ai";
-import { getEmbeddingModel } from "@/lib/providers/index.ts";
+import { embed } from "@/lib/openrouter/embed.ts";
+import { getEmbeddingModelId } from "@/lib/providers/index.ts";
 import { getSetting } from "@/lib/settings.ts";
 import { db } from "@/db/index.ts";
 import { log } from "@/lib/utils/logger.ts";
@@ -62,6 +62,8 @@ function getClient(): VectorClient {
   if (!_client) {
     _client = new VectorClient({
       path: process.env.VECTOR_DB_PATH ?? "./data/vectors.db",
+      storage: "disk",
+      diskCacheSize: 10_000,
     });
   }
   return _client;
@@ -80,12 +82,7 @@ export function isEmbeddingConfigured(): boolean {
 }
 
 async function embedValues(values: string[]): Promise<number[][]> {
-  const { embeddings } = await embedMany({
-    model: getEmbeddingModel(),
-    values,
-    abortSignal: AbortSignal.timeout(30_000),
-  });
-  return embeddings;
+  return embed(values, { model: getEmbeddingModelId() });
 }
 
 export async function embedValue(value: string): Promise<number[]> {

@@ -196,6 +196,18 @@ export interface ContainerInspectResult {
   NetworkSettings: {
     Networks: Record<string, { IPAddress: string }>;
   };
+  Mounts?: Array<{
+    Type: string;
+    Name?: string;
+    Source: string;
+    Destination: string;
+  }>;
+}
+
+export interface VolumeInspectResult {
+  Name: string;
+  Driver: string;
+  Mountpoint: string;
 }
 
 export interface ExecResult {
@@ -612,6 +624,14 @@ export class DockerClient {
   async ensureNetwork(name: string): Promise<void> {
     if (await this.networkExists(name)) return;
     await this.createNetwork(name);
+  }
+
+  // -- Volumes --
+
+  async inspectVolume(name: string): Promise<VolumeInspectResult | null> {
+    const res = await this.fetch(`/volumes/${encodeURIComponent(name)}`);
+    if (!res.ok) return null;
+    return res.json() as Promise<VolumeInspectResult>;
   }
 }
 

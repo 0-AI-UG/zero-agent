@@ -1,263 +1,91 @@
-import { useChat } from "@ai-sdk/react";
-import { DefaultChatTransport, lastAssistantMessageIsCompleteWithApprovalResponses } from "ai";
-import type { UIMessage } from "ai";
+import { useCallback, useMemo } from "react";
+import { useShallow } from "zustand/react/shallow";
 import {
   Conversation,
   ConversationContent,
   ConversationScrollButton,
-} from "@/components/ai/conversation";
-import { ChatMessageList } from "@/components/chat/ChatMessageList";
-import { ChatInputArea } from "@/components/chat/ChatInputArea";
-import { getQuickActionIcon } from "@/components/chat/QuickActionsManager";
+} from "@/components/chat-ui/Conversation";
+import { SyncChangesHover, SyncInlineControls } from "@/components/chat-ui/SyncApproval";
+import { getQuickActionIcon } from "./QuickActionsManager";
+import { MessageList } from "./MessageList";
+import { Composer } from "./Composer";
+import { useTypingUsers, PresenceDots } from "./PresenceBar";
 import { useQuickActions } from "@/api/quick-actions";
 import { useProject } from "@/api/projects";
 import { useServerCapabilities } from "@/api/capabilities";
 import { useMembers } from "@/api/members";
-import { useAuthStore } from "@/stores/auth";
-import { useModelStore } from "@/stores/model";
-import { useToolsStore } from "@/stores/tools";
-import { usePlanModeStore } from "@/stores/plan-mode";
-import { useQueryClient } from "@tanstack/react-query";
-import { queryKeys } from "@/lib/query-keys";
-import { useCallback, useEffect, useMemo, useRef } from "react";
-import type { ChatMessage } from "@/components/chat/ChatMessageItem";
-import { useSpectatingUser, useTypingUsers, PresenceDots } from "@/components/chat/PresenceBar";
 import { useViewChat } from "@/hooks/use-realtime";
-import { useRealtimeStore } from "@/stores/realtime";
-import { apiFetch } from "@/api/client";
-
-/** Deduplicate text parts within a single message (streaming can cause duplicates) */
-function deduplicateTextParts(messages: ChatMessage[]): ChatMessage[] {
-  return messages.map((msg) => {
-    if (msg.role !== "assistant") return msg;
-    const seen = new Set<string>();
-    const parts = msg.parts.filter((p) => {
-      if (p.type !== "text") return true;
-      const key = p.text.trim();
-      if (!key || seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-    return parts.length === msg.parts.length ? msg : { ...msg, parts };
-  });
-}
+import { useWsChat } from "@/hooks/use-ws-chat";
+import { usePendingApprovalsStore } from "@/stores/pending-approvals";
 
 interface ChatPanelProps {
   projectId: string;
   chatId: string;
-  initialMessages?: UIMessage[];
-  initialIsStreaming?: boolean;
   isAutonomous?: boolean;
   source?: string | null;
 }
 
-const SOURCE_LABELS: Record<string, string> = {
-  telegram: "Telegram",
-  whatsapp: "WhatsApp",
-  signal: "Signal",
-};
-
 function sourceLabel(source: string): string {
-  return SOURCE_LABELS[source] ?? source.charAt(0).toUpperCase() + source.slice(1);
+  const known: Record<string, string> = {
+    telegram: "Telegram",
+    whatsapp: "WhatsApp",
+    signal: "Signal",
+  };
+  return known[source] ?? source.charAt(0).toUpperCase() + source.slice(1);
 }
 
-export function ChatPanel({ projectId, chatId, initialMessages, initialIsStreaming, isAutonomous, source }: ChatPanelProps) {
-  const queryClient = useQueryClient();
+export function ChatPanel({ projectId, chatId, isAutonomous, source }: ChatPanelProps) {
   const { data: capabilities } = useServerCapabilities();
   const { data: project } = useProject(projectId);
   const { data: quickActions } = useQuickActions(projectId);
   const { data: membersData } = useMembers(projectId);
+
   const isMultiMember = (membersData?.members.length ?? 0) > 1;
   const memberMap = useMemo(
     () => new Map(membersData?.members.map((m) => [m.userId, m.username]) ?? []),
     [membersData],
   );
 
-  const transport = useMemo(
-    () =>
-      new DefaultChatTransport({
-        api: `/api/projects/${projectId}/chats/${chatId}/chat`,
-        headers: () => {
-          const token = useAuthStore.getState().token;
-          if (token) return { Authorization: `Bearer ${token}` };
-          return {} as Record<string, string>;
-        },
-        body: () => ({
-          model: useModelStore.getState().selectedModelId,
-          language: useModelStore.getState().language,
-          disabledTools: useToolsStore.getState().getDisabledToolsList(),
-          planMode: usePlanModeStore.getState().enabledChats[chatId] || undefined,
-        }),
-        prepareReconnectToStreamRequest: ({ headers, credentials }) => ({
-          api: `/api/projects/${projectId}/chats/${chatId}/stream`,
-          headers,
-          credentials,
-        }),
-      }),
-    [projectId, chatId],
-  );
-
-  const { messages: rawMessages, sendMessage, status, error, regenerate, stop, setMessages, resumeStream } = useChat<ChatMessage>({
-    id: chatId,
-    transport,
-    messages: initialMessages as ChatMessage[] | undefined,
-    resume: true,
-    sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses,
-    onFinish: () => {
-      queryClient.setQueryData(
-        queryKeys.messages.byChat(projectId, chatId),
-        { messages: deduplicateTextParts(messagesRef.current), isStreaming: false },
-      );
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.chats.byProject(projectId),
-      });
-    },
-  });
-
-  // Guard: useChat may return {} instead of [] when restoring from internal store
-  const messages = Array.isArray(rawMessages) ? rawMessages : [];
-
-  // When the stream ends, mark any still-loading tool parts as failed (interrupted).
-  const prevStatusRef = useRef(status);
-  useEffect(() => {
-    const wasStreaming = prevStatusRef.current === "streaming" || prevStatusRef.current === "submitted";
-    prevStatusRef.current = status;
-    if (!wasStreaming || status !== "ready") return;
-
-    const isLoadingPart = (p: any) =>
-      p.toolCallId && (p.state === "input-streaming" || p.state === "input-available");
-
-    const hasOrphaned = messages.some(
-      (m) => m.role === "assistant" && m.parts.some(isLoadingPart),
-    );
-    if (!hasOrphaned) return;
-
-    setMessages((prev) =>
-      prev.map((msg) => {
-        if (msg.role !== "assistant") return msg;
-        if (!msg.parts.some(isLoadingPart)) return msg;
-        return {
-          ...msg,
-          parts: msg.parts.map((p: any) =>
-            isLoadingPart(p)
-              ? { ...p, state: "output-error" as const, errorText: "Interrupted" }
-              : p,
-          ),
-        };
-      }),
-    );
-  }, [status, messages, setMessages]);
-
-  // Keep a ref to messages for unmount sync and onFinish
-  const messagesRef = useRef(messages);
-  messagesRef.current = messages;
-  // Persist messages to React Query cache on unmount (tab switch)
-  useEffect(() => {
-    return () => {
-      queryClient.setQueryData(
-        queryKeys.messages.byChat(projectId, chatId),
-        { messages: deduplicateTextParts(messagesRef.current), isStreaming: false },
-      );
-    };
-  }, [projectId, chatId, queryClient]);
-
-  // Track which chat we're viewing for presence
   useViewChat(chatId);
 
-  // When another user starts streaming on this chat, fetch fresh messages
-  // and resume the stream so the spectating user sees it in real-time.
-  const currentUserId = useAuthStore((s) => s.user?.id);
-  const streamGeneration = useRealtimeStore((s) => s.streamGeneration);
-  const lastStreamStartChatId = useRealtimeStore((s) => s.lastStreamStartChatId);
-  const lastStreamStartUserId = useRealtimeStore((s) => s.lastStreamStartUserId);
+  const { messages, sendMessage, stop, regenerate, status, error, isStreaming } =
+    useWsChat(chatId);
 
-  useEffect(() => {
-    if (
-      streamGeneration === 0 ||
-      lastStreamStartChatId !== chatId ||
-      lastStreamStartUserId === currentUserId
-    ) return;
-
-    // Server-initiated streams (e.g. a background sub-agent finished and
-    // the server woke the parent chat) emit `stream.started` with this
-    // sentinel as the user id. They APPEND a brand-new assistant message
-    // on top of the already-persisted history, so we must NOT strip prior
-    // assistant messages like we do for human-initiated streams.
-    const isServerResume = lastStreamStartUserId?.startsWith("__") ?? false;
-
-    let cancelled = false;
-    (async () => {
-      try {
-        const data = await apiFetch<{ messages: UIMessage[]; isStreaming?: boolean }>(
-          `/projects/${projectId}/chats/${chatId}/messages`,
-        );
-        if (cancelled || !data.isStreaming) return;
-
-        const msgs = data.messages;
-        if (isServerResume) {
-          // Keep the full persisted history; the new assistant message
-          // will stream in as an addition.
-          setMessages(msgs as ChatMessage[]);
-        } else {
-          // Human-initiated: strip trailing assistant messages - the
-          // resumed stream rebuilds the single reply from scratch.
-          let end = msgs.length;
-          while (end > 0 && msgs[end - 1]?.role === "assistant") end--;
-          setMessages(msgs.slice(0, end) as ChatMessage[]);
-        }
-        await resumeStream();
-      } catch {
-        // Silently ignore - the user can still reload manually
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [streamGeneration, lastStreamStartChatId, lastStreamStartUserId, chatId, currentUserId, projectId, setMessages, resumeStream]);
-
-  // Auto-send: server can queue a message via WS (e.g. plan implement).
-  // The server aborts the active stream before broadcasting, so we just
-  // wait for status === "ready" and then send.
-  const autoSendMsg = useRealtimeStore((s) => s.autoSendQueue[chatId]);
-  useEffect(() => {
-    if (autoSendMsg && status === "ready") {
-      useRealtimeStore.getState().consumeAutoSend(chatId);
-      sendMessage({ text: autoSendMsg });
-    }
-  }, [autoSendMsg, status, chatId, sendMessage]);
-
-  const spectatingUser = useSpectatingUser(chatId);
   const typingUsers = useTypingUsers(chatId);
 
-  const isStreaming = status === "streaming" || status === "submitted" ||
-    (!!initialIsStreaming && status === "ready");
+  const pendingSyncs = usePendingApprovalsStore(
+    useShallow((s) => Object.values(s.byId).filter((p) => p.chatId === chatId)),
+  );
 
-  const starterSuggestions = useMemo(() => {
-    return (quickActions ?? []).map((a) => ({
-      text: a.text,
-      icon: getQuickActionIcon(a.icon),
-      description: a.description,
-    }));
-  }, [quickActions]);
+  const starterSuggestions = useMemo(
+    () =>
+      (quickActions ?? []).map((a) => ({
+        text: a.text,
+        icon: getQuickActionIcon(a.icon),
+        description: a.description,
+      })),
+    [quickActions],
+  );
 
   const handleSuggestion = useCallback(
     (suggestion: string) => {
-      if (!isStreaming) {
-        sendMessage({ text: suggestion });
-      }
+      if (!isStreaming) sendMessage({ text: suggestion });
     },
-    [isStreaming, sendMessage]
+    [isStreaming, sendMessage],
   );
+
+  const errorObj = error ? new Error(error) : undefined;
 
   return (
     <div className="relative flex flex-col flex-1 min-h-0">
       <Conversation>
         <ConversationContent className="px-6 md:px-10 pb-48 max-w-4xl mx-auto w-full">
-          <ChatMessageList
+          <MessageList
             messages={messages}
             projectId={projectId}
             chatId={chatId}
             isStreaming={isStreaming}
-            status={status}
-            error={error}
+            error={errorObj}
             memberMap={memberMap}
             isMultiMember={isMultiMember}
             regenerate={regenerate}
@@ -270,6 +98,30 @@ export function ChatPanel({ projectId, chatId, initialMessages, initialIsStreami
       </Conversation>
 
       <div className="absolute bottom-0 left-0 right-0 z-10 bg-background">
+        {pendingSyncs.length > 0 && (
+          <div className="px-6 pt-3 md:px-10 max-w-4xl mx-auto w-full">
+            {pendingSyncs.map((proposal) => (
+              <div
+                key={proposal.id}
+                className="mb-3 rounded-lg border bg-card px-3 py-2 text-sm flex items-center gap-3"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="font-medium">Pending workspace sync approval</div>
+                  <div className="text-xs text-muted-foreground">
+                    {proposal.source === "bash"
+                      ? "Bash proposed file changes."
+                      : "A tool proposed file changes."}
+                  </div>
+                </div>
+                {proposal.changes && proposal.changes.length > 0 && (
+                  <SyncChangesHover syncId={proposal.id} changes={proposal.changes} />
+                )}
+                <SyncInlineControls proposal={proposal} />
+              </div>
+            ))}
+          </div>
+        )}
+
         {isAutonomous ? (
           <div className="px-6 py-4 md:px-10 max-w-4xl mx-auto w-full">
             <p className="text-xs text-muted-foreground text-center">
@@ -283,7 +135,7 @@ export function ChatPanel({ projectId, chatId, initialMessages, initialIsStreami
             </p>
           </div>
         ) : (
-          <ChatInputArea
+          <Composer
             projectId={projectId}
             chatId={chatId}
             messages={messages}
@@ -292,7 +144,6 @@ export function ChatPanel({ projectId, chatId, initialMessages, initialIsStreami
             sendMessage={sendMessage}
             stop={stop}
             capabilities={capabilities}
-            spectatingUser={spectatingUser}
             typingUsers={typingUsers}
             presenceDots={<PresenceDots chatId={chatId} />}
           />

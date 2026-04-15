@@ -1,6 +1,6 @@
-import type { ModelMessage } from "@ai-sdk/provider-utils";
-import { generateText } from "ai";
-import { getEnrichModel } from "@/lib/providers/index.ts";
+import type { Message } from "@/lib/messages/types.ts";
+import { generateText } from "@/lib/openrouter/text.ts";
+import { getEnrichModelId } from "@/lib/providers/index.ts";
 import { readFromS3, writeToS3, deleteFromS3 } from "@/lib/s3.ts";
 import { log } from "@/lib/utils/logger.ts";
 
@@ -73,22 +73,18 @@ Rules:
 /**
  * Format messages for the extraction prompt, stripping tool result bloat.
  */
-function formatMessagesForExtraction(messages: ModelMessage[]): string {
+function formatMessagesForExtraction(messages: Message[]): string {
   return messages
     .map((m) => {
-      if (m.role === "tool") {
-        const parts = m.content as Array<{ toolName?: string; toolCallId?: string }>;
-        if (Array.isArray(parts)) {
-          return parts
-            .map((p) => `tool-result: ${p.toolName ?? "unknown"}`)
-            .join("\n");
-        }
-        return `tool: ${JSON.stringify(m.content).slice(0, 200)}`;
+      const chunks: string[] = [];
+      for (const p of m.parts) {
+        if (p.type === "text") chunks.push(p.text);
+        else if (p.type === "reasoning") chunks.push(`(thinking) ${p.text}`);
+        else if (p.type === "tool-call") chunks.push(`tool-call: ${p.name}`);
+        else if (p.type === "tool-output")
+          chunks.push(`tool-result: ${(p.errorText ?? "").slice(0, 200) || "ok"}`);
       }
-      const content = typeof m.content === "string"
-        ? m.content
-        : JSON.stringify(m.content);
-      return `${m.role}: ${content}`;
+      return `${m.role}: ${chunks.join(" ")}`;
     })
     .join("\n");
 }
@@ -107,7 +103,7 @@ interface ExtractionResult {
  * state. Returns the updated state and any learnings for memory extraction.
  */
 export async function extractCompactionState(
-  messages: ModelMessage[],
+  messages: Message[],
   existing?: CompactionState,
 ): Promise<{ state: CompactionState; learnings: string[] }> {
   const state = existing ?? createEmptyCompactionState("");
@@ -124,9 +120,9 @@ export async function extractCompactionState(
 
   try {
     const result = await generateText({
-      model: getEnrichModel(),
+      model: getEnrichModelId(),
       system: EXTRACTION_PROMPT,
-      prompt: `${contextPrefix}Conversation segment to extract from:\n\n${text}`,
+      messages: `${contextPrefix}Conversation segment to extract from:\n\n${text}`,
       maxOutputTokens: 1024,
     });
 

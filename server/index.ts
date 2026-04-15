@@ -42,9 +42,6 @@ import {
   handleDeleteChat,
   handleSearchChats,
 } from "@/routes/chats.ts";
-import { handleChat, handleAbortChat } from "@/routes/chat.ts";
-import { handleResumeStream } from "@/routes/stream.ts";
-import { handleGetMessages } from "@/routes/messages.ts";
 import {
   handleListFiles,
   handleGetFileUrl,
@@ -333,12 +330,6 @@ app.post("/api/projects/:projectId/chats", h(handleCreateChat));
 app.get("/api/projects/:projectId/chats/search", h(handleSearchChats));
 app.put("/api/projects/:projectId/chats/:chatId", h(handleUpdateChat));
 app.delete("/api/projects/:projectId/chats/:chatId", h(handleDeleteChat));
-
-// Chat streaming
-app.post("/api/projects/:projectId/chats/:chatId/chat", h(handleChat));
-app.post("/api/projects/:projectId/chats/:chatId/abort", h(handleAbortChat));
-app.get("/api/projects/:projectId/chats/:chatId/stream", h(handleResumeStream));
-app.get("/api/projects/:projectId/chats/:chatId/messages", h(handleGetMessages));
 
 // Files
 app.get("/api/projects/:projectId/files", h(handleListFiles));

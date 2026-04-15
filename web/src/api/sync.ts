@@ -36,14 +36,6 @@ export interface SyncVerdictResponse {
   };
 }
 
-export interface SyncStatusResponse {
-  id: string;
-  status: SyncServerStatus;
-  source: string;
-  chatId: string | null;
-  changes: SyncChangeMeta[];
-}
-
 export function postSyncVerdict(
   syncId: string,
   approved: boolean,
@@ -55,10 +47,6 @@ export function postSyncVerdict(
       body: JSON.stringify({ approved }),
     },
   );
-}
-
-export function fetchSyncStatus(syncId: string): Promise<SyncStatusResponse> {
-  return apiFetch<SyncStatusResponse>(`/sync/${encodeURIComponent(syncId)}`);
 }
 
 export function fetchSyncDiff(syncId: string, path: string): Promise<SyncDiff> {

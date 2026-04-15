@@ -4,8 +4,8 @@
  * without needing direct API key access.
  */
 import type { z } from "zod";
-import { generateText } from "ai";
-import { getChatModel, createChatModel, getEnrichModel } from "@/lib/providers/index.ts";
+import { generateText } from "@/lib/openrouter/text.ts";
+import { resolveChatModelId, getEnrichModelId } from "@/lib/providers/index.ts";
 import { insertUsageLog } from "@/db/queries/usage-logs.ts";
 import type { CliContext } from "./context.ts";
 import { ok } from "./response.ts";
@@ -16,12 +16,12 @@ export async function handleLlmGenerate(
   input: z.infer<typeof LlmGenerateInput>,
 ): Promise<Response> {
   const model = input.model
-    ? createChatModel(input.model)
-    : getEnrichModel();
+    ? resolveChatModelId(input.model)
+    : getEnrichModelId();
 
   const result = await generateText({
     model,
-    prompt: input.prompt,
+    messages: input.prompt,
     system: input.system,
     maxOutputTokens: input.maxTokens ?? 4096,
   });

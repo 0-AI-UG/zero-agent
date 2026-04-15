@@ -1,5 +1,4 @@
-import type { ModelMessage } from "@ai-sdk/provider-utils";
-import type { PrepareStepFunction } from "ai";
+import type { Message, Part, ToolCallPart } from "@/lib/messages/types.ts";
 import { clearStaleToolResults } from "@/lib/conversation/clear-stale-results.ts";
 import { getUndeliveredResults } from "@/lib/agent/background-task-store.ts";
 import {
@@ -11,6 +10,7 @@ import {
   loadCompactionState,
 } from "@/lib/conversation/compaction-state.ts";
 import { flushLearnings } from "@/lib/conversation/memory-flush.ts";
+import { generateId } from "@/db/index.ts";
 import { log } from "@/lib/utils/logger.ts";
 
 const compactLog = log.child({ module: "compact" });
@@ -19,95 +19,78 @@ const THRESHOLD = 0.85;
 const RECENT_MESSAGE_COUNT = 20;
 
 /**
- * Calculate actual context token usage from the last message's metadata.
- * Prefers `contextTokens` (last step's inputTokens, set by onStepFinish)
- * which accurately reflects context window consumption even for multi-step
- * agent turns. Falls back to 0 so the caller uses character-based estimation.
+ * Canonical prepareStep hook signature. Called before each agent turn with
+ * the running message history; may return a rewrite of the messages (used
+ * for compaction, orphan patching, notifications) and/or a system override.
  */
-function calculateActualTokens(messages: ModelMessage[]): number {
+export type PrepareStepFn = (ctx: {
+  stepNumber: number;
+  messages: Message[];
+}) => Promise<{ messages?: Message[]; system?: string } | void>;
+
+/**
+ * Pull the most recent `contextTokens` stamp we recorded in message metadata
+ * (set by the agent-step onStepFinish hook from the step's inputTokens).
+ * Falls back to 0 so the caller uses a character-based estimate.
+ */
+function calculateActualTokens(messages: Message[]): number {
   for (let i = messages.length - 1; i >= 0; i--) {
-    const meta = (messages[i] as any).metadata;
+    const meta = messages[i]?.metadata;
     if (meta?.contextTokens) return meta.contextTokens;
   }
   return 0;
 }
 
-/**
- * Fallback estimation when no usage metadata is available.
- * Uses a slightly more conservative estimate (3 chars per token) for Chinese text.
- */
-function estimateTokensFromMessages(messages: ModelMessage[]): number {
+function estimateTokensFromMessages(messages: Message[]): number {
   const jsonString = JSON.stringify(messages);
-  // Chinese text typically has fewer tokens per character than English
-  // Using 3 as a middle ground (roughly 1 token per 3 characters)
   return Math.ceil(jsonString.length / 3);
 }
 
 /**
- * Format a tool result message for the summarizer - strip bloated content,
- * keep only tool name and call ID to save summarizer budget.
+ * Patch orphaned tool calls left over from an aborted stream: any
+ * assistant tool-call whose callId has no paired tool-output in history
+ * gets a synthetic interrupted-output injected so the next turn doesn't
+ * reject the transcript.
  */
-function formatToolMessageForSummary(msg: ModelMessage): string {
-  const parts = msg.content as Array<{ toolName?: string; toolCallId?: string }>;
-  if (Array.isArray(parts)) {
-    return parts
-      .map((p) => `tool-result: ${p.toolName ?? "unknown"}(${p.toolCallId ?? "?"})`)
-      .join("\n");
-  }
-  return `tool: ${JSON.stringify(msg.content).slice(0, 200)}`;
-}
-
-/**
- * Patch orphaned tool calls - when a stream is aborted mid-tool-call, the
- * assistant message contains a tool call but no corresponding tool result
- * message follows. The AI SDK throws MissingToolResultsError when it
- * encounters this. Fix by injecting a synthetic tool result for any orphaned
- * tool call.
- */
-function patchOrphanedToolCalls(messages: ModelMessage[]): ModelMessage[] {
-  // Collect all tool call IDs that have results
+function patchOrphanedToolCalls(messages: Message[]): Message[] {
   const resultIds = new Set<string>();
   for (const msg of messages) {
-    if (msg.role !== "tool") continue;
-    const parts = msg.content as Array<{ toolCallId?: string }>;
-    if (!Array.isArray(parts)) continue;
-    for (const part of parts) {
-      if (part.toolCallId) resultIds.add(part.toolCallId);
+    for (const p of msg.parts) {
+      if (p.type === "tool-output") resultIds.add(p.callId);
     }
   }
 
-  // Find assistant tool calls missing results and inject synthetic results
-  const patched: ModelMessage[] = [];
+  const patched: Message[] = [];
+  let mutated = false;
   for (const msg of messages) {
     patched.push(msg);
     if (msg.role !== "assistant") continue;
 
-    const parts = msg.content as Array<{ type?: string; toolCallId?: string; toolName?: string }>;
-    if (!Array.isArray(parts)) continue;
-
-    const orphaned = parts.filter(
-      (p) => p.type === "tool-call" && p.toolCallId && !resultIds.has(p.toolCallId),
+    const orphaned: ToolCallPart[] = msg.parts.filter(
+      (p): p is ToolCallPart =>
+        p.type === "tool-call" && !resultIds.has(p.callId),
     );
     if (orphaned.length === 0) continue;
 
-    // Inject a tool result message for the orphaned calls
+    const outputParts: Part[] = orphaned.map((p) => ({
+      type: "tool-output",
+      callId: p.callId,
+      output: null,
+      errorText: "[interrupted - tool call was aborted before completing]",
+    }));
     patched.push({
-      role: "tool" as const,
-      content: orphaned.map((p) => ({
-        type: "tool-result" as const,
-        toolCallId: p.toolCallId!,
-        toolName: p.toolName ?? "unknown",
-        output: { type: "text" as const, value: "[interrupted - tool call was aborted before completing]" },
-      })),
-    } as ModelMessage);
-
+      id: generateId(),
+      role: "tool",
+      parts: outputParts,
+    });
+    mutated = true;
     compactLog.debug("patched orphaned tool calls", {
       count: orphaned.length,
-      toolCallIds: orphaned.map((p) => p.toolCallId),
+      toolCallIds: orphaned.map((p) => p.callId),
     });
   }
 
-  return patched.length !== messages.length ? patched : messages;
+  return mutated ? patched : messages;
 }
 
 interface CompactOptions {
@@ -117,15 +100,15 @@ interface CompactOptions {
   chatId?: string;
 }
 
-export function createCompactPrepareStep(options: CompactOptions): PrepareStepFunction {
+export function createCompactPrepareStep(options: CompactOptions): PrepareStepFn {
   const { contextWindow, projectId, runId, chatId } = options;
   let currentState: CompactionState | null = null;
 
   return async ({ messages }) => {
-    // Layer 0: Patch orphaned tool calls from aborted streams
+    // Layer 0: patch orphaned tool calls from aborted streams.
     const patched = patchOrphanedToolCalls(messages);
 
-    // Layer 1: Inject background task completion notifications
+    // Layer 1: inject background task completion notifications.
     let withNotifications = patched;
     if (chatId) {
       const completed = getUndeliveredResults(chatId);
@@ -136,29 +119,33 @@ export function createCompactPrepareStep(options: CompactOptions): PrepareStepFu
           }
           return `- "${t.taskName}" (${t.runId}): failed - ${t.error ?? "unknown error"}`;
         });
-        const notification: ModelMessage = {
-          role: "user" as const,
-          content: `[System notification] Background tasks completed since your last step:\n${lines.join("\n")}`,
+        const notification: Message = {
+          id: generateId(),
+          role: "user",
+          parts: [
+            {
+              type: "text",
+              text: `[System notification] Background tasks completed since your last step:\n${lines.join("\n")}`,
+            },
+          ],
         };
         withNotifications = [...patched, notification];
-        compactLog.info("injected background task notifications", { chatId, count: completed.length });
+        compactLog.info("injected background task notifications", {
+          chatId,
+          count: completed.length,
+        });
       }
     }
 
-    // Layer 2: Always clear stale tool results (cheap, no LLM call)
+    // Layer 2: clear stale tool results.
     const cleaned = clearStaleToolResults(withNotifications);
 
-    // First, try to calculate actual tokens from metadata
     let estimatedTokens = calculateActualTokens(cleaned);
-
-    // If no usage data exists (e.g., first message or messages loaded without metadata),
-    // fall back to character-based estimation
     if (estimatedTokens === 0) {
       estimatedTokens = estimateTokensFromMessages(cleaned);
     }
 
     if (estimatedTokens < contextWindow * THRESHOLD) {
-      // Return cleaned messages if any were modified (patched or stale-cleared)
       return cleaned !== messages ? { messages: cleaned } : undefined;
     }
 
@@ -181,7 +168,6 @@ export function createCompactPrepareStep(options: CompactOptions): PrepareStepFu
     const oldMessages = cleaned.slice(0, -RECENT_MESSAGE_COUNT);
     const recentMessages = cleaned.slice(-RECENT_MESSAGE_COUNT);
 
-    // Load existing compaction state if we have project context and haven't loaded yet
     if (projectId && runId && !currentState) {
       currentState = await loadCompactionState(projectId, runId);
     }
@@ -189,19 +175,15 @@ export function createCompactPrepareStep(options: CompactOptions): PrepareStepFu
       currentState = createEmptyCompactionState(runId ?? "");
     }
 
-    // Extract structured state from evicted messages and merge in
     const { state, learnings } = await extractCompactionState(oldMessages, currentState);
     currentState = state;
 
-    // Save state to S3 if we have project context
     if (projectId && runId) {
       await saveCompactionState(projectId, runId, state).catch((err) => {
         compactLog.warn("failed to save compaction state", {
           error: err instanceof Error ? err.message : String(err),
         });
       });
-
-      // Flush learnings to memory incrementally
       if (learnings.length > 0) {
         await flushLearnings(projectId, learnings).catch((err) => {
           compactLog.warn("failed to flush learnings", {
@@ -218,10 +200,11 @@ export function createCompactPrepareStep(options: CompactOptions): PrepareStepFu
       decisions: state.activeDecisions.length,
     });
 
-    const compactedMessages: ModelMessage[] = [
+    const compactedMessages: Message[] = [
       {
-        role: "user" as const,
-        content: renderCompactionState(state),
+        id: generateId(),
+        role: "user",
+        parts: [{ type: "text", text: renderCompactionState(state) }],
       },
       ...recentMessages,
     ];

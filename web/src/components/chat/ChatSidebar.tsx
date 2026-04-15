@@ -151,8 +151,6 @@ export function ChatSidebar({ projectId }: { projectId: string }) {
                 const chatViewers = presence.filter(
                   (u) => u.chatId === chat.id && u.userId !== currentUserId,
                 );
-                const hasStreaming = chatViewers.some((u) => u.isStreaming) ||
-                  presence.some((u) => u.chatId === chat.id && u.isStreaming);
 
                 return (
                   <SidebarMenuItem key={chat.id}>
@@ -173,9 +171,9 @@ export function ChatSidebar({ projectId }: { projectId: string }) {
                           </span>
                         )}
                       </div>
-                      {(chatViewers.length > 0 || hasStreaming) && (
+                      {chatViewers.length > 0 && (
                         <span
-                          className={`w-1.5 h-1.5 rounded-full shrink-0 ${hasStreaming ? "bg-green-500 animate-pulse" : "bg-muted-foreground/40"}`}
+                          className="w-1.5 h-1.5 rounded-full shrink-0 bg-muted-foreground/40"
                           title={chatViewers.map((u) => u.username).join(", ")}
                         />
                       )}

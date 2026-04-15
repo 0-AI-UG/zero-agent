@@ -1,6 +1,6 @@
-import { generateText } from "ai";
-import type { UIMessage } from "ai";
-import { getEnrichModel } from "@/lib/providers/index.ts";
+import { generateText } from "@/lib/openrouter/text.ts";
+import type { Message } from "@/lib/messages/types.ts";
+import { getEnrichModelId } from "@/lib/providers/index.ts";
 import { readFromS3, writeToS3 } from "@/lib/s3.ts";
 import { extractConversationText } from "@/lib/conversation/message-utils.ts";
 import { embedEntries } from "@/lib/search/vectors.ts";
@@ -169,7 +169,7 @@ export async function flushLearnings(
  */
 export async function flushConversationMemory(
   projectId: string,
-  messages: UIMessage[],
+  messages: Message[],
 ): Promise<void> {
   // Only analyze the last 10 messages to keep cost/latency low
   const conversationText = extractConversationText(messages, 10);
@@ -193,7 +193,7 @@ export async function flushConversationMemory(
   // Ask LLM to extract new memories (with retry for transient API errors)
   const callLLM = () =>
     generateText({
-      model: getEnrichModel(),
+      model: getEnrichModelId(),
       system: `You extract important information from conversations. Output new memory entries, one per line, in the format:
 section: content
 
@@ -211,7 +211,7 @@ Rules:
 - Do NOT duplicate information already in existing memory
 - If nothing new to remember, output exactly: NONE
 - Maximum 5 new items`,
-      prompt: `## Existing Memory Entries
+      messages: `## Existing Memory Entries
 ${existingBullets || "(empty)"}
 
 ## Recent Conversation

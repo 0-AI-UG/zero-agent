@@ -13,7 +13,6 @@
 import { getSetting, setSetting, deleteSetting } from "@/lib/settings.ts";
 import { encrypt, decrypt } from "@/lib/auth/crypto.ts";
 import { log } from "@/lib/utils/logger.ts";
-import { retryFetch } from "@/lib/providers/middleware.ts";
 
 const tokLog = log.child({ module: "codex-tokens" });
 
@@ -40,7 +39,7 @@ export interface CodexTokens {
 let memoCache: CodexTokens | null | undefined = undefined;
 let inflightRefresh: Promise<CodexTokens> | null = null;
 
-const tokFetch = retryFetch(fetch);
+const tokFetch = fetch;
 
 export async function loadTokens(): Promise<CodexTokens | null> {
   if (memoCache !== undefined) return memoCache;
