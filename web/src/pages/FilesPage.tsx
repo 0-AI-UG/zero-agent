@@ -36,7 +36,8 @@ import { queryKeys } from "@/lib/query-keys";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useCreateFile } from "@/hooks/use-create-file";
-import { entriesFromDataTransfer, useUploadFiles } from "@/hooks/use-upload-files";
+import { useUploadFiles } from "@/hooks/use-upload-files";
+import { useDropzone } from "react-dropzone";
 
 export function FilesPage() {
   const { projectId } = useParams<{ projectId: string }>();
@@ -309,19 +310,25 @@ export function FilesPage() {
     document.body.style.userSelect = "none";
   }, [panelWidth]);
 
-  // Drag overlay state
-  const [isDragOver, setIsDragOver] = useState(false);
-  const dragCounter = useRef(0);
+  // Drag-drop upload via react-dropzone. It uses `file-selector` internally,
+  // which handles Safari's webkitGetAsEntry quirks and walks dropped folders.
   const { upload: uploadDropped, isUploading: isDropUploading } = useUploadFiles(projectId!);
-
-  const handleExternalDrop = useCallback(
-    async (dt: DataTransfer) => {
-      const entries = await entriesFromDataTransfer(dt);
-      if (entries.length === 0) return;
-      await uploadDropped(entries, currentPath);
+  const onDropFiles = useCallback(
+    (files: File[]) => {
+      if (files.length === 0) return;
+      void uploadDropped(files, currentPath);
     },
     [uploadDropped, currentPath],
   );
+  const {
+    getRootProps: getDropRootProps,
+    isDragActive,
+  } = useDropzone({
+    onDrop: onDropFiles,
+    noClick: true,
+    noKeyboard: true,
+    multiple: true,
+  });
 
 
   const handleDropItem = useCallback(
@@ -355,33 +362,9 @@ export function FilesPage() {
   const showSplit = !isMobile;
 
   return (
-    <div
-      className="flex h-full relative"
-      onDragEnter={(e) => {
-        e.preventDefault();
-        // Only show upload overlay for external file drops, not internal drag-and-drop
-        if (!e.dataTransfer.types.includes("Files")) return;
-        dragCounter.current++;
-        if (dragCounter.current === 1) setIsDragOver(true);
-      }}
-      onDragOver={(e) => e.preventDefault()}
-      onDragLeave={(e) => {
-        e.preventDefault();
-        if (!isDragOver) return;
-        dragCounter.current--;
-        if (dragCounter.current === 0) setIsDragOver(false);
-      }}
-      onDrop={(e) => {
-        e.preventDefault();
-        dragCounter.current = 0;
-        setIsDragOver(false);
-        if (e.dataTransfer.types.includes("Files")) {
-          void handleExternalDrop(e.dataTransfer);
-        }
-      }}
-    >
+    <div {...getDropRootProps({ className: "flex h-full relative" })}>
       {/* Drag overlay */}
-      {isDragOver && (
+      {isDragActive && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm border-2 border-dashed border-primary rounded-lg">
           <div className="flex flex-col items-center gap-2 text-primary">
             <UploadIcon className="size-8" />
@@ -392,7 +375,7 @@ export function FilesPage() {
           </div>
         </div>
       )}
-      {isDropUploading && !isDragOver && (
+      {isDropUploading && !isDragActive && (
         <div className="absolute bottom-4 right-4 z-40 rounded-md border bg-background px-3 py-2 text-xs shadow-md">
           Uploading...
         </div>

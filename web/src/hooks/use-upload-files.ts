@@ -8,12 +8,6 @@ import type { FileItem } from "@/hooks/use-files";
 export const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
 const UPLOAD_CONCURRENCY = 3;
 
-export interface UploadEntry {
-  file: File;
-  // Path relative to the target folder, e.g. "sub/dir/name.txt" or just "name.txt".
-  relativePath: string;
-}
-
 function sanitizeFolderName(name: string): string {
   return name.trim().replace(/[^a-zA-Z0-9._\- ]/g, "");
 }
@@ -21,6 +15,18 @@ function sanitizeFolderName(name: string): string {
 function joinPath(base: string, segment: string): string {
   const b = base.endsWith("/") ? base : `${base}/`;
   return `${b}${segment}/`;
+}
+
+// Get a relative path for a File:
+// - react-dropzone / file-selector sets `.path` on files from a dropped folder, e.g. "/dir/sub/a.txt"
+// - The HTML5 <input webkitdirectory> sets `.webkitRelativePath`, e.g. "dir/sub/a.txt"
+// - Plain <input multiple> or a flat drop has neither — use the file name.
+function relativePathOf(file: File): string {
+  const dz = (file as File & { path?: string }).path;
+  if (dz) return dz.replace(/^\/+/, "");
+  const wk = (file as File & { webkitRelativePath?: string }).webkitRelativePath;
+  if (wk) return wk;
+  return file.name;
 }
 
 async function ensureFolder(
@@ -36,10 +42,8 @@ async function ensureFolder(
       body: JSON.stringify({ path, name }),
     });
   } catch (err) {
-    // Folder may already exist; the server returns 400 "Folder already exists".
     const msg = (err as Error)?.message ?? "";
     if (!/already exists/i.test(msg)) {
-      // Unknown error — rethrow so caller can report.
       throw err;
     }
   }
@@ -102,16 +106,16 @@ export function useUploadFiles(projectId: string) {
   const activeRef = useRef(0);
 
   const upload = useCallback(
-    async (entries: UploadEntry[], basePath: string) => {
-      if (entries.length === 0) return;
+    async (files: File[], basePath: string) => {
+      if (files.length === 0) return;
 
-      const tooLarge = entries.filter((e) => e.file.size > MAX_FILE_SIZE);
-      const valid = entries.filter((e) => e.file.size <= MAX_FILE_SIZE);
+      const tooLarge = files.filter((f) => f.size > MAX_FILE_SIZE);
+      const valid = files.filter((f) => f.size <= MAX_FILE_SIZE);
 
       if (tooLarge.length > 0) {
         toast.error(
           tooLarge.length === 1
-            ? `"${tooLarge[0]!.file.name}" exceeds 50 MB and was skipped.`
+            ? `"${tooLarge[0]!.name}" exceeds 50 MB and was skipped.`
             : `${tooLarge.length} files exceed 50 MB and were skipped.`,
         );
       }
@@ -124,9 +128,10 @@ export function useUploadFiles(projectId: string) {
       let succeeded = 0;
       let failed = 0;
 
-      const runOne = async (entry: UploadEntry) => {
+      const runOne = async (file: File) => {
         try {
-          const parts = entry.relativePath.split("/").filter(Boolean);
+          const rel = relativePathOf(file);
+          const parts = rel.split("/").filter(Boolean);
           const segments = parts.slice(0, -1);
           const targetPath = await ensureFolderChain(
             projectId,
@@ -134,7 +139,7 @@ export function useUploadFiles(projectId: string) {
             segments,
             folderCache,
           );
-          await uploadOne(projectId, entry.file, targetPath);
+          await uploadOne(projectId, file, targetPath);
           succeeded++;
         } catch {
           failed++;
@@ -144,7 +149,6 @@ export function useUploadFiles(projectId: string) {
         }
       };
 
-      // Simple concurrency-limited queue.
       const queue = [...valid];
       const workers: Promise<void>[] = [];
       const worker = async () => {
@@ -165,9 +169,7 @@ export function useUploadFiles(projectId: string) {
 
       if (failed === 0) {
         toast.success(
-          succeeded === 1
-            ? "File uploaded."
-            : `Uploaded ${succeeded} files.`,
+          succeeded === 1 ? "File uploaded." : `Uploaded ${succeeded} files.`,
         );
       } else if (succeeded === 0) {
         toast.error("Upload failed.");
@@ -179,98 +181,4 @@ export function useUploadFiles(projectId: string) {
   );
 
   return { upload, isUploading: pending > 0, pending };
-}
-
-// --- Helpers for extracting UploadEntry[] from pickers and drops ---
-
-export function entriesFromFileList(files: FileList | File[]): UploadEntry[] {
-  const arr: UploadEntry[] = [];
-  const list = Array.from(files as ArrayLike<File>);
-  for (const f of list) {
-    // <input webkitdirectory> sets webkitRelativePath; plain <input multiple> does not.
-    const rel =
-      (f as File & { webkitRelativePath?: string }).webkitRelativePath ||
-      f.name;
-    arr.push({ file: f, relativePath: rel });
-  }
-  return arr;
-}
-
-interface FileSystemEntryLike {
-  isFile: boolean;
-  isDirectory: boolean;
-  name: string;
-  file?: (cb: (f: File) => void, err?: (e: unknown) => void) => void;
-  createReader?: () => {
-    readEntries: (
-      cb: (entries: FileSystemEntryLike[]) => void,
-      err?: (e: unknown) => void,
-    ) => void;
-  };
-}
-
-async function readAllEntries(
-  reader: NonNullable<ReturnType<NonNullable<FileSystemEntryLike["createReader"]>>>,
-): Promise<FileSystemEntryLike[]> {
-  const out: FileSystemEntryLike[] = [];
-  while (true) {
-    const batch = await new Promise<FileSystemEntryLike[]>((resolve, reject) => {
-      reader.readEntries(resolve, reject);
-    });
-    if (batch.length === 0) break;
-    out.push(...batch);
-  }
-  return out;
-}
-
-async function walkEntry(
-  entry: FileSystemEntryLike,
-  prefix: string,
-  out: UploadEntry[],
-): Promise<void> {
-  if (entry.isFile && entry.file) {
-    const file = await new Promise<File>((resolve, reject) => {
-      entry.file!(resolve, reject);
-    });
-    out.push({ file, relativePath: prefix ? `${prefix}/${entry.name}` : entry.name });
-    return;
-  }
-  if (entry.isDirectory && entry.createReader) {
-    const reader = entry.createReader();
-    const children = await readAllEntries(reader);
-    const nextPrefix = prefix ? `${prefix}/${entry.name}` : entry.name;
-    for (const child of children) {
-      await walkEntry(child, nextPrefix, out);
-    }
-  }
-}
-
-export async function entriesFromDataTransfer(
-  dt: DataTransfer,
-): Promise<UploadEntry[]> {
-  const items = dt.items;
-  const out: UploadEntry[] = [];
-
-  // Prefer the entries API (supports folders).
-  if (items && items.length > 0 && typeof (items[0] as DataTransferItem & { webkitGetAsEntry?: unknown }).webkitGetAsEntry === "function") {
-    const entries: FileSystemEntryLike[] = [];
-    for (let i = 0; i < items.length; i++) {
-      const it = items[i]!;
-      if (it.kind !== "file") continue;
-      const entry = (it as DataTransferItem & {
-        webkitGetAsEntry: () => FileSystemEntryLike | null;
-      }).webkitGetAsEntry();
-      if (entry) entries.push(entry);
-    }
-    for (const e of entries) {
-      await walkEntry(e, "", out);
-    }
-    if (out.length > 0) return out;
-  }
-
-  // Fallback to flat FileList.
-  if (dt.files && dt.files.length > 0) {
-    return entriesFromFileList(dt.files);
-  }
-  return out;
 }
