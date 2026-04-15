@@ -4,8 +4,8 @@
  * embeddings without needing direct API key access.
  */
 import type { z } from "zod";
-import { embedMany } from "ai";
-import { getEmbeddingModel } from "@/lib/providers/index.ts";
+import { embed } from "@/lib/openrouter/embed.ts";
+import { getEmbeddingModelId } from "@/lib/providers/index.ts";
 import { isEmbeddingConfigured } from "@/lib/search/vectors.ts";
 import type { CliContext } from "./context.ts";
 import { ok, fail } from "./response.ts";
@@ -19,11 +19,7 @@ export async function handleEmbed(
     return fail("not_configured", "Embedding model is not configured", 503);
   }
 
-  const { embeddings } = await embedMany({
-    model: getEmbeddingModel(),
-    values: input.texts,
-    abortSignal: AbortSignal.timeout(30_000),
-  });
+  const embeddings = await embed(input.texts, { model: getEmbeddingModelId() });
 
   return ok({
     embeddings,

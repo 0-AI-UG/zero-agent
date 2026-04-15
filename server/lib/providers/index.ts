@@ -1,9 +1,12 @@
 import { getSetting } from "@/lib/settings.ts";
 import { getModelById } from "@/db/queries/models.ts";
 import { log } from "@/lib/utils/logger.ts";
-import type { InferenceProvider, SpecializedKind } from "@/lib/providers/types.ts";
+import type {
+  InferenceProvider,
+  OpenRouterRouting,
+  SpecializedKind,
+} from "@/lib/providers/types.ts";
 import { openrouterProvider } from "@/lib/providers/openrouter.ts";
-import { codexProvider } from "@/lib/providers/codex.ts";
 
 const provLog = log.child({ module: "providers" });
 
@@ -11,7 +14,6 @@ const provLog = log.child({ module: "providers" });
 
 const PROVIDERS: Record<string, InferenceProvider> = {
   [openrouterProvider.id]: openrouterProvider,
-  [codexProvider.id]: codexProvider,
 };
 
 export function registerProvider(provider: InferenceProvider): void {
@@ -71,42 +73,52 @@ function withCapability<K extends keyof InferenceProvider["capabilities"]>(capab
   return PROVIDERS[FALLBACK_PROVIDER_ID]!;
 }
 
-// ── Re-exports matching the old openrouter.ts surface ──
+// ── ID resolver surface (replaces the old AI-SDK-typed re-exports) ──
 
-export function getChatModel() {
-  return getActiveProvider().getChatModel();
+export function getChatModelId(): string {
+  return getActiveProvider().getChatModelId();
 }
 
-export function createChatModel(modelId: string) {
-  return getProviderForModel(modelId).getChatModel(modelId);
+export function resolveChatModelId(modelId: string): string {
+  return getProviderForModel(modelId).getChatModelId(modelId);
 }
 
-export function getImageModel(modelId?: string) {
-  return withCapability("image").getImageModel(modelId);
+export function getImageModelId(modelId?: string): string {
+  return withCapability("image").getImageModelId(modelId);
 }
 
-export function getVisionModel() {
-  return withCapability("vision").getVisionModel();
+export function getVisionModelId(modelId?: string): string {
+  return withCapability("vision").getVisionModelId(modelId);
 }
 
-export function getEmbeddingModel() {
-  return withCapability("embedding").getEmbeddingModel();
+export function getEmbeddingModelId(modelId?: string): string {
+  return withCapability("embedding").getEmbeddingModelId(modelId);
 }
 
-export function getEnrichModel() {
-  return getActiveProvider().getSpecializedChatModel("enrich");
+export function getEnrichModelId(): string {
+  return getActiveProvider().getSpecializedChatModelId("enrich");
 }
 
-export function getExtractModel() {
-  return getActiveProvider().getSpecializedChatModel("extract");
+export function getExtractModelId(): string {
+  return getActiveProvider().getSpecializedChatModelId("extract");
 }
 
-export function getEditApplyModel() {
-  return getActiveProvider().getSpecializedChatModel("edit-apply");
+export function getEditApplyModelId(): string {
+  return getActiveProvider().getSpecializedChatModelId("edit-apply");
 }
 
-export function getSearchParseModel() {
-  return getActiveProvider().getSpecializedChatModel("search-parse");
+export function getSearchParseModelId(): string {
+  return getActiveProvider().getSpecializedChatModelId("search-parse");
 }
 
-export type { InferenceProvider, SpecializedKind };
+/**
+ * Per-model OpenRouter routing config (`{ order, allow_fallbacks }`) parsed
+ * from the model row's `provider_config` column. Callers merge this into
+ * `callModel({ provider: routing })`.
+ */
+export function getRoutingForModel(modelId: string): OpenRouterRouting | undefined {
+  const provider = getProviderForModel(modelId);
+  return provider.getRoutingForModel?.(modelId);
+}
+
+export type { InferenceProvider, OpenRouterRouting, SpecializedKind };

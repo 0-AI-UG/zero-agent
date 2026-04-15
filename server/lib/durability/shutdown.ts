@@ -1,4 +1,4 @@
-import { requestAbort } from "@/lib/http/resumable-stream.ts";
+import { requestAbort } from "@/lib/http/chat-aborts.ts";
 import { log } from "@/lib/utils/logger.ts";
 
 const shutdownLog = log.child({ module: "shutdown" });

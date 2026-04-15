@@ -29,7 +29,7 @@ import {
   SidebarFooter,
   useSidebar,
 } from "@/components/ui/sidebar";
-import { Loader } from "@/components/ai/loader";
+import { Loader } from "@/components/chat-ui/Loader";
 import {
   CheckIcon,
   ChevronLeftIcon,
@@ -58,7 +58,7 @@ import { cn } from "@/lib/utils";
 import { useState, useEffect, useMemo } from "react";
 import { useModelStore, type ModelConfig } from "@/stores/model";
 import { useModels } from "@/api/models";
-import { ModelSelectorLogo } from "@/components/ai/model-selector";
+import { ModelLogo } from "@/components/chat-ui/ModelLogo";
 import { useFilesStore } from "@/stores/files-store";
 import { useRealtime } from "@/hooks/use-realtime";
 import { InstallBanner } from "@/components/InstallBanner";
@@ -134,7 +134,7 @@ function MobileModelDropdown() {
                 onClick={() => setSelectedModelId(model.id)}
                 className="flex items-center gap-2.5"
               >
-                <ModelSelectorLogo provider={model.provider as any} className="size-3.5 shrink-0" />
+                <ModelLogo provider={model.provider} className="size-3.5 shrink-0" />
                 <span className="flex-1 truncate text-sm">{model.name}</span>
                 {model.id === selectedModelId && (
                   <CheckIcon className="size-3.5 shrink-0 text-primary" />
@@ -382,8 +382,6 @@ function ProjectSidebar({
                 const chatViewers = presence.filter(
                   (u) => u.chatId === chat.id && u.userId !== currentUserId,
                 );
-                const hasStreaming = chatViewers.some((u) => u.isStreaming) ||
-                  presence.some((u) => u.chatId === chat.id && u.isStreaming);
 
                 return (
                   <SidebarMenuItem key={chat.id}>
@@ -405,9 +403,9 @@ function ProjectSidebar({
                           </span>
                         )}
                       </div>
-                      {(chatViewers.length > 0 || hasStreaming) && (
+                      {chatViewers.length > 0 && (
                         <span
-                          className={`w-1.5 h-1.5 rounded-full shrink-0 ${hasStreaming ? "bg-green-500 animate-pulse" : "bg-muted-foreground/40"}`}
+                          className="w-1.5 h-1.5 rounded-full shrink-0 bg-muted-foreground/40"
                           title={chatViewers.map((u) => u.username).join(", ")}
                         />
                       )}

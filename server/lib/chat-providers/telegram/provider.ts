@@ -13,7 +13,8 @@
  *    replies can resolve the right pending response.
  */
 import sharp from "sharp";
-import { generateText, type ModelMessage } from "ai";
+import type { Message } from "@/lib/messages/types.ts";
+import { getOpenRouterClient } from "@/lib/openrouter/client.ts";
 
 import {
   sendTelegramText,
@@ -29,7 +30,7 @@ import {
   type TelegramCallbackQuery,
 } from "@/lib/telegram-global/telegram.ts";
 import { isModelMultimodal } from "@/config/models.ts";
-import { getActiveProvider, getVisionModel } from "@/lib/providers/index.ts";
+import { getActiveProvider, getVisionModelId } from "@/lib/providers/index.ts";
 import {
   getBotToken,
   getBotInfoSync,
@@ -58,7 +59,7 @@ import {
 } from "@/lib/chat-providers/index.ts";
 
 import { runAgentStepBatch } from "@/lib/agent-step/index.ts";
-import { dbMessagesToModelMessages } from "@/lib/agent-step/serialize.ts";
+import { dbMessagesToMessages } from "@/lib/agent-step/serialize.ts";
 import {
   getProjectById,
   getVisibleProjectsForUser,
@@ -432,17 +433,30 @@ async function runAgentTurn(
     if (imageData) {
       if (!isModelMultimodal(chatModelId)) {
         try {
-          const { text: caption } = await generateText({
-            model: getVisionModel(),
-            messages: [{
-              role: "user",
-              content: [
-                { type: "text", text: "Describe this image in detail. Include all visible text, layout, colors, and key elements." },
-                { type: "image", image: imageData.base64, mediaType: imageData.mediaType },
+          // Vision call: openrouter-sdk chat.send with an image part.
+          const client = getOpenRouterClient();
+          const visionModel = getVisionModelId();
+          const res = await client.chat.send({
+            chatRequest: {
+              model: visionModel,
+              messages: [
+                {
+                  role: "user",
+                  content: [
+                    { type: "text", text: "Describe this image in detail. Include all visible text, layout, colors, and key elements." },
+                    {
+                      type: "image_url",
+                      imageUrl: { url: `data:${imageData.mediaType};base64,${imageData.base64}` },
+                    },
+                  ] as any,
+                } as any,
               ],
-            }],
-          });
-          imageCaption = caption;
+            },
+          } as any);
+          const caption =
+            (res as any)?.choices?.[0]?.message?.content ??
+            (typeof (res as any)?.output_text === "string" ? (res as any).output_text : "");
+          imageCaption = typeof caption === "string" ? caption : "";
           imageData = null;
           tgLog.info("captioned telegram image for non-vision model", {
             chatModelId,
@@ -471,17 +485,16 @@ async function runAgentTurn(
 
     // Replay prior history.
     const dbMessages = getMessagesStmt.all(chatId) as MessageRow[];
-    const messages: ModelMessage[] = dbMessagesToModelMessages(dbMessages);
+    const messages: Message[] = dbMessagesToMessages(dbMessages);
 
-    if (imageData) {
-      const contentParts: any[] = [
-        { type: "image", image: imageData.base64, mimeType: imageData.mediaType },
-      ];
-      if (userText) contentParts.push({ type: "text", text: userText });
-      messages.push({ role: "user", content: contentParts });
-    } else {
-      messages.push({ role: "user", content: userText });
-    }
+    // Append the current user turn. Images are currently carried via the
+    // captioning path above (which folds them into userText); a future
+    // enhancement will add native image parts to canonical Messages.
+    messages.push({
+      id: generateId(),
+      role: "user",
+      parts: [{ type: "text", text: userText }],
+    });
 
     // Persist user message immediately.
     const userMsgId = generateId();

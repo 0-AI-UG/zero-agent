@@ -1,10 +1,7 @@
-import { useRealtimeStore, type PresenceUser } from "@/stores/realtime";
+import { useRealtimeStore } from "@/stores/realtime";
 import { useAuthStore } from "@/stores/auth";
 
-/**
- * Minimal presence dots - shown inline, not as a bar.
- * Shows small colored dots for users viewing this chat.
- */
+/** Minimal presence dots — shown inline next to a chat title. */
 export function PresenceDots({ chatId }: { chatId: string }) {
   const presence = useRealtimeStore((s) => s.presence);
   const currentUserId = useAuthStore((s) => s.user?.id);
@@ -20,7 +17,7 @@ export function PresenceDots({ chatId }: { chatId: string }) {
       {viewers.slice(0, 4).map((user) => (
         <span
           key={user.userId}
-          className={`w-2 h-2 rounded-full ${user.isStreaming ? "bg-green-500 animate-pulse" : "bg-muted-foreground/40"}`}
+          className="w-2 h-2 rounded-full bg-muted-foreground/40"
           title={user.username}
         />
       ))}
@@ -28,20 +25,7 @@ export function PresenceDots({ chatId }: { chatId: string }) {
   );
 }
 
-/**
- * Returns the user who is currently streaming in this chat (if not the current user).
- */
-export function useSpectatingUser(chatId: string): PresenceUser | undefined {
-  const presence = useRealtimeStore((s) => s.presence);
-  const currentUserId = useAuthStore((s) => s.user?.id);
-  return presence.find(
-    (u) => u.chatId === chatId && u.isStreaming && u.userId !== currentUserId,
-  );
-}
-
-/**
- * Returns users currently typing in this chat (excluding current user).
- */
+/** Returns users currently typing in this chat (excluding current user). */
 export function useTypingUsers(chatId: string) {
   const typing = useRealtimeStore((s) => s.typing);
   const currentUserId = useAuthStore((s) => s.user?.id);

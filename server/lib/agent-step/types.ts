@@ -1,4 +1,4 @@
-import type { UIMessage, ModelMessage } from "ai";
+import type { Message } from "@/lib/messages/types.ts";
 
 export interface AgentStepBase {
   project: { id: string; name: string };
@@ -35,20 +35,10 @@ export interface AgentStepBase {
  * - Auto-title is applied by the post-run hook, which re-reads the chat.
  */
 export interface StreamingStepInput extends AgentStepBase {
-  messages: UIMessage[];
+  messages: Message[];
   username?: string;
   abortSignal: AbortSignal;
   streamId: string;
-  /**
-   * Overrides the `userId` used when broadcasting `stream.started` over
-   * the WebSocket. Defaults to the agent-side `userId`. Server-initiated
-   * streams (e.g. background-completion resumes) pass a sentinel so the
-   * original user's client doesn't treat the broadcast as self and
-   * actually resumes the stream.
-   */
-  notifyAsUserId?: string;
-  /** Paired override for `notifyStreamStarted`'s username. */
-  notifyAsUsername?: string;
 }
 
 /**
@@ -60,8 +50,8 @@ export interface StreamingStepInput extends AgentStepBase {
 export interface BatchStepInput extends AgentStepBase {
   /** Prompt text used for RAG retrieval seeding (autonomous) and/or the agent generate() call. */
   prompt?: string;
-  /** Pre-built ModelMessage[] (telegram replays history). Mutually exclusive with `prompt`. */
-  messages?: ModelMessage[];
+  /** Pre-built Message[] (telegram replays history). Mutually exclusive with `prompt`. */
+  messages?: Message[];
   /** Extra context injected after the prompt (e.g., HEARTBEAT.md, retrieved files). */
   contextBlock?: string;
   /** Task name, used for logging and checkpoint metadata. */

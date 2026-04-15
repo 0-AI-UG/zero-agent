@@ -2,19 +2,18 @@
  * Per-container Unix socket proxy.
  *
  * For each managed container we create one Unix socket under
- * $ZERO_RUNNER_SOCKET_DIR/<name>/sock and expose it inside the session
- * container at /run/zero/sock. Two transport shapes are supported:
+ * $ZERO_RUNNER_SOCKET_DIR/<name>/sock and bind-mount its parent
+ * directory into the session container at /run/zero, exposing the
+ * socket to in-container tools at /run/zero/sock.
  *
- *  1. **Named-volume mode** (portable across macOS and Linux). When the
- *     runner runs inside a container and $ZERO_RUNNER_SOCKET_VOLUME is
- *     set, the session container mounts that same named volume with
- *     `VolumeOptions.Subpath = <name>` at /run/zero — so each session
- *     only sees its own socket, and both ends of the bind live in the
- *     Linux VM kernel (no macOS virtiofs AF_UNIX breakage).
- *
- *  2. **Host bind-mount mode** (legacy; Linux host dev). When
- *     $ZERO_RUNNER_SOCKET_VOLUME is unset, the runner bind-mounts the
- *     per-container socket file directly into the session container.
+ * When the runner itself runs inside a container, the runner's
+ * SOCKET_DIR is normally backed by a named Docker volume (so the files
+ * live inside the Linux VM kernel, which keeps AF_UNIX sockets
+ * connectable across Docker Desktop / OrbStack / plain Linux). The
+ * runner resolves that volume's host Mountpoint at startup and hands
+ * `<mountpoint>/<container-name>` to dockerd as a plain bind source for
+ * each session — universally supported, unlike VolumeOptions.Subpath
+ * which requires Docker ≥ 25.
  *
  * Identity is established by the mount itself: each socket's HTTP
  * handler closes over its container name, so we never need to inspect
@@ -33,11 +32,6 @@ const sockLog = log.child({ module: "socket-proxy" });
 
 export const SOCKET_DIR =
   process.env.ZERO_RUNNER_SOCKET_DIR ?? "/var/run/zero-runner";
-
-/** Per-session subdir, relative to SOCKET_DIR. Matches VolumeOptions.Subpath. */
-export function socketSubpathFor(containerName: string): string {
-  return containerName;
-}
 
 /** Absolute path to the socket file as seen by the runner process. */
 export function socketPathFor(containerName: string): string {

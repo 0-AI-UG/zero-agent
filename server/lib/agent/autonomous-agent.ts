@@ -1,6 +1,5 @@
-import { generateId } from "ai";
 import { createAutonomousChat, touchChat } from "@/db/queries/chats.ts";
-import { db } from "@/db/index.ts";
+import { db, generateId } from "@/db/index.ts";
 import { loadCompactionState, deleteCompactionState } from "@/lib/conversation/compaction-state.ts";
 import { flushLearnings } from "@/lib/conversation/memory-flush.ts";
 import { log } from "@/lib/utils/logger.ts";

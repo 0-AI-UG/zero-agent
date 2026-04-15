@@ -1,20 +1,12 @@
 /**
- * Pending approvals store.
+ * Pending sync-approval store.
  *
- * Holds the *authoritative* status for every sync_approval the client has
- * seen, keyed by sync id (which is the `pending_responses` row id on the
- * server). Sources that feed the store:
- *
- *  - SyncApproval mount: if a tool-part carries `status: "awaiting"`, the
- *    component fetches the live status via `GET /api/sync/:id` and seeds
- *    the store - fixes stale-on-reload for syncs resolved in a prior tab.
- *  - `postSyncVerdict` response: echoes the resolved state.
- *  - WS `sync.resolved` events from the realtime hook.
- *
- * The tool-part's persisted `output.sync.status` remains the fallback when
- * the store has no entry (first paint before the API call lands).
+ * One map keyed by sync id. Proposals arrive via `chat.sync.created` on
+ * viewChat, and statuses update via `sync.resolved`. No HTTP fetches — the
+ * server pushes everything over WS.
  */
 import { create } from "zustand";
+import type { SyncChangeMeta } from "@/api/sync";
 
 export type SyncUiStatus =
   | "awaiting"
@@ -23,29 +15,38 @@ export type SyncUiStatus =
   | "expired"
   | "cancelled";
 
+export interface PendingSyncProposal {
+  id: string;
+  chatId: string;
+  source?: string;
+  status: SyncUiStatus;
+  changes?: SyncChangeMeta[];
+}
+
 interface PendingApprovalsState {
-  statuses: Record<string, SyncUiStatus>;
+  byId: Record<string, PendingSyncProposal>;
   setStatus: (id: string, status: SyncUiStatus) => void;
-  getStatus: (id: string) => SyncUiStatus | undefined;
+  upsertProposal: (proposal: PendingSyncProposal) => void;
   clear: (id: string) => void;
 }
 
-export const usePendingApprovalsStore = create<PendingApprovalsState>(
-  (set, get) => ({
-    statuses: {},
-    setStatus: (id, status) =>
-      set((s) =>
-        s.statuses[id] === status
-          ? s
-          : { statuses: { ...s.statuses, [id]: status } },
-      ),
-    getStatus: (id) => get().statuses[id],
-    clear: (id) =>
-      set((s) => {
-        if (!(id in s.statuses)) return s;
-        const next = { ...s.statuses };
-        delete next[id];
-        return { statuses: next };
-      }),
-  }),
-);
+export const usePendingApprovalsStore = create<PendingApprovalsState>((set) => ({
+  byId: {},
+  setStatus: (id, status) =>
+    set((s) => {
+      const existing = s.byId[id];
+      if (!existing || existing.status === status) return s;
+      return { byId: { ...s.byId, [id]: { ...existing, status } } };
+    }),
+  upsertProposal: (proposal) =>
+    set((s) => ({
+      byId: { ...s.byId, [proposal.id]: { ...s.byId[proposal.id], ...proposal } },
+    })),
+  clear: (id) =>
+    set((s) => {
+      if (!(id in s.byId)) return s;
+      const byId = { ...s.byId };
+      delete byId[id];
+      return { byId };
+    }),
+}));

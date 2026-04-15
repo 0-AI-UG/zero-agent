@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { tool } from "ai";
+import { tool } from "@openrouter/sdk/lib/tool.js";
 import { ensureBackend } from "@/lib/execution/lifecycle.ts";
 import { writeToS3, readFromS3, deleteFromS3, writeStreamToS3 } from "@/lib/s3.ts";
 import { insertFile, getFileByS3Key, deleteFile as deleteFileRecord } from "@/db/queries/files.ts";
@@ -373,8 +373,9 @@ export function createCodeTools(
     return backend;
   }
 
-  return {
-    bash: tool({
+  return [
+    tool({
+      name: "bash",
       description:
         "Run a bash command in the project workspace. The `zero` CLI is preinstalled - run `zero --help` to discover commands. Changed files auto-sync back. Output truncated to ~8KB.",
       inputSchema: z.object({
@@ -382,7 +383,7 @@ export function createCodeTools(
         timeout: z.number().optional().describe("Timeout in ms (default 120000, max 300000)"),
         background: z.boolean().optional().describe("Run the command as a background process. Returns immediately with the PID. Use for long-running servers and processes that should keep running."),
       }),
-      execute: async function* ({ command, timeout, background }) {
+      execute: async ({ command, timeout, background }) => {
         toolLog.info("bash", { userId, projectId, command, background });
 
         try {
@@ -399,8 +400,7 @@ export function createCodeTools(
 
           if (!result || typeof result !== "object") {
             toolLog.error("bash: backend returned invalid result", null, { userId, projectId, result });
-            yield { error: `Backend returned invalid result: ${JSON.stringify(result)}` };
-            return;
+            return { error: `Backend returned invalid result: ${JSON.stringify(result)}` };
           }
           toolLog.info("bash result", {
             userId,
@@ -424,8 +424,7 @@ export function createCodeTools(
 
           // Background processes skip file sync entirely
           if (background) {
-            yield baseOutput;
-            return;
+            return baseOutput;
           }
 
           // Kick off blob-dir persistence (debounced, non-blocking)
@@ -439,11 +438,10 @@ export function createCodeTools(
           );
 
           if (changes.length === 0) {
-            yield {
+            return {
               ...baseOutput,
               ...(buildErrors.length > 0 ? { warning: formatErrors(buildErrors) } : {}),
             };
-            return;
           }
 
           // Look up the project's gating preference at execute time so toggling
@@ -452,18 +450,21 @@ export function createCodeTools(
           const gated = project?.sync_gating_enabled !== 0;
 
           if (!gated) {
-            // Auto-apply, yield final result
+            // Auto-apply and return
             const { applied, applyErrors } = await commitSyncChanges(projectId, changes);
             const allErrors = [...buildErrors, ...applyErrors];
-            yield {
+            return {
               ...baseOutput,
               syncedFiles: applied,
               ...(allErrors.length > 0 ? { warning: formatErrors(allErrors) } : {}),
             };
-            return;
           }
 
-          // Gated: register pending sync, yield awaiting state, await verdict
+          // Gated: register pending sync and await verdict.
+          // TODO phase 1 follow-up: the former implementation yielded an
+          // intermediate "awaiting" state so the UI could render pending
+          // changes. Under the items-stream model that signal will flow through
+          // chat-bus sync events, not the tool's return value.
           const { id: syncId, verdict } = registerPendingSync({
             projectId,
             userId,
@@ -472,23 +473,12 @@ export function createCodeTools(
             changes,
           });
 
-          yield {
-            ...baseOutput,
-            sync: {
-              id: syncId,
-              status: "awaiting" as const,
-              changes: changes.map(({ kind, path: p, sizeBytes, isBinary }) => ({
-                kind, path: p, sizeBytes, isBinary,
-              })),
-            },
-          };
-
           const decision = await verdict;
 
           if (decision === "approve") {
             const { applied, applyErrors } = await commitSyncChanges(projectId, changes);
             const allErrors = [...buildErrors, ...applyErrors];
-            yield {
+            return {
               ...baseOutput,
               sync: {
                 id: syncId,
@@ -497,13 +487,12 @@ export function createCodeTools(
               },
               ...(allErrors.length > 0 ? { warning: formatErrors(allErrors) } : {}),
             };
-            return;
           }
 
           // Rejected - revert the sandbox so it matches project storage again
           toolLog.info("sync discarded - reverting sandbox", { userId, projectId, syncId, changeCount: changes.length });
           const revertErrors = await revertSandboxChanges(projectId);
-          yield {
+          return {
             ...baseOutput,
             sync: {
               id: syncId,
@@ -516,9 +505,9 @@ export function createCodeTools(
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           toolLog.error("bash failed", err, { userId });
-          yield { error: message };
+          return { error: message };
         }
       },
     }),
-  };
+  ];
 }

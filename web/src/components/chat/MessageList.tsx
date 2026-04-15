@@ -1,0 +1,139 @@
+import { Link } from "react-router";
+import { AlertCircleIcon, RefreshCcwIcon } from "lucide-react";
+import { useCallback, useRef, type ReactNode } from "react";
+import type { Message } from "@/lib/messages";
+import { Button } from "@/components/ui/button";
+import { ConversationEmptyState } from "@/components/chat-ui/Conversation";
+import { MessageShell } from "@/components/chat-ui/MessageShell";
+import { Shimmer } from "@/components/chat-ui/Shimmer";
+import { Suggestion } from "@/components/chat-ui/Suggestion";
+import { MessageRow } from "./MessageRow";
+import logoSvg from "@/logo-mark.svg";
+
+interface MessageListProps {
+  messages: Message[];
+  projectId: string;
+  chatId: string;
+  isStreaming: boolean;
+  error: Error | undefined;
+  memberMap: Map<string, string>;
+  isMultiMember: boolean;
+  regenerate: (messageId?: string) => void;
+  project: { assistantName?: string; assistantDescription?: string } | undefined;
+  starterSuggestions: Array<{ text: string; icon: ReactNode; description: string }>;
+  onSuggestion: (suggestion: string) => void;
+}
+
+/**
+ * Shimmer shows only while streaming AND the assistant has nothing yet
+ * (or is actively compacting). Once the assistant has produced parts,
+ * each part's own component (ToolCard, streaming Markdown, …) owns the
+ * activity indicator — no second shimmer below.
+ */
+function shimmerLabel(messages: Message[], isStreaming: boolean): string | null {
+  if (!isStreaming) return null;
+  const last = messages.at(-1);
+  if (!last || last.role !== "assistant") return "Thinking";
+  if (last.metadata?.compacting) return "Compacting conversation";
+  if (last.parts.length === 0) return "Thinking";
+  return null;
+}
+
+export function MessageList({
+  messages,
+  projectId,
+  chatId,
+  isStreaming,
+  error,
+  memberMap,
+  isMultiMember,
+  regenerate,
+  project,
+  starterSuggestions,
+  onSuggestion,
+}: MessageListProps) {
+  const handleCopy = useCallback((text: string) => {
+    navigator.clipboard.writeText(text);
+  }, []);
+
+  const regenerateRef = useRef(regenerate);
+  regenerateRef.current = regenerate;
+  const stableRegenerate = useCallback(
+    (messageId?: string) => regenerateRef.current(messageId),
+    [],
+  );
+
+  const label = shimmerLabel(messages, isStreaming);
+
+  return (
+    <>
+      {messages.length === 0 && (
+        <div className="flex flex-col items-center justify-center flex-1 min-h-[60vh] gap-4">
+          <ConversationEmptyState
+            className="flex-none"
+            icon={<img src={logoSvg} alt="Zero Agent" className="size-10" />}
+            title={project?.assistantName ?? "Zero Agent"}
+            description={
+              project?.assistantDescription ??
+              "Ask me anything - I can browse the web, manage files, run code, and automate tasks."
+            }
+          />
+          <div className="flex justify-center pb-4">
+            <div className="flex flex-wrap justify-center gap-2">
+              {starterSuggestions.map((s) => (
+                <Suggestion
+                  key={s.text}
+                  suggestion={s.text}
+                  description={s.description}
+                  onClick={onSuggestion}
+                />
+              ))}
+            </div>
+          </div>
+          <Link
+            to={`/projects/${projectId}/settings`}
+            className="text-xs text-muted-foreground underline hover:text-foreground transition-colors"
+          >
+            Customize agent
+          </Link>
+        </div>
+      )}
+
+      {messages.map((message, index) => (
+        <MessageRow
+          key={message.id}
+          message={message}
+          projectId={projectId}
+          chatId={chatId}
+          isLastMessage={index === messages.length - 1}
+          isStreaming={isStreaming}
+          memberMap={memberMap}
+          isMultiMember={isMultiMember}
+          onCopy={handleCopy}
+          onRegenerate={stableRegenerate}
+        />
+      ))}
+
+      {label && (
+        <MessageShell role="assistant">
+          <Shimmer className="text-sm" duration={1.5}>
+            {label}
+          </Shimmer>
+        </MessageShell>
+      )}
+
+      {error && !isStreaming && (
+        <MessageShell role="assistant">
+          <div className="flex items-center gap-3 text-destructive text-sm">
+            <AlertCircleIcon className="size-4 shrink-0" />
+            <span>Something went wrong.</span>
+            <Button variant="outline" size="sm" onClick={() => stableRegenerate()}>
+              <RefreshCcwIcon className="size-3.5" />
+              Retry
+            </Button>
+          </div>
+        </MessageShell>
+      )}
+    </>
+  );
+}

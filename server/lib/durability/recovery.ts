@@ -1,7 +1,8 @@
-import { generateId } from "ai";
+import { generateId } from "@/db/index.ts";
 import { getActiveCheckpoints, deleteCheckpoint } from "@/lib/durability/checkpoint.ts";
 import { saveChatMessages } from "@/db/queries/messages.ts";
 import { touchChat } from "@/db/queries/chats.ts";
+import { checkpointEntriesToMessages } from "@/lib/messages/converters.ts";
 import { log } from "@/lib/utils/logger.ts";
 
 const recoveryLog = log.child({ module: "recovery" });
@@ -31,14 +32,9 @@ export function recoverInterruptedRuns(): void {
     }
 
     try {
-      // The checkpoint messages are UIMessage[] stored as JSON
-      const messages = cp.messages as Array<{
-        id: string;
-        role: string;
-        parts?: Array<{ type: string; text?: string }>;
-      }>;
+      const messages = checkpointEntriesToMessages(cp.messages);
 
-      if (!Array.isArray(messages) || messages.length === 0) {
+      if (messages.length === 0) {
         recoveryLog.debug("skipping empty checkpoint", { runId: cp.runId, chatId: cp.chatId });
         continue;
       }
@@ -55,7 +51,12 @@ export function recoverInterruptedRuns(): void {
         cp.projectId,
         cp.chatId,
         [...messages, interruptedMsg]
-          .filter((m) => m.id && (m.parts?.length ?? 0) > 0)
+          .filter(
+            (m) =>
+              (m.role === "user" || m.role === "assistant") &&
+              m.id &&
+              (m.parts?.length ?? 0) > 0,
+          )
           .map((m) => ({
             id: m.id,
             role: m.role,

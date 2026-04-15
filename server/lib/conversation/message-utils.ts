@@ -1,6 +1,6 @@
-import type { UIMessage } from "ai";
+import type { Message } from "@/lib/messages/types.ts";
 
-export function extractTextFromMessage(message: UIMessage): string {
+export function extractTextFromMessage(message: Message): string {
   if (Array.isArray(message.parts)) {
     return message.parts
       .filter((p): p is { type: "text"; text: string } => p.type === "text")
@@ -10,7 +10,7 @@ export function extractTextFromMessage(message: UIMessage): string {
   return "";
 }
 
-export function extractConversationText(messages: UIMessage[], lastN = 10): string {
+export function extractConversationText(messages: Message[], lastN = 10): string {
   return messages
     .slice(-lastN)
     .map((m) => `${m.role}: ${extractTextFromMessage(m)}`)

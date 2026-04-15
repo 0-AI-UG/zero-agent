@@ -8,7 +8,7 @@ import { executeAction, type RefMap, type CursorState, type SnapshotCache } from
 import { touchMarker, listFiles, detectChanges, readFiles, writeFiles, deleteFiles, saveSystemSnapshot, saveSystemSnapshotStream, restoreSystemSnapshot, restoreSystemSnapshotStream, detectBlobDirs, tarWorkspaceDir, tarWorkspaceDirStream, untarWorkspaceDir, untarWorkspaceDirStream, manifest as filesManifest, STATIC_BLOB_DIRS } from "./files.ts";
 import { fetchWithTimeout } from "./deferred.ts";
 import { log } from "./logger.ts";
-import { startSocketServer, stopSocketServer, socketPathFor, socketSubpathFor, ensureSocketDir } from "./socket-proxy.ts";
+import { startSocketServer, stopSocketServer, socketPathFor, ensureSocketDir, SOCKET_DIR } from "./socket-proxy.ts";
 import type { DockerMount } from "./docker-client.ts";
 import type * as http from "node:http";
 import type { BrowserAction, BrowserResult, ContainerInfo, ExecResult } from "./types.ts";
@@ -30,14 +30,15 @@ const CONTAINER_SOCKET_DIR = "/run/zero";
 const CONTAINER_SOCKET_PATH = `${CONTAINER_SOCKET_DIR}/sock`;
 
 /**
- * Name of the Docker named volume holding per-container socket subdirs.
- * When set, session containers receive a VolumeOptions.Subpath mount of
- * this volume instead of a host bind-mount — this is the only mode that
- * works on Docker Desktop for macOS, because AF_UNIX endpoints on
- * bind-mounted macOS files aren't connectable from inside the Linux VM.
- * When unset, we fall back to the legacy host bind-mount (Linux host dev).
+ * Name of the Docker named volume holding per-container socket subdirs
+ * when the runner itself is containerized. May be set explicitly via
+ * ZERO_RUNNER_SOCKET_VOLUME, or auto-detected from the runner's own
+ * mounts (whichever volume is mounted at SOCKET_DIR). When resolved, the
+ * runner bind-mounts a subdirectory of the volume's host Mountpoint into
+ * each session at CONTAINER_SOCKET_DIR — this works on every Docker
+ * version, unlike VolumeOptions.Subpath which requires Docker ≥ 25.
  */
-const SOCKET_VOLUME = process.env.ZERO_RUNNER_SOCKET_VOLUME;
+const SOCKET_VOLUME_ENV = process.env.ZERO_RUNNER_SOCKET_VOLUME;
 
 interface ContainerState {
   name: string;
@@ -70,6 +71,14 @@ export class ContainerManager {
   private latestScreenshots = new Map<string, { base64: string; title: string; url: string; timestamp: number }>();
   /** When the runner is itself containerized, this holds its container ID so it can join session networks. */
   private selfContainerId: string | null = null;
+  /**
+   * Host-side path that backs SOCKET_DIR inside the runner. When the
+   * runner is containerized with a named volume at SOCKET_DIR, this is
+   * the volume's Mountpoint on the Docker daemon host, which we can hand
+   * to the daemon as a plain bind source for session containers. When
+   * the runner runs on the host, this equals SOCKET_DIR itself.
+   */
+  private hostSocketDir: string = SOCKET_DIR;
 
   async waitForDocker(maxWaitMs = 30_000): Promise<boolean> {
     mgrLog.info("waiting for Docker daemon", { maxWaitMs });
@@ -169,28 +178,17 @@ export class ContainerManager {
     const baseEnv = opts?.env ?? [];
     const env = [...baseEnv, `ZERO_PROXY_URL=unix:${CONTAINER_SOCKET_PATH}`];
 
-    // Pick the socket transport shape. SOCKET_VOLUME implies we're a
-    // containerized runner sharing a named volume with sessions; otherwise
-    // we fall back to a plain host bind-mount of the socket file.
-    let mounts: DockerMount[] | undefined;
-    let binds: string[] | undefined;
-    if (SOCKET_VOLUME) {
-      mounts = [
-        {
-          Type: "volume",
-          Source: SOCKET_VOLUME,
-          Target: CONTAINER_SOCKET_DIR,
-          VolumeOptions: { Subpath: socketSubpathFor(name) },
-        },
-      ];
-    } else {
-      const hostSocketPath = socketPathFor(name);
-      // Host bind-mount the whole per-container directory (not just the
-      // file) so the runner can re-create the socket without the bind
-      // losing track of it.
-      const hostDir = hostSocketPath.replace(/\/sock$/, "");
-      binds = [`${hostDir}:${CONTAINER_SOCKET_DIR}`];
-    }
+    // Bind-mount the per-session socket directory into the session at
+    // CONTAINER_SOCKET_DIR. `hostSocketDir` is the host-daemon-visible
+    // path (resolved once at startup — either the runner's own host
+    // SOCKET_DIR or the Mountpoint of the named volume mounted there).
+    // We avoid VolumeOptions.Subpath because it requires Docker ≥ 25 and
+    // silently misbehaves on older/quirky daemons (Hetzner default
+    // Debian package, some OrbStack versions). Plain host-path binds
+    // work everywhere.
+    const sessionHostDir = `${this.hostSocketDir}/${name}`;
+    const binds = [`${sessionHostDir}:${CONTAINER_SOCKET_DIR}`];
+    const mounts: DockerMount[] | undefined = undefined;
 
     try {
       await docker.removeContainer(name).catch(() => {});
@@ -659,7 +657,9 @@ list(): ContainerInfo[] {
 
   /**
    * Detect whether the runner is itself running inside a Docker container.
-   * If so, store the container ID so we can join session networks.
+   * If so, store the container ID so we can join session networks, and
+   * resolve the host-side path backing SOCKET_DIR so we can hand it to
+   * dockerd as a plain bind source for session containers.
    */
   private async detectSelfContainer(): Promise<void> {
     try {
@@ -670,10 +670,55 @@ list(): ContainerInfo[] {
       if (hostname && await docker.isContainerRunning(hostname)) {
         this.selfContainerId = hostname;
         mgrLog.info("runner is containerized", { containerId: hostname });
+        await this.resolveHostSocketDir(hostname);
         return;
       }
     } catch {}
-    mgrLog.info("runner is running on host (not containerized)");
+    mgrLog.info("runner is running on host (not containerized)", { hostSocketDir: this.hostSocketDir });
+  }
+
+  /**
+   * Figure out the host-side path that backs SOCKET_DIR inside the
+   * runner. Preference order:
+   *   1. The named volume from the runner's own Mounts whose
+   *      Destination equals SOCKET_DIR → use its host Mountpoint.
+   *   2. A bind-mount at SOCKET_DIR → use its host Source.
+   *   3. Explicit ZERO_RUNNER_SOCKET_VOLUME env var → look up its
+   *      Mountpoint.
+   * If nothing resolves, we leave hostSocketDir = SOCKET_DIR, which
+   * means the runner and dockerd share a filesystem view (bind-mounted
+   * /var/run/docker.sock in a rootful setup with a shared host mount).
+   */
+  private async resolveHostSocketDir(containerId: string): Promise<void> {
+    try {
+      const info = await docker.inspectContainer(containerId);
+      const mount = info.Mounts?.find((m) => m.Destination === SOCKET_DIR);
+      if (mount) {
+        if (mount.Type === "volume" && mount.Name) {
+          const vol = await docker.inspectVolume(mount.Name);
+          if (vol?.Mountpoint) {
+            this.hostSocketDir = vol.Mountpoint;
+            mgrLog.info("resolved socket dir via volume", { volume: mount.Name, hostSocketDir: this.hostSocketDir });
+            return;
+          }
+        } else if (mount.Type === "bind" && mount.Source) {
+          this.hostSocketDir = mount.Source;
+          mgrLog.info("resolved socket dir via bind mount", { hostSocketDir: this.hostSocketDir });
+          return;
+        }
+      }
+      if (SOCKET_VOLUME_ENV) {
+        const vol = await docker.inspectVolume(SOCKET_VOLUME_ENV);
+        if (vol?.Mountpoint) {
+          this.hostSocketDir = vol.Mountpoint;
+          mgrLog.info("resolved socket dir via env volume", { volume: SOCKET_VOLUME_ENV, hostSocketDir: this.hostSocketDir });
+          return;
+        }
+      }
+      mgrLog.warn("could not resolve host-side socket dir; session socket mounts may fail", { socketDir: SOCKET_DIR });
+    } catch (err) {
+      mgrLog.warn("failed to resolve host socket dir", { error: String(err) });
+    }
   }
 
   private async cleanupOrphaned(): Promise<void> {

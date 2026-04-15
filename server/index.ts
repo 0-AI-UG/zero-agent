@@ -42,9 +42,6 @@ import {
   handleDeleteChat,
   handleSearchChats,
 } from "@/routes/chats.ts";
-import { handleChat, handleAbortChat } from "@/routes/chat.ts";
-import { handleResumeStream } from "@/routes/stream.ts";
-import { handleGetMessages } from "@/routes/messages.ts";
 import {
   handleListFiles,
   handleGetFileUrl,
@@ -171,11 +168,6 @@ import {
 } from "@/routes/user-invitations.ts";
 import { handleSetupStatus, handleSetupComplete } from "@/routes/setup.ts";
 import { handleGetSettings, handleUpdateSettings } from "@/routes/settings.ts";
-import {
-  handleCodexImport,
-  handleCodexStatus,
-  handleCodexDisconnect,
-} from "@/routes/oauth.ts";
 import {
   handleListEnabledModels,
   handleListAllModels,
@@ -334,12 +326,6 @@ app.get("/api/projects/:projectId/chats/search", h(handleSearchChats));
 app.put("/api/projects/:projectId/chats/:chatId", h(handleUpdateChat));
 app.delete("/api/projects/:projectId/chats/:chatId", h(handleDeleteChat));
 
-// Chat streaming
-app.post("/api/projects/:projectId/chats/:chatId/chat", h(handleChat));
-app.post("/api/projects/:projectId/chats/:chatId/abort", h(handleAbortChat));
-app.get("/api/projects/:projectId/chats/:chatId/stream", h(handleResumeStream));
-app.get("/api/projects/:projectId/chats/:chatId/messages", h(handleGetMessages));
-
 // Files
 app.get("/api/projects/:projectId/files", h(handleListFiles));
 app.get("/api/projects/:projectId/files/search", h(handleSearchFiles));
@@ -463,11 +449,6 @@ app.get("/api/sync/:id", h(handleSyncStatus));
 // Settings
 app.get("/api/settings", h(handleGetSettings));
 app.put("/api/settings/:key", h(handleUpdateSettings));
-
-// OAuth - Codex inference provider
-app.get("/api/oauth/codex/status", h(handleCodexStatus));
-app.post("/api/oauth/codex/import", h(handleCodexImport));
-app.post("/api/oauth/codex/disconnect", h(handleCodexDisconnect));
 
 // Credentials (saved logins)
 app.get("/api/projects/:projectId/credentials", h(handleListCredentials));

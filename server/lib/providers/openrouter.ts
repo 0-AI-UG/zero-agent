@@ -1,59 +1,36 @@
-import { createOpenRouter } from "@openrouter/ai-sdk-provider";
-import { wrapLanguageModel, extractReasoningMiddleware } from "ai";
+/**
+ * OpenRouter provider. Post-AI-SDK: resolves model IDs only. The shared
+ * `@openrouter/sdk` client lives in `server/lib/openrouter/client.ts`, and
+ * the `callModel`/`embed`/`generateImage` helpers take a plain model ID.
+ *
+ * `getRoutingForModel` exposes the per-model `provider_config` JSON so
+ * callers can merge `{ provider: routing }` into the SDK request.
+ */
+
 import { getModelById } from "@/db/queries/models.ts";
 import { getSetting } from "@/lib/settings.ts";
-import type { InferenceProvider, SpecializedKind } from "@/lib/providers/types.ts";
-import {
-  retryFetch,
-  imageToolResultMiddleware,
-  circuitBreakerMiddleware,
-} from "@/lib/providers/middleware.ts";
-
-// ── OpenRouter SDK cache ──
-
-let _cachedKey: string | null = null;
-let _cachedProvider: ReturnType<typeof createOpenRouter> | null = null;
-
-function getOpenRouter() {
-  const key = getSetting("OPENROUTER_API_KEY") ?? "";
-  if (_cachedProvider && key === _cachedKey) return _cachedProvider;
-  _cachedKey = key;
-  _cachedProvider = createOpenRouter({ apiKey: key, fetch: retryFetch(fetch) });
-  return _cachedProvider;
-}
+import type {
+  InferenceProvider,
+  OpenRouterRouting,
+  SpecializedKind,
+} from "@/lib/providers/types.ts";
 
 // ── Provider routing (per-model fallback config from `provider_config`) ──
 
-interface OpenRouterRouting {
-  order: string[];
-  allow_fallbacks?: boolean;
-}
-
-function getProviderRouting(modelId: string): OpenRouterRouting | undefined {
-  const model = getModelById(modelId);
-  if (!model?.provider_config) return undefined;
+function parseRouting(raw: string | null | undefined): OpenRouterRouting | undefined {
+  if (!raw) return undefined;
   try {
-    return JSON.parse(model.provider_config) as OpenRouterRouting;
+    const parsed = JSON.parse(raw) as Partial<OpenRouterRouting>;
+    if (!parsed || !Array.isArray(parsed.order)) return undefined;
+    return {
+      order: parsed.order.filter((x): x is string => typeof x === "string"),
+      ...(typeof parsed.allow_fallbacks === "boolean"
+        ? { allow_fallbacks: parsed.allow_fallbacks }
+        : {}),
+    };
   } catch {
     return undefined;
   }
-}
-
-function openrouterWithRouting(modelId: string) {
-  const routing = getProviderRouting(modelId);
-  const or = getOpenRouter();
-  return or(modelId, routing ? { extraBody: { provider: routing } } : {});
-}
-
-function wrapChatModel(modelId: string) {
-  return wrapLanguageModel({
-    model: openrouterWithRouting(modelId),
-    middleware: [
-      circuitBreakerMiddleware,
-      imageToolResultMiddleware,
-      extractReasoningMiddleware({ tagName: "think" }),
-    ],
-  });
 }
 
 function getDefaultModelId(): string {
@@ -76,37 +53,32 @@ export const openrouterProvider: InferenceProvider = {
     return getDefaultModelId();
   },
 
-  getChatModel(modelId?: string) {
-    return wrapChatModel(modelId ?? getDefaultModelId());
+  getChatModelId(modelId?: string) {
+    return modelId ?? getDefaultModelId();
   },
 
-  getImageModel(modelId?: string) {
-    const or = getOpenRouter();
-    return or.imageModel(
-      modelId ?? process.env.IMAGE_MODEL ?? "black-forest-labs/flux.2-klein-4b",
-    );
+  getImageModelId(modelId?: string) {
+    return modelId ?? process.env.IMAGE_MODEL ?? "black-forest-labs/flux.2-klein-4b";
   },
 
-  getVisionModel(modelId?: string) {
-    return openrouterWithRouting(
-      modelId ?? process.env.VISION_MODEL ?? "qwen/qwen3.5-flash-02-23",
-    );
+  getVisionModelId(modelId?: string) {
+    return modelId ?? process.env.VISION_MODEL ?? "qwen/qwen3.5-flash-02-23";
   },
 
-  getEmbeddingModel(modelId?: string) {
-    return getOpenRouter().textEmbeddingModel(modelId ?? "openai/text-embedding-3-small");
+  getEmbeddingModelId(modelId?: string) {
+    return modelId ?? "openai/text-embedding-3-small";
   },
 
-  getSpecializedChatModel(kind: SpecializedKind, modelId?: string) {
-    return openrouterWithRouting(modelId ?? SPECIALIZED_DEFAULTS[kind]());
+  getSpecializedChatModelId(kind: SpecializedKind, modelId?: string) {
+    return modelId ?? SPECIALIZED_DEFAULTS[kind]();
   },
 
   parseConfig(raw: string | null) {
-    if (!raw) return undefined;
-    try {
-      return JSON.parse(raw);
-    } catch {
-      return undefined;
-    }
+    return parseRouting(raw);
+  },
+
+  getRoutingForModel(modelId: string) {
+    const model = getModelById(modelId);
+    return parseRouting(model?.provider_config ?? null);
   },
 };

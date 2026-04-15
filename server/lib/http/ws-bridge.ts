@@ -1,5 +1,5 @@
 import { events } from "@/lib/scheduling/events.ts";
-import { broadcastToProject, broadcastPresence, setStreamingUser, clearStreamingUser } from "@/lib/http/ws.ts";
+import { broadcastToProject } from "@/lib/http/ws.ts";
 import { sendPushToUser } from "@/lib/notifications/web-push.ts";
 import { getProjectMembers } from "@/db/queries/members.ts";
 
@@ -82,21 +82,3 @@ export function startBackgroundBridge() {
   });
 }
 
-/**
- * Called from chat.ts when a stream starts. Broadcasts to the project room
- * and tracks the streaming user for presence.
- */
-export function notifyStreamStarted(projectId: string, chatId: string, userId: string, username: string) {
-  setStreamingUser(chatId, userId, username);
-  broadcastToProject(projectId, { type: "stream.started", chatId, userId, username });
-  broadcastPresence(projectId);
-}
-
-/**
- * Called from chat.ts when a stream ends. Clears streaming state and notifies.
- */
-export function notifyStreamEnded(projectId: string, chatId: string) {
-  clearStreamingUser(chatId);
-  broadcastToProject(projectId, { type: "stream.ended", chatId });
-  broadcastPresence(projectId);
-}

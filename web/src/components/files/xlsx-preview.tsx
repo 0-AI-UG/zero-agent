@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Loader } from "@/components/ai/loader";
+import { Loader } from "@/components/chat-ui/Loader";
 import { toast } from "sonner";
 import { usePreviewActions } from "./preview-actions-context";
 import { SpreadsheetTable } from "./spreadsheet-table";

@@ -30,18 +30,18 @@
  * `runningChats`; new completions arriving during a resume enqueue a
  * follow-up pass via `queuedChats`.
  */
-import { generateId } from "ai";
-import type { UIMessage } from "ai";
+import { generateId } from "@/db/index.ts";
+import type { Message } from "@/lib/messages/types.ts";
 import { events } from "@/lib/scheduling/events.ts";
 import { log } from "@/lib/utils/logger.ts";
 import { getChatById } from "@/db/queries/chats.ts";
 import { getMessagesByChat } from "@/db/queries/messages.ts";
 import { getProjectById } from "@/db/queries/projects.ts";
 import {
-  getActiveStreamId,
   createAbortController,
   clearAbortController,
-} from "@/lib/http/resumable-stream.ts";
+} from "@/lib/http/chat-aborts.ts";
+import { isChatStreaming as chatIsStreaming } from "@/lib/http/ws.ts";
 import { runAgentStepStreaming } from "@/lib/agent-step/index.ts";
 import {
   getParentChatIdForRun,
@@ -50,12 +50,6 @@ import {
 import { isShuttingDown } from "@/lib/durability/shutdown.ts";
 
 const resumeLog = log.child({ module: "background-resume" });
-
-// Sentinel id used as the "initiator" on the WS broadcast so every
-// connected client (including the original user) treats the stream as
-// spectator-mode and calls resumeStream(). See ChatPanel.tsx for the
-// paired client-side handling.
-const SYSTEM_USER_ID = "__background_resume__";
 
 const runningChats = new Set<string>();
 const queuedChats = new Set<string>();
@@ -85,7 +79,7 @@ function maybeResume(chatId: string) {
 
   // In-flight run owns this chat - its prepareStep will inject the
   // notification on its next step. Don't interfere.
-  if (getActiveStreamId(chatId)) return;
+  if (chatIsStreaming(chatId)) return;
 
   // Nothing to react to.
   if (!hasUndeliveredResults(chatId)) return;
@@ -127,8 +121,8 @@ async function runResume(chatId: string): Promise<void> {
 
     // Reconstruct the UIMessage history from the DB.
     const rows = getMessagesByChat(chatId);
-    const messages: UIMessage[] = rows
-      .map((row) => JSON.parse(row.content) as UIMessage)
+    const messages: Message[] = rows
+      .map((row) => JSON.parse(row.content) as Message)
       .filter((m) => (m.parts?.length ?? 0) > 0);
     if (messages.length === 0) {
       resumeLog.debug("no persisted messages - skipping resume", { chatId });
@@ -151,27 +145,14 @@ async function runResume(chatId: string): Promise<void> {
       userId,
     });
 
-    const response = await runAgentStepStreaming({
+    await runAgentStepStreaming({
       project: { id: project.id, name: project.name },
       chatId,
       userId,
       messages,
       abortSignal: abortController.signal,
       streamId,
-      // Sentinel initiator so every connected client (including the
-      // original user) treats the stream as spectator-mode and resumes it.
-      notifyAsUserId: SYSTEM_USER_ID,
-      notifyAsUsername: "Background resume",
     });
-
-    // Drive the stream to completion. `createAgentUIStreamResponse` tees
-    // the underlying stream: one branch feeds the resumable-stream
-    // context (for live clients) and the other is the response body.
-    // Without a real HTTP consumer we drain the body ourselves so the
-    // agent loop actually runs.
-    if (response.body) {
-      await response.body.pipeTo(new WritableStream());
-    }
 
     resumeLog.info("resume finished", { chatId });
   } finally {

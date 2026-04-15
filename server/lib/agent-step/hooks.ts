@@ -4,7 +4,7 @@
  * All hooks are best-effort and log on failure rather than throwing - a
  * failed memory flush must never cause a chat reply to fail.
  */
-import type { UIMessage } from "ai";
+import type { Message } from "@/lib/messages/types.ts";
 import { log } from "@/lib/utils/logger.ts";
 import { touchChat, updateChat, getChatById } from "@/db/queries/chats.ts";
 import { saveChatMessages } from "@/db/queries/messages.ts";
@@ -15,6 +15,7 @@ import { flushConversationMemory } from "@/lib/conversation/memory-flush.ts";
 import { detectExploreItems } from "@/lib/scheduling/heartbeat-explore.ts";
 import { loadCheckpoint, deleteCheckpoint } from "@/lib/durability/checkpoint.ts";
 import { deregisterRun } from "@/lib/durability/shutdown.ts";
+import { checkpointEntriesToMessages } from "@/lib/messages/converters.ts";
 
 const hookLog = log.child({ module: "agent-step:hooks" });
 
@@ -42,7 +43,7 @@ export interface PostRunHookCtx {
  * that it constructs its finalMessages list itself.
  */
 export function runPostChatHooks(
-  finalMessages: UIMessage[],
+  finalMessages: Message[],
   ctx: PostRunHookCtx,
 ): void {
   const { projectId, chatId, userId, modelId, runId, start, totalUsage } = ctx;
@@ -165,11 +166,14 @@ export function persistCheckpointOnError(
     const cp = loadCheckpoint(runId);
     if (!cp || cp.stepNumber === 0) return false;
 
-    const cpMessages = cp.messages as Array<{ id?: string; role: string; parts?: unknown[] }>;
-    if (!Array.isArray(cpMessages) || cpMessages.length === 0) return false;
+    const cpMessages = checkpointEntriesToMessages(cp.messages);
+    if (cpMessages.length === 0) return false;
 
     const withIds = cpMessages.filter(
-      (m) => m.id && ((m.parts as unknown[] | undefined)?.length ?? 0) > 0,
+      (m) =>
+        (m.role === "user" || m.role === "assistant") &&
+        m.id &&
+        ((m.parts as unknown[] | undefined)?.length ?? 0) > 0,
     ) as Array<{ id: string; role: string; parts: unknown[] }>;
 
     if (withIds.length === 0) return false;

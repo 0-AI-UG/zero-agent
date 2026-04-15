@@ -24,11 +24,9 @@ const toastIdForResponse = (responseId: string) => `pending-${responseId}`;
  */
 export function useRealtime(projectId: string | undefined) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
-  const setConnected = useRealtimeStore((s) => s.setConnected);
   const setPresence = useRealtimeStore((s) => s.setPresence);
   const addTyping = useRealtimeStore((s) => s.addTyping);
   const clearExpiredTyping = useRealtimeStore((s) => s.clearExpiredTyping);
-  const bumpStreamGeneration = useRealtimeStore((s) => s.bumpStreamGeneration);
 
   // Connect/disconnect based on auth state
   useEffect(() => {
@@ -57,10 +55,6 @@ export function useRealtime(projectId: string | undefined) {
       const pid = projectIdRef.current;
 
       switch (msg.type) {
-        case "connectionChange":
-          setConnected(msg.connected);
-          break;
-
         case "presence":
           setPresence(msg.users ?? []);
           break;
@@ -78,26 +72,6 @@ export function useRealtime(projectId: string | undefined) {
         case "chat.deleted":
           if (pid) {
             queryClient.invalidateQueries({ queryKey: queryKeys.chats.byProject(pid) });
-          }
-          break;
-
-        case "message.received":
-        case "message.sent":
-          if (pid && msg.chatId) {
-            queryClient.invalidateQueries({ queryKey: queryKeys.messages.byChat(pid, msg.chatId) });
-          }
-          break;
-
-        case "stream.started":
-          if (pid && msg.chatId) {
-            bumpStreamGeneration(msg.chatId, msg.userId);
-            queryClient.invalidateQueries({ queryKey: queryKeys.messages.byChat(pid, msg.chatId) });
-          }
-          break;
-
-        case "stream.ended":
-          if (pid && msg.chatId) {
-            queryClient.invalidateQueries({ queryKey: queryKeys.messages.byChat(pid, msg.chatId) });
           }
           break;
 
@@ -128,6 +102,7 @@ export function useRealtime(projectId: string | undefined) {
             const store = usePendingApprovalsStore.getState();
             for (const id of ids) {
               store.setStatus(id, status);
+              if (status !== "awaiting") store.clear(id);
               toast.dismiss(toastIdForResponse(id));
             }
           }
@@ -135,10 +110,22 @@ export function useRealtime(projectId: string | undefined) {
         }
 
         case "sync.created":
-          // Nothing to hydrate at the store level - the inline tool part
-          // will carry the awaiting card once the message streams in. This
-          // case exists so the switch doesn't toast-spam "unknown event".
+        case "chat.sync.created": {
+          const syncId =
+            (typeof msg.syncId === "string" ? msg.syncId : undefined) ??
+            (typeof msg.id === "string" ? msg.id : undefined);
+          const chatId = typeof msg.chatId === "string" ? msg.chatId : undefined;
+          if (syncId && chatId) {
+            usePendingApprovalsStore.getState().upsertProposal({
+              id: syncId,
+              chatId,
+              source: typeof msg.source === "string" ? msg.source : undefined,
+              status: "awaiting",
+              changes: Array.isArray(msg.changes) ? (msg.changes as any[]) : undefined,
+            });
+          }
           break;
+        }
 
         case "plan.ready": {
           const chatId = msg.chatId as string | undefined;
@@ -163,15 +150,6 @@ export function useRealtime(projectId: string | undefined) {
           const newChatId = msg.newChatId as string | undefined;
           if (sourceChatId && newChatId) {
             usePlanModeStore.getState().setNewChatRedirect(sourceChatId, newChatId);
-          }
-          break;
-        }
-
-        case "chat.autoSend": {
-          const chatId = msg.chatId as string | undefined;
-          const message = msg.message as string | undefined;
-          if (chatId && message) {
-            useRealtimeStore.getState().queueAutoSend(chatId, message);
           }
           break;
         }
@@ -273,7 +251,7 @@ export function useRealtime(projectId: string | undefined) {
         }
       }
     });
-  }, [setConnected, setPresence, addTyping, bumpStreamGeneration]);
+  }, [setPresence, addTyping]);
 }
 
 /**

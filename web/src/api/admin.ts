@@ -78,47 +78,6 @@ export function useUpdateSettings() {
   });
 }
 
-// ── Codex OAuth ──
-
-export interface CodexStatus {
-  connected: boolean;
-  accountEmail?: string;
-  expiresAt?: number;
-}
-
-export function useCodexStatus() {
-  return useQuery({
-    queryKey: ["admin", "codex-status"],
-    queryFn: async () => apiFetch<CodexStatus>("/oauth/codex/status"),
-    staleTime: 10_000,
-  });
-}
-
-export function useCodexDisconnect() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async () =>
-      apiFetch<{ success: boolean }>("/oauth/codex/disconnect", { method: "POST" }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["admin", "codex-status"] });
-    },
-  });
-}
-
-export function useCodexImport() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (authJson: string) =>
-      apiFetch<{ success: boolean; accountEmail?: string }>("/oauth/codex/import", {
-        method: "POST",
-        body: JSON.stringify({ authJson }),
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["admin", "codex-status"] });
-    },
-  });
-}
-
 export function useUpdateUser() {
   const queryClient = useQueryClient();
   return useMutation({

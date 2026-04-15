@@ -12,7 +12,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Loader } from "@/components/ai/loader";
+import { Loader } from "@/components/chat-ui/Loader";
 import { usePresignedUrl } from "@/hooks/use-presigned-url";
 import { useFileContent } from "@/hooks/use-file-content";
 import { useDeleteFile } from "@/hooks/use-delete-file";

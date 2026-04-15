@@ -43,7 +43,6 @@ export function connectWs() {
     console.log("[ws] connected");
     _connected = true;
     reconnectDelay = 1000;
-    dispatch({ type: "connectionChange", connected: true });
 
     // Rejoin room if we were in one
     if (currentProjectId) {
@@ -157,7 +156,6 @@ function dispatch(msg: any) {
 
 function cleanup() {
   _connected = false;
-  dispatch({ type: "connectionChange", connected: false });
   if (heartbeatTimer) {
     clearInterval(heartbeatTimer);
     heartbeatTimer = null;
