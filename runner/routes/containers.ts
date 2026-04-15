@@ -3,7 +3,7 @@ import type { ContainerManager } from "../lib/container.ts";
 export function containerRoutes(mgr: ContainerManager) {
   return {
     async create(req: Request): Promise<Response> {
-      const body = await req.json() as { name: string; image?: string; env?: string[]; memory?: number; cpus?: number; network?: string };
+      const body = await req.json() as { name: string; image?: string; env?: string[]; memory?: number; cpus?: number; network?: string; userId?: string };
       if (!body.name) return Response.json({ error: "name is required" }, { status: 400 });
 
       try {
@@ -13,6 +13,7 @@ export function containerRoutes(mgr: ContainerManager) {
           memory: body.memory,
           cpus: body.cpus,
           network: body.network,
+          userId: body.userId,
         });
         return Response.json(info);
       } catch (err) {

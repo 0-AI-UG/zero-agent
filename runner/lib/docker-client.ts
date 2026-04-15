@@ -50,6 +50,59 @@ function unixFetch(url: string, socketPath: string, init?: RequestInit): Promise
   });
 }
 
+/**
+ * Hijacked variant — used for Docker exec with AttachStdin:true or Tty:true.
+ * Docker returns 101/200 then upgrades to a raw TCP stream carrying stdin
+ * (caller → daemon) and stdout/stderr (daemon → caller). The socket is
+ * returned raw so callers can both read and write.
+ */
+function unixFetchHijack(url: string, socketPath: string, init?: RequestInit): Promise<{ socket: import("node:net").Socket; head: Buffer }> {
+  return new Promise((resolve, reject) => {
+    const parsed = new URL(url);
+    const headers: Record<string, string> = {
+      ...(init?.headers as Record<string, string> | undefined ?? {}),
+      "Connection": "Upgrade",
+      "Upgrade": "tcp",
+    };
+    const options: http.RequestOptions = {
+      socketPath,
+      path: parsed.pathname + parsed.search,
+      method: init?.method ?? "POST",
+      headers,
+    };
+    const req = http.request(options);
+    let settled = false;
+    req.on("upgrade", (_res, socket, head) => {
+      if (settled) return;
+      settled = true;
+      resolve({ socket, head });
+    });
+    req.on("response", (res) => {
+      // Docker < 25 may not upgrade even when AttachStdin is set — some
+      // daemons just stream back on the same connection. In that case
+      // steal the underlying socket before any response data is consumed.
+      if (settled) return;
+      settled = true;
+      const socket = (res as any).socket as import("node:net").Socket;
+      (req as any).removeAllListeners("response");
+      resolve({ socket, head: Buffer.alloc(0) });
+    });
+    req.on("error", (err) => {
+      if (settled) return;
+      settled = true;
+      reject(err);
+    });
+    if (init?.body) {
+      if (init.body instanceof ArrayBuffer || init.body instanceof Uint8Array || Buffer.isBuffer(init.body)) {
+        req.write(Buffer.from(init.body as ArrayBuffer));
+      } else if (typeof init.body === "string") {
+        req.write(init.body);
+      }
+    }
+    req.end();
+  });
+}
+
 /** Streaming variant — resolves as soon as headers arrive, body is a ReadableStream */
 function unixFetchStreaming(url: string, socketPath: string, init?: RequestInit): Promise<Response> {
   return new Promise((resolve, reject) => {
@@ -616,6 +669,77 @@ export class DockerClient {
     const inspectRes = await this.fetch(`/exec/${execId}/json`);
     const inspectData = (await inspectRes.json()) as { ExitCode: number };
     return inspectData.ExitCode ?? 0;
+  }
+
+  /**
+   * Interactive exec — TTY on, stdin attached. Returns the raw hijacked
+   * socket so callers can both write stdin bytes and read TTY output.
+   * In TTY mode Docker does NOT multiplex stdout/stderr; the socket carries
+   * raw terminal bytes (stdout + stderr interleaved as a single stream).
+   */
+  async execInteractive(
+    containerName: string,
+    cmd: string[],
+    opts?: { workingDir?: string; env?: string[] },
+  ): Promise<{ execId: string; socket: import("node:net").Socket }> {
+    const createRes = await this.fetch(
+      `/containers/${encodeURIComponent(containerName)}/exec`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          Cmd: cmd,
+          AttachStdin: true,
+          AttachStdout: true,
+          AttachStderr: true,
+          Tty: true,
+          WorkingDir: opts?.workingDir ?? "/project",
+          Env: opts?.env,
+        }),
+      },
+    );
+    if (!createRes.ok) {
+      throw new Error(`Failed to create interactive exec: ${await createRes.text()}`);
+    }
+    const { Id: execId } = (await createRes.json()) as { Id: string };
+
+    const { socket, head } = await unixFetchHijack(
+      `${this.baseUrl}/exec/${execId}/start`,
+      this.socket,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ Detach: false, Tty: true }),
+      },
+    );
+    if (head.length > 0) socket.unshift(head);
+    return { execId, socket };
+  }
+
+  async inspectExec(execId: string): Promise<{ Running: boolean; ExitCode: number | null }> {
+    const res = await this.fetch(`/exec/${execId}/json`);
+    if (!res.ok) throw new Error(`inspect exec failed: ${res.status}`);
+    const j = (await res.json()) as { Running: boolean; ExitCode: number | null };
+    return j;
+  }
+
+  // -- Volumes --
+
+  async ensureVolume(name: string): Promise<void> {
+    const existing = await this.fetch(`/volumes/${encodeURIComponent(name)}`);
+    if (existing.ok) return;
+    const res = await this.fetch(`/volumes/create`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ Name: name }),
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to create volume ${name}: ${await res.text()}`);
+    }
+  }
+
+  async removeVolume(name: string): Promise<void> {
+    await this.fetch(`/volumes/${encodeURIComponent(name)}?force=true`, { method: "DELETE" });
   }
 
   // -- List / Filter --

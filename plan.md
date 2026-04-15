@@ -49,18 +49,33 @@ Current MVP state is captured at the bottom of this document. Everything above t
 
 **Next:** §4 (per-user OAuth / BYO subscription). §5 (ToS review) is a policy/legal gate that should run in parallel with §4 since it blocks hosted rollout. §6 (Codex backend) becomes cheaper once §4 lands because it can reuse the OAuth plumbing — sequence it after §4.
 
-## 4. Per-user OAuth (BYO subscription)
+## 4. Per-user OAuth (BYO subscription) — 🟡 CLAUDE SHIPPED; CODEX STUBBED (branch `worktree-cli-byo-auth`)
 
-**Problem:** MVP assumes credentials already exist in the container. Real users need to log in through the UI.
+**Shipped (Claude Code):**
+- **Per-user named volume** — every container is mounted with `claude-home-<userId>:/root/.claude`. Credentials persist across container rebuilds and are strictly scoped to the user; volume is created on-demand (`runner/lib/docker-client.ts#ensureVolume`) and wired in by `runner/lib/container.ts` when the server passes `userId` through `POST /containers`.
+- **Bidirectional interactive exec** — new runner primitive for TTY + stdin + stdout Docker exec via a `unixFetchHijack` helper that steals the raw socket from the HTTP client (`runner/lib/docker-client.ts#execInteractive`). Sessions live in `runner/lib/auth-exec.ts` (replay buffer, 10-min timeout, broadcast) and are exposed by `runner/routes/auth-exec.ts` (`start`, `stream`, `stdin`, `cancel`, `status`).
+- **Server-side auth session manager** — `server/lib/backends/cli/auth/claude-oauth.ts` drives `claude setup-token` inside the user's container. `auth login` wants a browser + loopback callback (neither exists in a headless container); the token-paste flow is the only one that works. Provides start/subscribe/stdin/cancel plus `getClaudeAuthStatus` (reads `claude auth status --json`) and `logoutClaude`.
+- **HTTP routes** (`server/routes/cli-auth.ts`, wired in `server/index.ts`):
+  - `POST /api/cli-auth/claude/start {projectId}` → `{sessionId}`
+  - `GET /api/cli-auth/claude/stream/:sessionId` → NDJSON of `stdout | exit | error` frames, replays on subscribe
+  - `POST /api/cli-auth/claude/stdin/:sessionId {data}` — writes bytes into the CLI
+  - `POST /api/cli-auth/claude/cancel/:sessionId`
+  - `POST /api/cli-auth/claude/logout {projectId}`
+  - `GET /api/cli-auth/status?projectId=…` → `{claude, codex}` (authenticated/account/lastVerifiedAt)
+- **Frontend** — `web/src/api/cli-auth.ts` API client; `ClaudeLoginModal.tsx` streams NDJSON via `fetch`, aborts on close, auto-scrolls output, extracts the first URL, accepts token on Enter; `CliSubscriptionsPanel.tsx` in Settings shows per-provider status with Log in/Log out actions.
+- **SetupPage** — OpenRouter API key is now optional; helper text points at Settings → CLI Subscriptions. Server `/api/setup/complete` accepts a missing key.
+- **Design note:** auth stream uses NDJSON-over-fetch (same pattern as `exec-stream`), not the chat WebSocket. Flows are ≤ 10 min and single-subscriber — wiring new scene types end-to-end through the chat WS for a non-chat surface wasn't worth it.
 
-**Work:**
-- Server: `server/lib/backends/cli/auth/claude-oauth.ts` — spawns `claude login` inside the user's container (TTY via docker exec), streams the device-code URL/code to the frontend over a dedicated WS channel.
-- Routes: `POST /api/cli-auth/claude/start` (creates auth session), `WS /ws/cli-auth/claude/:id` (device-code stream), `GET /api/cli-auth/status` (is-authenticated per backend), `POST /api/cli-auth/claude/logout` (wipes `~/.claude/credentials.json`).
-- Frontend: `ClaudeLoginModal.tsx` subscribes to the WS, renders URL + code + copy button, dismisses on success. Add "CLI Subscriptions" panel in `SettingsPage.tsx`.
-- Credentials isolation: per-user named Docker volume mounted at `/root/.claude/`. Never shared across users. Volume cleanup on user deletion.
-- Token refresh: Claude Code SDK handles refresh internally; surface expiry/401 signals as a re-auth prompt.
-- Setup: `SetupPage.tsx` — make OpenRouter key step optional with a "log in with Claude Code instead" path.
-- Symmetric routes for Codex.
+**Deferred (under §4, not shipped here):**
+- **Volume cleanup on user deletion** — `server/routes/admin.ts#handleDeleteUser` currently only deletes the row; orphan containers and the `claude-home-<userId>` volume leak. Small work, deliberate TODO — keeping the slice tight.
+- **Existing containers don't pick up the volume** — only newly-created containers get the mount. Either add a destroy-then-recreate path to the Settings panel or document the one-time destroy. Flagged as a deferred UX fix, not a blocker.
+- **Codex login** — `server/lib/backends/cli/auth/codex-oauth.ts` is a stub that throws "not implemented"; routes return 501 for `provider=codex`. Lands in §6 alongside the Codex backend so we can confirm the exact `codex login` shape against the installed CLI.
+- **Token refresh / expiry UX** — we check login status on panel mount. Surfacing a 401 from a mid-turn chat failure as "re-auth required" belongs with §11 (observability) — we'd need structured backend error classification first.
+- **WS push** — see design note above. Revisit if real-world usage shows reconnect friction.
+
+**Verification:** `bun run typecheck` shows only the two pre-existing `RunnerPool` errors (missing `streamExecInContainer`) that the instructions called out; no new server-side type errors. Web typecheck has only pre-existing shadcn `ref` type mismatches — none in the new files.
+
+**Next:** §5 (ToS review) is still the policy/legal gate. §6 (Codex backend) picks up the Codex login stubs. §7 (batch parity) and §9 (resource limits) are the next code-side blockers before hosted rollout.
 
 ## 5. ToS / licensing review
 

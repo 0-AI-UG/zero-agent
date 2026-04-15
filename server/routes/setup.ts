@@ -35,13 +35,9 @@ export async function handleSetupComplete(request: Request): Promise<Response> {
     const body = await request.json() as Record<string, string>;
     const { openrouterApiKey, openrouterModel, braveSearchApiKey } = body;
 
-    if (!openrouterApiKey) {
-      return Response.json(
-        { error: "OpenRouter API key is required" },
-        { status: 400, headers: corsHeaders }
-      );
-    }
-
+    // OpenRouter key is optional now: users can alternatively link a Claude
+    // Code / Codex subscription from the Settings → CLI Subscriptions panel
+    // after completing setup. We still store it if provided.
     const username = usernameSchema.parse(body.username);
     const password = passwordSchema.parse(body.password);
 
@@ -53,7 +49,7 @@ export async function handleSetupComplete(request: Request): Promise<Response> {
     ).run(userId, username, passwordHash);
 
     // Store settings
-    setSetting("OPENROUTER_API_KEY", openrouterApiKey);
+    if (openrouterApiKey) setSetting("OPENROUTER_API_KEY", openrouterApiKey);
     if (openrouterModel) setSetting("OPENROUTER_MODEL", openrouterModel);
     if (braveSearchApiKey) setSetting("BRAVE_SEARCH_API_KEY", braveSearchApiKey);
 

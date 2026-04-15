@@ -245,6 +245,27 @@ export class RunnerPool implements ExecutionBackend {
     return client.execInContainer(projectId, cmd, opts);
   }
 
+  async startAuthExec(projectId: string, cmd: string[], opts?: { workingDir?: string; env?: string[] }) {
+    const { client } = await this.getClientForProject(projectId);
+    return client.startAuthExec(projectId, cmd, opts);
+  }
+
+  async *streamAuthExec(projectId: string, sessionId: string, opts?: { abortSignal?: AbortSignal }) {
+    const { client } = await this.getClientForProject(projectId);
+    yield* client.streamAuthExec(projectId, sessionId, opts);
+  }
+
+  async writeAuthExecStdin(projectId: string, sessionId: string, data: string): Promise<void> {
+    const { client } = await this.getClientForProject(projectId);
+    return client.writeAuthExecStdin(projectId, sessionId, data);
+  }
+
+  async cancelAuthExec(projectId: string, sessionId: string): Promise<void> {
+    const resolved = await this.resolveRunner(projectId);
+    if (!resolved) return;
+    return resolved.client.cancelAuthExec(projectId, sessionId);
+  }
+
   async checkPort(projectId: string, port: number): Promise<boolean> {
     const resolved = await this.resolveRunner(projectId);
     if (!resolved) return false;
