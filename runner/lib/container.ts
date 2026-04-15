@@ -114,6 +114,10 @@ export class ContainerManager {
     memory?: number;
     cpus?: number;
     network?: string;
+    /** When set, mount per-user named volumes at `/root/.claude` (Claude Code)
+     *  and `/root/.codex` (Codex) so BYO credentials persist across container
+     *  rebuilds and are scoped to the user (never shared between users). */
+    userId?: string;
   }): Promise<ContainerInfo> {
     const existing = this.containers.get(name);
     if (existing) {
@@ -155,6 +159,7 @@ export class ContainerManager {
     memory?: number;
     cpus?: number;
     network?: string;
+    userId?: string;
   }): Promise<ContainerInfo> {
     const startTime = Date.now();
     const image = opts?.image ?? DEFAULT_IMAGE;
@@ -188,7 +193,29 @@ export class ContainerManager {
     // work everywhere.
     const sessionHostDir = `${this.hostSocketDir}/${name}`;
     const binds = [`${sessionHostDir}:${CONTAINER_SOCKET_DIR}`];
-    const mounts: DockerMount[] | undefined = undefined;
+    let mounts: DockerMount[] | undefined = undefined;
+
+    // Per-user persistent CLI auth volumes. Scoped to the user (never shared
+    // across users). `/root/.claude` holds Claude Code credentials; `/root/.codex`
+    // holds Codex credentials + session state. Logging in once via the Settings
+    // UI persists even when containers are destroyed and recreated.
+    if (opts?.userId) {
+      const claudeHomeVolume = `claude-home-${opts.userId}`;
+      const codexHomeVolume = `codex-home-${opts.userId}`;
+      try {
+        const { docker } = await import("./docker-client.ts");
+        await Promise.all([
+          docker.ensureVolume(claudeHomeVolume),
+          docker.ensureVolume(codexHomeVolume),
+        ]);
+        mounts = [
+          { Type: "volume", Source: claudeHomeVolume, Target: "/root/.claude" },
+          { Type: "volume", Source: codexHomeVolume, Target: "/root/.codex" },
+        ];
+      } catch (err) {
+        mgrLog.warn("failed to prepare per-user CLI home volumes", { userId: opts.userId, error: String(err) });
+      }
+    }
 
     try {
       await docker.removeContainer(name).catch(() => {});
@@ -332,6 +359,31 @@ list(): ContainerInfo[] {
     if (!state) throw new Error(`Container "${name}" not found`);
     state.lastUsedAt = Date.now();
     return docker.exec(name, cmd, opts);
+  }
+
+  async execStream(
+    name: string,
+    cmd: string[],
+    opts: {
+      workingDir?: string;
+      onFrame: (f: { type: "stdout" | "stderr"; data: Uint8Array }) => void;
+      abortSignal?: AbortSignal;
+    },
+  ): Promise<number> {
+    const state = this.containers.get(name);
+    if (!state) throw new Error(`Container "${name}" not found`);
+    // Mark busy so the idle reaper doesn't destroy this container while a
+    // CLI (claude / codex) subprocess is still running inside it. The
+    // reaper already respects busyCount > 0; without this, long CLI turns
+    // could get their container reaped out from under them.
+    state.busyCount++;
+    state.lastUsedAt = Date.now();
+    try {
+      return await docker.execStream(name, cmd, opts);
+    } finally {
+      state.busyCount--;
+      state.lastUsedAt = Date.now();
+    }
   }
 
   async bash(name: string, command: string, opts?: { timeout?: number; workingDir?: string }): Promise<ExecResult> {

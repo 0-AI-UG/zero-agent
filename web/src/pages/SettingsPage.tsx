@@ -27,11 +27,13 @@ import {
 } from "lucide-react";
 import { MembersManager } from "@/components/settings/MembersManager";
 import { CredentialsManager } from "@/components/settings/CredentialsManager";
+import { CliSubscriptionsPanel } from "@/components/settings/CliSubscriptionsPanel";
 
 const NAV_ITEMS = [
   { id: "general", label: "General" },
   { id: "members", label: "Members" },
   { id: "credentials", label: "Credentials" },
+  { id: "cli-subscriptions", label: "CLI Subscriptions" },
   { id: "assistant", label: "Assistant" },
 ] as const;
 
@@ -198,6 +200,11 @@ export function SettingsPage() {
           {/* Credentials */}
           <section id="credentials" className="scroll-mt-10">
             <CredentialsManager projectId={projectId!} />
+          </section>
+
+          {/* CLI subscriptions */}
+          <section id="cli-subscriptions" className="scroll-mt-10">
+            <CliSubscriptionsPanel projectId={projectId!} />
           </section>
 
           {/* Assistant */}

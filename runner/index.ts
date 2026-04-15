@@ -9,6 +9,8 @@ import { ContainerManager } from "./lib/container.ts";
 import { validateAuth, unauthorized } from "./lib/auth.ts";
 import { containerRoutes } from "./routes/containers.ts";
 import { execRoutes } from "./routes/exec.ts";
+import { execStreamRoutes } from "./routes/exec-stream.ts";
+import { authExecRoutes } from "./routes/auth-exec.ts";
 import { browserRoutes } from "./routes/browser.ts";
 import { fileRoutes } from "./routes/files.ts";
 import { proxyRoute } from "./routes/proxy.ts";
@@ -22,6 +24,8 @@ const mgr = new ContainerManager();
 
 const containers = containerRoutes(mgr);
 const exec = execRoutes(mgr);
+const execStream = execStreamRoutes(mgr);
+const authExec = authExecRoutes();
 const browser = browserRoutes(mgr);
 const files = fileRoutes(mgr);
 const proxy = proxyRoute(mgr);
@@ -56,6 +60,24 @@ function matchRoute(method: string, pathname: string): { handler: (req: Request)
     return { handler: () => containers.destroyAll() };
   }
 
+  const authExecMatch = api.match(/^\/auth-exec\/([^/]+)(?:\/(.*))?$/);
+  if (authExecMatch) {
+    const [, sessionId, action] = authExecMatch;
+    if (method === "GET" && action === "stream") {
+      return { handler: (req) => authExec.stream(req, sessionId!) };
+    }
+    if (method === "POST" && action === "stdin") {
+      return { handler: (req) => authExec.stdin(req, sessionId!) };
+    }
+    if (method === "GET" && !action) {
+      return { handler: (req) => authExec.status(req, sessionId!) };
+    }
+    if (method === "DELETE" && !action) {
+      return { handler: (req) => authExec.cancel(req, sessionId!) };
+    }
+    return null;
+  }
+
   const containerMatch = api.match(/^\/containers\/([^/]+)(.*)$/);
   if (!containerMatch) {
     // Admin routes
@@ -85,6 +107,12 @@ function matchRoute(method: string, pathname: string): { handler: (req: Request)
   }
   if (method === "POST" && sub === "/bash") {
     return { handler: (req) => exec.bash(req, name!) };
+  }
+  if (method === "POST" && sub === "/exec-stream") {
+    return { handler: (req) => execStream.stream(req, name!) };
+  }
+  if (method === "POST" && sub === "/auth-exec/start") {
+    return { handler: (req) => authExec.start(req, name!) };
   }
 
   // Browser

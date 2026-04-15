@@ -42,6 +42,8 @@ const providerLabels: Record<string, string> = {
   anthropic: "Anthropic",
   google: "Google",
   openai: "OpenAI",
+  "claude-code": "Claude Code (your subscription)",
+  codex: "Codex (your subscription)",
 };
 
 export function ModelSection() {

@@ -10,6 +10,10 @@ import {
   type ModelInput,
 } from "@/db/queries/models.ts";
 import type { ModelRow } from "@/db/types.ts";
+import {
+  cliBackendsEnabled,
+  isCliInferenceProvider,
+} from "@/lib/backends/cli/feature-flag.ts";
 
 function formatModel(m: ModelRow) {
   return {
@@ -32,7 +36,10 @@ function formatModel(m: ModelRow) {
 export async function handleListEnabledModels(request: Request): Promise<Response> {
   try {
     await authenticateRequest(request);
-    const models = getEnabledModels();
+    let models = getEnabledModels();
+    if (!cliBackendsEnabled()) {
+      models = models.filter((m) => !isCliInferenceProvider(m.inference_provider));
+    }
     return Response.json({ models: models.map(formatModel) }, { headers: corsHeaders });
   } catch (error) {
     return handleError(error);

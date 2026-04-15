@@ -51,14 +51,15 @@ db.exec(`
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS chats (
-    id            TEXT PRIMARY KEY,
-    project_id    TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    title         TEXT NOT NULL DEFAULT 'New Chat',
-    is_autonomous INTEGER NOT NULL DEFAULT 0,
-    created_by    TEXT REFERENCES users(id) ON DELETE SET NULL,
-    source        TEXT,
-    created_at    TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    id                  TEXT PRIMARY KEY,
+    project_id          TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    title               TEXT NOT NULL DEFAULT 'New Chat',
+    is_autonomous       INTEGER NOT NULL DEFAULT 0,
+    created_by          TEXT REFERENCES users(id) ON DELETE SET NULL,
+    source              TEXT,
+    backend_session_id  TEXT,
+    created_at          TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at          TEXT NOT NULL DEFAULT (datetime('now'))
   )
 `);
 
@@ -436,6 +437,16 @@ db.exec(`
   }
 }
 
+// Idempotently add backend_session_id for installs that pre-date the column.
+{
+  const cols = db
+    .prepare("PRAGMA table_info(chats)")
+    .all() as { name: string }[];
+  if (!cols.some((c) => c.name === "backend_session_id")) {
+    db.exec("ALTER TABLE chats ADD COLUMN backend_session_id TEXT");
+  }
+}
+
 // Idempotently add max_steps for installs that pre-date the column.
 {
   const cols = db
@@ -572,8 +583,8 @@ if (modelCount.count === 0) {
   const { default: modelsJson } = await import("@/config/models.json", { with: { type: "json" } });
   const seedModels = (modelsJson as any).models;
   const insertModel = db.prepare(
-    `INSERT INTO models (id, name, provider, inference_provider, description, context_window, pricing_input, pricing_output, tags, is_default, multimodal, provider_config, sort_order)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO models (id, name, provider, inference_provider, description, context_window, pricing_input, pricing_output, tags, is_default, multimodal, provider_config, enabled, sort_order)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
   for (let i = 0; i < seedModels.length; i++) {
     const m = seedModels[i];
@@ -587,6 +598,7 @@ if (modelCount.count === 0) {
       m.default ? 1 : 0,
       m.multimodal ? 1 : 0,
       m.providerConfig ? JSON.stringify(m.providerConfig) : null,
+      m.enabled === false ? 0 : 1,
       i,
     );
   }

@@ -1,0 +1,260 @@
+# CLI Inference Backends — Production Readiness Plan
+
+Scope: take the MVP Claude Code / Codex CLI backends from "works on one dev machine" to "safe to ship to paying users." OpenRouter remains the default; CLI backends are an additional path users opt into via model selection.
+
+Current MVP state is captured at the bottom of this document. Everything above the "MVP baseline" section is net-new work.
+
+---
+
+## 1. Multi-turn context continuity — ✅ DONE (branch `worktree-cli-session-continuity`)
+
+**Shipped:**
+- `chats.backend_session_id` column + idempotent ALTER (`server/db/index.ts`, `server/db/types.ts`).
+- `getBackendSessionId` / `setBackendSessionId` helpers (`server/db/queries/chats.ts`).
+- `claude-code-backend.ts`: first turn mints a UUID → `claude -p --session-id <uuid>` and persists; subsequent turns invoke `claude -p --resume <uuid>`. Session id persisted eagerly so a crashed mid-turn still leaves resumable on-disk state.
+- Auto-fallback: if `--resume` exits non-zero before producing any event (container rebuilt, `~/.claude` wiped), retry once as a fresh session with a new UUID.
+
+**Deferred:**
+- Codex symmetry — rolled into §6.
+- Chat-deletion cleanup of `~/.claude/projects/<hash>/<session>.jsonl` inside the container. Not implemented; orphan session files are harmless and will be reaped when the container is rebuilt or when §12's idle-reap policy lands. Revisit alongside §4 (per-user volumes).
+
+**Next:** §3 (RAG / skills / system-prompt injection). Rationale: §2 (stdin streaming) is an optional perf win and the plan itself notes it "may be sufficient" to skip after §1 works; §3 is the next correctness blocker — without system-prompt + RAG parity the CLI path behaves like a different product from the OpenRouter path.
+
+## 2. Stdin streaming + persistent subprocess (optional perf)
+
+**Problem:** Each turn spawns a new CLI process (~1-2s startup + model cold-start). For active chats this is wasteful and loses Claude's internal prompt cache.
+
+**Work:**
+- Upgrade runner `exec-stream` to bidirectional: session-based protocol with a second POST endpoint to write stdin + DELETE to kill. State held in a runner-side `Map<sessionId, {stdin, exitPromise, ...}>`.
+- Docker exec `AttachStdin: true` with the upgrade/hijack protocol (dropped from MVP for simplicity).
+- Server: extend `RunnerClient.streamExecInContainer` signature to return `{ frames: AsyncIterable, writeStdin(bytes), kill() }`.
+- Claude CLI: use `--input-format=stream-json` with `stream-json` user events fed over stdin, one subprocess per chat, held in `session-manager.ts`.
+- Only worth doing after §1 works — session continuity via `--resume` may be sufficient.
+
+## 3. RAG / skills / system-prompt injection — ✅ DONE (branch `worktree-cli-rag-system-prompt`)
+
+**Shipped:**
+- New helper `server/lib/backends/cli/prompt-assembly.ts` — `assembleCliSystemPrompt({ project, messages, language, onlySkills, planMode })` returns a single string for `--append-system-prompt`. Parity with `buildSystemPrompt` in `server/lib/agent/agent.ts`: identity (SOUL.md, 20KB cap) + project/date, language directive (zh), skills index, `zero` CLI hint, no-internal-thinking rule, plan-mode framing, RAG memories/files.
+- Skills pre-expanded inline: `loadSkill` doesn't work on the CLI path, so gated skills (passing `checkGating`) have their full instructions + bundled file list injected as `### Skill: <name>` sections, bodies capped at 8KB each.
+- RAG: `retrieveRagContext` called against the last user text; memories + file-path list appended as two `## Relevant …` blocks. Tolerates embedding failures (empty context).
+- Length budget: 100KB hard cap on the append string. Shed order when over budget — (1) skill bodies (keep index), (2) RAG blocks, (3) SOUL.md truncation. Final hard slice as a last resort.
+- Wired into `claude-code-backend.ts`: assembled before `buildClaudeCmd`, passed via a new `--append-system-prompt <str>` arg. Assembly failure falls back to bare prompt with a warn log.
+- Note on append-system-prompt length: `claude --help` documents no explicit cap; the string rides on argv. Linux ARG_MAX is ~2MB, macOS ~256KB. 100KB leaves ample headroom for the rest of argv + any future growth.
+
+**Deferred:**
+- Tool index — intentionally omitted. Claude brings its own tools (Read/Edit/Bash/…); our OpenRouter tool names would be misleading. Revisit if §8 (tool-card polish) shows users conflating backends.
+- Per-turn `prepareStep` equivalent — compaction + orphan-patching + background-notification injection don't translate to Claude's self-managed context window. `--resume` (§1) handles continuity; Claude does its own compaction internally.
+- HEARTBEAT.md injection (batch-only feature) — wait for §7 (batch-mode parity) to land first.
+- `initialReadPaths` read-guard seeding — Claude's Read tool has no equivalent guard; not applicable.
+
+**Next:** §4 (per-user OAuth / BYO subscription). §5 (ToS review) is a policy/legal gate that should run in parallel with §4 since it blocks hosted rollout. §6 (Codex backend) becomes cheaper once §4 lands because it can reuse the OAuth plumbing — sequence it after §4.
+
+## 4. Per-user OAuth (BYO subscription) — 🟡 CLAUDE SHIPPED; CODEX STUBBED (branch `worktree-cli-byo-auth`)
+
+**Shipped (Claude Code):**
+- **Per-user named volume** — every container is mounted with `claude-home-<userId>:/root/.claude`. Credentials persist across container rebuilds and are strictly scoped to the user; volume is created on-demand (`runner/lib/docker-client.ts#ensureVolume`) and wired in by `runner/lib/container.ts` when the server passes `userId` through `POST /containers`.
+- **Bidirectional interactive exec** — new runner primitive for TTY + stdin + stdout Docker exec via a `unixFetchHijack` helper that steals the raw socket from the HTTP client (`runner/lib/docker-client.ts#execInteractive`). Sessions live in `runner/lib/auth-exec.ts` (replay buffer, 10-min timeout, broadcast) and are exposed by `runner/routes/auth-exec.ts` (`start`, `stream`, `stdin`, `cancel`, `status`).
+- **Server-side auth session manager** — `server/lib/backends/cli/auth/claude-oauth.ts` drives `claude setup-token` inside the user's container. `auth login` wants a browser + loopback callback (neither exists in a headless container); the token-paste flow is the only one that works. Provides start/subscribe/stdin/cancel plus `getClaudeAuthStatus` (reads `claude auth status --json`) and `logoutClaude`.
+- **HTTP routes** (`server/routes/cli-auth.ts`, wired in `server/index.ts`):
+  - `POST /api/cli-auth/claude/start {projectId}` → `{sessionId}`
+  - `GET /api/cli-auth/claude/stream/:sessionId` → NDJSON of `stdout | exit | error` frames, replays on subscribe
+  - `POST /api/cli-auth/claude/stdin/:sessionId {data}` — writes bytes into the CLI
+  - `POST /api/cli-auth/claude/cancel/:sessionId`
+  - `POST /api/cli-auth/claude/logout {projectId}`
+  - `GET /api/cli-auth/status?projectId=…` → `{claude, codex}` (authenticated/account/lastVerifiedAt)
+- **Frontend** — `web/src/api/cli-auth.ts` API client; `ClaudeLoginModal.tsx` streams NDJSON via `fetch`, aborts on close, auto-scrolls output, extracts the first URL, accepts token on Enter; `CliSubscriptionsPanel.tsx` in Settings shows per-provider status with Log in/Log out actions.
+- **SetupPage** — OpenRouter API key is now optional; helper text points at Settings → CLI Subscriptions. Server `/api/setup/complete` accepts a missing key.
+- **Design note:** auth stream uses NDJSON-over-fetch (same pattern as `exec-stream`), not the chat WebSocket. Flows are ≤ 10 min and single-subscriber — wiring new scene types end-to-end through the chat WS for a non-chat surface wasn't worth it.
+
+**Deferred (under §4, not shipped here):**
+- **Volume cleanup on user deletion** — `server/routes/admin.ts#handleDeleteUser` currently only deletes the row; orphan containers and the `claude-home-<userId>` volume leak. Small work, deliberate TODO — keeping the slice tight.
+- **Existing containers don't pick up the volume** — only newly-created containers get the mount. Either add a destroy-then-recreate path to the Settings panel or document the one-time destroy. Flagged as a deferred UX fix, not a blocker.
+- **Codex login** — `server/lib/backends/cli/auth/codex-oauth.ts` is a stub that throws "not implemented"; routes return 501 for `provider=codex`. Lands in §6 alongside the Codex backend so we can confirm the exact `codex login` shape against the installed CLI.
+- **Token refresh / expiry UX** — we check login status on panel mount. Surfacing a 401 from a mid-turn chat failure as "re-auth required" belongs with §11 (observability) — we'd need structured backend error classification first.
+- **WS push** — see design note above. Revisit if real-world usage shows reconnect friction.
+
+**Verification:** `bun run typecheck` shows only the two pre-existing `RunnerPool` errors (missing `streamExecInContainer`) that the instructions called out; no new server-side type errors. Web typecheck has only pre-existing shadcn `ref` type mismatches — none in the new files.
+
+**Next:** §6 (Codex backend) picks up the Codex login stubs. §7 (batch parity) and §9 (resource limits) are the next code-side blockers before hosted rollout.
+
+## 6. Codex backend — ✅ SHIPPED (branch `worktree-cli-codex-backend`)
+
+**Shipped:**
+- `server/lib/backends/cli/codex-backend.ts` — mirrors `claude-code-backend.ts`: `codex exec --json --skip-git-repo-check --full-auto` per turn, working-dir `/project`. Session continuity via `thread_id` (emitted on `thread.started`) persisted to `chats.backend_session_id`; subsequent turns use `codex exec resume <id>`. Same auto-fallback as Claude: if `resume` exits non-zero with zero events, retry once as a fresh session (re-assembling system prompt on retry — see below).
+- Event adapter extended in `stream-json-adapter.ts` with `codexEventToParts`. Covers `thread.started`, `turn.started/completed/failed`, `error`, and `item.{started,updated,completed}` for item types `agent_message`, `reasoning`, `command_execution`, `file_change`, `mcp_tool_call`, `web_search`, `todo_list`, `error`. Each tool-ish item becomes a `tool-call` Part that upgrades to `output-available` / `output-error` on `item.completed`. Event shapes confirmed against `openai/codex` repo `codex-rs/exec/src/exec_events.rs`.
+- Provider + backend registration: `server/lib/providers/codex.ts`, wired in both registries. Model rows `codex/gpt-5-codex` and `codex/gpt-5` added to `server/config/models.json`.
+- System-prompt injection: Codex has no `--append-system-prompt` equivalent, so `assembleCliSystemPrompt` output is prepended to the user turn wrapped in `<workspace_context>…</workspace_context>`. Only on fresh sessions — resumed turns skip it (Codex already has the context from turn 1). The retry path re-assembles when it demotes resume → new.
+- Per-user `/root/.codex` volume: `runner/lib/container.ts` now mounts both `claude-home-<userId>` and `codex-home-<userId>`. Volumes are ensured on-demand. Dockerfile installs `@openai/codex` alongside `@anthropic-ai/claude-code`.
+- Codex login flow: `server/lib/backends/cli/auth/codex-oauth.ts` drives `codex login --device-auth` via the runner auth-exec primitive built in §4. Device-auth prints a URL + one-time code and polls the OpenAI auth server — no stdin needed after launch, so the frontend flow is simpler than Claude's (user visits URL, enters code, CLI exits 0 on its own). `codex login status` drives the status check; `codex logout` + removing `/root/.codex/auth.json` on logout.
+- Routes: `server/routes/cli-auth.ts` 501 stubs for `provider=codex` lifted; stream/stdin/cancel now dispatch on provider.
+- Frontend: `web/src/components/settings/CodexLoginModal.tsx` — near-identical to `ClaudeLoginModal.tsx` but presents the device code prominently instead of a token input. `CliSubscriptionsPanel.tsx`'s Codex row enabled with real login/logout. (Shared-hook extraction skipped — two users of the pattern; the duplication is small and the flows diverge on stdin vs no-stdin UI, so premature.)
+
+**Verification:** `bun run typecheck` server-side shows only the two pre-existing `RunnerPool.streamExecInContainer` errors. Web `tsc --noEmit` shows no errors in the new files (only pre-existing shadcn `ref` and missing-module noise).
+
+**Deferred (under §6, not shipped here):**
+- Batch mode for Codex — both CLI backends throw on `runBatchStep`. Lives in §7 for both.
+- Codex-specific tool-card rendering (§8) — currently uses generic StatusLine fallback just like Claude Code does. Revisit together.
+- Codex `prompt-assembly.ts` tuning — the SOUL.md and skills index were authored for Claude; may be worth a Codex-flavored variant. Low priority.
+- `lastVerifiedAt` staleness / mid-turn 401 re-auth UX — same §11 observability deferral as for Claude.
+
+**Next:** §10 (checkpointing + crash recovery) — with §13's unit layer landed, we have regression coverage for the fold loop + adapter. §10's in-flight recovery work is the natural next slice; the integration harness we deferred in §13 can be built on top of §10's checkpoint plumbing when it exists.
+
+## 7. Batch-mode parity — ✅ SHIPPED (branch `feat/cli-batch-streaming-robustness`)
+
+**Shipped:**
+- New shared helper `server/lib/backends/cli/turn-loop.ts` — `consumeStreamJsonFrames()` drives the per-turn fold loop (frame reading, NDJSON line split, JSON parse, timeout, output byte cap, heartbeat skipping, abort propagation). Both backends' streaming and batch paths now route through the same helper via a `driveTurn` wrapper per backend.
+- `claude-code-backend.ts` + `codex-backend.ts` `runBatchStep` implementations: buffer the adapter output into `assistantMessage.parts`, no WS publish, return a `BatchStepResult` with `assistantParts`, `text`, `totalUsage`, `runId`, `chatId`. Accept both `prompt` (autonomous) and `messages` (Telegram) shapes, mirroring the OpenRouter batch entrypoint. Checkpoints are written at step 0 with `backend` + `batch: true` metadata and deleted on success / persisted on error via the shared hook plumbing.
+- Auto-fallback (resume → new session) works on the batch path too: same inner `runOnce` helper is reused; Codex re-assembles the system prompt on the demoted retry.
+
+**Deferred (under §7):**
+- **Per-project / per-chat batch policy gate.** Plan originally flagged "should Telegram users get to use their own Claude subscription?" — for now the CLI backend is enabled wherever the chat's configured model points at a `claude-code/*` or `codex/*` row. The "shared bot should not borrow a user's subscription" case is a per-tenant config decision and has no operators yet; the simplest gate lands in §14 (feature flag + per-deployment `ENABLE_CLI_BACKENDS`), not here. Leaving as a TODO in the batch entry points was judged unnecessary since the registry dispatch is the natural seam.
+- **Integration fixtures for batch runs.** Added to §13 (testing) scope — see the canned-event integration test bullet there.
+
+## 8. Tool-card rendering polish — ✅ SHIPPED (branch `feat/cli-tool-cards`)
+
+**Shipped:**
+- **Router switch on capitalized CLI tool names.** `web/src/components/chat/tool-cards/index.tsx` now dispatches `Bash` / `Edit` / `MultiEdit` / `Read` / `Write` / `Task` / `TodoWrite` to dedicated cards. Keeps the existing lowercase-name branches (`bash`, `writeFile`, `displayFile`, `agent`, `forwardPort`, `finishPlanning`) untouched so OpenRouter tool calls render as before.
+- **`Bash` → `BashCard` reuse.** The CLI tool-output is typically a raw string rather than `{stdout, stderr, exit_code}`; the router wraps it as `{stdout: text}` (or `{error: text}` on `output-error`) so `BashCard` renders it verbatim.
+- **`Edit` / `MultiEdit` → new `EditDiffCard`.** Renders Claude's `old_string` / `new_string` as a stacked deletion-then-addition diff, and handles Codex's `changes: [{path, before, after, kind}]` shape when it arrives under the same `Edit` name. Heading shows file path and, for multi-change, the count.
+- **`Read` / `Write` → new `CliFileCard` (two exports).** Expandable path + numbered-line preview. `Read` uses the tool output string; `Write` previews the `content` input. `WriteFileCard` itself was left unchanged — it's still the right render for OpenRouter `writeFile` outputs that carry a `fileId`. Instead, `CliWriteCard` renders a **"direct write"** badge to flag that the CLI bypassed the S3 sync-approval flow.
+- **`Task` → new `CliTaskCard`.** Single-task collapsible modeled on `ParallelSubagentCard`'s `TaskRow`, showing the subagent type + description in the header and the markdown-rendered result body on expand.
+- **`TodoWrite` → new `CliTodoCard`.** Check/loading/circle glyphs per item, completed count, line-through for finished entries. Accepts Claude's `{todos}` and Codex's `{items}` shapes.
+- **`tool-config.ts` entries added.** Capitalized CLI names get labels / icons / detail strings so the `StatusLine` fallback for `Glob` / `Grep` / `WebFetch` / `WebSearch` stops reading as "Working / Done" and surfaces the pattern / URL / query as the detail pill.
+- **`BackendBadge` on assistant messages.** New `web/src/components/chat/BackendBadge.tsx`; `MessageRow` renders it once per assistant message when `message.metadata.modelId` starts with `claude-code/` or `codex/`. The tooltip explains why the approval UI is absent ("writes are applied directly in the container and bypass the S3 approval flow").
+
+**Verification:** `bun run tsc --noEmit` in `web/` returns only pre-existing errors (shadcn ref noise, `bun-plugin-tailwind`, `@simplewebauthn/browser`, `ImportMeta.hot`, `GithubIcon`). No new errors in any touched file. The full Bun bundle can't be built in this worktree because `bun-plugin-tailwind` isn't installed — a pre-existing condition, not caused by this session. Browser click-through was not performed in this session (no live model credentials / container handy) — smoke-test deferred to the next person who runs against a CLI-backed chat.
+
+## 9. Streaming robustness + resource limits — ✅ SHIPPED (branch `feat/cli-batch-streaming-robustness`)
+
+**Shipped:**
+- **Per-turn hard timeout (10 min default).** `consumeStreamJsonFrames` starts a `setTimeout` that aborts the inner controller on expiry. The abort propagates into the runner fetch → `req.signal` → docker exec kill. On expiry, `endReason="error"` with a descriptive `endError`; any in-flight tool-call Parts are finalized as `output-error` via the existing `finalizePendingToolCalls` catch path if the aborted exec raises.
+- **Per-turn stdout byte cap (50 MB default).** Counter incremented per `stdout` frame; exceeding the cap aborts the inner controller and sets `endReason="error"`.
+- **Runner heartbeat.** `runner/routes/exec-stream.ts` now emits `{type:"heartbeat", t}` every 10s for the lifetime of the exec. Client-side `consumeStreamJsonFrames` ignores these without counting them as an "event" (so resume→new auto-fallback still fires when the CLI produced nothing). Purpose: keep proxies from closing the idle HTTP chunked response, and surface a dead server-side socket fast.
+- **Container not reaped during live exec.** `runner/lib/container.ts#execStream` now bumps `busyCount` for the duration of the stream so the idle reaper doesn't destroy a container while a CLI subprocess is mid-turn.
+- **Orphan CLI reap via container idle-reap.** The existing idle-reap (`IDLE_TIMEOUT_SECS`, default 600s) destroys the whole container after idle, which inherently kills any orphan `claude` / `codex` subprocess inside it. Finer-grained "kill the subprocess but keep the container" reaping isn't implemented — the container reap is already the cleanup path, so it would just duplicate work.
+- **Abort propagation chain documented.** Verified end-to-end in code:  WS close → server streaming handler's `AbortSignal` → `driveTurn` `runOnce` inner `AbortController` → `RunnerClient.streamExecInContainer` fetch signal → `runner/routes/exec-stream.ts` `req.signal` → `ContainerManager.execStream` → `docker.execStream` exec kill. The chain is short-circuited by any of: per-turn timeout, output byte cap, or parent abort.
+- **NDJSON framing confirmed safe.** Both `claude -p --output-format=stream-json --verbose` and `codex exec --json` use `JSON.stringify` semantics for their output, which escapes literal newlines in string values as `\n`. Splitting on raw `\n` is correct. Documented as a code comment in `turn-loop.ts`; revisit only if a CLI starts emitting non-JSON sentinel lines.
+
+**Deferred (under §9):**
+- **Container cgroup memory bump for Claude Code.** Default is 512 MiB (`runner/lib/container.ts`) which is tight for Claude Code on large workspaces. Bumping it is a per-deployment tuning call — flagged in §15 (ops runbook) instead of hard-coding a new default.
+- **Integration test for abort propagation.** Belongs under §13 (testing), not worth spinning up a runner-mock here.
+
+## 10. Checkpointing + crash recovery — ✅ SHIPPED (branch `feat/cli-checkpointing-crash-recovery`)
+
+**Shipped:**
+- **Periodic progress checkpoints inside both CLI backends' streaming path.** `driveTurn` in `claude-code-backend.ts` and `codex-backend.ts` now sets up a progress saver while a turn is in flight. Triggers: every 3 fully-materialized tool invocations (`tool-call` reaching `input-available` or `tool-output` emission) OR a 15s timer tick, whichever fires first. Messages saved = `[...priorMessages, assistantMessage]`, so on crash recovery the user sees their partial response (streamed text + completed tool calls), not just the user prompt. `step_number` increments per save so the interrupted-marker message reports meaningful progress.
+- **Metadata preserved across upserts.** The step-0 `saveCheckpoint` metadata (`streamId` + `backend`) is now computed once (`progressCheckpointMeta`) and threaded into `driveTurn` via a new optional `progressCheckpointMeta` field on `TurnContext`. Progress saves pass the same metadata so the checkpoint row upsert doesn't drop it.
+- **Batch path intentionally unchanged.** Batch turns are non-interactive (scheduled tasks, Telegram); the incremental saves don't surface to a UI. Keeping step-0-only avoids the complexity without losing anything user-visible.
+- **Recovery policy confirmed.** The existing `server/lib/durability/recovery.ts#recoverInterruptedRuns` (called from `server/index.ts` on startup) already iterates all active `agent_checkpoints`, appends an `⚠ interrupted at step N due to a server restart` marker to each chat, and deletes the checkpoint. This applies uniformly to OpenRouter and CLI checkpoints — no CLI-specific code path needed. Subprocess lifecycle on crash: the runner's exec-stream HTTP response closes, the runner kills the docker exec, the CLI subprocess dies. We don't try to resume a detached subprocess — the user's next turn hits `--resume` and Claude/Codex rehydrates from its own on-disk session state.
+
+**Verification:** `bun run typecheck` (server) shows only the two pre-existing `RunnerPool.streamExecInContainer` errors. Web `tsc --noEmit` shows only pre-existing shadcn `ref` noise. `vitest run server/lib/backends/cli` — 50/50 passing (stream-json-adapter + turn-loop unit layer).
+
+**Deferred (under §10):**
+- **Integration test for progress-checkpoint → crash → recover flow.** Needs the same mock runner harness §13 deferred. Pair it with the §13 integration slice; both use the same fixture.
+- **Tunable intervals.** `PROGRESS_TOOL_USE_INTERVAL = 3` and `PROGRESS_TIMER_MS = 15_000` are reasonable defaults. If ops feedback shows they're too chatty (many checkpoint upserts for long turns) or too coarse (users losing visible progress), expose as env vars — not worth the knob today.
+
+**Next:** all sessions shipped. §13's integration + E2E slices remain deferred — §10's checkpoint plumbing is the seam when the integration harness lands.
+
+## 11. Observability — ✅ SHIPPED (branch `feat/cli-observability-security`)
+
+**Shipped:**
+- **Counters module** `server/lib/backends/cli/metrics.ts` — in-process `Map<"<backend>:<event>", number>` with `started | completed | aborted | errored` events. `recordTurn("claude-code", …)` / `recordTurn("codex", …)` called from the streaming + batch entry points in each backend. Snapshot emitted every 60s via `metricsLog.info("cli-turn-counters", snapshot)` for log-scraper aggregation. Timer is `.unref()`'d so it doesn't pin the event loop.
+- **Usage tracking** — already correctly wired. `runPostChatHooks` receives `modelId: model ?? "claude-code" | "codex"`; the streaming/batch `model` field is the full `claude-code/sonnet` / `codex/gpt-5` id, so `insertUsageLog` keys on the exact prefix dashboards need. No code change required.
+- **Alerts as structured log lines.** No dedicated alerting surface exists in the codebase; the minimal convention is `{ alert: true, … }` on the relevant warn line. Emitted from:
+  - CLI turn error path via `emitAlert("<backend> turn exited with error", …)` on non-zero exit, and on the catch path for stream throws + batch throws.
+  - Runner `exec-stream` 5xx in `server/lib/execution/runner-client.ts` — tagged `alert: true` before re-throwing.
+  - OAuth: `claude-oauth.ts` + `codex-oauth.ts` stream-error warn lines tagged `alert: true, provider: "claude" | "codex"`.
+
+**Deferred (under §11):**
+- **Prometheus / push-gateway integration.** Not worth adding until there's an ops target to push to; snapshots + alert-tagged logs are the seam.
+- **Mid-turn 401 re-auth UX.** Same deferral as in §4 / §6 — would need structured backend error classification, not in scope here.
+
+## 12. Security hardening — ✅ SHIPPED (branch `feat/cli-observability-security`)
+
+**Shipped:**
+- **Credential-leak audit.** Confirmed no server-side code reads `/root/.claude/credentials.json` or `/root/.codex/auth.json`. They are only created (by `claude setup-token` / `codex login`) and deleted (`logout` paths in `auth/{claude,codex}-oauth.ts`) inside the user's container. CLI backend logs never include prompt bodies or stdin bytes — only lengths and error strings (`prompt-assembly.ts` warn lines, `claude-code-backend.ts:156`, `codex-backend.ts:140`). Runner `exec-stream` does not log the `cmd` argv (so the `-p <prompt>` vector cannot leak). The one exception (`runner/lib/auth-exec.ts:83`) logs the auth cmd's first 80 chars — `claude setup-token` / `codex login --device-auth` — non-sensitive.
+- **Rate limits.** `chatSendRateLimiter` (30 turns / 60 s per userId) added in `server/lib/http/rate-limit.ts` and enforced in `ws-chat.ts` at `chat.send` + `chat.regenerate` entry. Per-chat concurrency is already 1 (`chatIsStreaming` guard), so this closes the "same user firing many chats rapidly" hole. Per-user concurrent-chat cap not added separately — with per-chat concurrency = 1 and a per-user turn limit, a user's concurrent CLI subprocess count is bounded by 30/min.
+- **Idle-reap applies to CLI subprocesses.** Verified in `runner/lib/container.ts`: `busyCount` is bumped inside `execStream()` (§9) for the life of the stream, and the idle reaper destroys the whole container after `IDLE_TIMEOUT_SECS` (default 600s) of zero `busyCount` — taking any orphan `claude` / `codex` subprocess with it. No finer-grained subprocess reap needed — the container is the reap unit.
+- **Container-escape surface.** CLI backends run `claude -p …` / `codex exec …` inside the user's existing sandbox (`/project` cwd, per-user `claude-home-<userId>` + `codex-home-<userId>` volumes, the same Docker isolation OpenRouter's tool path uses). Claude's Bash tool can execute arbitrary commands in that container — by design, same as our `bash` tool — so the blast radius is the container, not the host. Not a regression vs. the OpenRouter path.
+- **Prompt-injection policy documented.** `prompt-assembly.ts` merges into the system prompt: (1) **trusted** — SOUL.md, project metadata, skills-index entries from `server/skills/**`, language directive, plan-mode framing (all author-controlled); (2) **untrusted** — RAG memories + file-path lists from `retrieveRagContext`, which can contain user-supplied content. Policy: RAG content must not be used to grant the agent privileged tools. This matches the OpenRouter path — same retriever feeds both system prompts. No new trust boundaries introduced by the CLI backends.
+
+**Deferred (under §12):**
+- **Per-user concurrent-chat cap (separate limiter).** `chatIsStreaming` + turn rate-limit is judged sufficient today; revisit if users open many chats in parallel to bypass the 30/min cap.
+- **Explicit prompt-injection test** for a malicious memory attempting to override the system prompt. Belongs in §13's integration slice.
+- **Volume cleanup on user deletion** — still open from §4. Not re-done here; the credential audit confirmed the current deletion path is safe (row deleted, volume leaks but is scoped to the user).
+
+## 13. Testing — 🟡 UNIT SHIPPED; INTEGRATION + E2E DEFERRED (branch `feat/cli-testing`)
+
+**Shipped:**
+- `server/lib/backends/cli/stream-json-adapter.test.ts` — 36 cases covering both `claudeEventToParts` and `codexEventToParts`. Every Claude event shape (`assistant` with text/thinking/tool_use blocks, `user` tool_result with success + `is_error` + array content, `result` success/error_*), every Codex item type (`agent_message`, `reasoning`, `command_execution` start→update→complete, `file_change`, `mcp_tool_call`, `web_search`, `todo_list`, `error`), plus usage-only events (`turn.completed`), failure events (`turn.failed`, top-level `error`), and forward-compat assertions for unknown event / item types and malformed input. Regression block verifies every tool-call Part carries `callId + name + state` — the invariant frontend renderers assume.
+- `server/lib/backends/cli/turn-loop.test.ts` — 14 cases for `consumeStreamJsonFrames`. Covers: exit 0 completion, exit != 0 error classification, frame.error propagation, adapter errorText surfacing, heartbeat frames skipped (and crucially don't flip `sawAnyEvent` — guards the backend's resume→new auto-fallback), multi-JSON-per-chunk parsing, partial-line buffering across chunks, unparseable line skip, output byte cap → abort, per-turn timeout → abort, parent-abort → endReason="aborted", stderr-not-counted-toward-cap, blank line skip, usage forwarding.
+- Full `vitest run` passes 93/95 tests (the 2 failures are pre-existing `BRAVE_SEARCH_API_KEY` env-missing errors in `search.test.ts`, unrelated to CLI work).
+
+**Deferred (under §13):**
+- **Integration tests** — mock the `AgentBackend` / `ExecutionBackend` at the module seam and drive `claude-code-backend.runStreamingStep` / `runBatchStep` end-to-end through canned frames, asserting WS publish sequence + auto-fallback resume→new behavior. Landable but requires mocking ~8 collaborators (DB queries, WS bus, checkpoint, runPostChatHooks, ensureBackend, assembleCliSystemPrompt). Writing those mocks is a real chunk of work and belongs in a slice of its own — the unit layer above already covers the interesting logic (fold + timeout + cap + abort). Flagged to revisit before §10 (checkpointing) lands because checkpoint recovery needs the same harness.
+- **E2E Playwright** — needs a CI-friendly Claude / Codex auth bypass (pre-seeded volume? API-key env var? mock CLI binary?) plus a runner + server + web stack in CI. Infrastructure-heavy, deserves its own slice; pair it with §14 (rollout flag) so the test can exercise the flag path.
+- **Regression smoke for OpenRouter** — existing tests cover converters / tool registry / files / skills / conversation; the chat-streaming happy path is still unit-shaped. A runtime integration test that drives `runStreamingAgent` against a mocked OpenRouter SDK would be valuable; deferred alongside the CLI integration work above.
+
+## 14. Migration + rollout — ✅ SHIPPED (branch `feat/cli-rollout-docs`)
+
+**Shipped:**
+- **Deployment flag** `ENABLE_CLI_BACKENDS` (default off) in new `server/lib/backends/cli/feature-flag.ts`. Read once at module load from `process.env`; accepts `1/true/yes/on` as on. Exposes `cliBackendsEnabled()` + `isCliInferenceProvider(id)`.
+- **Registry gating.** `server/lib/backends/registry.ts#getBackendForModel` now checks the flag: if the model's `inference_provider` is a CLI one (`claude-code` / `codex`) and the flag is off, it warns and falls back to OpenRouter. Admin-only paths are untouched.
+- **Model-list gating.** `server/routes/models.ts#handleListEnabledModels` filters CLI rows out of the user-facing list when the flag is off. `handleListAllModels` (admin) is unchanged — operators can still see and edit the rows.
+- **Seed defaults.** `server/config/models.json` marks the four CLI rows `"enabled": false`. `server/db/index.ts` seed insert now respects `m.enabled` on fresh databases. Existing databases are unaffected (seed only runs when `models` is empty) — the env flag is the operative kill switch for them.
+- **Image-size disclosure.** `CHANGELOG.md` entry flags the ~200 MB image-layer bump from Node + `@anthropic-ai/claude-code` + `@openai/codex` in `runner/docker/session/Dockerfile`.
+- **Changelog.** New `CHANGELOG.md` with BYO-subscription flow, what works, and the feature-gap disclosure (no custom tools, direct writes bypass S3 approval, no image-gen / scheduling / credential-vault tools mid-turn).
+- **Staged rollout plan** written into `CHANGELOG.md`: internal dogfood → 1 pilot tenant → GA, gated on `cli-turn-counters` telemetry + alert-tagged log review.
+- **.env.example** updated with a commented `ENABLE_CLI_BACKENDS` entry pointing operators at `docs/cli-subscriptions.md`.
+
+**Verification:** `bun run typecheck` shows only the two pre-existing `RunnerPool.streamExecInContainer` errors. `vitest run server/lib/backends/cli` — 50/50 passing.
+
+## 15. Documentation — ✅ SHIPPED (branch `feat/cli-rollout-docs`)
+
+**Shipped:**
+- `docs/cli-subscriptions.md` — user-facing guide. Prerequisites (operator must flip the flag), sign-in steps for Claude (`claude setup-token` token-paste) and Codex (`codex login --device-auth` device-code), what works on the CLI path, what doesn't (custom Zero tools, per-change approval modal, image-gen / scheduling / credential tools), sign-out, troubleshooting for the "fresh container doesn't pick up the per-user volume" UX gap documented under §4-deferred.
+- `docs/runbooks/cli-backends.md` — ops runbook. Flag + admin toggle, image bump, per-user volume layout, telemetry (the `cli-turn-counters` log line + `alert: true` tags added in §11), diagnosing stuck turns, resetting credentials, wiping session state, memory tuning (§9 deferred item), mid-turn 401 guidance (§4 / §11 deferred).
+- `CLAUDE.md` — added an "Inference paths" section covering OpenRouter vs. CLI, pointing at the two backend files, the adapter, and both user + ops docs. Keeps the existing ai-sdk skill instruction.
+
+---
+
+## MVP baseline (already shipped in this branch)
+
+What exists today and is working (subject to the limits above):
+
+### Server
+- `server/lib/backends/types.ts` — `AgentBackend` interface.
+- `server/lib/backends/registry.ts` — `getBackendForModel(modelId)` dispatcher, reads `inference_provider` column, falls back to OpenRouter.
+- `server/lib/backends/llm/openrouter-backend.ts` — wraps existing `runStreamingAgent` + `runBatchAgent`. No behavior change.
+- `server/lib/agent-step/batch-entrypoint.ts` — batch implementation extracted from the public dispatcher to break a circular import.
+- `server/lib/agent-step/index.ts` — slimmed to a thin dispatcher.
+- `server/lib/backends/cli/stream-json-adapter.ts` — Claude Code event → `Part` mapping.
+- `server/lib/backends/cli/claude-code-backend.ts` — implements `AgentBackend.runStreamingStep`. Batch stubbed.
+- `server/lib/providers/claude-code.ts` — minimal `InferenceProvider` for model-id resolution parity.
+- `server/lib/execution/backend-interface.ts` — `streamExecInContainer()` + `StreamExecFrame` type.
+- `server/lib/execution/runner-client.ts` — NDJSON-consuming `streamExecInContainer()` implementation.
+
+### Runner
+- `runner/lib/docker-client.ts` — `execStream()` + `demuxDockerStreamIncremental()` helper.
+- `runner/lib/container.ts` — `execStream()` wrapper.
+- `runner/routes/exec-stream.ts` — new `POST /api/v1/containers/:name/exec-stream` endpoint serving NDJSON over chunked HTTP.
+- `runner/index.ts` — route wired.
+
+### Config + frontend
+- `server/config/models.json` — `claude-code/sonnet` + `claude-code/opus` model rows.
+- `runner/docker/session/Dockerfile` — installs Node + `@anthropic-ai/claude-code`.
+- `web/src/components/chat/ModelSection.tsx` — provider labels extended so CLI models form their own UI group.
+
+### Known MVP gaps (each addressed above)
+1. Single-turn only — no context continuity across messages.
+2. No stdin / no persistent subprocess.
+3. No RAG / skills / system-prompt injection.
+4. No per-user OAuth — credentials must already exist in container.
+5. No Codex backend.
+6. Batch mode throws for CLI backend.
+7. Frontend tool cards render via generic fallback only.
+8. No timeout / output cap / resource limits on CLI subprocess.
+9. Checkpoints only at step 0 for CLI path.
+10. No dedicated metrics for CLI-backed chats.
+11. No tests.
+12. Not feature-flagged; not rolled out.

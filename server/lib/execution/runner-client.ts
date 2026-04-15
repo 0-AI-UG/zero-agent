@@ -6,7 +6,7 @@
 import http from "node:http";
 import type { BrowserAction, BrowserResult } from "@/lib/browser/protocol.ts";
 import type {
-  ExecutionBackend, BashResult, ExecResult, SessionInfo, ContainerListEntry,
+  ExecutionBackend, BashResult, ExecResult, SessionInfo, ContainerListEntry, StreamExecFrame, AuthExecFrame,
 } from "./backend-interface.ts";
 import { listS3Files, readStreamFromS3, writeStreamToS3, s3FileExists, s3FileSize } from "@/lib/s3.ts";
 import { fetchWithTimeout } from "@/lib/utils/deferred.ts";
@@ -190,7 +190,7 @@ export class RunnerClient implements ExecutionBackend {
     const name = this.containerName(projectId);
     const result = await this.json<{ name: string; ip: string; status: string; created?: boolean }>(`/containers`, {
       method: "POST",
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, userId }),
       timeout: 60_000,
     });
     this.sessionCache.set(projectId, {
@@ -508,6 +508,144 @@ export class RunnerClient implements ExecutionBackend {
     });
     const capped = await capExecResult(raw.stdout ?? "", raw.stderr ?? "", projectId);
     return { stdout: capped.stdout, stderr: capped.stderr, exitCode: raw.exitCode };
+  }
+
+  /**
+   * Stream a long-running command's output as newline-delimited JSON frames.
+   * Connects to the runner's `/exec-stream` endpoint and yields parsed frames
+   * until the terminal `{type:"exit"}` frame arrives (or the caller aborts).
+   */
+  async *streamExecInContainer(
+    projectId: string,
+    cmd: string[],
+    opts?: { workingDir?: string; abortSignal?: AbortSignal },
+  ): AsyncIterable<StreamExecFrame> {
+    const name = this.containerName(projectId);
+    const controller = new AbortController();
+    opts?.abortSignal?.addEventListener("abort", () => controller.abort());
+
+    const res = await fetch(`${this.baseUrl}/api/v1/containers/${encodeURIComponent(name)}/exec-stream`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${this.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ cmd, workingDir: opts?.workingDir }),
+      signal: controller.signal,
+    });
+    if (!res.ok || !res.body) {
+      const text = await res.text().catch(() => "");
+      if (res.status >= 500) {
+        // Tag 5xx for log-scraping alert aggregation (plan.md §11).
+        clientLog.warn("runner exec-stream 5xx", {
+          alert: true,
+          status: res.status,
+          projectId,
+          body: text.slice(0, 500),
+        });
+      }
+      throw new Error(`Runner exec-stream failed ${res.status}: ${text}`);
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        let newline: number;
+        while ((newline = buf.indexOf("\n")) !== -1) {
+          const line = buf.slice(0, newline);
+          buf = buf.slice(newline + 1);
+          if (!line) continue;
+          try {
+            yield JSON.parse(line) as StreamExecFrame;
+          } catch (err) {
+            clientLog.warn("exec-stream parse error", { line: line.slice(0, 200), error: String(err) });
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+  }
+
+  // -- Auth exec (interactive CLI login sessions) --
+
+  async startAuthExec(
+    projectId: string,
+    cmd: string[],
+    opts?: { workingDir?: string; env?: string[] },
+  ): Promise<{ sessionId: string }> {
+    const name = this.containerName(projectId);
+    return this.json<{ sessionId: string }>(
+      `/containers/${encodeURIComponent(name)}/auth-exec/start`,
+      {
+        method: "POST",
+        body: JSON.stringify({ cmd, workingDir: opts?.workingDir, env: opts?.env }),
+        timeout: 30_000,
+      },
+    );
+  }
+
+  async *streamAuthExec(
+    _projectId: string,
+    sessionId: string,
+    opts?: { abortSignal?: AbortSignal },
+  ): AsyncIterable<AuthExecFrame> {
+    const controller = new AbortController();
+    opts?.abortSignal?.addEventListener("abort", () => controller.abort());
+    const res = await fetch(
+      `${this.baseUrl}/api/v1/auth-exec/${encodeURIComponent(sessionId)}/stream`,
+      {
+        method: "GET",
+        headers: { "Authorization": `Bearer ${this.apiKey}` },
+        signal: controller.signal,
+      },
+    );
+    if (!res.ok || !res.body) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`Runner auth-exec stream failed ${res.status}: ${text}`);
+    }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        let newline: number;
+        while ((newline = buf.indexOf("\n")) !== -1) {
+          const line = buf.slice(0, newline);
+          buf = buf.slice(newline + 1);
+          if (!line) continue;
+          try {
+            yield JSON.parse(line) as AuthExecFrame;
+          } catch (err) {
+            clientLog.warn("auth-exec parse error", { line: line.slice(0, 200), error: String(err) });
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+  }
+
+  async writeAuthExecStdin(_projectId: string, sessionId: string, data: string): Promise<void> {
+    await this.json(
+      `/auth-exec/${encodeURIComponent(sessionId)}/stdin`,
+      { method: "POST", body: JSON.stringify({ data }), timeout: 10_000 },
+    );
+  }
+
+  async cancelAuthExec(_projectId: string, sessionId: string): Promise<void> {
+    await this.request(
+      `/auth-exec/${encodeURIComponent(sessionId)}`,
+      { method: "DELETE", timeout: 10_000 },
+    ).catch(() => {});
   }
 
   // -- Port checks --

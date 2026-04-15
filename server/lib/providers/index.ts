@@ -7,6 +7,8 @@ import type {
   SpecializedKind,
 } from "@/lib/providers/types.ts";
 import { openrouterProvider } from "@/lib/providers/openrouter.ts";
+import { claudeCodeProvider } from "@/lib/providers/claude-code.ts";
+import { codexProvider } from "@/lib/providers/codex.ts";
 
 const provLog = log.child({ module: "providers" });
 
@@ -14,6 +16,8 @@ const provLog = log.child({ module: "providers" });
 
 const PROVIDERS: Record<string, InferenceProvider> = {
   [openrouterProvider.id]: openrouterProvider,
+  [claudeCodeProvider.id]: claudeCodeProvider,
+  [codexProvider.id]: codexProvider,
 };
 
 export function registerProvider(provider: InferenceProvider): void {

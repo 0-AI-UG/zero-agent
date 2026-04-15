@@ -50,6 +50,59 @@ function unixFetch(url: string, socketPath: string, init?: RequestInit): Promise
   });
 }
 
+/**
+ * Hijacked variant — used for Docker exec with AttachStdin:true or Tty:true.
+ * Docker returns 101/200 then upgrades to a raw TCP stream carrying stdin
+ * (caller → daemon) and stdout/stderr (daemon → caller). The socket is
+ * returned raw so callers can both read and write.
+ */
+function unixFetchHijack(url: string, socketPath: string, init?: RequestInit): Promise<{ socket: import("node:net").Socket; head: Buffer }> {
+  return new Promise((resolve, reject) => {
+    const parsed = new URL(url);
+    const headers: Record<string, string> = {
+      ...(init?.headers as Record<string, string> | undefined ?? {}),
+      "Connection": "Upgrade",
+      "Upgrade": "tcp",
+    };
+    const options: http.RequestOptions = {
+      socketPath,
+      path: parsed.pathname + parsed.search,
+      method: init?.method ?? "POST",
+      headers,
+    };
+    const req = http.request(options);
+    let settled = false;
+    req.on("upgrade", (_res, socket, head) => {
+      if (settled) return;
+      settled = true;
+      resolve({ socket, head });
+    });
+    req.on("response", (res) => {
+      // Docker < 25 may not upgrade even when AttachStdin is set — some
+      // daemons just stream back on the same connection. In that case
+      // steal the underlying socket before any response data is consumed.
+      if (settled) return;
+      settled = true;
+      const socket = (res as any).socket as import("node:net").Socket;
+      (req as any).removeAllListeners("response");
+      resolve({ socket, head: Buffer.alloc(0) });
+    });
+    req.on("error", (err) => {
+      if (settled) return;
+      settled = true;
+      reject(err);
+    });
+    if (init?.body) {
+      if (init.body instanceof ArrayBuffer || init.body instanceof Uint8Array || Buffer.isBuffer(init.body)) {
+        req.write(Buffer.from(init.body as ArrayBuffer));
+      } else if (typeof init.body === "string") {
+        req.write(init.body);
+      }
+    }
+    req.end();
+  });
+}
+
 /** Streaming variant — resolves as soon as headers arrive, body is a ReadableStream */
 function unixFetchStreaming(url: string, socketPath: string, init?: RequestInit): Promise<Response> {
   return new Promise((resolve, reject) => {
@@ -564,6 +617,131 @@ export class DockerClient {
     }
   }
 
+  /**
+   * Streaming exec. No stdin — pass the prompt as a CLI arg. Streams
+   * stdout/stderr frames via `onFrame` as Docker returns them. Resolves
+   * with the process exit code after the stream closes.
+   */
+  async execStream(
+    containerName: string,
+    cmd: string[],
+    opts: {
+      workingDir?: string;
+      onFrame: (f: { type: "stdout" | "stderr"; data: Uint8Array }) => void;
+      abortSignal?: AbortSignal;
+    },
+  ): Promise<number> {
+    const createRes = await this.fetch(
+      `/containers/${encodeURIComponent(containerName)}/exec`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          Cmd: cmd,
+          AttachStdin: false,
+          AttachStdout: true,
+          AttachStderr: true,
+          Tty: false,
+          WorkingDir: opts.workingDir ?? "/project",
+        }),
+      },
+    );
+    if (!createRes.ok) {
+      throw new Error(`Failed to create exec: ${await createRes.text()}`);
+    }
+    const { Id: execId } = (await createRes.json()) as { Id: string };
+
+    const startRes = await unixFetchStreaming(
+      `${this.baseUrl}/exec/${execId}/start`,
+      this.socket,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ Detach: false, Tty: false }),
+      },
+    );
+    if (!startRes.ok) {
+      throw new Error(`Failed to start exec: ${await startRes.text()}`);
+    }
+
+    await demuxDockerStreamIncremental(startRes.body!, opts.onFrame, opts.abortSignal);
+
+    const inspectRes = await this.fetch(`/exec/${execId}/json`);
+    const inspectData = (await inspectRes.json()) as { ExitCode: number };
+    return inspectData.ExitCode ?? 0;
+  }
+
+  /**
+   * Interactive exec — TTY on, stdin attached. Returns the raw hijacked
+   * socket so callers can both write stdin bytes and read TTY output.
+   * In TTY mode Docker does NOT multiplex stdout/stderr; the socket carries
+   * raw terminal bytes (stdout + stderr interleaved as a single stream).
+   */
+  async execInteractive(
+    containerName: string,
+    cmd: string[],
+    opts?: { workingDir?: string; env?: string[] },
+  ): Promise<{ execId: string; socket: import("node:net").Socket }> {
+    const createRes = await this.fetch(
+      `/containers/${encodeURIComponent(containerName)}/exec`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          Cmd: cmd,
+          AttachStdin: true,
+          AttachStdout: true,
+          AttachStderr: true,
+          Tty: true,
+          WorkingDir: opts?.workingDir ?? "/project",
+          Env: opts?.env,
+        }),
+      },
+    );
+    if (!createRes.ok) {
+      throw new Error(`Failed to create interactive exec: ${await createRes.text()}`);
+    }
+    const { Id: execId } = (await createRes.json()) as { Id: string };
+
+    const { socket, head } = await unixFetchHijack(
+      `${this.baseUrl}/exec/${execId}/start`,
+      this.socket,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ Detach: false, Tty: true }),
+      },
+    );
+    if (head.length > 0) socket.unshift(head);
+    return { execId, socket };
+  }
+
+  async inspectExec(execId: string): Promise<{ Running: boolean; ExitCode: number | null }> {
+    const res = await this.fetch(`/exec/${execId}/json`);
+    if (!res.ok) throw new Error(`inspect exec failed: ${res.status}`);
+    const j = (await res.json()) as { Running: boolean; ExitCode: number | null };
+    return j;
+  }
+
+  // -- Volumes --
+
+  async ensureVolume(name: string): Promise<void> {
+    const existing = await this.fetch(`/volumes/${encodeURIComponent(name)}`);
+    if (existing.ok) return;
+    const res = await this.fetch(`/volumes/create`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ Name: name }),
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to create volume ${name}: ${await res.text()}`);
+    }
+  }
+
+  async removeVolume(name: string): Promise<void> {
+    await this.fetch(`/volumes/${encodeURIComponent(name)}?force=true`, { method: "DELETE" });
+  }
+
   // -- List / Filter --
 
   async listContainers(opts?: { all?: boolean; filters?: Record<string, string[]> }): Promise<Array<{ Id: string; Names: string[]; State: string }>> {
@@ -667,6 +845,57 @@ function demuxDockerStream(data: Uint8Array): { stdout: string; stderr: string }
     stdout: decoder.decode(concatUint8Arrays(stdoutChunks)),
     stderr: decoder.decode(concatUint8Arrays(stderrChunks)),
   };
+}
+
+/**
+ * Incrementally demux Docker's multiplexed exec stream. Emits stdout/stderr
+ * frames as they arrive. Honors abortSignal by cancelling the stream.
+ */
+async function demuxDockerStreamIncremental(
+  body: ReadableStream<Uint8Array>,
+  onFrame: (f: { type: "stdout" | "stderr"; data: Uint8Array }) => void,
+  abortSignal?: AbortSignal,
+): Promise<void> {
+  const reader = body.getReader();
+  let buf = new Uint8Array(0);
+  const onAbort = () => {
+    reader.cancel().catch(() => {});
+  };
+  abortSignal?.addEventListener("abort", onAbort);
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value.length === 0) continue;
+      // Append
+      const merged = new Uint8Array(buf.length + value.length);
+      merged.set(buf, 0);
+      merged.set(value, buf.length);
+      buf = merged;
+
+      let offset = 0;
+      while (offset + 8 <= buf.length) {
+        const streamType = buf[offset]!;
+        const size =
+          (buf[offset + 4]! << 24) |
+          (buf[offset + 5]! << 16) |
+          (buf[offset + 6]! << 8) |
+          buf[offset + 7]!;
+        if (offset + 8 + size > buf.length) break;
+        const payload = buf.subarray(offset + 8, offset + 8 + size);
+        if (streamType === 1) {
+          onFrame({ type: "stdout", data: payload });
+        } else if (streamType === 2) {
+          onFrame({ type: "stderr", data: payload });
+        }
+        offset += 8 + size;
+      }
+      buf = buf.subarray(offset);
+    }
+  } finally {
+    abortSignal?.removeEventListener("abort", onAbort);
+    reader.releaseLock();
+  }
 }
 
 function parseDockerLogs(data: Uint8Array): string {

@@ -70,6 +70,17 @@ export class RateLimiter {
 /** 10 failed attempts per 15 minutes for auth endpoints */
 export const authRateLimiter = new RateLimiter(10, 15 * 60 * 1000);
 
+/**
+ * Per-user cap on chat.send / chat.regenerate turns. Guards the CLI
+ * backends in particular, where a subprocess can burn container CPU +
+ * a user's subscription quota fast. 30 turns/min is generous for
+ * interactive use and will only bite runaway clients.
+ *
+ * Shape differs from authRateLimiter: here we _record on success_
+ * (every send is a turn) and _check_ before accepting the next one.
+ */
+export const chatSendRateLimiter = new RateLimiter(30, 60 * 1000);
+
 /** Record a failed auth attempt for the request's client IP. */
 export function recordAuthFailure(request: Request): void {
   const ip =

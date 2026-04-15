@@ -33,6 +33,14 @@ RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 ENV PATH="/root/.local/bin:$PATH"
 ENV UV_PYTHON_PREFERENCE=only-managed
 
+# Node + Claude Code CLI + Codex CLI (used by the claude-code / codex
+# inference backends). Both are npm-distributed and currently require Node,
+# so install a minimal Node alongside Bun. Users authenticate their own
+# subscription via `claude login` / `codex login --device-auth` once per user.
+RUN apt-get update && apt-get install -y --no-install-recommends nodejs npm \
+    && rm -rf /var/lib/apt/lists/* \
+    && npm install -g --omit=dev @anthropic-ai/claude-code @openai/codex
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 

@@ -169,6 +169,14 @@ import {
 import { handleSetupStatus, handleSetupComplete } from "@/routes/setup.ts";
 import { handleGetSettings, handleUpdateSettings } from "@/routes/settings.ts";
 import {
+  handleStart as handleCliAuthStart,
+  handleStream as handleCliAuthStream,
+  handleStdin as handleCliAuthStdin,
+  handleCancel as handleCliAuthCancel,
+  handleStatus as handleCliAuthStatus,
+  handleLogout as handleCliAuthLogout,
+} from "@/routes/cli-auth.ts";
+import {
   handleListEnabledModels,
   handleListAllModels,
   handleCreateModel,
@@ -446,6 +454,14 @@ app.get("/api/admin/usage/by-user", h(handleUsageByUser));
 app.post("/api/sync/:id/verdict", h(handleSyncVerdict));
 app.get("/api/sync/:id/diff", h(handleSyncDiff));
 app.get("/api/sync/:id", h(handleSyncStatus));
+
+// CLI subscription auth (Claude Code, Codex) — per-user BYO login
+app.get("/api/cli-auth/status", h(handleCliAuthStatus));
+app.post("/api/cli-auth/:provider/start", h((req: any) => handleCliAuthStart(req, req.params.provider)));
+app.get("/api/cli-auth/:provider/stream/:sessionId", h((req: any) => handleCliAuthStream(req, req.params.provider, req.params.sessionId)));
+app.post("/api/cli-auth/:provider/stdin/:sessionId", h((req: any) => handleCliAuthStdin(req, req.params.provider, req.params.sessionId)));
+app.post("/api/cli-auth/:provider/cancel/:sessionId", h((req: any) => handleCliAuthCancel(req, req.params.provider, req.params.sessionId)));
+app.post("/api/cli-auth/:provider/logout", h((req: any) => handleCliAuthLogout(req, req.params.provider)));
 
 // Settings
 app.get("/api/settings", h(handleGetSettings));

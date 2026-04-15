@@ -26,6 +26,7 @@ import {
 import { runAgentStepStreaming } from "@/lib/agent-step/index.ts";
 import { isChatStreaming as chatIsStreaming } from "@/lib/http/ws.ts";
 import { resolvePendingSync } from "@/lib/sync-approval.ts";
+import { chatSendRateLimiter } from "@/lib/http/rate-limit.ts";
 
 import type { Message, Part } from "@/lib/messages/types.ts";
 
@@ -142,6 +143,16 @@ async function handleChatSend(
     return;
   }
 
+  const rl = chatSendRateLimiter.check(meta.userId);
+  if (!rl.allowed) {
+    sendError(
+      ws,
+      `chat.send: rate limit exceeded — retry in ${rl.retryAfterSeconds}s`,
+    );
+    return;
+  }
+  chatSendRateLimiter.record(meta.userId);
+
   // Build the new user message from text + attachments. Server owns history.
   const newUserParts: Part[] = [];
   if (msg.text) newUserParts.push({ type: "text", text: msg.text });
@@ -239,6 +250,16 @@ async function handleChatRegenerate(
     sendError(ws, "chat.regenerate: chat is already streaming");
     return;
   }
+
+  const rl = chatSendRateLimiter.check(meta.userId);
+  if (!rl.allowed) {
+    sendError(
+      ws,
+      `chat.regenerate: rate limit exceeded — retry in ${rl.retryAfterSeconds}s`,
+    );
+    return;
+  }
+  chatSendRateLimiter.record(meta.userId);
 
   const messages = getMessagesByChat(chat.id)
     .map((row) => {
