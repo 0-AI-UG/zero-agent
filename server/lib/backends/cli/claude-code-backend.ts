@@ -2,7 +2,8 @@
  * Claude Code CLI backend. Delegates an entire agent turn to the
  * `claude -p --output-format=stream-json` CLI running inside the user's
  * execution container. Stream-json events are translated into the canonical
- * `Part` stream and published via the same WS scene the LLM backend uses.
+ * `Part` stream and published via the same WS scene the LLM backend uses
+ * (streaming path) or buffered into a `BatchStepResult` (batch path).
  *
  * Multi-turn context: each chat row owns a `backend_session_id` (UUID).
  * First turn starts Claude with `--session-id <uuid>`; subsequent turns
@@ -62,66 +63,42 @@ import type {
 
 import { claudeEventToParts } from "./stream-json-adapter.ts";
 import { assembleCliSystemPrompt } from "./prompt-assembly.ts";
+import { consumeStreamJsonFrames } from "./turn-loop.ts";
 
 const cliLog = log.child({ module: "backend:claude-code" });
 
-async function runStreamingStep(input: StreamingStepInput): Promise<void> {
-  const start = Date.now();
-  const {
-    project,
-    chatId,
-    userId,
-    messages: priorMessages,
-    model,
-    abortSignal,
-    streamId,
-    checkpointMetadata,
-  } = input;
+interface TurnContext {
+  project: { id: string; name: string };
+  chatId: string;
+  userId?: string;
+  priorMessages: Message[];
+  model?: string;
+  language?: "en" | "zh";
+  onlySkills?: string[];
+  planMode?: boolean;
+  abortSignal: AbortSignal;
+  runId: string;
+  // Output sinks — set on streaming path, unset on batch path.
+  onPart?: () => void;
+}
 
-  if (isShuttingDown()) {
-    beginStream(chatId, [], streamId);
-    endStream(chatId, "error", "Server is shutting down");
-    return;
-  }
+/** Shared turn driver used by both the streaming and batch entry points. */
+async function driveTurn(
+  ctx: TurnContext,
+  assistantMessage: Message,
+  totalUsage: { inputTokens: number; outputTokens: number; reasoningTokens: number; cachedInputTokens: number },
+): Promise<{ endReason: "completed" | "aborted" | "error"; endError?: string; sessionId: string; sessionMode: "new" | "resume" }> {
+  const { project, chatId, userId, priorMessages, model, language, onlySkills, planMode, abortSignal } = ctx;
 
-  const { language, onlySkills, planMode } = input;
-  const runId = input.runId ?? generateId();
-  const assistantMessageId = generateId();
-  const assistantMessage: Message = {
-    id: assistantMessageId,
-    role: "assistant",
-    parts: [],
-    createdAt: Date.now(),
-  };
-
-  // Extract the latest user prompt from the message history. Claude drives
-  // its own context via --resume; on first turn we pass just the last user
-  // message. Future iterations may pass the whole transcript as stream-json
-  // input events.
   const lastUser = [...priorMessages].reverse().find((m) => m.role === "user");
   const prompt = lastUser ? extractText(lastUser) : "";
   if (!prompt) {
-    beginStream(chatId, priorMessages, streamId);
-    endStream(chatId, "error", "No user prompt found");
-    return;
+    return { endReason: "error", endError: "No user prompt found", sessionId: "", sessionMode: "new" };
   }
-
-  saveCheckpoint({
-    runId,
-    chatId,
-    projectId: project.id,
-    stepNumber: 0,
-    messages: priorMessages,
-    metadata: { ...(checkpointMetadata ?? {}), streamId, backend: "claude-code" },
-  });
-  registerRun({ runId, chatId, projectId: project.id, startedAt: Date.now() });
-  beginStream(chatId, priorMessages, streamId);
-  publishMessage(chatId, assistantMessage);
 
   const backend = await ensureBackend();
   if (!backend) {
-    endStream(chatId, "error", "Execution backend unavailable");
-    return;
+    return { endReason: "error", endError: "Execution backend unavailable", sessionId: "", sessionMode: "new" };
   }
   if (userId) {
     await backend.ensureContainer(userId, project.id).catch(() => {});
@@ -129,10 +106,6 @@ async function runStreamingStep(input: StreamingStepInput): Promise<void> {
 
   const partIndexById = new Map<string, number>();
   const callIndexByCallId = new Map<string, number>();
-
-  let endReason: "completed" | "aborted" | "error" = "completed";
-  let endError: string | undefined;
-  const totalUsage = { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, cachedInputTokens: 0 };
 
   // Resolve session: reuse stored id (resume) or mint a fresh UUID. We persist
   // the fresh id eagerly so a crashed mid-turn still leaves a resumable state
@@ -156,79 +129,140 @@ async function runStreamingStep(input: StreamingStepInput): Promise<void> {
     return "";
   });
 
+  let endReason: "completed" | "aborted" | "error" = "completed";
+  let endError: string | undefined;
   let sawAnyEvent = false;
 
   const runOnce = async (mode: "resume" | "new", id: string): Promise<void> => {
-    let stdoutBuf = "";
+    // Per-exec abort controller — the turn-loop combines it with the parent
+    // signal plus its per-turn timeout / output cap. We pass its signal into
+    // the runner fetch so a local abort kills the docker exec.
+    const controller = new AbortController();
+    abortSignal.addEventListener("abort", () => controller.abort(), { once: true });
+
     const cmd = buildClaudeCmd(prompt, model, mode, id, appendSystemPrompt);
-    for await (const frame of backend.streamExecInContainer(project.id, cmd, {
+    const stream = backend.streamExecInContainer(project.id, cmd, {
       workingDir: "/project",
-      abortSignal,
-    })) {
-      if (frame.type === "exit") {
-        if (frame.code !== 0 && endReason === "completed") {
-          endReason = "error";
-          endError = `claude exited with code ${frame.code}`;
-        }
-        break;
-      }
-      if (frame.type === "error") {
-        endReason = "error";
-        endError = frame.message;
-        break;
-      }
-      if (frame.type !== "stdout") continue;
-      stdoutBuf += frame.data;
-      let nl: number;
-      while ((nl = stdoutBuf.indexOf("\n")) !== -1) {
-        const line = stdoutBuf.slice(0, nl);
-        stdoutBuf = stdoutBuf.slice(nl + 1);
-        if (!line.trim()) continue;
-        let event: unknown;
-        try {
-          event = JSON.parse(line);
-        } catch {
-          cliLog.warn("unparseable stream-json line", { line: line.slice(0, 200) });
-          continue;
-        }
-        sawAnyEvent = true;
-        const { parts, usage, errorText } = claudeEventToParts(event);
-        for (const part of parts) {
-          foldPartIntoMessage(assistantMessage, part, partIndexById, callIndexByCallId);
-          publishMessage(chatId, assistantMessage);
-        }
-        if (usage) {
-          totalUsage.inputTokens = usage.inputTokens;
-          totalUsage.outputTokens = usage.outputTokens;
-          totalUsage.cachedInputTokens = usage.cachedInputTokens;
-        }
-        if (errorText) {
-          endReason = "error";
-          endError = errorText;
-        }
-      }
-    }
+      abortSignal: controller.signal,
+    });
+
+    const result = await consumeStreamJsonFrames(
+      {
+        stream,
+        adapter: claudeEventToParts,
+        abortSignal,
+        logTag: "claude",
+        onAdapterResult: (r) => {
+          for (const part of r.parts) {
+            foldPartIntoMessage(assistantMessage, part, partIndexById, callIndexByCallId);
+            ctx.onPart?.();
+          }
+          if (r.usage) {
+            totalUsage.inputTokens = r.usage.inputTokens;
+            totalUsage.outputTokens = r.usage.outputTokens;
+            totalUsage.cachedInputTokens = r.usage.cachedInputTokens;
+          }
+        },
+      },
+      controller,
+    );
+    endReason = result.endReason;
+    endError = result.endError;
+    sawAnyEvent = result.sawAnyEvent;
   };
 
-  try {
-    await runOnce(sessionMode, sessionId);
+  await runOnce(sessionMode, sessionId);
 
-    // Auto-fallback: a resume that never produced any assistant event and
-    // exited non-zero typically means the session file is gone (container
-    // rebuilt or user wiped ~/.claude). Retry once as a fresh session.
-    if (sessionMode === "resume" && !sawAnyEvent && (endReason as string) === "error") {
-      cliLog.warn("claude --resume failed, retrying as fresh session", {
-        chatId,
-        oldSessionId: sessionId,
-        prevError: endError,
-      });
-      endReason = "completed";
-      endError = undefined;
-      sessionId = crypto.randomUUID();
-      sessionMode = "new";
-      setBackendSessionId(chatId, sessionId);
-      await runOnce("new", sessionId);
-    }
+  // Auto-fallback: a resume that never produced any assistant event and
+  // exited non-zero typically means the session file is gone (container
+  // rebuilt or user wiped ~/.claude). Retry once as a fresh session.
+  if (sessionMode === "resume" && !sawAnyEvent && (endReason as string) === "error") {
+    cliLog.warn("claude --resume failed, retrying as fresh session", {
+      chatId,
+      oldSessionId: sessionId,
+      prevError: endError,
+    });
+    endReason = "completed";
+    endError = undefined;
+    sessionId = crypto.randomUUID();
+    sessionMode = "new";
+    setBackendSessionId(chatId, sessionId);
+    await runOnce("new", sessionId);
+  }
+
+  return { endReason, endError, sessionId, sessionMode };
+}
+
+async function runStreamingStep(input: StreamingStepInput): Promise<void> {
+  const start = Date.now();
+  const {
+    project,
+    chatId,
+    userId,
+    messages: priorMessages,
+    model,
+    abortSignal,
+    streamId,
+    checkpointMetadata,
+  } = input;
+
+  if (isShuttingDown()) {
+    beginStream(chatId, [], streamId);
+    endStream(chatId, "error", "Server is shutting down");
+    return;
+  }
+
+  const runId = input.runId ?? generateId();
+  const assistantMessageId = generateId();
+  const assistantMessage: Message = {
+    id: assistantMessageId,
+    role: "assistant",
+    parts: [],
+    createdAt: Date.now(),
+  };
+
+  const lastUser = [...priorMessages].reverse().find((m) => m.role === "user");
+  const prompt = lastUser ? extractText(lastUser) : "";
+  if (!prompt) {
+    beginStream(chatId, priorMessages, streamId);
+    endStream(chatId, "error", "No user prompt found");
+    return;
+  }
+
+  saveCheckpoint({
+    runId,
+    chatId,
+    projectId: project.id,
+    stepNumber: 0,
+    messages: priorMessages,
+    metadata: { ...(checkpointMetadata ?? {}), streamId, backend: "claude-code" },
+  });
+  registerRun({ runId, chatId, projectId: project.id, startedAt: Date.now() });
+  beginStream(chatId, priorMessages, streamId);
+  publishMessage(chatId, assistantMessage);
+
+  const totalUsage = { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, cachedInputTokens: 0 };
+
+  let endReason: "completed" | "aborted" | "error" = "completed";
+  let endError: string | undefined;
+  let sessionIdFinal = "";
+  let sessionModeFinal: "new" | "resume" = "new";
+
+  try {
+    const turn = await driveTurn(
+      {
+        project, chatId, userId, priorMessages, model,
+        language: input.language, onlySkills: input.onlySkills, planMode: input.planMode,
+        abortSignal, runId,
+        onPart: () => publishMessage(chatId, assistantMessage),
+      },
+      assistantMessage,
+      totalUsage,
+    );
+    endReason = turn.endReason;
+    endError = turn.endError;
+    sessionIdFinal = turn.sessionId;
+    sessionModeFinal = turn.sessionMode;
 
     assistantMessage.metadata = {
       modelId: model ?? "claude-code",
@@ -252,8 +286,9 @@ async function runStreamingStep(input: StreamingStepInput): Promise<void> {
       runId,
       durationMs: Date.now() - start,
       partCount: assistantMessage.parts.length,
-      sessionId,
-      sessionMode,
+      sessionId: sessionIdFinal,
+      sessionMode: sessionModeFinal,
+      endReason,
     });
   } catch (err) {
     if (abortSignal.aborted) {
@@ -288,8 +323,124 @@ async function runStreamingStep(input: StreamingStepInput): Promise<void> {
   }
 }
 
-async function runBatchStep(_input: BatchStepInput): Promise<BatchStepResult> {
-  throw new Error("claude-code backend: batch mode not yet implemented");
+async function runBatchStep(input: BatchStepInput): Promise<BatchStepResult> {
+  const start = Date.now();
+  const {
+    project,
+    chatId,
+    userId,
+    model,
+    language,
+    onlySkills,
+    planMode,
+    prompt,
+    messages: providedMessages,
+    contextBlock,
+    checkpointMetadata,
+    taskName,
+  } = input;
+
+  if (prompt == null && (providedMessages == null || providedMessages.length === 0)) {
+    throw new Error("claude-code runBatchStep: provide either `prompt` or `messages`");
+  }
+  if (isShuttingDown()) {
+    throw new Error("Server is shutting down");
+  }
+
+  const runId = input.runId ?? generateId();
+  const assistantMessageId = generateId();
+  const assistantMessage: Message = {
+    id: assistantMessageId,
+    role: "assistant",
+    parts: [],
+    createdAt: Date.now(),
+  };
+
+  // Batch callers supply either a prompt string (autonomous tasks) or a
+  // pre-built Message[] (Telegram). Normalize to a Message[] so the shared
+  // driver gets the same shape as the streaming path.
+  const priorMessages: Message[] =
+    prompt != null
+      ? [{
+          id: generateId(),
+          role: "user",
+          parts: [{ type: "text", text: prompt + (contextBlock ?? "") }],
+        }]
+      : [...(providedMessages ?? [])];
+
+  saveCheckpoint({
+    runId,
+    chatId,
+    projectId: project.id,
+    stepNumber: 0,
+    messages: priorMessages,
+    metadata: {
+      ...(checkpointMetadata ?? {}),
+      ...(taskName ? { taskName } : {}),
+      backend: "claude-code",
+      batch: true,
+    },
+  });
+  registerRun({ runId, chatId, projectId: project.id, startedAt: Date.now() });
+
+  const totalUsage = { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, cachedInputTokens: 0 };
+
+  // Batch paths don't have a user-driven abort signal. A never-aborted
+  // controller keeps the shared driver's addEventListener contract simple;
+  // the per-turn timeout inside `consumeStreamJsonFrames` provides the
+  // backstop.
+  const controller = new AbortController();
+
+  try {
+    const turn = await driveTurn(
+      {
+        project, chatId, userId, priorMessages, model,
+        language, onlySkills, planMode,
+        abortSignal: controller.signal,
+        runId,
+        // No onPart publishing in batch mode.
+      },
+      assistantMessage,
+      totalUsage,
+    );
+    if (turn.endReason === "error") {
+      throw new Error(turn.endError ?? "claude-code batch turn errored");
+    }
+    if (turn.endReason === "aborted") {
+      throw new Error("claude-code batch turn aborted");
+    }
+
+    const text = assistantMessage.parts
+      .filter((p): p is Extract<Part, { type: "text" }> => p.type === "text")
+      .map((p) => p.text)
+      .join("");
+
+    cliLog.info("claude-code batch completed", {
+      projectId: project.id,
+      chatId,
+      runId,
+      durationMs: Date.now() - start,
+      partCount: assistantMessage.parts.length,
+      taskName,
+    });
+
+    return {
+      runId,
+      text,
+      assistantParts: assistantMessage.parts,
+      totalUsage,
+      responseMessages: [],
+      steps: [],
+      chatId,
+    };
+  } catch (err) {
+    cliLog.error("claude-code batch errored", err, { chatId, runId });
+    persistCheckpointOnError(runId, chatId);
+    throw err;
+  } finally {
+    deleteCheckpoint(runId);
+    deregisterRun(runId);
+  }
 }
 
 export const claudeCodeBackend: AgentBackend = {

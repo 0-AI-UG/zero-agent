@@ -372,8 +372,18 @@ list(): ContainerInfo[] {
   ): Promise<number> {
     const state = this.containers.get(name);
     if (!state) throw new Error(`Container "${name}" not found`);
+    // Mark busy so the idle reaper doesn't destroy this container while a
+    // CLI (claude / codex) subprocess is still running inside it. The
+    // reaper already respects busyCount > 0; without this, long CLI turns
+    // could get their container reaped out from under them.
+    state.busyCount++;
     state.lastUsedAt = Date.now();
-    return docker.execStream(name, cmd, opts);
+    try {
+      return await docker.execStream(name, cmd, opts);
+    } finally {
+      state.busyCount--;
+      state.lastUsedAt = Date.now();
+    }
   }
 
   async bash(name: string, command: string, opts?: { timeout?: number; workingDir?: string }): Promise<ExecResult> {

@@ -1,7 +1,8 @@
 /**
  * Codex CLI backend. Delegates an agent turn to `codex exec --json` running
  * inside the user's per-project container. JSONL events are translated into
- * canonical `Part`s and published via the same WS scene the LLM backend uses.
+ * canonical `Part`s and published via the same WS scene the LLM backend uses
+ * (streaming path) or buffered into a `BatchStepResult` (batch path).
  *
  * Multi-turn context: Codex emits a `thread.started { thread_id }` event on
  * the first turn. We persist that id to `chats.backend_session_id`, and
@@ -61,8 +62,131 @@ import type {
 
 import { codexEventToParts } from "./stream-json-adapter.ts";
 import { assembleCliSystemPrompt } from "./prompt-assembly.ts";
+import { consumeStreamJsonFrames } from "./turn-loop.ts";
 
 const cliLog = log.child({ module: "backend:codex" });
+
+interface TurnContext {
+  project: { id: string; name: string };
+  chatId: string;
+  userId?: string;
+  priorMessages: Message[];
+  model?: string;
+  language?: "en" | "zh";
+  onlySkills?: string[];
+  planMode?: boolean;
+  abortSignal: AbortSignal;
+  runId: string;
+  onPart?: () => void;
+}
+
+async function driveTurn(
+  ctx: TurnContext,
+  assistantMessage: Message,
+  totalUsage: { inputTokens: number; outputTokens: number; reasoningTokens: number; cachedInputTokens: number },
+): Promise<{ endReason: "completed" | "aborted" | "error"; endError?: string; sessionId: string | null; sessionMode: "new" | "resume" }> {
+  const { project, chatId, userId, priorMessages, model, language, onlySkills, planMode, abortSignal } = ctx;
+
+  const lastUser = [...priorMessages].reverse().find((m) => m.role === "user");
+  const userText = lastUser ? extractText(lastUser) : "";
+  if (!userText) {
+    return { endReason: "error", endError: "No user prompt found", sessionId: null, sessionMode: "new" };
+  }
+
+  const backend = await ensureBackend();
+  if (!backend) {
+    return { endReason: "error", endError: "Execution backend unavailable", sessionId: null, sessionMode: "new" };
+  }
+  if (userId) {
+    await backend.ensureContainer(userId, project.id).catch(() => {});
+  }
+
+  const partIndexById = new Map<string, number>();
+  const callIndexByCallId = new Map<string, number>();
+
+  const storedSessionId = getBackendSessionId(chatId);
+  let sessionMode: "resume" | "new" = storedSessionId ? "resume" : "new";
+  let sessionId: string | null = storedSessionId;
+
+  // System-prompt assembly: only on fresh sessions — Codex has no append flag
+  // and already has our context from turn 1 on resumed sessions.
+  const assembleSys = () =>
+    assembleCliSystemPrompt({ project, messages: priorMessages, language, onlySkills, planMode })
+      .catch((err) => {
+        cliLog.warn("failed to assemble system prompt; falling back to bare prompt", {
+          chatId,
+          err: String(err),
+        });
+        return "";
+      });
+
+  const appendSystemPrompt = sessionMode === "new" ? await assembleSys() : "";
+  let prompt = buildPrompt(userText, appendSystemPrompt);
+
+  let endReason: "completed" | "aborted" | "error" = "completed";
+  let endError: string | undefined;
+  let sawAnyEvent = false;
+
+  const runOnce = async (mode: "resume" | "new", id: string | null): Promise<void> => {
+    const controller = new AbortController();
+    abortSignal.addEventListener("abort", () => controller.abort(), { once: true });
+
+    const cmd = buildCodexCmd(prompt, model, mode, id);
+    const stream = backend.streamExecInContainer(project.id, cmd, {
+      workingDir: "/project",
+      abortSignal: controller.signal,
+    });
+
+    const result = await consumeStreamJsonFrames(
+      {
+        stream,
+        adapter: codexEventToParts,
+        abortSignal,
+        logTag: "codex",
+        onAdapterResult: (r) => {
+          if (r.threadId) {
+            sessionId = r.threadId;
+            setBackendSessionId(chatId, r.threadId);
+          }
+          for (const part of r.parts) {
+            foldPartIntoMessage(assistantMessage, part, partIndexById, callIndexByCallId);
+            ctx.onPart?.();
+          }
+          if (r.usage) {
+            totalUsage.inputTokens = r.usage.inputTokens;
+            totalUsage.outputTokens = r.usage.outputTokens;
+            totalUsage.cachedInputTokens = r.usage.cachedInputTokens;
+          }
+        },
+      },
+      controller,
+    );
+    endReason = result.endReason;
+    endError = result.endError;
+    sawAnyEvent = result.sawAnyEvent;
+  };
+
+  await runOnce(sessionMode, sessionId);
+
+  if (sessionMode === "resume" && !sawAnyEvent && (endReason as string) === "error") {
+    cliLog.warn("codex exec resume failed, retrying as fresh session", {
+      chatId,
+      oldSessionId: sessionId,
+      prevError: endError,
+    });
+    endReason = "completed";
+    endError = undefined;
+    sessionMode = "new";
+    sessionId = null;
+    // Re-assemble system prompt for the fresh-session retry (first attempt
+    // skipped it because it thought the session was being resumed).
+    const fresh = await assembleSys();
+    prompt = buildPrompt(userText, fresh);
+    await runOnce("new", null);
+  }
+
+  return { endReason, endError, sessionId, sessionMode };
+}
 
 async function runStreamingStep(input: StreamingStepInput): Promise<void> {
   const start = Date.now();
@@ -83,7 +207,6 @@ async function runStreamingStep(input: StreamingStepInput): Promise<void> {
     return;
   }
 
-  const { language, onlySkills, planMode } = input;
   const runId = input.runId ?? generateId();
   const assistantMessageId = generateId();
   const assistantMessage: Message = {
@@ -113,130 +236,28 @@ async function runStreamingStep(input: StreamingStepInput): Promise<void> {
   beginStream(chatId, priorMessages, streamId);
   publishMessage(chatId, assistantMessage);
 
-  const backend = await ensureBackend();
-  if (!backend) {
-    endStream(chatId, "error", "Execution backend unavailable");
-    return;
-  }
-  if (userId) {
-    await backend.ensureContainer(userId, project.id).catch(() => {});
-  }
-
-  const partIndexById = new Map<string, number>();
-  const callIndexByCallId = new Map<string, number>();
+  const totalUsage = { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, cachedInputTokens: 0 };
 
   let endReason: "completed" | "aborted" | "error" = "completed";
   let endError: string | undefined;
-  const totalUsage = { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, cachedInputTokens: 0 };
-
-  const storedSessionId = getBackendSessionId(chatId);
-  let sessionMode: "resume" | "new" = storedSessionId ? "resume" : "new";
-  let sessionId: string | null = storedSessionId;
-
-  // Assemble system prompt; on fresh session we prepend it to the user
-  // turn. On resume, Codex already has our context from turn 1 — sending
-  // the full system prompt again would waste tokens, so we skip it.
-  const appendSystemPrompt = sessionMode === "new"
-    ? await assembleCliSystemPrompt({
-        project,
-        messages: priorMessages,
-        language,
-        onlySkills,
-        planMode,
-      }).catch((err) => {
-        cliLog.warn("failed to assemble system prompt; falling back to bare prompt", {
-          chatId,
-          err: String(err),
-        });
-        return "";
-      })
-    : "";
-
-  let prompt = buildPrompt(userText, appendSystemPrompt);
-
-  let sawAnyEvent = false;
-
-  const runOnce = async (mode: "resume" | "new", id: string | null): Promise<void> => {
-    let stdoutBuf = "";
-    const cmd = buildCodexCmd(prompt, model, mode, id);
-    for await (const frame of backend.streamExecInContainer(project.id, cmd, {
-      workingDir: "/project",
-      abortSignal,
-    })) {
-      if (frame.type === "exit") {
-        if (frame.code !== 0 && endReason === "completed") {
-          endReason = "error";
-          endError = `codex exited with code ${frame.code}`;
-        }
-        break;
-      }
-      if (frame.type === "error") {
-        endReason = "error";
-        endError = frame.message;
-        break;
-      }
-      if (frame.type !== "stdout") continue;
-      stdoutBuf += frame.data;
-      let nl: number;
-      while ((nl = stdoutBuf.indexOf("\n")) !== -1) {
-        const line = stdoutBuf.slice(0, nl);
-        stdoutBuf = stdoutBuf.slice(nl + 1);
-        if (!line.trim()) continue;
-        let event: unknown;
-        try {
-          event = JSON.parse(line);
-        } catch {
-          cliLog.warn("unparseable codex JSON line", { line: line.slice(0, 200) });
-          continue;
-        }
-        sawAnyEvent = true;
-        const { parts, usage, errorText, threadId } = codexEventToParts(event);
-        if (threadId) {
-          sessionId = threadId;
-          setBackendSessionId(chatId, threadId);
-        }
-        for (const part of parts) {
-          foldPartIntoMessage(assistantMessage, part, partIndexById, callIndexByCallId);
-          publishMessage(chatId, assistantMessage);
-        }
-        if (usage) {
-          totalUsage.inputTokens = usage.inputTokens;
-          totalUsage.outputTokens = usage.outputTokens;
-          totalUsage.cachedInputTokens = usage.cachedInputTokens;
-        }
-        if (errorText) {
-          endReason = "error";
-          endError = errorText;
-        }
-      }
-    }
-  };
+  let sessionIdFinal: string | null = null;
+  let sessionModeFinal: "new" | "resume" = "new";
 
   try {
-    await runOnce(sessionMode, sessionId);
-
-    if (sessionMode === "resume" && !sawAnyEvent && (endReason as string) === "error") {
-      cliLog.warn("codex exec resume failed, retrying as fresh session", {
-        chatId,
-        oldSessionId: sessionId,
-        prevError: endError,
-      });
-      endReason = "completed";
-      endError = undefined;
-      sessionMode = "new";
-      sessionId = null;
-      // Re-assemble system prompt for the fresh-session retry (first attempt
-      // skipped it because it thought the session was being resumed).
-      const fresh = await assembleCliSystemPrompt({
-        project,
-        messages: priorMessages,
-        language,
-        onlySkills,
-        planMode,
-      }).catch(() => "");
-      prompt = buildPrompt(userText, fresh);
-      await runOnce("new", null);
-    }
+    const turn = await driveTurn(
+      {
+        project, chatId, userId, priorMessages, model,
+        language: input.language, onlySkills: input.onlySkills, planMode: input.planMode,
+        abortSignal, runId,
+        onPart: () => publishMessage(chatId, assistantMessage),
+      },
+      assistantMessage,
+      totalUsage,
+    );
+    endReason = turn.endReason;
+    endError = turn.endError;
+    sessionIdFinal = turn.sessionId;
+    sessionModeFinal = turn.sessionMode;
 
     assistantMessage.metadata = {
       modelId: model ?? "codex",
@@ -260,8 +281,9 @@ async function runStreamingStep(input: StreamingStepInput): Promise<void> {
       runId,
       durationMs: Date.now() - start,
       partCount: assistantMessage.parts.length,
-      sessionId,
-      sessionMode,
+      sessionId: sessionIdFinal,
+      sessionMode: sessionModeFinal,
+      endReason,
     });
   } catch (err) {
     if (abortSignal.aborted) {
@@ -296,8 +318,115 @@ async function runStreamingStep(input: StreamingStepInput): Promise<void> {
   }
 }
 
-async function runBatchStep(_input: BatchStepInput): Promise<BatchStepResult> {
-  throw new Error("codex backend: batch mode not yet implemented");
+async function runBatchStep(input: BatchStepInput): Promise<BatchStepResult> {
+  const start = Date.now();
+  const {
+    project,
+    chatId,
+    userId,
+    model,
+    language,
+    onlySkills,
+    planMode,
+    prompt,
+    messages: providedMessages,
+    contextBlock,
+    checkpointMetadata,
+    taskName,
+  } = input;
+
+  if (prompt == null && (providedMessages == null || providedMessages.length === 0)) {
+    throw new Error("codex runBatchStep: provide either `prompt` or `messages`");
+  }
+  if (isShuttingDown()) {
+    throw new Error("Server is shutting down");
+  }
+
+  const runId = input.runId ?? generateId();
+  const assistantMessageId = generateId();
+  const assistantMessage: Message = {
+    id: assistantMessageId,
+    role: "assistant",
+    parts: [],
+    createdAt: Date.now(),
+  };
+
+  const priorMessages: Message[] =
+    prompt != null
+      ? [{
+          id: generateId(),
+          role: "user",
+          parts: [{ type: "text", text: prompt + (contextBlock ?? "") }],
+        }]
+      : [...(providedMessages ?? [])];
+
+  saveCheckpoint({
+    runId,
+    chatId,
+    projectId: project.id,
+    stepNumber: 0,
+    messages: priorMessages,
+    metadata: {
+      ...(checkpointMetadata ?? {}),
+      ...(taskName ? { taskName } : {}),
+      backend: "codex",
+      batch: true,
+    },
+  });
+  registerRun({ runId, chatId, projectId: project.id, startedAt: Date.now() });
+
+  const totalUsage = { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, cachedInputTokens: 0 };
+  const controller = new AbortController();
+
+  try {
+    const turn = await driveTurn(
+      {
+        project, chatId, userId, priorMessages, model,
+        language, onlySkills, planMode,
+        abortSignal: controller.signal,
+        runId,
+      },
+      assistantMessage,
+      totalUsage,
+    );
+    if (turn.endReason === "error") {
+      throw new Error(turn.endError ?? "codex batch turn errored");
+    }
+    if (turn.endReason === "aborted") {
+      throw new Error("codex batch turn aborted");
+    }
+
+    const text = assistantMessage.parts
+      .filter((p): p is Extract<Part, { type: "text" }> => p.type === "text")
+      .map((p) => p.text)
+      .join("");
+
+    cliLog.info("codex batch completed", {
+      projectId: project.id,
+      chatId,
+      runId,
+      durationMs: Date.now() - start,
+      partCount: assistantMessage.parts.length,
+      taskName,
+    });
+
+    return {
+      runId,
+      text,
+      assistantParts: assistantMessage.parts,
+      totalUsage,
+      responseMessages: [],
+      steps: [],
+      chatId,
+    };
+  } catch (err) {
+    cliLog.error("codex batch errored", err, { chatId, runId });
+    persistCheckpointOnError(runId, chatId);
+    throw err;
+  } finally {
+    deleteCheckpoint(runId);
+    deregisterRun(runId);
+  }
 }
 
 export const codexBackend: AgentBackend = {
@@ -385,4 +514,3 @@ function finalizePendingToolCalls(msg: Message, errText: string): void {
     return p;
   });
 }
-
