@@ -33,6 +33,14 @@ const deleteStmt = db.prepare(
   "DELETE FROM chats WHERE id = ?",
 );
 
+const getBackendSessionIdStmt = db.prepare(
+  "SELECT backend_session_id FROM chats WHERE id = ?",
+);
+
+const setBackendSessionIdStmt = db.prepare(
+  "UPDATE chats SET backend_session_id = ? WHERE id = ?",
+);
+
 export function insertChat(
   projectId: string,
   title: string = "New Chat",
@@ -75,5 +83,16 @@ export function getOrCreateAutonomousChat(projectId: string): ChatRow {
 export function createAutonomousChat(projectId: string, title: string): ChatRow {
   const id = generateId();
   return insertAutonomousStmt.get(id, projectId, title) as ChatRow;
+}
+
+export function getBackendSessionId(chatId: string): string | null {
+  const row = getBackendSessionIdStmt.get(chatId) as
+    | { backend_session_id: string | null }
+    | undefined;
+  return row?.backend_session_id ?? null;
+}
+
+export function setBackendSessionId(chatId: string, sessionId: string | null): void {
+  setBackendSessionIdStmt.run(sessionId, chatId);
 }
 

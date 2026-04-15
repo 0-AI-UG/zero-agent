@@ -4,10 +4,14 @@
  * execution container. Stream-json events are translated into the canonical
  * `Part` stream and published via the same WS scene the LLM backend uses.
  *
- * Constraints (MVP):
- * - No persistent subprocess across turns. Each turn spawns `claude` fresh
- *   and ends when Claude emits its terminal `result` event. Claude's own
- *   `--session-id` / `--resume` mechanism can be layered on later.
+ * Multi-turn context: each chat row owns a `backend_session_id` (UUID).
+ * First turn starts Claude with `--session-id <uuid>`; subsequent turns
+ * invoke `claude -p --resume <uuid>` so Claude rehydrates its transcript
+ * from its own local state under `~/.claude/projects/<cwd-hash>/`. If the
+ * stored session file is gone (container rebuilt, user-initiated wipe),
+ * the resume attempt fails fast and we auto-retry once as a fresh session.
+ *
+ * Constraints:
  * - No custom in-process tools. Claude owns its tool loop and brings its
  *   own Read/Edit/Bash/Task tools. Our custom tools (`readFile`, `editFile`,
  *   `bash`-in-Docker, etc.) are not invoked on this path.
@@ -16,6 +20,10 @@
  *   post-hoc.
  */
 import { generateId } from "@/db/index.ts";
+import {
+  getBackendSessionId,
+  setBackendSessionId,
+} from "@/db/queries/chats.ts";
 import { log } from "@/lib/utils/logger.ts";
 
 import type {
@@ -120,15 +128,23 @@ async function runStreamingStep(input: StreamingStepInput): Promise<void> {
   const partIndexById = new Map<string, number>();
   const callIndexByCallId = new Map<string, number>();
 
-  // Buffer partial stdout lines; parse whole NDJSON events line-by-line.
-  let stdoutBuf = "";
   let endReason: "completed" | "aborted" | "error" = "completed";
   let endError: string | undefined;
   const totalUsage = { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, cachedInputTokens: 0 };
 
-  const cmd = buildClaudeCmd(prompt, model);
+  // Resolve session: reuse stored id (resume) or mint a fresh UUID. We persist
+  // the fresh id eagerly so a crashed mid-turn still leaves a resumable state
+  // on disk — Claude writes its session file on first invocation.
+  const storedSessionId = getBackendSessionId(chatId);
+  let sessionMode: "resume" | "new" = storedSessionId ? "resume" : "new";
+  let sessionId: string = storedSessionId ?? crypto.randomUUID();
+  if (!storedSessionId) setBackendSessionId(chatId, sessionId);
 
-  try {
+  let sawAnyEvent = false;
+
+  const runOnce = async (mode: "resume" | "new", id: string): Promise<void> => {
+    let stdoutBuf = "";
+    const cmd = buildClaudeCmd(prompt, model, mode, id);
     for await (const frame of backend.streamExecInContainer(project.id, cmd, {
       workingDir: "/project",
       abortSignal,
@@ -159,6 +175,7 @@ async function runStreamingStep(input: StreamingStepInput): Promise<void> {
           cliLog.warn("unparseable stream-json line", { line: line.slice(0, 200) });
           continue;
         }
+        sawAnyEvent = true;
         const { parts, usage, errorText } = claudeEventToParts(event);
         for (const part of parts) {
           foldPartIntoMessage(assistantMessage, part, partIndexById, callIndexByCallId);
@@ -174,6 +191,27 @@ async function runStreamingStep(input: StreamingStepInput): Promise<void> {
           endError = errorText;
         }
       }
+    }
+  };
+
+  try {
+    await runOnce(sessionMode, sessionId);
+
+    // Auto-fallback: a resume that never produced any assistant event and
+    // exited non-zero typically means the session file is gone (container
+    // rebuilt or user wiped ~/.claude). Retry once as a fresh session.
+    if (sessionMode === "resume" && !sawAnyEvent && (endReason as string) === "error") {
+      cliLog.warn("claude --resume failed, retrying as fresh session", {
+        chatId,
+        oldSessionId: sessionId,
+        prevError: endError,
+      });
+      endReason = "completed";
+      endError = undefined;
+      sessionId = crypto.randomUUID();
+      sessionMode = "new";
+      setBackendSessionId(chatId, sessionId);
+      await runOnce("new", sessionId);
     }
 
     assistantMessage.metadata = {
@@ -198,6 +236,8 @@ async function runStreamingStep(input: StreamingStepInput): Promise<void> {
       runId,
       durationMs: Date.now() - start,
       partCount: assistantMessage.parts.length,
+      sessionId,
+      sessionMode,
     });
   } catch (err) {
     if (abortSignal.aborted) {
@@ -245,7 +285,12 @@ export const claudeCodeBackend: AgentBackend = {
 
 // ── helpers ──
 
-function buildClaudeCmd(prompt: string, modelId: string | undefined): string[] {
+function buildClaudeCmd(
+  prompt: string,
+  modelId: string | undefined,
+  sessionMode: "new" | "resume",
+  sessionId: string,
+): string[] {
   const cmd = [
     "claude",
     "-p",
@@ -254,6 +299,11 @@ function buildClaudeCmd(prompt: string, modelId: string | undefined): string[] {
     "stream-json",
     "--verbose",
   ];
+  if (sessionMode === "resume") {
+    cmd.push("--resume", sessionId);
+  } else {
+    cmd.push("--session-id", sessionId);
+  }
   // Map our model id (e.g. "claude-code/sonnet") to Claude's expected flag.
   if (modelId) {
     const suffix = modelId.split("/").pop() ?? "";
