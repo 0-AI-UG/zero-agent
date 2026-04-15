@@ -53,6 +53,7 @@ import type {
 } from "@/lib/agent-step/types.ts";
 
 import { claudeEventToParts } from "./stream-json-adapter.ts";
+import { assembleCliSystemPrompt } from "./prompt-assembly.ts";
 
 const cliLog = log.child({ module: "backend:claude-code" });
 
@@ -75,6 +76,7 @@ async function runStreamingStep(input: StreamingStepInput): Promise<void> {
     return;
   }
 
+  const { language, onlySkills, planMode } = input;
   const runId = input.runId ?? generateId();
   const assistantMessageId = generateId();
   const assistantMessage: Message = {
@@ -126,7 +128,21 @@ async function runStreamingStep(input: StreamingStepInput): Promise<void> {
   let endError: string | undefined;
   const totalUsage = { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, cachedInputTokens: 0 };
 
-  const cmd = buildClaudeCmd(prompt, model);
+  const appendSystemPrompt = await assembleCliSystemPrompt({
+    project,
+    messages: priorMessages,
+    language,
+    onlySkills,
+    planMode,
+  }).catch((err) => {
+    cliLog.warn("failed to assemble system prompt; falling back to bare prompt", {
+      chatId,
+      err: String(err),
+    });
+    return "";
+  });
+
+  const cmd = buildClaudeCmd(prompt, model, appendSystemPrompt);
 
   try {
     for await (const frame of backend.streamExecInContainer(project.id, cmd, {
@@ -245,7 +261,11 @@ export const claudeCodeBackend: AgentBackend = {
 
 // ── helpers ──
 
-function buildClaudeCmd(prompt: string, modelId: string | undefined): string[] {
+function buildClaudeCmd(
+  prompt: string,
+  modelId: string | undefined,
+  appendSystemPrompt: string,
+): string[] {
   const cmd = [
     "claude",
     "-p",
@@ -254,6 +274,9 @@ function buildClaudeCmd(prompt: string, modelId: string | undefined): string[] {
     "stream-json",
     "--verbose",
   ];
+  if (appendSystemPrompt) {
+    cmd.push("--append-system-prompt", appendSystemPrompt);
+  }
   // Map our model id (e.g. "claude-code/sonnet") to Claude's expected flag.
   if (modelId) {
     const suffix = modelId.split("/").pop() ?? "";
