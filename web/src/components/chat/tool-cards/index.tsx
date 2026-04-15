@@ -15,6 +15,23 @@ export { getToolActiveLabel, HIDDEN_TOOLS } from "./tool-config";
 
 type Part = Message["parts"][number];
 
+/**
+ * Returns true if an assistant message part produces visible content in the
+ * chat UI. Hidden tools, empty text, and non-image files are invisible.
+ *
+ * Centralised here so `MessageRow` and `shimmerLabel` share one predicate
+ * and stay in sync when the renderer changes.
+ */
+export function isVisiblePart(p: Part): boolean {
+  if (isToolUIPart(p)) return !HIDDEN_TOOLS.has(getToolName(p));
+  if (p.type === "text") return p.text.length > 0;
+  if (p.type === "file") {
+    const mt = (p as { mediaType?: string }).mediaType;
+    return typeof mt === "string" && mt.startsWith("image/");
+  }
+  return false;
+}
+
 interface Ctx {
   projectId?: string;
   chatId?: string;

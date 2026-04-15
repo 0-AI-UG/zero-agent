@@ -2,14 +2,14 @@ import { Link } from "react-router";
 import { AlertCircleIcon, RefreshCcwIcon } from "lucide-react";
 import { useCallback, useRef, type ReactNode } from "react";
 import type { Message } from "@/lib/messages";
-import { isToolUIPart, getToolName } from "@/lib/messages";
+import { isToolUIPart } from "@/lib/messages";
 import { Button } from "@/components/ui/button";
 import { ConversationEmptyState } from "@/components/chat-ui/Conversation";
 import { MessageShell } from "@/components/chat-ui/MessageShell";
 import { Shimmer } from "@/components/chat-ui/Shimmer";
 import { Suggestion } from "@/components/chat-ui/Suggestion";
 import { MessageRow } from "./MessageRow";
-import { HIDDEN_TOOLS } from "./tool-cards";
+import { isVisiblePart } from "./tool-cards";
 import logoSvg from "@/logo-mark.svg";
 
 interface MessageListProps {
@@ -38,15 +38,14 @@ function shimmerLabel(messages: Message[], isStreaming: boolean): string | null 
   if (!last || last.role !== "assistant") return "Thinking";
   if (last.metadata?.compacting) return "Compacting conversation";
 
-  const lastVisible = [...last.parts].reverse().find((p) => {
-    if (isToolUIPart(p)) return !HIDDEN_TOOLS.has(getToolName(p));
-    if (p.type === "text") return p.text.length > 0;
-    if (p.type === "file") {
-      const mt = (p as { mediaType?: string }).mediaType;
-      return typeof mt === "string" && mt.startsWith("image/");
+  let lastVisible = null;
+  for (let i = last.parts.length - 1; i >= 0; i -= 1) {
+    const p = last.parts[i];
+    if (isVisiblePart(p)) {
+      lastVisible = p;
+      break;
     }
-    return false;
-  });
+  }
   if (!lastVisible) return "Thinking";
   if (isToolUIPart(lastVisible) && lastVisible.state === "output-available") return "Thinking";
   return null;
