@@ -6,16 +6,19 @@ Current MVP state is captured at the bottom of this document. Everything above t
 
 ---
 
-## 1. Multi-turn context continuity
+## 1. Multi-turn context continuity — ✅ DONE (branch `worktree-cli-session-continuity`)
 
-**Problem:** MVP spawns a fresh `claude` process per turn and passes only the last user message as a CLI argument. No prior conversation context, no tool-call state carries across turns. Unusable beyond single-shot.
+**Shipped:**
+- `chats.backend_session_id` column + idempotent ALTER (`server/db/index.ts`, `server/db/types.ts`).
+- `getBackendSessionId` / `setBackendSessionId` helpers (`server/db/queries/chats.ts`).
+- `claude-code-backend.ts`: first turn mints a UUID → `claude -p --session-id <uuid>` and persists; subsequent turns invoke `claude -p --resume <uuid>`. Session id persisted eagerly so a crashed mid-turn still leaves resumable on-disk state.
+- Auto-fallback: if `--resume` exits non-zero before producing any event (container rebuilt, `~/.claude` wiped), retry once as a fresh session with a new UUID.
 
-**Work:**
-- Adopt Claude Code's `--session-id <uuid>` + `--resume` flags. Store `claude_session_id` on each chat row (new column), generated on first turn.
-- On turn N > 1: invoke `claude -p <new user msg> --resume --session-id <stored>`. Claude re-hydrates its own transcript from its local state (stored under `~/.claude/projects/<cwd-hash>/`).
-- Symmetric story for Codex: `codex exec --session <id>` (confirm exact flag name against current CLI version before implementing).
-- Edge cases: chat deleted → delete CLI session dir in container; container rebuilt → session dir lost, fall back to passing last N messages inline and generate new session id.
-- Files: new DB column `chats.backend_session_id`, new migration, `claude-code-backend.ts` reads/writes it.
+**Deferred:**
+- Codex symmetry — rolled into §6.
+- Chat-deletion cleanup of `~/.claude/projects/<hash>/<session>.jsonl` inside the container. Not implemented; orphan session files are harmless and will be reaped when the container is rebuilt or when §12's idle-reap policy lands. Revisit alongside §4 (per-user volumes).
+
+**Next:** §3 (RAG / skills / system-prompt injection). Rationale: §2 (stdin streaming) is an optional perf win and the plan itself notes it "may be sufficient" to skip after §1 works; §3 is the next correctness blocker — without system-prompt + RAG parity the CLI path behaves like a different product from the OpenRouter path.
 
 ## 2. Stdin streaming + persistent subprocess (optional perf)
 

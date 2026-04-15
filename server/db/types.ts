@@ -54,6 +54,7 @@ export interface ChatRow {
   is_autonomous: number;
   created_by: string | null;
   source: string | null;
+  backend_session_id: string | null;
   created_at: string;
   updated_at: string;
 }

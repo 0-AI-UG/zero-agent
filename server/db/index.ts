@@ -51,14 +51,15 @@ db.exec(`
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS chats (
-    id            TEXT PRIMARY KEY,
-    project_id    TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    title         TEXT NOT NULL DEFAULT 'New Chat',
-    is_autonomous INTEGER NOT NULL DEFAULT 0,
-    created_by    TEXT REFERENCES users(id) ON DELETE SET NULL,
-    source        TEXT,
-    created_at    TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    id                  TEXT PRIMARY KEY,
+    project_id          TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    title               TEXT NOT NULL DEFAULT 'New Chat',
+    is_autonomous       INTEGER NOT NULL DEFAULT 0,
+    created_by          TEXT REFERENCES users(id) ON DELETE SET NULL,
+    source              TEXT,
+    backend_session_id  TEXT,
+    created_at          TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at          TEXT NOT NULL DEFAULT (datetime('now'))
   )
 `);
 
@@ -433,6 +434,16 @@ db.exec(`
     db.exec(
       "ALTER TABLE user_telegram_links ADD COLUMN active_project_id TEXT REFERENCES projects(id) ON DELETE SET NULL",
     );
+  }
+}
+
+// Idempotently add backend_session_id for installs that pre-date the column.
+{
+  const cols = db
+    .prepare("PRAGMA table_info(chats)")
+    .all() as { name: string }[];
+  if (!cols.some((c) => c.name === "backend_session_id")) {
+    db.exec("ALTER TABLE chats ADD COLUMN backend_session_id TEXT");
   }
 }
 
