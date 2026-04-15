@@ -97,7 +97,7 @@ Current MVP state is captured at the bottom of this document. Everything above t
 - Codex `prompt-assembly.ts` tuning — the SOUL.md and skills index were authored for Claude; may be worth a Codex-flavored variant. Low priority.
 - `lastVerifiedAt` staleness / mid-turn 401 re-auth UX — same §11 observability deferral as for Claude.
 
-**Next:** §13 (testing) — with §7 and §9 shipped, the code surface for the streaming + batch CLI paths is effectively frozen; adding tests before §10/§11/§12 churn on the same files keeps regressions cheap to detect.
+**Next:** §10 (checkpointing + crash recovery) — with §13's unit layer landed, we have regression coverage for the fold loop + adapter. §10's in-flight recovery work is the natural next slice; the integration harness we deferred in §13 can be built on top of §10's checkpoint plumbing when it exists.
 
 ## 7. Batch-mode parity — ✅ SHIPPED (branch `feat/cli-batch-streaming-robustness`)
 
@@ -167,13 +167,17 @@ Current MVP state is captured at the bottom of this document. Everything above t
 - **Resource abuse:** a malicious user can burn their own Claude subscription quickly — not our problem — but can also hold a long-running subprocess pinning a container slot. Idle-reap timeout (existing mechanism) must apply to claude processes too.
 - **Rate limits:** per-user concurrent-chat cap, per-chat turn rate-limit.
 
-## 13. Testing
+## 13. Testing — 🟡 UNIT SHIPPED; INTEGRATION + E2E DEFERRED (branch `feat/cli-testing`)
 
-**Work:**
-- **Unit:** `stream-json-adapter.ts` event → Part mapping, including unknown event types (forward-compat).
-- **Integration:** mock runner that emits canned stream-json events; verify WS publish sequence matches expected Part snapshots.
-- **E2E:** Playwright test — select Claude model, send message, verify message renders and tool cards appear. Requires a CI-friendly auth bypass (env var API key for testing).
-- **Regression:** all existing OpenRouter chat tests must still pass (Phase 1 refactor — already verified via typecheck, needs runtime test).
+**Shipped:**
+- `server/lib/backends/cli/stream-json-adapter.test.ts` — 36 cases covering both `claudeEventToParts` and `codexEventToParts`. Every Claude event shape (`assistant` with text/thinking/tool_use blocks, `user` tool_result with success + `is_error` + array content, `result` success/error_*), every Codex item type (`agent_message`, `reasoning`, `command_execution` start→update→complete, `file_change`, `mcp_tool_call`, `web_search`, `todo_list`, `error`), plus usage-only events (`turn.completed`), failure events (`turn.failed`, top-level `error`), and forward-compat assertions for unknown event / item types and malformed input. Regression block verifies every tool-call Part carries `callId + name + state` — the invariant frontend renderers assume.
+- `server/lib/backends/cli/turn-loop.test.ts` — 14 cases for `consumeStreamJsonFrames`. Covers: exit 0 completion, exit != 0 error classification, frame.error propagation, adapter errorText surfacing, heartbeat frames skipped (and crucially don't flip `sawAnyEvent` — guards the backend's resume→new auto-fallback), multi-JSON-per-chunk parsing, partial-line buffering across chunks, unparseable line skip, output byte cap → abort, per-turn timeout → abort, parent-abort → endReason="aborted", stderr-not-counted-toward-cap, blank line skip, usage forwarding.
+- Full `vitest run` passes 93/95 tests (the 2 failures are pre-existing `BRAVE_SEARCH_API_KEY` env-missing errors in `search.test.ts`, unrelated to CLI work).
+
+**Deferred (under §13):**
+- **Integration tests** — mock the `AgentBackend` / `ExecutionBackend` at the module seam and drive `claude-code-backend.runStreamingStep` / `runBatchStep` end-to-end through canned frames, asserting WS publish sequence + auto-fallback resume→new behavior. Landable but requires mocking ~8 collaborators (DB queries, WS bus, checkpoint, runPostChatHooks, ensureBackend, assembleCliSystemPrompt). Writing those mocks is a real chunk of work and belongs in a slice of its own — the unit layer above already covers the interesting logic (fold + timeout + cap + abort). Flagged to revisit before §10 (checkpointing) lands because checkpoint recovery needs the same harness.
+- **E2E Playwright** — needs a CI-friendly Claude / Codex auth bypass (pre-seeded volume? API-key env var? mock CLI binary?) plus a runner + server + web stack in CI. Infrastructure-heavy, deserves its own slice; pair it with §14 (rollout flag) so the test can exercise the flag path.
+- **Regression smoke for OpenRouter** — existing tests cover converters / tool registry / files / skills / conversation; the chat-streaming happy path is still unit-shaped. A runtime integration test that drives `runStreamingAgent` against a mocked OpenRouter SDK would be valuable; deferred alongside the CLI integration work above.
 
 ## 14. Migration + rollout
 

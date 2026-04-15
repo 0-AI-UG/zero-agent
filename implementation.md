@@ -4,9 +4,9 @@ Continuation plan for the `feat/cli-inference-backends` branch. Each numbered
 section in `plan.md` describes the full requirements; this file groups them
 into coherent work sessions and fixes a suggested execution order.
 
-**Done so far (merged into `feat/cli-inference-backends`):** §1, §3, §4, §6, §7, §9 (Session A). §5 dropped.
+**Done so far (merged into `feat/cli-inference-backends`):** §1, §3, §4, §6, §7, §9, §13 unit layer (Sessions A + B). §5 dropped.
 
-**Next session:** B (§13 — testing).
+**Next session:** C (§10 — checkpointing + crash recovery). §13's integration + E2E slices are deferred — revisit alongside §10's checkpoint plumbing (the same mock harness is needed for both).
 
 **General workflow per session:**
 1. Create a fresh worktree off `feat/cli-inference-backends` (reset --hard inside if the auto-branch picks main).
