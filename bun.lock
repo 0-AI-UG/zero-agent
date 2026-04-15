@@ -5,7 +5,7 @@
     "": {
       "name": "rednote-leads-agent",
       "dependencies": {
-        "@0-ai/s3lite": "0.5.1",
+        "@0-ai/s3lite": "^0.6.0",
         "@codemirror/lang-cpp": "^6.0.3",
         "@codemirror/lang-css": "^6.3.1",
         "@codemirror/lang-go": "^6.0.1",
@@ -160,7 +160,7 @@
     "esbuild",
   ],
   "packages": {
-    "@0-ai/s3lite": ["@0-ai/s3lite@0.5.1", "", {}, "sha512-ByCm7xop8H/7EresJVXb2I2rfj0ZDrtD49zuFUqb5268V+UBViQCfvYIfa3+YdtHLBhtcg3ZngpOCCv+3DHSxw=="],
+    "@0-ai/s3lite": ["@0-ai/s3lite@0.6.0", "", {}, "sha512-QUlEbFxyx7P9N0zoJeJmNsRYFZZ5MWrolPH4K8hxz+FCdh+wTu4txBQUXTuXfwE5dkzcoZ7Wydbvh1chNv2RPA=="],
 
     "@babel/runtime": ["@babel/runtime@7.28.6", "", {}, "sha512-05WQkdpL9COIMz4LjTxGpPNCdlpyimKppYNoJ5Di5EUObifl8t4tuLuUBBZEpoLYOmfvIWrsp9fCl0HoPRVTdA=="],
 
