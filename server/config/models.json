@@ -226,7 +226,8 @@
         "coding",
         "agent"
       ],
-      "multimodal": true
+      "multimodal": true,
+      "enabled": false
     },
     {
       "id": "claude-code/opus",
@@ -244,7 +245,8 @@
         "premium",
         "reasoning"
       ],
-      "multimodal": true
+      "multimodal": true,
+      "enabled": false
     },
     {
       "id": "codex/gpt-5-codex",
@@ -262,7 +264,8 @@
         "coding",
         "agent"
       ],
-      "multimodal": true
+      "multimodal": true,
+      "enabled": false
     },
     {
       "id": "codex/gpt-5",
@@ -280,7 +283,8 @@
         "premium",
         "reasoning"
       ],
-      "multimodal": true
+      "multimodal": true,
+      "enabled": false
     }
   ]
 }

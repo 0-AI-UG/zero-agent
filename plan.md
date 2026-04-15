@@ -153,7 +153,7 @@ Current MVP state is captured at the bottom of this document. Everything above t
 - **Integration test for progress-checkpoint → crash → recover flow.** Needs the same mock runner harness §13 deferred. Pair it with the §13 integration slice; both use the same fixture.
 - **Tunable intervals.** `PROGRESS_TOOL_USE_INTERVAL = 3` and `PROGRESS_TIMER_MS = 15_000` are reasonable defaults. If ops feedback shows they're too chatty (many checkpoint upserts for long turns) or too coarse (users losing visible progress), expose as env vars — not worth the knob today.
 
-**Next:** §14 + §15 (rollout flag + documentation) — last session, so docs describe shipped reality. §13's integration + E2E slices remain deferred.
+**Next:** all sessions shipped. §13's integration + E2E slices remain deferred — §10's checkpoint plumbing is the seam when the integration harness lands.
 
 ## 11. Observability — ✅ SHIPPED (branch `feat/cli-observability-security`)
 
@@ -195,21 +195,26 @@ Current MVP state is captured at the bottom of this document. Everything above t
 - **E2E Playwright** — needs a CI-friendly Claude / Codex auth bypass (pre-seeded volume? API-key env var? mock CLI binary?) plus a runner + server + web stack in CI. Infrastructure-heavy, deserves its own slice; pair it with §14 (rollout flag) so the test can exercise the flag path.
 - **Regression smoke for OpenRouter** — existing tests cover converters / tool registry / files / skills / conversation; the chat-streaming happy path is still unit-shaped. A runtime integration test that drives `runStreamingAgent` against a mocked OpenRouter SDK would be valuable; deferred alongside the CLI integration work above.
 
-## 14. Migration + rollout
+## 14. Migration + rollout — ✅ SHIPPED (branch `feat/cli-rollout-docs`)
 
-**Work:**
-- Feature-flag the CLI backends behind a `ENABLE_CLI_BACKENDS` setting. Default off.
-- Model rows for claude-code/* ship with `enabled = 0` until Phase 3 OAuth ships; then flip on per-deployment.
-- Docker image bump (new image layer with Node + claude CLI) — document pull size increase.
-- Changelog entry explaining the BYO-subscription flow + feature gap disclosure (no custom tools, etc.).
-- Staged rollout: internal dogfood → 1 pilot tenant → general availability.
+**Shipped:**
+- **Deployment flag** `ENABLE_CLI_BACKENDS` (default off) in new `server/lib/backends/cli/feature-flag.ts`. Read once at module load from `process.env`; accepts `1/true/yes/on` as on. Exposes `cliBackendsEnabled()` + `isCliInferenceProvider(id)`.
+- **Registry gating.** `server/lib/backends/registry.ts#getBackendForModel` now checks the flag: if the model's `inference_provider` is a CLI one (`claude-code` / `codex`) and the flag is off, it warns and falls back to OpenRouter. Admin-only paths are untouched.
+- **Model-list gating.** `server/routes/models.ts#handleListEnabledModels` filters CLI rows out of the user-facing list when the flag is off. `handleListAllModels` (admin) is unchanged — operators can still see and edit the rows.
+- **Seed defaults.** `server/config/models.json` marks the four CLI rows `"enabled": false`. `server/db/index.ts` seed insert now respects `m.enabled` on fresh databases. Existing databases are unaffected (seed only runs when `models` is empty) — the env flag is the operative kill switch for them.
+- **Image-size disclosure.** `CHANGELOG.md` entry flags the ~200 MB image-layer bump from Node + `@anthropic-ai/claude-code` + `@openai/codex` in `runner/docker/session/Dockerfile`.
+- **Changelog.** New `CHANGELOG.md` with BYO-subscription flow, what works, and the feature-gap disclosure (no custom tools, direct writes bypass S3 approval, no image-gen / scheduling / credential-vault tools mid-turn).
+- **Staged rollout plan** written into `CHANGELOG.md`: internal dogfood → 1 pilot tenant → GA, gated on `cli-turn-counters` telemetry + alert-tagged log review.
+- **.env.example** updated with a commented `ENABLE_CLI_BACKENDS` entry pointing operators at `docs/cli-subscriptions.md`.
 
-## 15. Documentation
+**Verification:** `bun run typecheck` shows only the two pre-existing `RunnerPool.streamExecInContainer` errors. `vitest run server/lib/backends/cli` — 50/50 passing.
 
-**Work:**
-- User-facing: "Using Claude Code with your own subscription" guide — OAuth steps, what works, what doesn't (the "not available in CLI mode" tool list).
-- Ops: runbook for diagnosing stuck claude subprocesses, resetting a user's credentials, clearing session state.
-- Developer: update `CLAUDE.md` noting the two inference paths and when each runs.
+## 15. Documentation — ✅ SHIPPED (branch `feat/cli-rollout-docs`)
+
+**Shipped:**
+- `docs/cli-subscriptions.md` — user-facing guide. Prerequisites (operator must flip the flag), sign-in steps for Claude (`claude setup-token` token-paste) and Codex (`codex login --device-auth` device-code), what works on the CLI path, what doesn't (custom Zero tools, per-change approval modal, image-gen / scheduling / credential tools), sign-out, troubleshooting for the "fresh container doesn't pick up the per-user volume" UX gap documented under §4-deferred.
+- `docs/runbooks/cli-backends.md` — ops runbook. Flag + admin toggle, image bump, per-user volume layout, telemetry (the `cli-turn-counters` log line + `alert: true` tags added in §11), diagnosing stuck turns, resetting credentials, wiping session state, memory tuning (§9 deferred item), mid-turn 401 guidance (§4 / §11 deferred).
+- `CLAUDE.md` — added an "Inference paths" section covering OpenRouter vs. CLI, pointing at the two backend files, the adapter, and both user + ops docs. Keeps the existing ai-sdk skill instruction.
 
 ---
 

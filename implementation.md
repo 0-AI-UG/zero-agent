@@ -4,9 +4,9 @@ Continuation plan for the `feat/cli-inference-backends` branch. Each numbered
 section in `plan.md` describes the full requirements; this file groups them
 into coherent work sessions and fixes a suggested execution order.
 
-**Done so far (merged into `feat/cli-inference-backends`):** §1, §3, §4, §6, §7, §8, §9, §10, §11, §12, §13 unit layer (Sessions A + B + C + D + E). §5 dropped.
+**Done so far (merged into `feat/cli-inference-backends`):** §1, §3, §4, §6, §7, §8, §9, §10, §11, §12, §13 unit layer, §14, §15 (Sessions A + B + C + D + E + F). §5 dropped.
 
-**Next session:** F (§14 + §15 — rollout flag + docs). §13's integration + E2E slices remain deferred — the checkpoint plumbing §10 added can serve as a seam for the integration harness when §13 returns.
+**Next session:** all sessions shipped. §13's integration + E2E slices remain deferred — the checkpoint plumbing §10 added can serve as a seam for the integration harness when §13 returns.
 
 **General workflow per session:**
 1. Create a fresh worktree off `feat/cli-inference-backends` (reset --hard inside if the auto-branch picks main).
@@ -80,25 +80,9 @@ See plan.md §11 / §12 for the full shipped/deferred breakdown. Key touches: ne
 
 ---
 
-## Session F — §14 + §15: rollout flag + documentation
+## Session F — §14 + §15: rollout flag + documentation — ✅ SHIPPED (branch `feat/cli-rollout-docs`)
 
-**Bundle rationale:** writing the `ENABLE_CLI_BACKENDS` flag naturally produces the CLAUDE.md + user-guide content as you describe what the flag gates.
-
-**Plan references:** plan.md §14 (migration + rollout), §15 (documentation).
-
-**Scope — §14:**
-- Feature-flag CLI backends behind `ENABLE_CLI_BACKENDS` (default off). Check at backend registration / model listing.
-- `claude-code/*` and `codex/*` model rows ship with `enabled = 0` until the flag flips per-deployment.
-- Docker image bump: document the new image layer (Node + claude CLI + codex CLI) pull-size increase.
-- Changelog entry: BYO-subscription flow + feature-gap disclosure (no custom tools, etc.).
-- Staged rollout plan written down: internal dogfood → 1 pilot tenant → general availability.
-
-**Scope — §15:**
-- User-facing: "Using Claude Code / Codex with your own subscription" guide — OAuth steps, what works, what doesn't (the "not available in CLI mode" tool list).
-- Ops runbook: diagnosing stuck `claude` / `codex` subprocesses, resetting a user's credentials, clearing session state, wiping the per-user volumes.
-- Developer: update `CLAUDE.md` noting the two inference paths and when each runs.
-
-**Files to touch:** `server/lib/backends/registry.ts`, `server/config/models.json`, `CLAUDE.md`, `docs/` (new guides), `CHANGELOG.md`.
+See plan.md §14 / §15 for the full shipped breakdown. Key touches: new `server/lib/backends/cli/feature-flag.ts` reading `ENABLE_CLI_BACKENDS` (default off); `server/lib/backends/registry.ts` gated to fall back to OpenRouter for CLI rows when off; `server/routes/models.ts` filters CLI rows from the user-facing enabled-model list; `server/config/models.json` ships CLI rows with `enabled: false`; `server/db/index.ts` seed respects the field; new `CHANGELOG.md` (feature gaps + staged rollout), `docs/cli-subscriptions.md` (user guide), `docs/runbooks/cli-backends.md` (ops runbook), updated `CLAUDE.md` with an "Inference paths" section; `.env.example` flag entry.
 
 ---
 
@@ -119,4 +103,4 @@ Optional perf. Don't bundle with anything. Revisit only if measurements show col
 3. ~~**Session C** (§10)~~ — shipped.
 4. ~~**Session D** (§8)~~ — shipped.
 5. ~~**Session E** (§11 + §12)~~ — shipped.
-6. **Session F** (§14 + §15) — flag + docs, last so the docs describe shipped reality. **NEXT**
+6. ~~**Session F** (§14 + §15)~~ — shipped. All sessions shipped.

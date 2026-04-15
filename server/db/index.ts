@@ -583,8 +583,8 @@ if (modelCount.count === 0) {
   const { default: modelsJson } = await import("@/config/models.json", { with: { type: "json" } });
   const seedModels = (modelsJson as any).models;
   const insertModel = db.prepare(
-    `INSERT INTO models (id, name, provider, inference_provider, description, context_window, pricing_input, pricing_output, tags, is_default, multimodal, provider_config, sort_order)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO models (id, name, provider, inference_provider, description, context_window, pricing_input, pricing_output, tags, is_default, multimodal, provider_config, enabled, sort_order)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
   for (let i = 0; i < seedModels.length; i++) {
     const m = seedModels[i];
@@ -598,6 +598,7 @@ if (modelCount.count === 0) {
       m.default ? 1 : 0,
       m.multimodal ? 1 : 0,
       m.providerConfig ? JSON.stringify(m.providerConfig) : null,
+      m.enabled === false ? 0 : 1,
       i,
     );
   }

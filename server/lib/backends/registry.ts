@@ -11,6 +11,7 @@ import type { AgentBackend, AgentBackendId } from "./types.ts";
 import { openrouterBackend } from "./llm/openrouter-backend.ts";
 import { claudeCodeBackend } from "./cli/claude-code-backend.ts";
 import { codexBackend } from "./cli/codex-backend.ts";
+import { cliBackendsEnabled, isCliInferenceProvider } from "./cli/feature-flag.ts";
 
 const bLog = log.child({ module: "backends" });
 
@@ -43,6 +44,14 @@ export function getBackendForModel(modelId: string | undefined): AgentBackend {
   if (!modelId) return BACKENDS[DEFAULT_BACKEND_ID]!;
   const row = getModelById(modelId);
   if (row?.inference_provider) {
+    if (isCliInferenceProvider(row.inference_provider) && !cliBackendsEnabled()) {
+      bLog.warn("CLI backend requested but ENABLE_CLI_BACKENDS is off; falling back", {
+        modelId,
+        inferenceProvider: row.inference_provider,
+        fallback: DEFAULT_BACKEND_ID,
+      });
+      return BACKENDS[DEFAULT_BACKEND_ID]!;
+    }
     const b = BACKENDS[row.inference_provider];
     if (b) return b;
     bLog.warn("unknown inference_provider on model row, falling back", {
