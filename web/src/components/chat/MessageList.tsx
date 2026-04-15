@@ -41,7 +41,7 @@ function shimmerLabel(messages: Message[], isStreaming: boolean): string | null 
   let lastVisible = null;
   for (let i = last.parts.length - 1; i >= 0; i -= 1) {
     const p = last.parts[i];
-    if (isVisiblePart(p)) {
+    if (p && isVisiblePart(p)) {
       lastVisible = p;
       break;
     }
