@@ -1,11 +1,11 @@
 /**
  * WebSocket chat handlers.
  *
- * Dispatches `chat.send` / `chat.stop` / `chat.regenerate` /
- * `chat.approve` from the per-connection switch in `ws.ts`. Owns the
- * per-`chatId` AbortController for `chat.stop`. The streaming run kicks
- * off `ws-entrypoint.ts`, which mutates the per-chat scene in `ws.ts` —
- * that module broadcasts to current viewers directly.
+ * Dispatches `chat.send` / `chat.stop` / `chat.regenerate` from the
+ * per-connection switch in `ws.ts`. Owns the per-`chatId` AbortController
+ * for `chat.stop`. The streaming run kicks off `ws-entrypoint.ts`, which
+ * mutates the per-chat scene in `ws.ts` — that module broadcasts to current
+ * viewers directly.
  */
 import type { WebSocket } from "ws";
 import { generateId } from "@/db/index.ts";
@@ -25,7 +25,6 @@ import {
 } from "@/lib/http/chat-aborts.ts";
 import { runAgentStepStreaming } from "@/lib/agent-step/index.ts";
 import { isChatStreaming as chatIsStreaming } from "@/lib/http/ws.ts";
-import { resolvePendingSync } from "@/lib/sync-approval.ts";
 
 import type { Message, Part } from "@/lib/messages/types.ts";
 
@@ -75,17 +74,10 @@ interface ChatRegenerateMessage {
   planMode?: boolean;
 }
 
-interface ChatApproveMessage {
-  type: "chat.approve";
-  syncId: string;
-  verdict: "approve" | "reject";
-}
-
 export type ChatWsMessage =
   | ChatSendMessage
   | ChatStopMessage
-  | ChatRegenerateMessage
-  | ChatApproveMessage;
+  | ChatRegenerateMessage;
 
 // ────────────────────────────────────────────────────────────────────────
 //  Dispatcher
@@ -109,9 +101,6 @@ export async function handleChatMessage(
       return;
     case "chat.regenerate":
       await handleChatRegenerate(ws, meta, msg);
-      return;
-    case "chat.approve":
-      handleChatApprove(ws, meta, msg);
       return;
   }
 }
@@ -310,22 +299,6 @@ function handleChatStop(
     userId: meta.userId,
     aborted,
   });
-}
-
-// ────────────────────────────────────────────────────────────────────────
-//  chat.approve
-// ────────────────────────────────────────────────────────────────────────
-
-function handleChatApprove(
-  ws: WebSocket,
-  _meta: ChatConnectionMeta,
-  msg: ChatApproveMessage,
-): void {
-  if (!msg.syncId || (msg.verdict !== "approve" && msg.verdict !== "reject")) {
-    sendError(ws, "chat.approve: missing syncId or invalid verdict");
-    return;
-  }
-  resolvePendingSync(msg.syncId, msg.verdict, "ws");
 }
 
 // ────────────────────────────────────────────────────────────────────────

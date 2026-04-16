@@ -7,6 +7,8 @@ import { CdpClient, connectToPage } from "./cdp.ts";
 import { executeAction, type RefMap, type CursorState, type SnapshotCache } from "./browser.ts";
 import { touchMarker, listFiles, detectChanges, readFiles, writeFiles, deleteFiles, saveSystemSnapshot, saveSystemSnapshotStream, restoreSystemSnapshot, restoreSystemSnapshotStream, detectBlobDirs, tarWorkspaceDir, tarWorkspaceDirStream, untarWorkspaceDir, untarWorkspaceDirStream, manifest as filesManifest, STATIC_BLOB_DIRS } from "./files.ts";
 import { startWatcher, type WatcherHandle } from "./watcher.ts";
+import { ensureSnapshotRepo } from "./snapshots.ts";
+import { dropAllWorkdirsForContainer } from "./workdirs.ts";
 import { fetchWithTimeout } from "./deferred.ts";
 import { log } from "./logger.ts";
 import { startSocketServer, stopSocketServer, socketPathFor, ensureSocketDir, SOCKET_DIR } from "./socket-proxy.ts";
@@ -225,6 +227,17 @@ export class ContainerManager {
         mgrLog.warn("failed to start watcher, continuing without it", { name, error: String(err) });
       }
 
+      // Initialize the hidden snapshot branch in /workspace. Idempotent —
+      // safe to call on every container create/first-start. If the repo
+      // already has the branch, this is effectively a no-op.
+      // NOTE: .git/ is excluded from the watcher (see watcher-config.ts),
+      // so snapshot commits don't cause a feedback loop.
+      try {
+        await ensureSnapshotRepo(name);
+      } catch (err) {
+        mgrLog.warn("failed to initialize snapshot repo, continuing without it", { name, error: String(err) });
+      }
+
       const state: ContainerState = {
         name,
         containerId,
@@ -282,6 +295,11 @@ export class ContainerManager {
         try { state.watcher.stop(); } catch (err) {
           mgrLog.warn("failed to stop watcher", { name, error: String(err) });
         }
+      }
+      try {
+        await dropAllWorkdirsForContainer(name);
+      } catch (err) {
+        mgrLog.warn("failed to drop workdirs before container removal", { name, error: String(err) });
       }
       try { await docker.removeContainer(name); } catch (err) {
         mgrLog.warn("failed to remove container", { name, error: String(err) });

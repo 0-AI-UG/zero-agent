@@ -10,6 +10,7 @@ import { Shimmer } from "@/components/chat-ui/Shimmer";
 import { Suggestion } from "@/components/chat-ui/Suggestion";
 import { MessageRow } from "./MessageRow";
 import { isVisiblePart } from "./tool-cards";
+import { useTurnDiffsStore } from "@/stores/turn-diffs";
 import logoSvg from "@/logo-mark.svg";
 
 interface MessageListProps {
@@ -80,6 +81,15 @@ export function MessageList({
 
   const label = shimmerLabel(messages, isStreaming);
 
+  const turnDiffs = useTurnDiffsStore((s) => s.byChatId[chatId]);
+  const latestTurnDiff = turnDiffs && turnDiffs.length > 0 ? turnDiffs[turnDiffs.length - 1] : null;
+  const lastAssistantIndex = (() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i]?.role === "assistant") return i;
+    }
+    return -1;
+  })();
+
   return (
     <>
       {messages.length === 0 && (
@@ -126,6 +136,11 @@ export function MessageList({
           isMultiMember={isMultiMember}
           onCopy={handleCopy}
           onRegenerate={stableRegenerate}
+          postSnapshotId={
+            index === lastAssistantIndex && !isStreaming
+              ? latestTurnDiff?.postSnapshotId
+              : undefined
+          }
         />
       ))}
 

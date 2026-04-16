@@ -101,9 +101,7 @@ export const handleBrowserFill = (
  * the CLI only ever sees a compact `{path, fileId, sizeBytes, ...}` reference,
  * which keeps the bash tool result tiny.
  *
- * This bypasses the bash sync-approval gate on purpose: screenshots are
- * observation artefacts, not user-authored files, so they shouldn't prompt
- * for approval.
+ * Screenshots are observation artefacts, not user-authored files.
  */
 export const handleBrowserScreenshot = async (
   ctx: CliContext,

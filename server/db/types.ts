@@ -89,6 +89,17 @@ export interface FolderRow {
   created_at: string;
 }
 
+export interface TurnSnapshotRow {
+  id: string;
+  project_id: string;
+  chat_id: string;
+  run_id: string;
+  turn_index: number;
+  parent_snapshot_id: string | null;
+  commit_sha: string;
+  created_at: string;
+}
+
 export interface ScheduledTaskRow {
   id: string;
   project_id: string;
@@ -315,12 +326,6 @@ export interface PendingResponseRow {
   expires_at: string;
   created_at: string;
   resolved_at: string | null;
-}
-
-export interface SyncApprovalBlobRow {
-  pending_response_id: string;
-  changes_json: string;
-  created_at: string;
 }
 
 export interface TelegramNotificationMessageRow {

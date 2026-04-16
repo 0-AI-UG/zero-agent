@@ -2,7 +2,6 @@ import { z } from "zod";
 import { tool } from "ai";
 import { ensureBackend } from "@/lib/execution/lifecycle.ts";
 import { writeStreamToS3 } from "@/lib/s3.ts";
-import { withProjectLock } from "@/lib/execution/project-lock.ts";
 import { markActivity } from "@/lib/execution/snapshot.ts";
 import { log } from "@/lib/utils/logger.ts";
 import { truncateText, stripBase64 } from "@/lib/conversation/truncate-result.ts";
@@ -112,54 +111,52 @@ export function createCodeTools(
       execute: async ({ command, timeout, background }) => {
         toolLog.info("bash", { userId, projectId, command, background });
 
-        return withProjectLock(projectId, async () => {
-          try {
-            const backend = await getBackend();
-            await backend.ensureContainer(userId, projectId);
-            markActivity(projectId);
+        try {
+          const backend = await getBackend();
+          await backend.ensureContainer(userId, projectId);
+          markActivity(projectId);
 
-            const result = await backend.runBash(
-              userId,
-              projectId,
-              command,
-              timeout,
-              background,
-            );
+          const result = await backend.runBash(
+            userId,
+            projectId,
+            command,
+            timeout,
+            background,
+          );
 
-            if (!result || typeof result !== "object") {
-              toolLog.error("bash: backend returned invalid result", null, { userId, projectId, result });
-              return { error: `Backend returned invalid result: ${JSON.stringify(result)}` };
-            }
-            toolLog.info("bash result", {
-              userId,
-              projectId,
-              exitCode: result.exitCode,
-              stdoutLen: result.stdout?.length ?? 0,
-              stderrLen: result.stderr?.length ?? 0,
-            });
-
-            // Strip base64 blobs (screenshots, image data) unconditionally, then
-            // apply a tighter char budget for browser-driving commands so a single
-            // `zero browser snapshot` can't blow past the text budget.
-            const cap = isBrowserCommand(command) ? MAX_BROWSER_OUTPUT_CHARS : MAX_OUTPUT_CHARS;
-            const baseOutput = {
-              stdout: truncateText(stripBase64(result.stdout), cap),
-              stderr: truncateText(stripBase64(result.stderr), cap),
-              exitCode: result.exitCode,
-            };
-
-            // Kick off blob-dir persistence (debounced, non-blocking)
-            if (!background) {
-              persistBlobsAsync(backend, projectId);
-            }
-
-            return baseOutput;
-          } catch (err) {
-            const message = err instanceof Error ? err.message : String(err);
-            toolLog.error("bash failed", err, { userId });
-            return { error: message };
+          if (!result || typeof result !== "object") {
+            toolLog.error("bash: backend returned invalid result", null, { userId, projectId, result });
+            return { error: `Backend returned invalid result: ${JSON.stringify(result)}` };
           }
-        });
+          toolLog.info("bash result", {
+            userId,
+            projectId,
+            exitCode: result.exitCode,
+            stdoutLen: result.stdout?.length ?? 0,
+            stderrLen: result.stderr?.length ?? 0,
+          });
+
+          // Strip base64 blobs (screenshots, image data) unconditionally, then
+          // apply a tighter char budget for browser-driving commands so a single
+          // `zero browser snapshot` can't blow past the text budget.
+          const cap = isBrowserCommand(command) ? MAX_BROWSER_OUTPUT_CHARS : MAX_OUTPUT_CHARS;
+          const baseOutput = {
+            stdout: truncateText(stripBase64(result.stdout), cap),
+            stderr: truncateText(stripBase64(result.stderr), cap),
+            exitCode: result.exitCode,
+          };
+
+          // Kick off blob-dir persistence (debounced, non-blocking)
+          if (!background) {
+            persistBlobsAsync(backend, projectId);
+          }
+
+          return baseOutput;
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          toolLog.error("bash failed", err, { userId });
+          return { error: message };
+        }
       },
     }),
   };

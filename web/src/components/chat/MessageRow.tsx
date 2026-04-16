@@ -11,6 +11,7 @@ import {
 } from "@/components/chat-ui/MessageShell";
 import { Markdown } from "@/components/chat-ui/Markdown";
 import { ToolCard, HIDDEN_TOOLS } from "./tool-cards";
+import { TurnDiffPanel } from "@/components/chat-ui/TurnDiffPanel";
 
 type Part = Message["parts"][number];
 
@@ -24,6 +25,13 @@ interface MessageRowProps {
   isMultiMember: boolean;
   onCopy: (text: string) => void;
   onRegenerate: (messageId: string) => void;
+  /**
+   * Post-turn git snapshot id for this assistant message, supplied by the
+   * parent once the `turn.diff.ready` WS event has landed. When present,
+   * renders a `TurnDiffPanel` at the tail of the message. Owned by the
+   * 3C-realtime task; undefined until that wiring exists.
+   */
+  postSnapshotId?: string;
 }
 
 /** Detect `[Triggered by: <event>] ... --- ... <prompt>` and pluck the pieces. */
@@ -140,6 +148,7 @@ function MessageRowInner({
   isMultiMember,
   onCopy,
   onRegenerate,
+  postSnapshotId,
 }: MessageRowProps) {
   const { role, parts } = message;
   const userId = (message as { userId?: string }).userId;
@@ -254,6 +263,10 @@ function MessageRowInner({
             </span>
           )}
         </div>
+      )}
+
+      {role === "assistant" && isDone && postSnapshotId && (
+        <TurnDiffPanel snapshotId={postSnapshotId} />
       )}
     </>
   );

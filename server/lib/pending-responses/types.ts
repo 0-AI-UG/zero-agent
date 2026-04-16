@@ -1,4 +1,4 @@
-export type PendingRequesterKind = "cli" | "agent" | "sync_approval";
+export type PendingRequesterKind = "cli" | "agent";
 
 export interface PendingRequesterContext {
   userId?: string;

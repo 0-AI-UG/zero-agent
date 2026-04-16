@@ -38,10 +38,6 @@ interface SubsResponse {
 }
 
 const KIND_META: Record<string, { title: string; description: string }> = {
-  sync_approval: {
-    title: "File-change approvals",
-    description: "When an agent needs you to review a write to your project.",
-  },
   cli_request: {
     title: "CLI messages",
     description: "When the agent CLI surfaces a question or request.",

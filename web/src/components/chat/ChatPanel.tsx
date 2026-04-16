@@ -1,11 +1,9 @@
 import { useCallback, useMemo } from "react";
-import { useShallow } from "zustand/react/shallow";
 import {
   Conversation,
   ConversationContent,
   ConversationScrollButton,
 } from "@/components/chat-ui/Conversation";
-import { SyncChangesHover, SyncInlineControls } from "@/components/chat-ui/SyncApproval";
 import { getQuickActionIcon } from "./QuickActionsManager";
 import { MessageList } from "./MessageList";
 import { Composer } from "./Composer";
@@ -16,7 +14,6 @@ import { useServerCapabilities } from "@/api/capabilities";
 import { useMembers } from "@/api/members";
 import { useViewChat } from "@/hooks/use-realtime";
 import { useWsChat } from "@/hooks/use-ws-chat";
-import { usePendingApprovalsStore } from "@/stores/pending-approvals";
 
 interface ChatPanelProps {
   projectId: string;
@@ -52,10 +49,6 @@ export function ChatPanel({ projectId, chatId, isAutonomous, source }: ChatPanel
     useWsChat(chatId);
 
   const typingUsers = useTypingUsers(chatId);
-
-  const pendingSyncs = usePendingApprovalsStore(
-    useShallow((s) => Object.values(s.byId).filter((p) => p.chatId === chatId)),
-  );
 
   const starterSuggestions = useMemo(
     () =>
@@ -98,30 +91,6 @@ export function ChatPanel({ projectId, chatId, isAutonomous, source }: ChatPanel
       </Conversation>
 
       <div className="absolute bottom-0 left-0 right-0 z-10 bg-background">
-        {pendingSyncs.length > 0 && (
-          <div className="px-6 pt-3 md:px-10 max-w-4xl mx-auto w-full">
-            {pendingSyncs.map((proposal) => (
-              <div
-                key={proposal.id}
-                className="mb-3 rounded-lg border bg-card px-3 py-2 text-sm flex items-center gap-3"
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="font-medium">Pending workspace sync approval</div>
-                  <div className="text-xs text-muted-foreground">
-                    {proposal.source === "bash"
-                      ? "Bash proposed file changes."
-                      : "A tool proposed file changes."}
-                  </div>
-                </div>
-                {proposal.changes && proposal.changes.length > 0 && (
-                  <SyncChangesHover syncId={proposal.id} changes={proposal.changes} />
-                )}
-                <SyncInlineControls proposal={proposal} />
-              </div>
-            ))}
-          </div>
-        )}
-
         {isAutonomous ? (
           <div className="px-6 py-4 md:px-10 max-w-4xl mx-auto w-full">
             <p className="text-xs text-muted-foreground text-center">

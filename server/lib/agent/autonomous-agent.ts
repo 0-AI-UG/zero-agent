@@ -159,7 +159,7 @@ export async function runAutonomousTask(
 
     // Persist to autonomous chat only when there's something to report.
     // Full tool-part parity with interactive chat: walk result.assistantParts
-    // so bash/sync-approval cards render in autonomous task logs.
+    // so tool cards render in autonomous task logs.
     const userMsgId = generateId();
     const assistantMsgId = generateId();
 

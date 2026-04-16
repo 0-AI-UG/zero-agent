@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { ChevronRightIcon, TerminalSquareIcon } from "lucide-react";
-import { SyncChangesHover, SyncInlineControls, type SyncProposal } from "@/components/chat-ui/SyncApproval";
 import { cn } from "@/lib/utils";
 
 interface BashOutput {
@@ -9,7 +8,6 @@ interface BashOutput {
   stdout?: string;
   stderr?: string;
   error?: string;
-  sync?: SyncProposal;
 }
 
 /**
@@ -37,7 +35,6 @@ export function BashCard({ output, command }: { output: BashOutput; command?: st
   const stdout = redact && rawStdout ? "••••••" : rawStdout;
   const stderr = output.stderr ?? "";
   const error = output.error;
-  const sync = output.sync;
 
   const collapseByDefault = exitCode === 0 && !error;
   const [expanded, setExpanded] = useState(!collapseByDefault);
@@ -82,8 +79,6 @@ export function BashCard({ output, command }: { output: BashOutput; command?: st
               {!expanded && hasOutput && (
                 <span className="text-xs text-muted-foreground/70">{summary}</span>
               )}
-              {sync?.changes && <SyncChangesHover syncId={sync.id} changes={sync.changes} />}
-              {sync && <SyncInlineControls proposal={sync} />}
               {exitCode != null && (
                 <span className="text-xs font-medium text-muted-foreground/70">
                   {exitCode === -1 ? "timeout" : `exit ${exitCode}`}

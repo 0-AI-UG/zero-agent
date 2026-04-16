@@ -8,13 +8,10 @@ import {
   insertFile,
   getFilesByFolder,
   getFileById,
-  getFilesByFolderPath,
-  deleteFilesByFolderPath,
-  deleteFile as deleteFileRecord,
-  updateFileFolderPath,
   updateFileSize,
 } from "@/db/queries/files.ts";
-import { indexFileContent, removeFileIndex } from "@/db/queries/search.ts";
+import { getLocalBackend } from "@/lib/execution/lifecycle.ts";
+import { indexFileContent } from "@/db/queries/search.ts";
 import {
   createFolder,
   getFoldersByParent,
@@ -24,12 +21,13 @@ import {
   updateFolderPath,
   updateFolderChildPaths,
 } from "@/db/queries/folders.ts";
-import { generateDownloadUrl, generateUploadUrl, deleteFromS3, writeToS3, readBinaryFromS3 } from "@/lib/s3.ts";
+import { generateDownloadUrl, generateUploadUrl, writeToS3, readBinaryFromS3 } from "@/lib/s3.ts";
 import { generateId } from "@/db/index.ts";
 import { searchFileContent } from "@/db/queries/search.ts";
 import { events } from "@/lib/scheduling/events.ts";
-import { embedAndStore, deleteVectorsBySource, semanticSearch } from "@/lib/search/vectors.ts";
-import { reconcileToContainer, sha256Hex } from "@/lib/execution/workspace-sync.ts";
+import { embedAndStore, semanticSearch } from "@/lib/search/vectors.ts";
+import { sha256Hex } from "@/lib/execution/workspace-sync.ts";
+import { importUploadedFile } from "@/lib/uploads/import-event.ts";
 import { updateFileHash } from "@/db/queries/files.ts";
 import { log } from "@/lib/utils/logger.ts";
 
@@ -199,14 +197,16 @@ export async function handleUpdateFileBinary(request: Request): Promise<Response
 
     events.emit("file.updated", { projectId, path: file.folder_path, filename: file.filename, mimeType: file.mime_type });
 
-    // Compute hash from the freshly-uploaded blob and reconcile container.
+    // Compute hash from the freshly-uploaded blob and import into container.
     try {
       const buf = await readBinaryFromS3(file.s3_key);
-      updateFileHash(id, sha256Hex(buf));
-    } catch {
-      // Best-effort
+      const hash = sha256Hex(buf);
+      updateFileHash(id, hash);
+      const workspacePath = `${file.folder_path}${file.filename}`.replace(/^\/+/, "");
+      await importUploadedFile({ projectId, s3Key: file.s3_key, path: workspacePath, expectedHash: hash });
+    } catch (err) {
+      routeLog.warn("importUploadedFile failed (binary update)", { projectId, fileId: id, error: err instanceof Error ? err.message : String(err) });
     }
-    await reconcileToContainer(projectId);
 
     return Response.json({ success: true }, { headers: corsHeaders });
   } catch (error) {
@@ -225,19 +225,18 @@ export async function handleDeleteFile(request: Request): Promise<Response> {
       throw new NotFoundError("File not found");
     }
 
-    // Delete metadata first so the file is gone from the user's view even if
-    // downstream cleanup (S3, vectors) fails. Vector cleanup is best-effort.
-    removeFileIndex(id);
-    deleteVectorsBySource(projectId, "file", id);
-    deleteFileRecord(id);
+    // Convert folder_path ("/" or "/foo/") + filename to workspace-relative path.
+    const trimmedFolder = file.folder_path.replace(/^\/+/, "").replace(/\/+$/, "");
+    const workspacePath = trimmedFolder ? `${trimmedFolder}/${file.filename}` : file.filename;
 
-    await deleteFromS3(file.s3_key).catch((err) => {
-      routeLog.warn("deleteFromS3 failed", { s3Key: file.s3_key, error: err instanceof Error ? err.message : String(err) });
-    });
-    if (file.thumbnail_s3_key) {
-      await deleteFromS3(file.thumbnail_s3_key).catch(() => {});
+    const backend = getLocalBackend();
+    if (!backend) {
+      throw new Error("Execution backend unavailable");
     }
-    await reconcileToContainer(projectId);
+    await backend.deletePath!(projectId, workspacePath);
+
+    // DB row, S3 object, FTS index, and vectors are cleaned up by the
+    // mirror-receiver once the watcher emits a delete event.
     events.emit("file.deleted", { projectId, path: file.folder_path, filename: file.filename });
 
     return Response.json({ success: true }, { headers: corsHeaders });
@@ -334,8 +333,10 @@ export async function handleUpdateFileContent(request: Request): Promise<Respons
     const buffer = Buffer.from(body.content, "utf-8");
     await writeToS3(file.s3_key, buffer);
     const updated = updateFileSize(id, buffer.length);
-    updateFileHash(id, sha256Hex(buffer));
-    await reconcileToContainer(projectId);
+    const hash = sha256Hex(buffer);
+    updateFileHash(id, hash);
+    const workspacePath = `${file.folder_path}${file.filename}`.replace(/^\/+/, "");
+    await importUploadedFile({ projectId, s3Key: file.s3_key, path: workspacePath, expectedHash: hash });
     indexFileContent(id, projectId, file.filename, body.content);
     embedAndStore(projectId, "file", id, body.content, { filename: file.filename }).catch(() => {});
     events.emit("file.updated", { projectId, path: file.folder_path, filename: file.filename, mimeType: file.mime_type });
@@ -366,13 +367,23 @@ export async function handleMoveFile(request: Request): Promise<Response> {
       }
     }
 
-    const oldPath = file.folder_path;
-    const updated = updateFileFolderPath(id, body.destinationPath);
+    const oldFolderPath = file.folder_path;
+    // Convert folder_path ("/" or "/foo/") + filename to workspace-relative path.
+    const toRel = (folderPath: string, filename: string) => {
+      const trimmed = folderPath.replace(/^\/+/, "").replace(/\/+$/, "");
+      return trimmed ? `${trimmed}/${filename}` : filename;
+    };
+    const oldPath = toRel(oldFolderPath, file.filename);
+    const newPath = toRel(body.destinationPath, file.filename);
 
-    await reconcileToContainer(projectId);
+    const backend = getLocalBackend();
+    if (!backend) {
+      throw new Error("Execution backend unavailable");
+    }
+    await backend.movePath!(projectId, oldPath, newPath);
 
-    events.emit("file.moved", { projectId, fromPath: oldPath, toPath: body.destinationPath, filename: file.filename });
-    return Response.json({ file: formatFile(updated) }, { headers: corsHeaders });
+    events.emit("file.moved", { projectId, fromPath: oldFolderPath, toPath: body.destinationPath, filename: file.filename });
+    return Response.json({ ok: true }, { headers: corsHeaders });
   } catch (error) {
     return handleError(error);
   }
@@ -412,13 +423,24 @@ export async function handleMoveFolder(request: Request): Promise<Response> {
       throw new ValidationError("A folder with this name already exists at the destination");
     }
 
-    // Update the folder itself
+    // Convert folder paths ("/foo/") to workspace-relative ("foo").
+    const toRelFolder = (p: string) => p.replace(/^\/+/, "").replace(/\/+$/, "");
+    const oldRel = toRelFolder(oldPath);
+    const newRel = toRelFolder(newPath);
+
+    const backend = getLocalBackend();
+    if (!backend) {
+      throw new Error("Execution backend unavailable");
+    }
+    await backend.movePath!(projectId, oldRel, newRel);
+
+    // Keep the folders table consistent. mirror-receiver handles files, but
+    // does not create/update folder rows, so we update those here. The call
+    // to updateFolderChildPaths also touches file rows under the old prefix;
+    // that is harmless because the watcher's delete+upsert will converge to
+    // the same final state.
     const updated = updateFolderPath(id, newPath, folder.name);
-
-    // Update all child folders and files
     updateFolderChildPaths(projectId, oldPath, newPath);
-
-    await reconcileToContainer(projectId);
 
     return Response.json({ folder: formatFolder(updated) }, { headers: corsHeaders });
   } catch (error) {
@@ -437,25 +459,23 @@ export async function handleDeleteFolder(request: Request): Promise<Response> {
       throw new NotFoundError("Folder not found");
     }
 
-    // Delete all files under this folder path from S3 (including thumbnails)
-    const files = getFilesByFolderPath(projectId, folder.path);
-    await Promise.all(
-      files.flatMap((f) => {
-        const ops = [deleteFromS3(f.s3_key)];
-        if (f.thumbnail_s3_key) {
-          ops.push(deleteFromS3(f.thumbnail_s3_key).catch(() => {}));
-        }
-        return ops;
-      })
-    );
+    // Convert folder.path ("/foo/bar/") to workspace-relative path ("foo/bar").
+    const workspacePath = folder.path.replace(/^\/+/, "").replace(/\/+$/, "");
+    if (!workspacePath) {
+      throw new ValidationError("Cannot delete root folder");
+    }
 
-    // Delete file records from DB
-    deleteFilesByFolderPath(projectId, folder.path);
-
-    // Delete this folder and all child folders
+    const backend = getLocalBackend();
+    if (!backend) {
+      throw new Error("Execution backend unavailable");
+    }
+    // `rm -rf` cascades to all children in the container; the watcher will
+    // emit per-file delete events and the mirror-receiver handles DB+S3+vector
+    // cleanup for files. The mirror-receiver does NOT touch the `folders`
+    // table, so we still delete folder rows (including child folders) here.
+    await backend.deletePath!(projectId, workspacePath);
     deleteFoldersByPathPrefix(projectId, folder.path);
 
-    await reconcileToContainer(projectId);
     events.emit("folder.deleted", { projectId, path: folder.path });
 
     return Response.json({ success: true }, { headers: corsHeaders });

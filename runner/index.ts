@@ -14,6 +14,9 @@ import { fileRoutes } from "./routes/files.ts";
 import { proxyRoute } from "./routes/proxy.ts";
 import { healthRoutes } from "./routes/health.ts";
 import { watcherRoutes } from "./routes/watcher.ts";
+import { snapshotsRoutes } from "./routes/snapshots.ts";
+import { importRoutes } from "./routes/import.ts";
+import { workdirsRoutes } from "./routes/workdirs.ts";
 import { ensureSocketDir } from "./lib/socket-proxy.ts";
 import { log } from "./lib/logger.ts";
 
@@ -28,6 +31,9 @@ const files = fileRoutes(mgr);
 const proxy = proxyRoute(mgr);
 const health = healthRoutes(mgr);
 const watcher = watcherRoutes(mgr);
+const snapshots = snapshotsRoutes(mgr);
+const importer = importRoutes(mgr);
+const workdirs = workdirsRoutes(mgr);
 
 function matchRoute(method: string, pathname: string): { handler: (req: Request) => Promise<Response> | Response; } | null {
   // Health (no auth required)
@@ -138,6 +144,47 @@ function matchRoute(method: string, pathname: string): { handler: (req: Request)
   }
   if (method === "POST" && sub === "/watcher/flush") {
     return { handler: (req) => watcher.flush(req, name!) };
+  }
+
+  // Import (S3 → container /workspace)
+  if (method === "POST" && sub === "/import") {
+    return { handler: (req) => importer.handle(req, name!) };
+  }
+
+  // Snapshots (hidden-branch git-backed per-turn snapshots in /workspace)
+  if (method === "POST" && sub === "/snapshots") {
+    return { handler: (req) => snapshots.create(req, name!) };
+  }
+  const snapshotMatch = sub.match(/^\/snapshots\/([0-9a-f]{40})(\/diff|\/file|\/revert)$/);
+  if (snapshotMatch) {
+    const [, sha, op] = snapshotMatch;
+    if (method === "GET" && op === "/diff") {
+      return { handler: (req) => snapshots.diff(req, name!, sha!) };
+    }
+    if (method === "GET" && op === "/file") {
+      return { handler: (req) => snapshots.file(req, name!, sha!) };
+    }
+    if (method === "POST" && op === "/revert") {
+      return { handler: (req) => snapshots.revert(req, name!, sha!) };
+    }
+  }
+
+  // Workdirs (per-call overlayfs isolation)
+  if (method === "POST" && sub === "/workdirs") {
+    return { handler: (req) => workdirs.create(req, name!) };
+  }
+  if (method === "GET" && sub === "/workdirs") {
+    return { handler: (req) => workdirs.list(req, name!) };
+  }
+  const workdirMatch = sub.match(/^\/workdirs\/([0-9a-fA-F-]{36})(\/flush)?$/);
+  if (workdirMatch) {
+    const [, id, op] = workdirMatch;
+    if (method === "POST" && op === "/flush") {
+      return { handler: (req) => workdirs.flush(req, name!, id!) };
+    }
+    if (method === "DELETE" && !op) {
+      return { handler: (req) => workdirs.drop(req, name!, id!) };
+    }
   }
 
   return null;

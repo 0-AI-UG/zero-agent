@@ -73,7 +73,6 @@ import {
   findPendingByReplyTarget,
 } from "@/db/queries/telegram-notification-messages.ts";
 import { resolvePendingResponse } from "@/lib/pending-responses/store.ts";
-import { resolvePendingSync, getSyncRow } from "@/lib/sync-approval.ts";
 import { registerTelegramNotifier } from "@/lib/notifications/dispatcher.ts";
 
 const tgLog = log.child({ module: "chat-providers/telegram" });
@@ -193,10 +192,8 @@ export const TelegramProvider: ChatProvider = {
     const text = formatNotification(payload);
     try {
       let messageId: number | undefined;
-      // If we have sync_approval-style actions, use an inline keyboard.
+      // If we have action buttons, render them as an inline keyboard.
       if (payload.actions && payload.actions.length > 0) {
-        // Sync approval keyboard uses callback_data of the form
-        // `syncv:<pendingResponseId>:<actionId>`.
         const keyboard = [
           payload.actions.map((a) => ({
             text: a.label,
@@ -645,58 +642,6 @@ async function handleCallbackQuery(cb: TelegramCallbackQuery): Promise<void> {
           token,
           String(cb.message.chat.id),
           `Active project: <b>${escapeTelegramHtml(project.name)}</b>. Send a message or use /new for a fresh chat.`,
-        );
-      } catch {
-        // best-effort
-      }
-    }
-    return;
-  }
-
-  // `syncv:<pendingResponseId>:<actionId>` - workspace sync approval.
-  if (cb.data.startsWith("syncv:")) {
-    const [, pendingId, actionId] = cb.data.split(":");
-    if (!pendingId || !actionId) {
-      await answerTelegramCallbackQuery(token, cb.id, "Invalid action");
-      return;
-    }
-    const telegramUserId = String(cb.from.id);
-    const link = getLinkForTelegramUser(telegramUserId);
-    if (!link) {
-      await answerTelegramCallbackQuery(token, cb.id, "Not linked");
-      return;
-    }
-
-    // Verify the row exists and that this telegram user is its target. The
-    // row's target_user_id matches the linked user_id (sync approvals are
-    // single-target per Stage 6 - project-wide fanout is deferred).
-    const row = getSyncRow(pendingId);
-    if (!row) {
-      await answerTelegramCallbackQuery(token, cb.id, "Sync not found");
-      return;
-    }
-    if (row.target_user_id !== link.user_id) {
-      await answerTelegramCallbackQuery(token, cb.id, "Not your sync");
-      return;
-    }
-
-    const verdict = actionId === "approve" ? "approve" : "reject";
-    const resolved = resolvePendingSync(pendingId, verdict, "telegram");
-    const ok = !!resolved;
-    await answerTelegramCallbackQuery(
-      token,
-      cb.id,
-      ok ? (verdict === "approve" ? "Kept" : "Discarded") : "Already answered",
-    );
-    // Disable the inline keyboard on the notification message so it can't be
-    // clicked again.
-    if (cb.message) {
-      try {
-        await editTelegramReplyMarkup(
-          token,
-          String(cb.message.chat.id),
-          cb.message.message_id,
-          null,
         );
       } catch {
         // best-effort

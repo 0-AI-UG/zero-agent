@@ -10,11 +10,8 @@ import {
   type NotificationAction,
 } from "@/components/notifications/NotificationToast";
 import { createElement } from "react";
-import {
-  usePendingApprovalsStore,
-  type SyncUiStatus,
-} from "@/stores/pending-approvals";
 import { usePlanModeStore } from "@/stores/plan-mode";
+import { turnDiffsStore } from "@/stores/turn-diffs";
 
 const toastIdForResponse = (responseId: string) => `pending-${responseId}`;
 
@@ -81,47 +78,22 @@ export function useRealtime(projectId: string | undefined) {
           }
           break;
 
-        case "sync.resolved": {
-          // Authoritative update: flip any open SyncApproval card to its
-          // terminal state regardless of which channel resolved it.
-          //
-          // Multi-user (autonomous) fan-outs include sibling row ids in
-          // `ids[]` so the canonical card flips even when a remote member
-          // resolved a non-canonical row. Also dismiss any open toast for
-          // the same response ids so a stale "Approve / Discard" toast
-          // doesn't sit there after the sync was decided elsewhere.
-          if (typeof msg.status === "string") {
-            const status = msg.status as SyncUiStatus;
-            const ids = Array.isArray(msg.ids)
-              ? (msg.ids as unknown[]).filter(
-                  (x): x is string => typeof x === "string",
-                )
-              : typeof msg.id === "string"
-              ? [msg.id]
-              : [];
-            const store = usePendingApprovalsStore.getState();
-            for (const id of ids) {
-              store.setStatus(id, status);
-              if (status !== "awaiting") store.clear(id);
-              toast.dismiss(toastIdForResponse(id));
-            }
-          }
-          break;
-        }
-
-        case "sync.created":
-        case "chat.sync.created": {
-          const syncId =
-            (typeof msg.syncId === "string" ? msg.syncId : undefined) ??
-            (typeof msg.id === "string" ? msg.id : undefined);
+        case "turn.diff.ready": {
+          // Server broadcasts this after a turn completes with a post-snapshot
+          // available. We stash the snapshot pair so the TurnDiffPanel can
+          // fetch and render the diff on demand.
           const chatId = typeof msg.chatId === "string" ? msg.chatId : undefined;
-          if (syncId && chatId) {
-            usePendingApprovalsStore.getState().upsertProposal({
-              id: syncId,
-              chatId,
-              source: typeof msg.source === "string" ? msg.source : undefined,
-              status: "awaiting",
-              changes: Array.isArray(msg.changes) ? (msg.changes as any[]) : undefined,
+          const runId = typeof msg.runId === "string" ? msg.runId : undefined;
+          const preSnapshotId =
+            typeof msg.preSnapshotId === "string" ? msg.preSnapshotId : undefined;
+          const postSnapshotId =
+            typeof msg.postSnapshotId === "string" ? msg.postSnapshotId : undefined;
+          if (chatId && runId && preSnapshotId && postSnapshotId) {
+            turnDiffsStore.addTurnDiff(chatId, {
+              runId,
+              preSnapshotId,
+              postSnapshotId,
+              createdAt: Date.now(),
             });
           }
           break;

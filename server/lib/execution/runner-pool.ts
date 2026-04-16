@@ -10,6 +10,7 @@ import type { BrowserAction, BrowserResult } from "@/lib/browser/protocol.ts";
 import type {
   ExecutionBackend, BashResult, ExecResult, SessionInfo, ContainerListEntry, WatcherEvent,
 } from "./backend-interface.ts";
+import type { TurnDiffEntry } from "@/lib/snapshots/types.ts";
 import { RunnerClient } from "./runner-client.ts";
 import { clearProjectActivity } from "./snapshot.ts";
 import { listEnabledRunners } from "@/db/queries/runners.ts";
@@ -177,19 +178,19 @@ export class RunnerPool implements ExecutionBackend {
     clearProjectActivity(projectId);
   }
 
-  async getContainerManifest(projectId: string, subpath?: string): Promise<Record<string, string>> {
+  async getContainerManifest(projectId: string, subpath?: string, workdirId?: string): Promise<Record<string, string>> {
     const { client } = await this.getClientForProject(projectId);
-    return client.getContainerManifest(projectId, subpath);
+    return client.getContainerManifest(projectId, subpath, workdirId);
   }
 
-  async pushFile(projectId: string, relativePath: string, buffer: Buffer): Promise<void> {
+  async pushFile(projectId: string, relativePath: string, buffer: Buffer, workdirId?: string): Promise<void> {
     const { client } = await this.getClientForProject(projectId);
-    await client.pushFile(projectId, relativePath, buffer);
+    await client.pushFile(projectId, relativePath, buffer, workdirId);
   }
 
-  async deleteFile(projectId: string, relativePath: string): Promise<void> {
+  async deleteFile(projectId: string, relativePath: string, workdirId?: string): Promise<void> {
     const { client } = await this.getClientForProject(projectId);
-    await client.deleteFile(projectId, relativePath);
+    await client.deleteFile(projectId, relativePath, workdirId);
   }
 
   async listBlobDirs(projectId: string): Promise<string[]> {
@@ -224,9 +225,9 @@ export class RunnerPool implements ExecutionBackend {
     }
   }
 
-  async runBash(userId: string, projectId: string, command: string, timeout?: number, background?: boolean): Promise<BashResult> {
+  async runBash(userId: string, projectId: string, command: string, timeout?: number, background?: boolean, workdirId?: string): Promise<BashResult> {
     const { client } = await this.getClientForProject(projectId);
-    return client.runBash(userId, projectId, command, timeout, background);
+    return client.runBash(userId, projectId, command, timeout, background, workdirId);
   }
 
   async execute(userId: string, projectId: string, action: BrowserAction, stealth?: boolean): Promise<BrowserResult> {
@@ -251,7 +252,7 @@ export class RunnerPool implements ExecutionBackend {
     return resolved.client.flushWatcher(projectId);
   }
 
-  async execInContainer(projectId: string, cmd: string[], opts?: { timeout?: number; workingDir?: string }): Promise<ExecResult> {
+  async execInContainer(projectId: string, cmd: string[], opts?: { timeout?: number; workingDir?: string; workdirId?: string }): Promise<ExecResult> {
     const { client } = await this.getClientForProject(projectId);
     return client.execInContainer(projectId, cmd, opts);
   }
@@ -313,6 +314,65 @@ export class RunnerPool implements ExecutionBackend {
       }
     }
     return results;
+  }
+
+  async createSnapshot(projectId: string, message: string): Promise<{ commitSha: string }> {
+    const { client } = await this.getClientForProject(projectId);
+    return client.createSnapshot(projectId, message);
+  }
+
+  async getSnapshotDiff(projectId: string, sha: string, against: string): Promise<TurnDiffEntry[]> {
+    const { client } = await this.getClientForProject(projectId);
+    return client.getSnapshotDiff(projectId, sha, against);
+  }
+
+  async readSnapshotFile(projectId: string, sha: string, path: string): Promise<Buffer> {
+    const { client } = await this.getClientForProject(projectId);
+    return client.readSnapshotFile(projectId, sha, path);
+  }
+
+  async revertSnapshotPaths(projectId: string, sha: string, paths: string[]): Promise<{ reverted: string[] }> {
+    const { client } = await this.getClientForProject(projectId);
+    return client.revertSnapshotPaths(projectId, sha, paths);
+  }
+
+  async importFromS3(
+    projectId: string,
+    req: { path: string; url: string; expectedHash: string },
+    workdirId?: string,
+  ): Promise<{ status: "written" | "skipped-same-hash"; bytes: number }> {
+    const { client } = await this.getClientForProject(projectId);
+    return client.importFromS3(projectId, req, workdirId);
+  }
+
+  async deletePath(projectId: string, path: string, workdirId?: string): Promise<void> {
+    const { client } = await this.getClientForProject(projectId);
+    return client.deletePath(projectId, path, workdirId);
+  }
+
+  async movePath(projectId: string, fromPath: string, toPath: string, workdirId?: string): Promise<void> {
+    const { client } = await this.getClientForProject(projectId);
+    return client.movePath(projectId, fromPath, toPath, workdirId);
+  }
+
+  async allocateWorkdir(projectId: string): Promise<{ id: string }> {
+    const { client } = await this.getClientForProject(projectId);
+    return client.allocateWorkdir(projectId);
+  }
+
+  async flushWorkdir(projectId: string, id: string): Promise<{ changes: number }> {
+    const { client } = await this.getClientForProject(projectId);
+    return client.flushWorkdir(projectId, id);
+  }
+
+  async dropWorkdir(projectId: string, id: string): Promise<void> {
+    const { client } = await this.getClientForProject(projectId);
+    return client.dropWorkdir(projectId, id);
+  }
+
+  async listWorkdirs(projectId: string): Promise<Array<{ id: string; allocatedAt: number }>> {
+    const { client } = await this.getClientForProject(projectId);
+    return client.listWorkdirs(projectId);
   }
 
   async destroyAll(): Promise<void> {

@@ -1,7 +1,6 @@
 import { memo } from "react";
 import { isToolUIPart, getToolName } from "@/lib/messages";
 import type { Message } from "@/lib/messages";
-import type { SyncProposal } from "@/components/chat-ui/SyncApproval";
 import { BashCard } from "./BashCard";
 import { WriteFileCard } from "./WriteFileCard";
 import { ForwardPortCard } from "./ForwardPortCard";
@@ -111,5 +110,3 @@ export const ToolCard = memo(
     prev.projectId === next.projectId &&
     prev.chatId === next.chatId,
 );
-
-export type { SyncProposal };

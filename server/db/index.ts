@@ -491,10 +491,20 @@ db.exec(`
   )
 `);
 
+// Legacy blob storage removed; drop if present for existing installs.
+db.exec(`DROP TABLE IF EXISTS sync_approval_blobs`);
+
+// ── Turn snapshots (per-turn git snapshots; Phase 3) ──
+
 db.exec(`
-  CREATE TABLE IF NOT EXISTS sync_approval_blobs (
-    pending_response_id TEXT PRIMARY KEY REFERENCES pending_responses(id) ON DELETE CASCADE,
-    changes_json        TEXT NOT NULL,
+  CREATE TABLE IF NOT EXISTS turn_snapshots (
+    id                  TEXT PRIMARY KEY,
+    project_id          TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    chat_id             TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+    run_id              TEXT NOT NULL,
+    turn_index          INTEGER NOT NULL,
+    parent_snapshot_id  TEXT REFERENCES turn_snapshots(id) ON DELETE SET NULL,
+    commit_sha          TEXT NOT NULL,
     created_at          TEXT NOT NULL DEFAULT (datetime('now'))
   )
 `);
@@ -537,6 +547,7 @@ db.exec(`CREATE INDEX IF NOT EXISTS idx_task_runs_task ON task_runs(task_id, sta
 db.exec(`CREATE INDEX IF NOT EXISTS idx_project_members_project ON project_members(project_id)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_project_members_user ON project_members(user_id)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_invitations_project ON invitations(project_id, status)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_turn_snapshots_chat ON turn_snapshots(chat_id, turn_index)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_invitations_username ON invitations(invitee_username, status)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_todos_project_chat ON todos(project_id, chat_id)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_skills_project ON skills(project_id)`);

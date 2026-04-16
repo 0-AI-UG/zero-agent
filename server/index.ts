@@ -57,6 +57,11 @@ import {
   handleUpdateFileBinary,
 } from "@/routes/files.ts";
 import {
+  handleGetTurnSnapshotDiff,
+  handleGetTurnSnapshotFile,
+  handleRevertTurnSnapshot,
+} from "@/routes/turn-snapshots.ts";
+import {
   handleReindex,
   handleReindexStatus,
   handleReindexStream,
@@ -109,10 +114,6 @@ import {
 } from "@/lib/telegram-global/poller.ts";
 import { ensureWebhookRegistered } from "@/lib/telegram-global/bot.ts";
 import { startupExpirySweep } from "@/lib/pending-responses/store.ts";
-import {
-  cancelAllPendingSyncs,
-  recoverSyncOrphansOnStartup,
-} from "@/lib/sync-approval.ts";
 import {
   handleGetVapidKey,
   handlePushSubscribe,
@@ -176,7 +177,6 @@ import {
   handleDeleteModel,
 } from "@/routes/models.ts";
 import { handleUsageSummary, handleUsageByModel, handleUsageByUser } from "@/routes/usage.ts";
-import { handleSyncVerdict, handleSyncDiff, handleSyncStatus } from "@/routes/sync.ts";
 import {
   handleListRunners,
   handleCreateRunner,
@@ -341,6 +341,11 @@ app.delete("/api/projects/:projectId/files/:id", h(handleDeleteFile));
 app.put("/api/projects/:projectId/files/:id", h(handleUpdateFileContent));
 app.patch("/api/projects/:projectId/files/:id", h(handleMoveFile));
 
+// Turn snapshots (per-turn git diff / file / revert)
+app.get("/api/turns/:snapshotId/diff", h(handleGetTurnSnapshotDiff));
+app.get("/api/turns/:snapshotId/file", h(handleGetTurnSnapshotFile));
+app.post("/api/turns/:snapshotId/revert", h(handleRevertTurnSnapshot));
+
 // Folders
 app.post("/api/projects/:projectId/folders", h(handleCreateFolder));
 app.delete("/api/projects/:projectId/folders/:id", h(handleDeleteFolder));
@@ -441,11 +446,6 @@ app.delete("/api/admin/models", h(handleDeleteModel));
 app.get("/api/admin/usage/summary", h(handleUsageSummary));
 app.get("/api/admin/usage/by-model", h(handleUsageByModel));
 app.get("/api/admin/usage/by-user", h(handleUsageByUser));
-
-// Workspace sync approval
-app.post("/api/sync/:id/verdict", h(handleSyncVerdict));
-app.get("/api/sync/:id/diff", h(handleSyncDiff));
-app.get("/api/sync/:id", h(handleSyncStatus));
 
 // Settings
 app.get("/api/settings", h(handleGetSettings));
@@ -739,10 +739,6 @@ registerGlobalPollerHandler(handleGlobalUpdate);
 
 // Sweep pending-responses that expired while the server was down.
 startupExpirySweep();
-// Reject any still-pending sync approvals from a prior process - their
-// owning runs are gone, so auto-reject and broadcast so any reconnecting
-// UI flips the card.
-recoverSyncOrphansOnStartup();
 
 // ── Heap monitoring + self-defense (every 60s) ──
 // heap cap is 400MB (--max-old-space-size=400). Above 300MB we aggressively
@@ -815,14 +811,6 @@ async function handleShutdown(signal: string) {
   stopScheduler();
   stopAllEventTriggers();
   stopGlobalPoller();
-  // Unblock any tool calls waiting on a sync approval so their runs can
-  // finish instead of timing out at the drain deadline.
-  const cancelledSyncs = cancelAllPendingSyncs("shutdown");
-  if (cancelledSyncs > 0) {
-    log.info("cancelled pending sync approvals on shutdown", {
-      count: cancelledSyncs,
-    });
-  }
   await drainActiveRuns(IS_PROD ? 30_000 : 2_000);
   closeWebSocketServer();
   await teardownExecution();

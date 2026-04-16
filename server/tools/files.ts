@@ -10,7 +10,6 @@ import { log } from "@/lib/utils/logger.ts";
 import { isModelMultimodal } from "@/config/models.ts";
 import { getVisionModelId } from "@/lib/providers/index.ts";
 import { ensureBackend } from "@/lib/execution/lifecycle.ts";
-import { withProjectLock } from "@/lib/execution/project-lock.ts";
 import sharp from "sharp";
 
 const MAX_READ_CHARS = 15_000;

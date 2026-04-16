@@ -44,6 +44,10 @@ import {
 } from "@/lib/durability/checkpoint.ts";
 
 import { runPostChatHooks, persistCheckpointOnError } from "./hooks.ts";
+import {
+  snapshotBeforeTurn,
+  snapshotAfterTurn,
+} from "@/lib/snapshots/snapshot-service.ts";
 
 import type { StreamingStepInput } from "./types.ts";
 
@@ -136,6 +140,21 @@ export async function runStreamingAgent(input: StreamingStepInput): Promise<void
   registerRun({ runId, chatId, projectId: project.id, startedAt: Date.now() });
 
   beginStream(chatId, priorMessages, streamId);
+
+  // Pre-turn git snapshot. Best-effort — if the runner call fails, log a
+  // warning and proceed without a snapshot (the turn must not abort).
+  let pre: { snapshotId: string; commitSha: string } | null = null;
+  try {
+    pre = await snapshotBeforeTurn({ projectId: project.id, chatId, runId });
+  } catch (err) {
+    wsLog.warn("snapshotBeforeTurn threw", {
+      projectId: project.id,
+      chatId,
+      runId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    pre = null;
+  }
 
   // Run prepareStep once up front so compaction / orphan-patching /
   // background-result injection happen before the first turn.
@@ -367,6 +386,25 @@ export async function runStreamingAgent(input: StreamingStepInput): Promise<void
     assistantMessage.metadata = metadata;
 
     publishMessage(chatId, assistantMessage);
+
+    // Post-turn git snapshot. Same best-effort pattern as the pre-turn call.
+    if (pre) {
+      try {
+        await snapshotAfterTurn({
+          projectId: project.id,
+          chatId,
+          runId,
+          preSnapshotId: pre.snapshotId,
+        });
+      } catch (err) {
+        wsLog.warn("snapshotAfterTurn threw", {
+          projectId: project.id,
+          chatId,
+          runId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
 
     runPostChatHooks([...priorMessages, assistantMessage], {
       projectId: project.id,

@@ -7,7 +7,6 @@ import { getProjectById } from "@/db/queries/projects.ts";
 import { getMessagesByChatTail } from "@/db/queries/messages.ts";
 import { log } from "@/lib/utils/logger.ts";
 import { isChatWsMessage, handleChatMessage } from "@/lib/http/ws-chat.ts";
-import { listPendingSyncsForChat } from "@/lib/sync-approval.ts";
 import { subscribeBrowser, unsubscribeBrowser } from "@/lib/http/ws-browser.ts";
 import type { Message, Part } from "@/lib/messages/types.ts";
 
@@ -588,18 +587,6 @@ function handleViewChat(ws: WebSocket, meta: ConnectionMeta, chatId: string) {
   // only receives `chat.message` / `chat.streamBegin` / `chat.streamEnd`
   // deltas — full scene frames are no longer broadcast per tick.
   send(ws, buildSnapshot(chatId));
-
-  // Seed the joining socket with any still-pending sync approvals for this
-  // chat. Replaces the client's mount-time HTTP GET /api/sync/:id fetch.
-  for (const pending of listPendingSyncsForChat(chatId)) {
-    send(ws, {
-      type: "chat.sync.created",
-      chatId,
-      syncId: pending.syncId,
-      source: pending.source,
-      changes: pending.changes,
-    });
-  }
 
   // Broadcast updated presence to the project
   broadcastPresence(meta.projectId);

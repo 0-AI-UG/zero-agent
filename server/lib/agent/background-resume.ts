@@ -129,9 +129,9 @@ async function runResume(chatId: string): Promise<void> {
       return;
     }
 
-    // The agent needs a userId for tool gating and sync-approval routing.
-    // Use the most recent human sender - that's who was interacting with
-    // this chat when the background task was spawned.
+    // The agent needs a userId for tool gating. Use the most recent human
+    // sender - that's who was interacting with this chat when the background
+    // task was spawned.
     const lastUserRow = [...rows].reverse().find((r) => r.user_id);
     const userId = lastUserRow?.user_id ?? undefined;
 

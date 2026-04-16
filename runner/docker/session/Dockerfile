@@ -37,6 +37,14 @@ ENV UV_PYTHON_PREFERENCE=only-managed
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
+# Pre-configure a default git identity + init branch for the hidden
+# snapshot repo that zero-agent maintains inside /workspace. These only
+# affect the dedicated `zero-agent/turns` branch the runner manages; the
+# agent's own git workflow inside /workspace is unaffected.
+RUN git config --system user.name  "zero-agent" \
+ && git config --system user.email "agent@zero-agent.local" \
+ && git config --system init.defaultBranch "zero-agent/turns"
+
 WORKDIR /workspace
 EXPOSE 5900 9222 9223
 

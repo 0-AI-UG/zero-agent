@@ -363,6 +363,7 @@ export class DockerClient {
         RestartPolicy: opts.restartPolicy
           ? { Name: opts.restartPolicy }
           : undefined,
+        CapAdd: ["SYS_ADMIN"],
       },
     };
 

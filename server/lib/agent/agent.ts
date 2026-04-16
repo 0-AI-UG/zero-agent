@@ -56,9 +56,8 @@ export interface AgentOptions {
   /** Use the fast/enrich model instead of the default chat model. Overrides `model`. */
   fast?: boolean;
   /**
-   * Autonomous (non-interactive) run - propagates to tool construction so
-   * the bash sync-approval flow fans out to every project member instead of
-   * just the triggering user.
+   * Autonomous (non-interactive) run - propagates to tool construction for
+   * autonomous-specific behaviour (no interactive prompts, etc.).
    */
   autonomous?: boolean;
   /** Plan mode - agent explores, writes a plan, then calls finishPlanning for user review. */

@@ -12,6 +12,7 @@ import { listS3Files, readStreamFromS3, writeStreamToS3, s3FileExists, s3FileSiz
 import { fetchWithTimeout } from "@/lib/utils/deferred.ts";
 import { capExecResult } from "@/lib/execution/exec-caps.ts";
 import { attachReceiver, type ReceiverHandle } from "@/lib/execution/mirror-receiver.ts";
+import type { TurnDiffEntry } from "@/lib/snapshots/types.ts";
 import { log } from "@/lib/utils/logger.ts";
 
 const clientLog = log.child({ module: "runner-client" });
@@ -372,28 +373,31 @@ export class RunnerClient implements ExecutionBackend {
     this.sessionCache.delete(projectId);
   }
 
-  async pushFile(projectId: string, relativePath: string, buffer: Buffer): Promise<void> {
+  async pushFile(projectId: string, relativePath: string, buffer: Buffer, workdirId?: string): Promise<void> {
     const name = this.containerName(projectId);
-    await this.json(`/containers/${encodeURIComponent(name)}/files/write`, {
+    const qs = workdirId ? `?workdirId=${encodeURIComponent(workdirId)}` : "";
+    await this.json(`/containers/${encodeURIComponent(name)}/files/write${qs}`, {
       method: "POST",
       body: JSON.stringify({ files: [{ path: relativePath, data: buffer.toString("base64") }] }),
       timeout: 30_000,
     });
   }
 
-  async deleteFile(projectId: string, relativePath: string): Promise<void> {
+  async deleteFile(projectId: string, relativePath: string, workdirId?: string): Promise<void> {
     const name = this.containerName(projectId);
-    await this.json(`/containers/${encodeURIComponent(name)}/files/delete`, {
+    const qs = workdirId ? `?workdirId=${encodeURIComponent(workdirId)}` : "";
+    await this.json(`/containers/${encodeURIComponent(name)}/files/delete${qs}`, {
       method: "POST",
       body: JSON.stringify({ paths: [relativePath] }),
       timeout: 30_000,
     });
   }
 
-  async getContainerManifest(projectId: string, subpath = "/workspace"): Promise<Record<string, string>> {
+  async getContainerManifest(projectId: string, subpath = "/workspace", workdirId?: string): Promise<Record<string, string>> {
     const name = this.containerName(projectId);
+    const wd = workdirId ? `&workdirId=${encodeURIComponent(workdirId)}` : "";
     const res = await this.json<{ files: Record<string, string> }>(
-      `/containers/${encodeURIComponent(name)}/files/manifest?dir=${encodeURIComponent(subpath)}`,
+      `/containers/${encodeURIComponent(name)}/files/manifest?dir=${encodeURIComponent(subpath)}${wd}`,
       { timeout: 120_000 },
     );
     return res.files ?? {};
@@ -407,14 +411,14 @@ export class RunnerClient implements ExecutionBackend {
 
   // -- Code execution --
 
-  async runBash(userId: string, projectId: string, command: string, timeout?: number, background?: boolean): Promise<BashResult> {
+  async runBash(userId: string, projectId: string, command: string, timeout?: number, background?: boolean, workdirId?: string): Promise<BashResult> {
     const name = this.containerName(projectId);
 
     if (background) {
       const bgCommand = `nohup bash -c '${command.replace(/'/g, "'\\''")}' > /dev/null 2>&1 & echo $!`;
       const result = await this.json<{ stdout: string; stderr: string; exitCode: number }>(`/containers/${encodeURIComponent(name)}/exec`, {
         method: "POST",
-        body: JSON.stringify({ cmd: ["bash", "-c", bgCommand], timeout: 15_000 }),
+        body: JSON.stringify({ cmd: ["bash", "-c", bgCommand], timeout: 15_000, workdirId }),
         timeout: 20_000,
       });
       const pid = result.stdout.trim();
@@ -431,7 +435,7 @@ export class RunnerClient implements ExecutionBackend {
     clientLog.debug("runBash request", { name, commandLength: command.length, effectiveTimeout });
     const result = await this.json<{ stdout: string; stderr: string; exitCode: number }>(`/containers/${encodeURIComponent(name)}/bash`, {
       method: "POST",
-      body: JSON.stringify({ command, timeout: effectiveTimeout }),
+      body: JSON.stringify({ command, timeout: effectiveTimeout, workdirId }),
       timeout: httpTimeout,
     });
 
@@ -520,6 +524,108 @@ export class RunnerClient implements ExecutionBackend {
     }
   }
 
+  // -- Snapshots (per-turn git) --
+
+  async createSnapshot(projectId: string, message: string): Promise<{ commitSha: string }> {
+    const name = this.containerName(projectId);
+    return this.json<{ commitSha: string }>(`/containers/${encodeURIComponent(name)}/snapshots`, {
+      method: "POST",
+      body: JSON.stringify({ message }),
+      timeout: 60_000,
+    });
+  }
+
+  async getSnapshotDiff(projectId: string, sha: string, against: string): Promise<TurnDiffEntry[]> {
+    const name = this.containerName(projectId);
+    const qs = `?against=${encodeURIComponent(against)}`;
+    return this.json<TurnDiffEntry[]>(
+      `/containers/${encodeURIComponent(name)}/snapshots/${encodeURIComponent(sha)}/diff${qs}`,
+      { method: "GET", timeout: 30_000 },
+    );
+  }
+
+  async readSnapshotFile(projectId: string, sha: string, path: string): Promise<Buffer> {
+    const name = this.containerName(projectId);
+    const qs = `?path=${encodeURIComponent(path)}`;
+    const res = await this.request(
+      `/containers/${encodeURIComponent(name)}/snapshots/${encodeURIComponent(sha)}/file${qs}`,
+      { method: "GET", timeout: 30_000 },
+    );
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      throw new Error(`readSnapshotFile failed (${res.status}): ${body.slice(0, 500)}`);
+    }
+    return Buffer.from(await res.arrayBuffer());
+  }
+
+  async revertSnapshotPaths(projectId: string, sha: string, paths: string[]): Promise<{ reverted: string[] }> {
+    const name = this.containerName(projectId);
+    return this.json<{ reverted: string[] }>(
+      `/containers/${encodeURIComponent(name)}/snapshots/${encodeURIComponent(sha)}/revert`,
+      {
+        method: "POST",
+        body: JSON.stringify({ paths }),
+        timeout: 60_000,
+      },
+    );
+  }
+
+  // -- Phase 4 file ops (runner-routed) --
+
+  /** Reject paths containing `..` components or a leading `/`. Paths must be /workspace-relative. */
+  private assertSafeWorkspacePath(path: string): void {
+    if (!path) throw new Error("path must be non-empty");
+    if (path.startsWith("/")) throw new Error(`path must not start with '/': ${path}`);
+    const parts = path.split("/");
+    for (const p of parts) {
+      if (p === "..") throw new Error(`path must not contain '..' components: ${path}`);
+    }
+  }
+
+  async importFromS3(
+    projectId: string,
+    req: { path: string; url: string; expectedHash: string },
+    workdirId?: string,
+  ): Promise<{ status: "written" | "skipped-same-hash"; bytes: number }> {
+    this.assertSafeWorkspacePath(req.path);
+    const name = this.containerName(projectId);
+    const qs = workdirId ? `?workdirId=${encodeURIComponent(workdirId)}` : "";
+    return this.json<{ status: "written" | "skipped-same-hash"; bytes: number }>(
+      `/containers/${encodeURIComponent(name)}/import${qs}`,
+      {
+        method: "POST",
+        body: JSON.stringify(req),
+        timeout: 120_000,
+      },
+    );
+  }
+
+  async deletePath(projectId: string, path: string, workdirId?: string): Promise<void> {
+    this.assertSafeWorkspacePath(path);
+    const base = workdirId ? `/workspace-${workdirId}/` : "/workspace/";
+    const result = await this.execInContainer(projectId, ["rm", "-rf", base + path], { workdirId });
+    if (result.exitCode !== 0) {
+      throw new Error(`deletePath failed (exit ${result.exitCode}): ${result.stderr || result.stdout}`);
+    }
+  }
+
+  async movePath(projectId: string, fromPath: string, toPath: string, workdirId?: string): Promise<void> {
+    this.assertSafeWorkspacePath(fromPath);
+    this.assertSafeWorkspacePath(toPath);
+    const base = workdirId ? `/workspace-${workdirId}/` : "/workspace/";
+    const parent = toPath.includes("/") ? toPath.slice(0, toPath.lastIndexOf("/")) : "";
+    if (parent) {
+      const mkdir = await this.execInContainer(projectId, ["mkdir", "-p", base + parent], { workdirId });
+      if (mkdir.exitCode !== 0) {
+        throw new Error(`movePath mkdir failed (exit ${mkdir.exitCode}): ${mkdir.stderr || mkdir.stdout}`);
+      }
+    }
+    const mv = await this.execInContainer(projectId, ["mv", base + fromPath, base + toPath], { workdirId });
+    if (mv.exitCode !== 0) {
+      throw new Error(`movePath mv failed (exit ${mv.exitCode}): ${mv.stderr || mv.stdout}`);
+    }
+  }
+
   // -- Browser --
 
   async execute(userId: string, projectId: string, action: BrowserAction, stealth?: boolean): Promise<BrowserResult> {
@@ -544,11 +650,11 @@ export class RunnerClient implements ExecutionBackend {
 
   // -- Raw exec --
 
-  async execInContainer(projectId: string, cmd: string[], opts?: { timeout?: number; workingDir?: string }): Promise<ExecResult> {
+  async execInContainer(projectId: string, cmd: string[], opts?: { timeout?: number; workingDir?: string; workdirId?: string }): Promise<ExecResult> {
     const name = this.containerName(projectId);
     const raw = await this.json<ExecResult>(`/containers/${encodeURIComponent(name)}/exec`, {
       method: "POST",
-      body: JSON.stringify({ cmd, timeout: opts?.timeout, workingDir: opts?.workingDir }),
+      body: JSON.stringify({ cmd, timeout: opts?.timeout, workingDir: opts?.workingDir, workdirId: opts?.workdirId }),
       timeout: (opts?.timeout ?? 120_000) + 10_000,
     });
     const capped = await capExecResult(raw.stdout ?? "", raw.stderr ?? "", projectId);
@@ -642,5 +748,40 @@ export class RunnerClient implements ExecutionBackend {
 
   getProxyInfo(projectId: string, port: number, path: string): { url: string; apiKey: string } {
     return { url: this.getProxyUrl(projectId, port, path), apiKey: this.apiKey };
+  }
+
+  // -- Workdirs (overlayfs) --
+
+  async allocateWorkdir(projectId: string): Promise<{ id: string }> {
+    const name = this.containerName(projectId);
+    return this.json<{ id: string }>(`/containers/${encodeURIComponent(name)}/workdirs`, {
+      method: "POST",
+      timeout: 30_000,
+    });
+  }
+
+  async flushWorkdir(projectId: string, id: string): Promise<{ changes: number }> {
+    const name = this.containerName(projectId);
+    return this.json<{ changes: number }>(
+      `/containers/${encodeURIComponent(name)}/workdirs/${encodeURIComponent(id)}/flush`,
+      { method: "POST", timeout: 120_000 },
+    );
+  }
+
+  async dropWorkdir(projectId: string, id: string): Promise<void> {
+    const name = this.containerName(projectId);
+    await this.json(`/containers/${encodeURIComponent(name)}/workdirs/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+      timeout: 30_000,
+    });
+  }
+
+  async listWorkdirs(projectId: string): Promise<Array<{ id: string; allocatedAt: number }>> {
+    const name = this.containerName(projectId);
+    const res = await this.json<{ workdirs: Array<{ id: string; allocatedAt: number }> }>(
+      `/containers/${encodeURIComponent(name)}/workdirs`,
+      { timeout: 30_000 },
+    );
+    return res.workdirs ?? [];
   }
 }
