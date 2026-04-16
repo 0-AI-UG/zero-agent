@@ -1,19 +1,15 @@
 import { z } from "zod";
 import { tool } from "ai";
 import { generateText } from "@/lib/openrouter/text.ts";
-import { getFileByS3Key, insertFile } from "@/db/queries/files.ts";
-import { createFolder as createFolderRecord, getFolderByPath } from "@/db/queries/folders.ts";
-import { readFromS3, readBinaryFromS3, writeToS3, s3 } from "@/lib/s3.ts";
+import { getFileByS3Key } from "@/db/queries/files.ts";
 import { applyEdits } from "@/lib/files/apply-edits.ts";
 import { lintContent } from "@/lib/files/lint.ts";
 import { sanitizePath } from "@/lib/files/sanitize.ts";
 import { truncateText } from "@/lib/conversation/truncate-result.ts";
-import { indexFileContent } from "@/db/queries/search.ts";
-import { embedAndStore } from "@/lib/search/vectors.ts";
 import { log } from "@/lib/utils/logger.ts";
 import { isModelMultimodal } from "@/config/models.ts";
 import { getVisionModelId } from "@/lib/providers/index.ts";
-import { reconcileToContainer, sha256Hex } from "@/lib/execution/workspace-sync.ts";
+import { ensureBackend } from "@/lib/execution/lifecycle.ts";
 import { withProjectLock } from "@/lib/execution/project-lock.ts";
 import sharp from "sharp";
 
@@ -90,31 +86,19 @@ function guessMimeType(filename: string): string {
   return map[ext ?? ""] ?? "application/octet-stream";
 }
 
-function isTextMime(mimeType: string): boolean {
-  return mimeType.startsWith("text/") || mimeType === "application/json";
-}
-
 function deriveFolder(path: string): string {
   const parts = path.split("/");
   if (parts.length <= 1) return "/";
   return "/" + parts.slice(0, -1).join("/") + "/";
 }
 
-/**
- * Ensure all ancestor folder records exist for a given folder path.
- * e.g. for "/research/competitors/" creates "/research/" and "/research/competitors/"
- */
-function ensureFoldersExist(projectId: string, folderPath: string) {
-  if (folderPath === "/") return;
-  const segments = folderPath.split("/").filter(Boolean);
-  let currentPath = "/";
-  for (const segment of segments) {
-    currentPath += segment + "/";
-    const existing = getFolderByPath(projectId, currentPath);
-    if (!existing) {
-      createFolderRecord(projectId, currentPath, segment);
-    }
+
+async function getBackend() {
+  const backend = await ensureBackend();
+  if (!backend?.isReady()) {
+    throw new Error("Code execution is not available. Docker may not be running.");
   }
+  return backend;
 }
 
 
@@ -125,7 +109,7 @@ export function createFileTools(projectId: string, options?: { chatId?: string; 
   return {
     readFile: tool({
       description:
-        "Read a file from project storage. Supports text and images. Must read before editing.",
+        "Read a file from the workspace. Supports text and images. Must read before editing.",
       inputSchema: z.object({
         path: z
           .string()
@@ -149,10 +133,17 @@ export function createFileTools(projectId: string, options?: { chatId?: string; 
         const path = sanitizePath(rawPath);
         toolLog.info("readFile", { projectId, path, offset, limit });
         try {
-          const s3Key = `projects/${projectId}/${path}`;
+          const userId = options?.userId ?? "";
+          const backend = await getBackend();
+          await backend.ensureContainer(userId, projectId);
 
           if (isImageFile(path)) {
-            const buffer = await readBinaryFromS3(s3Key);
+            // Read image bytes from the container via base64 encoding
+            const b64Result = await backend.execInContainer(projectId, ["base64", `/workspace/${path}`]);
+            if (b64Result.exitCode !== 0) {
+              throw new Error(`File not found: ${path}`);
+            }
+            const buffer = Buffer.from(b64Result.stdout.replace(/\s/g, ""), "base64");
             readPaths.add(path);
             const originalMediaType = getImageMediaType(path);
             const { buffer: resized, mediaType } = await resizeImageForModel(buffer, originalMediaType);
@@ -198,8 +189,12 @@ export function createFileTools(projectId: string, options?: { chatId?: string; 
             return { path, type: "image" as const, base64, mediaType };
           }
 
-          // Text files: existing behavior
-          let content = await readFromS3(s3Key);
+          // Text files: read from container
+          const catResult = await backend.execInContainer(projectId, ["cat", `/workspace/${path}`]);
+          if (catResult.exitCode !== 0) {
+            throw new Error(`File not found: ${path}`);
+          }
+          let content = catResult.stdout;
           readPaths.add(path);
           const totalLength = content.length;
 
@@ -227,16 +222,16 @@ export function createFileTools(projectId: string, options?: { chatId?: string; 
           toolLog.error("readFile failed", err, { projectId, path });
           throw err;
         }
+        // TODO phase 1: readFile returns `{ type: "image", base64, mediaType }` for
+        // images when the model is multimodal. AI-SDK formerly used `toModelOutput`
+        // to surface this as a content part; in OpenRouter SDK the mapping will be
+        // handled by the loop's items-stream adapter (another subagent's scope).
       },
-      // TODO phase 1: readFile returns `{ type: "image", base64, mediaType }` for
-      // images when the model is multimodal. AI-SDK formerly used `toModelOutput`
-      // to surface this as a content part; in OpenRouter SDK the mapping will be
-      // handled by the loop's items-stream adapter (another subagent's scope).
     }),
 
     writeFile: tool({
       description:
-        "Create or overwrite a file in project storage. IMPORTANT: before calling this tool, first use readFile to check whether the file already exists. You must read before overwriting.",
+        "Create or overwrite a file in the workspace. Persistence to project storage happens in the background. IMPORTANT: before calling this tool, first use readFile to check whether the file already exists. You must read before overwriting.",
       inputSchema: z.object({
         path: z
           .string()
@@ -249,14 +244,15 @@ export function createFileTools(projectId: string, options?: { chatId?: string; 
         const path = sanitizePath(rawPath);
         const folderPath = deriveFolder(path);
         toolLog.info("writeFile", { projectId, path, folderPath, contentLength: content.length });
-        return withProjectLock(projectId, async () => {
         try {
-          const s3Key = `projects/${projectId}/${path}`;
+          const userId = options?.userId ?? "";
+          const backend = await getBackend();
+          await backend.ensureContainer(userId, projectId);
 
           // Block overwriting files the agent hasn't read (new files are OK)
           if (!readPaths.has(path)) {
-            const exists = await s3.file(s3Key).exists();
-            if (exists) {
+            const result = await backend.execInContainer(projectId, ["test", "-f", `/workspace/${path}`]);
+            if (result.exitCode === 0) {
               throw new Error(
                 `Cannot overwrite "${path}" - you must readFile first.`,
               );
@@ -264,35 +260,10 @@ export function createFileTools(projectId: string, options?: { chatId?: string; 
           }
 
           const buffer = Buffer.from(content, "utf-8");
-          await writeToS3(s3Key, buffer);
+          await backend.pushFile(projectId, path, buffer);
 
           const filename = path.split("/").pop() ?? path;
           const mimeType = guessMimeType(filename);
-
-          // Ensure parent folder records exist so the UI can navigate to them
-          ensureFoldersExist(projectId, folderPath);
-
-          const fileRow = insertFile(
-            projectId,
-            s3Key,
-            filename,
-            mimeType,
-            buffer.length,
-            folderPath,
-            sha256Hex(buffer),
-          );
-
-          await reconcileToContainer(projectId);
-
-          // Index for FTS search (text files get content indexed, others just filename)
-          indexFileContent(fileRow.id, projectId, filename, isTextMime(mimeType) ? content : "");
-
-          // Embed for semantic search
-          if (isTextMime(mimeType)) {
-            embedAndStore(projectId, "file", fileRow.id, content, { filename }).catch((err) =>
-              toolLog.warn("embedding failed", { projectId, path, error: String(err) }),
-            );
-          }
 
           // Lint the written content and surface any issues
           const diagnostics = lintContent(content, mimeType);
@@ -303,7 +274,7 @@ export function createFileTools(projectId: string, options?: { chatId?: string; 
           // Mark as read so subsequent edits don't require a redundant readFile
           readPaths.add(path);
 
-          toolLog.info("writeFile success", { projectId, path, fileId: fileRow.id, sizeBytes: buffer.length });
+          toolLog.info("writeFile success", { projectId, path, sizeBytes: buffer.length });
           return {
             ...(diagnostics.length > 0 && {
               lint: {
@@ -316,7 +287,6 @@ export function createFileTools(projectId: string, options?: { chatId?: string; 
           toolLog.error("writeFile failed", err, { projectId, path });
           throw err;
         }
-        });
       },
     }),
 
@@ -341,7 +311,6 @@ export function createFileTools(projectId: string, options?: { chatId?: string; 
       execute: async ({ path: rawPath, edits }) => {
         const path = sanitizePath(rawPath);
         toolLog.info("editFile", { projectId, path, editCount: edits.length });
-        return withProjectLock(projectId, async () => {
         try {
           if (!readPaths.has(path)) {
             throw new Error(
@@ -349,30 +318,24 @@ export function createFileTools(projectId: string, options?: { chatId?: string; 
             );
           }
 
-          const s3Key = `projects/${projectId}/${path}`;
-          const content = await readFromS3(s3Key);
+          const userId = options?.userId ?? "";
+          const backend = await getBackend();
+          await backend.ensureContainer(userId, projectId);
+
+          // Read current content from the container
+          const catResult = await backend.execInContainer(projectId, ["cat", `/workspace/${path}`]);
+          if (catResult.exitCode !== 0) {
+            throw new Error(`Failed to read "${path}" from container: ${catResult.stderr}`);
+          }
+          const content = catResult.stdout;
+
           const updated = await applyEdits(content, edits);
 
           const buffer = Buffer.from(updated, "utf-8");
-          await writeToS3(s3Key, buffer);
+          await backend.pushFile(projectId, path, buffer);
 
           const filename = path.split("/").pop() ?? path;
           const mimeType = guessMimeType(filename);
-          const folderPath = deriveFolder(path);
-          ensureFoldersExist(projectId, folderPath);
-          const fileRow = insertFile(projectId, s3Key, filename, mimeType, buffer.length, folderPath, sha256Hex(buffer));
-
-          await reconcileToContainer(projectId);
-
-          // Re-index for FTS search
-          indexFileContent(fileRow.id, projectId, filename, isTextMime(mimeType) ? updated : "");
-
-          // Re-embed for semantic search
-          if (isTextMime(mimeType)) {
-            embedAndStore(projectId, "file", fileRow.id, updated, { filename }).catch((err) =>
-              toolLog.warn("embedding failed", { projectId, path, error: String(err) }),
-            );
-          }
 
           // Lint the updated content and surface any issues
           const diagnostics = lintContent(updated, mimeType);
@@ -394,7 +357,6 @@ export function createFileTools(projectId: string, options?: { chatId?: string; 
           toolLog.error("editFile failed", err, { projectId, path });
           throw err;
         }
-        });
       },
     }),
 
