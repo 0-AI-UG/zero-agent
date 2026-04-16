@@ -6,11 +6,12 @@
 import http from "node:http";
 import type { BrowserAction, BrowserResult } from "@/lib/browser/protocol.ts";
 import type {
-  ExecutionBackend, BashResult, ExecResult, SessionInfo, ContainerListEntry,
+  ExecutionBackend, BashResult, ExecResult, SessionInfo, ContainerListEntry, WatcherEvent,
 } from "./backend-interface.ts";
 import { listS3Files, readStreamFromS3, writeStreamToS3, s3FileExists, s3FileSize } from "@/lib/s3.ts";
 import { fetchWithTimeout } from "@/lib/utils/deferred.ts";
 import { capExecResult } from "@/lib/execution/exec-caps.ts";
+import { attachReceiver, type ReceiverHandle } from "@/lib/execution/mirror-receiver.ts";
 import { log } from "@/lib/utils/logger.ts";
 
 const clientLog = log.child({ module: "runner-client" });
@@ -23,6 +24,10 @@ export class RunnerClient implements ExecutionBackend {
   // Cache session info to avoid repeated HTTP calls
   private sessionCache = new Map<string, { info: SessionInfo; expiresAt: number }>();
   private static SESSION_CACHE_TTL = 60_000;
+
+  // Live mirror-receiver handles, one per project. Attached on ensureContainer,
+  // detached on destroyContainer.
+  private receivers = new Map<string, ReceiverHandle>();
 
   constructor(baseUrl: string, apiKey: string) {
     this.baseUrl = baseUrl.replace(/\/$/, "");
@@ -198,6 +203,11 @@ export class RunnerClient implements ExecutionBackend {
       expiresAt: Date.now() + RunnerClient.SESSION_CACHE_TTL,
     });
 
+    // Idempotent: attachReceiver returns the existing handle if already live.
+    if (!this.receivers.has(projectId)) {
+      this.receivers.set(projectId, attachReceiver(projectId, name));
+    }
+
     // Only restore snapshots/blobs when the runner actually created a new
     // container. Previously we used an in-memory `existed` flag that reset on
     // every server restart, causing a 391MB snapshot to be buffered into memory
@@ -321,6 +331,21 @@ export class RunnerClient implements ExecutionBackend {
   async destroyContainer(projectId: string): Promise<void> {
     const name = this.containerName(projectId);
 
+    // Flush watcher so pending events are delivered before container dies,
+    // then detach the server-side receiver so it stops reconnecting.
+    try {
+      await this.flushWatcher(projectId);
+    } catch (err) {
+      clientLog.warn("flushWatcher during destroy failed", { projectId, error: String(err) });
+    }
+    const receiver = this.receivers.get(projectId);
+    if (receiver) {
+      try { await receiver.detach(); } catch (err) {
+        clientLog.warn("receiver detach failed", { projectId, error: String(err) });
+      }
+      this.receivers.delete(projectId);
+    }
+
     // Save system snapshot before destroying (streamed)
     try {
       const snapshotRes = await this.request(`/containers/${encodeURIComponent(name)}/files/snapshot`, {
@@ -400,24 +425,6 @@ export class RunnerClient implements ExecutionBackend {
       };
     }
 
-    // Touch change marker, run command, detect changes, read changed files
-    // The runner's bash endpoint handles marker + truncation but not change detection.
-    // We do change detection via separate calls.
-
-    // Touch marker + get pre-file-list
-    await this.json(`/containers/${encodeURIComponent(name)}/files/write`, {
-      method: "POST",
-      body: JSON.stringify({ files: [] }), // no-op write to ensure container is alive
-      timeout: 10_000,
-    });
-
-    // Use the exec endpoint to touch marker
-    await this.json(`/containers/${encodeURIComponent(name)}/exec`, {
-      method: "POST",
-      body: JSON.stringify({ cmd: ["bash", "-c", "touch /tmp/.snapshot-marker"], workingDir: "/" }),
-      timeout: 10_000,
-    });
-
     const effectiveTimeout = timeout ?? 120_000;
     const httpTimeout = effectiveTimeout + 30_000;
 
@@ -444,34 +451,73 @@ export class RunnerClient implements ExecutionBackend {
     }
     clientLog.debug("runBash response", { name, exitCode: result.exitCode, stdoutLen: rawStdout.length, stderrLen: rawStderr.length });
 
-    const stdout = rawStdout;
-    const stderr = rawStderr;
-
-    // Detect changes
-    const changes = await this.json<{ changed: string[]; deleted: string[] }>(`/containers/${encodeURIComponent(name)}/files/changes`, {
-      method: "POST",
-      timeout: 30_000,
-    });
-
-    // Read changed files
-    let changedFiles: BashResult["changedFiles"];
-    if (changes.changed.length > 0) {
-      const readResult = await this.json<{ files: Array<{ path: string; data: string; sizeBytes: number }> }>(`/containers/${encodeURIComponent(name)}/files/read`, {
-        method: "POST",
-        body: JSON.stringify({ paths: changes.changed }),
-        timeout: 60_000,
-      });
-      changedFiles = readResult.files;
-    }
-
-    const capped = await capExecResult(stdout, stderr, projectId);
+    const capped = await capExecResult(rawStdout, rawStderr, projectId);
     return {
       stdout: capped.stdout,
       stderr: capped.stderr,
       exitCode: typeof result.exitCode === "number" ? result.exitCode : -1,
-      ...(changedFiles && changedFiles.length > 0 ? { changedFiles } : {}),
-      ...(changes.deleted.length > 0 ? { deletedFiles: changes.deleted } : {}),
     };
+  }
+
+  // -- Watcher --
+
+  async streamWatcherEvents(
+    projectId: string,
+    onEvent: (event: WatcherEvent) => void,
+    signal: AbortSignal,
+  ): Promise<void> {
+    const name = this.containerName(projectId);
+    const res = await fetch(`${this.baseUrl}/api/v1/containers/${encodeURIComponent(name)}/watcher/events`, {
+      method: "GET",
+      headers: { "Authorization": `Bearer ${this.apiKey}`, "Accept": "text/event-stream" },
+      signal,
+    });
+    if (!res.ok || !res.body) {
+      throw new Error(`watcher SSE failed: ${res.status} ${res.statusText}`);
+    }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    try {
+      while (!signal.aborted) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        // SSE frames are separated by \n\n. Each frame may have multiple lines.
+        let frameEnd: number;
+        while ((frameEnd = buf.indexOf("\n\n")) !== -1) {
+          const frame = buf.slice(0, frameEnd);
+          buf = buf.slice(frameEnd + 2);
+          for (const line of frame.split("\n")) {
+            if (line.startsWith("data:")) {
+              const payload = line.slice(5).trim();
+              if (!payload) continue;
+              try {
+                const event = JSON.parse(payload) as WatcherEvent;
+                onEvent(event);
+              } catch (err) {
+                clientLog.warn("watcher event parse failed", { projectId, error: String(err) });
+              }
+            }
+            // lines starting with `:` are keepalive comments; ignore.
+          }
+        }
+      }
+    } finally {
+      try { reader.cancel(); } catch {}
+    }
+  }
+
+  async flushWatcher(projectId: string): Promise<void> {
+    const name = this.containerName(projectId);
+    try {
+      await this.json(`/containers/${encodeURIComponent(name)}/watcher/flush`, {
+        method: "POST",
+        timeout: 30_000,
+      });
+    } catch (err) {
+      clientLog.warn("flushWatcher failed", { projectId, error: String(err) });
+    }
   }
 
   // -- Browser --

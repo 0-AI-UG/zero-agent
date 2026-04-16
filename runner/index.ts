@@ -13,6 +13,7 @@ import { browserRoutes } from "./routes/browser.ts";
 import { fileRoutes } from "./routes/files.ts";
 import { proxyRoute } from "./routes/proxy.ts";
 import { healthRoutes } from "./routes/health.ts";
+import { watcherRoutes } from "./routes/watcher.ts";
 import { ensureSocketDir } from "./lib/socket-proxy.ts";
 import { log } from "./lib/logger.ts";
 
@@ -26,6 +27,7 @@ const browser = browserRoutes(mgr);
 const files = fileRoutes(mgr);
 const proxy = proxyRoute(mgr);
 const health = healthRoutes(mgr);
+const watcher = watcherRoutes(mgr);
 
 function matchRoute(method: string, pathname: string): { handler: (req: Request) => Promise<Response> | Response; } | null {
   // Health (no auth required)
@@ -128,6 +130,14 @@ function matchRoute(method: string, pathname: string): { handler: (req: Request)
   }
   if (method === "PUT" && sub === "/files/blob") {
     return { handler: (req) => files.restoreBlob(req, name!) };
+  }
+
+  // Watcher
+  if (method === "GET" && sub === "/watcher/events") {
+    return { handler: (req) => watcher.events(req, name!) };
+  }
+  if (method === "POST" && sub === "/watcher/flush") {
+    return { handler: (req) => watcher.flush(req, name!) };
   }
 
   return null;

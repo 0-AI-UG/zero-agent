@@ -4,12 +4,14 @@
  */
 import type { BrowserAction, BrowserResult } from "@/lib/browser/protocol.ts";
 
+export type WatcherEvent =
+  | { kind: "upsert"; path: string; size: number; mtime: number }
+  | { kind: "delete"; path: string };
+
 export interface BashResult {
   stdout: string;
   stderr: string;
   exitCode: number;
-  changedFiles?: Array<{ path: string; data: string; sizeBytes: number }>;
-  deletedFiles?: string[];
 }
 
 export interface ExecResult {
@@ -54,6 +56,11 @@ export interface ExecutionBackend {
   runBash(userId: string, projectId: string, command: string, timeout?: number, background?: boolean): Promise<BashResult>;
   execute(userId: string, projectId: string, action: BrowserAction, stealth?: boolean): Promise<BrowserResult>;
   getLatestScreenshot(projectId: string): Promise<{ base64: string; title: string; url: string; timestamp: number } | null>;
+
+  /** Subscribe to the container-side watcher's change stream. Resolves when the stream ends (abort or remote close). */
+  streamWatcherEvents(projectId: string, onEvent: (event: WatcherEvent) => void, signal: AbortSignal): Promise<void>;
+  /** Wait for the watcher's pending debounce timers to fire + events to be delivered. */
+  flushWatcher(projectId: string): Promise<void>;
 
   /** Run a raw command in the project's container (used by port detection). */
   execInContainer(projectId: string, cmd: string[], opts?: { timeout?: number; workingDir?: string }): Promise<ExecResult>;

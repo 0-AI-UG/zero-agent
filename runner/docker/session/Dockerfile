@@ -5,6 +5,7 @@ RUN apt-get update && apt-get install -y \
     chromium xvfb x11vnc socat \
     fonts-liberation fonts-noto-color-emoji libnss3 libatk-bridge2.0-0 \
     curl git jq zip unzip ca-certificates net-tools \
+    inotify-tools \
     --no-install-recommends && rm -rf /var/lib/apt/lists/*
 
 # Bun

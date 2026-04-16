@@ -8,7 +8,7 @@
  */
 import type { BrowserAction, BrowserResult } from "@/lib/browser/protocol.ts";
 import type {
-  ExecutionBackend, BashResult, ExecResult, SessionInfo, ContainerListEntry,
+  ExecutionBackend, BashResult, ExecResult, SessionInfo, ContainerListEntry, WatcherEvent,
 } from "./backend-interface.ts";
 import { RunnerClient } from "./runner-client.ts";
 import { clearProjectActivity } from "./snapshot.ts";
@@ -238,6 +238,17 @@ export class RunnerPool implements ExecutionBackend {
     const resolved = await this.resolveRunner(projectId);
     if (!resolved) return null;
     return resolved.client.getLatestScreenshot(projectId);
+  }
+
+  async streamWatcherEvents(projectId: string, onEvent: (event: WatcherEvent) => void, signal: AbortSignal): Promise<void> {
+    const { client } = await this.getClientForProject(projectId);
+    return client.streamWatcherEvents(projectId, onEvent, signal);
+  }
+
+  async flushWatcher(projectId: string): Promise<void> {
+    const resolved = await this.resolveRunner(projectId);
+    if (!resolved) return;
+    return resolved.client.flushWatcher(projectId);
   }
 
   async execInContainer(projectId: string, cmd: string[], opts?: { timeout?: number; workingDir?: string }): Promise<ExecResult> {

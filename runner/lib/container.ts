@@ -6,6 +6,7 @@ import { docker } from "./docker-client.ts";
 import { CdpClient, connectToPage } from "./cdp.ts";
 import { executeAction, type RefMap, type CursorState, type SnapshotCache } from "./browser.ts";
 import { touchMarker, listFiles, detectChanges, readFiles, writeFiles, deleteFiles, saveSystemSnapshot, saveSystemSnapshotStream, restoreSystemSnapshot, restoreSystemSnapshotStream, detectBlobDirs, tarWorkspaceDir, tarWorkspaceDirStream, untarWorkspaceDir, untarWorkspaceDirStream, manifest as filesManifest, STATIC_BLOB_DIRS } from "./files.ts";
+import { startWatcher, type WatcherHandle } from "./watcher.ts";
 import { fetchWithTimeout } from "./deferred.ts";
 import { log } from "./logger.ts";
 import { startSocketServer, stopSocketServer, socketPathFor, ensureSocketDir, SOCKET_DIR } from "./socket-proxy.ts";
@@ -57,6 +58,7 @@ interface ContainerState {
   lastUsedAt: number;
   busyCount: number;
   socketServer: http.Server | null;
+  watcher: WatcherHandle | null;
 }
 
 export class ContainerManager {
@@ -216,6 +218,13 @@ export class ContainerManager {
       const { cdp } = await connectToPage(ip, CDP_PORT);
       const snapshotCache: SnapshotCache = { dirty: true, lastContent: "" };
 
+      let watcher: WatcherHandle | null = null;
+      try {
+        watcher = startWatcher(name);
+      } catch (err) {
+        mgrLog.warn("failed to start watcher, continuing without it", { name, error: String(err) });
+      }
+
       const state: ContainerState = {
         name,
         containerId,
@@ -233,6 +242,7 @@ export class ContainerManager {
         lastUsedAt: Date.now(),
         busyCount: 0,
         socketServer,
+        watcher,
       };
 
       this.registerDomListener(cdp, snapshotCache);
@@ -268,6 +278,11 @@ export class ContainerManager {
       if (!state) return;
 
       try { state.cdp?.close(); } catch {}
+      if (state.watcher) {
+        try { state.watcher.stop(); } catch (err) {
+          mgrLog.warn("failed to stop watcher", { name, error: String(err) });
+        }
+      }
       try { await docker.removeContainer(name); } catch (err) {
         mgrLog.warn("failed to remove container", { name, error: String(err) });
       }
@@ -302,6 +317,10 @@ export class ContainerManager {
     const state = this.containers.get(name);
     if (!state) return null;
     return { name, ip: state.ip, status: "running", created: false, createdAt: state.createdAt, lastUsedAt: state.lastUsedAt };
+  }
+
+  getWatcher(name: string): WatcherHandle | undefined {
+    return this.containers.get(name)?.watcher ?? undefined;
   }
 
 list(): ContainerInfo[] {
