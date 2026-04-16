@@ -53,19 +53,17 @@ interface ChatScene {
   error?: string;
   lastAccessAt: number;
   /**
-   * Broadcast coalescer. During tool-call argument streaming the agent can
-   * emit thousands of content-only deltas per second; serializing the whole
-   * message on every delta caused runaway heap growth. We publish structural
-   * changes immediately and trail content-only changes on a short timer so
-   * at most one snapshot is emitted per {@link COALESCE_INTERVAL_MS} window.
+   * Per-message-id structural signature of the last broadcast. Content-only
+   * deltas (text, reasoning) skip publishMessage and go out via publishChatDelta
+   * as lightweight frames, so structural changes are the only thing that needs
+   * dedup here.
    */
-  pendingMessage: Message | null;
-  pendingTimer: ReturnType<typeof setTimeout> | null;
-  /** Per-message-id structural signature of the last broadcast snapshot. */
   lastSignatures: Map<string, string>;
 }
 
-const COALESCE_INTERVAL_MS = 60;
+const WS_BUFFER_HIGH_WATER = 1 * 1024 * 1024; // 1 MB — skip sends when the kernel can't drain fast enough
+const WS_FRAME_SIZE_CAP = 4 * 1024 * 1024; // 4 MB — hard cap; drop pathologically large frames
+const TOOL_PART_TRUNCATE_BYTES = 20 * 1024; // 20 KB — truncate large tool inputs/outputs before broadcasting
 
 const chatScenes = new Map<string, ChatScene>();
 
@@ -88,8 +86,6 @@ function getOrCreateScene(chatId: string): ChatScene {
     isStreaming: false,
     working: new Map(),
     lastAccessAt: Date.now(),
-    pendingMessage: null,
-    pendingTimer: null,
     lastSignatures: new Map(),
   };
   chatScenes.set(chatId, s);
@@ -134,11 +130,12 @@ function buildSnapshot(chatId: string): WsBroadcastMessage {
     byId.set(m.id, m);
   }
   for (const [id, m] of s.working) {
+    const prepared = prepareForBroadcast(m);
     if (byId.has(id)) {
       const idx = tail.findIndex((x) => x.id === id);
-      if (idx >= 0) tail[idx] = m;
+      if (idx >= 0) tail[idx] = prepared;
     } else {
-      tail.push(m);
+      tail.push(prepared);
     }
   }
   return {
@@ -160,12 +157,6 @@ export function beginChatStream(
   s.streamId = streamId;
   s.isStreaming = true;
   s.error = undefined;
-  // Discard any stale coalescer state from a prior turn before we start.
-  if (s.pendingTimer) {
-    clearTimeout(s.pendingTimer);
-    s.pendingTimer = null;
-  }
-  s.pendingMessage = null;
   s.lastSignatures.clear();
   s.working.clear();
   // Only the newest message is truly in-flight (typically the user turn that
@@ -208,24 +199,28 @@ function messageSignature(m: Message): string {
   return `${parts.length}|${parts.join(",")}|${m.metadata ? "m" : ""}`;
 }
 
-function emitChatMessage(chatId: string, message: Message): void {
-  broadcastToChat(chatId, { type: "chat.message", chatId, message });
+function truncateField(value: unknown): unknown {
+  if (value == null) return value;
+  const json = typeof value === "string" ? value : JSON.stringify(value);
+  if (json.length <= TOOL_PART_TRUNCATE_BYTES) return value;
+  return { _truncated: true, preview: json.slice(0, 500), byteLength: json.length };
 }
 
-/**
- * Flush any coalesced pending snapshot immediately. Safe to call when
- * there's nothing pending.
- */
-function flushPendingBroadcast(s: ChatScene): void {
-  if (s.pendingTimer) {
-    clearTimeout(s.pendingTimer);
-    s.pendingTimer = null;
-  }
-  const pending = s.pendingMessage;
-  if (!pending) return;
-  s.pendingMessage = null;
-  s.lastSignatures.set(pending.id, messageSignature(pending));
-  emitChatMessage(s.chatId, pending);
+function prepareForBroadcast(message: Message): Message {
+  const parts = message.parts.map((p) => {
+    if (p.type !== "dynamic-tool") return p;
+    const dt = p as { type: string; input?: unknown; output?: unknown; [k: string]: unknown };
+    const newInput = truncateField(dt.input);
+    const newOutput = truncateField(dt.output);
+    if (newInput === dt.input && newOutput === dt.output) return p;
+    return { ...dt, input: newInput, output: newOutput } as Part;
+  });
+  if (parts === message.parts) return message;
+  return { ...message, parts };
+}
+
+function emitChatMessage(chatId: string, message: Message): void {
+  broadcastToChat(chatId, { type: "chat.message", chatId, message: prepareForBroadcast(message) });
 }
 
 export function publishChatMessage(chatId: string, message: Message): void {
@@ -234,31 +229,28 @@ export function publishChatMessage(chatId: string, message: Message): void {
   s.working.set(message.id, message);
 
   const sig = messageSignature(message);
-  const prev = s.lastSignatures.get(message.id);
-
-  if (prev !== sig) {
-    // Structural change: any prior coalesced snapshot is stale — drop it and
-    // emit this one immediately so renderers see the transition without lag.
-    if (s.pendingTimer) {
-      clearTimeout(s.pendingTimer);
-      s.pendingTimer = null;
-    }
-    s.pendingMessage = null;
-    s.lastSignatures.set(message.id, sig);
-    emitChatMessage(chatId, message);
+  if (s.lastSignatures.get(message.id) === sig) {
+    // Content-only delta — caller sends it via publishChatDelta.
     return;
   }
+  s.lastSignatures.set(message.id, sig);
+  emitChatMessage(chatId, message);
+}
 
-  // Content-only delta: stash the latest snapshot and schedule a trailing
-  // flush. The stream loop mutates `message` in place, so we hold exactly
-  // one reference to the live object — no extra retention.
-  s.pendingMessage = message;
-  if (!s.pendingTimer) {
-    s.pendingTimer = setTimeout(() => {
-      const scene = chatScenes.get(chatId);
-      if (scene) flushPendingBroadcast(scene);
-    }, COALESCE_INTERVAL_MS);
-  }
+/**
+ * Broadcast a lightweight text/reasoning delta to chat viewers.
+ * Sends a tiny `chat.delta` envelope instead of the full ~40KB message,
+ * eliminating the repeated JSON.stringify OOM that content-only streaming caused.
+ */
+export function publishChatDelta(
+  chatId: string,
+  messageId: string,
+  partIndex: number,
+  deltaText: string,
+): void {
+  const s = getOrCreateScene(chatId);
+  touchScene(s);
+  broadcastToChat(chatId, { type: "chat.delta", chatId, messageId, partIndex, text: deltaText });
 }
 
 export function endChatStream(
@@ -269,9 +261,11 @@ export function endChatStream(
   const s = getOrCreateScene(chatId);
   s.isStreaming = false;
   s.error = reason === "error" ? error ?? "Stream ended with an error" : undefined;
-  // Drain any coalesced snapshot so clients never see a terminal stream
-  // envelope with stale content behind it.
-  flushPendingBroadcast(s);
+  // Emit the final full state for each in-flight working message so clients
+  // have the complete content after any content-only deltas.
+  for (const message of s.working.values()) {
+    emitChatMessage(chatId, message);
+  }
   s.lastSignatures.clear();
   // Release the in-flight working set. DB is authoritative from here on; a
   // late viewer's snapshot will rebuild from the tail.
@@ -434,9 +428,9 @@ export function broadcastToProject(projectId: string, message: WsBroadcastMessag
   if (!room) return;
   const data = JSON.stringify(message);
   for (const ws of room) {
-    if (ws.readyState === WebSocket.OPEN) {
-      ws.send(data);
-    }
+    if (ws.readyState !== WebSocket.OPEN) continue;
+    if (ws.bufferedAmount > WS_BUFFER_HIGH_WATER) continue;
+    ws.send(data);
   }
 }
 
@@ -446,6 +440,7 @@ export function broadcastToUser(userId: string, message: WsBroadcastMessage): nu
   for (const [ws, meta] of connections) {
     if (meta.userId !== userId) continue;
     if (ws.readyState !== WebSocket.OPEN) continue;
+    if (ws.bufferedAmount > WS_BUFFER_HIGH_WATER) continue;
     ws.send(data);
     sent++;
   }
@@ -461,12 +456,19 @@ export function isUserConnected(userId: string): boolean {
 
 export function broadcastToChat(chatId: string, message: WsBroadcastMessage) {
   const viewers = chatViewers.get(chatId);
-  if (!viewers) return;
+  if (!viewers || viewers.size === 0) return;
   const data = JSON.stringify(message);
+  if (data.length > WS_FRAME_SIZE_CAP) {
+    wsLog.warn("ws frame exceeds size cap, dropping", { chatId, bytes: data.length });
+    return;
+  }
   for (const ws of viewers) {
-    if (ws.readyState === WebSocket.OPEN) {
-      ws.send(data);
+    if (ws.readyState !== WebSocket.OPEN) continue;
+    if (ws.bufferedAmount > WS_BUFFER_HIGH_WATER) {
+      wsLog.debug("ws backpressure, skipping frame", { chatId, buffered: ws.bufferedAmount });
+      continue;
     }
+    ws.send(data);
   }
 }
 

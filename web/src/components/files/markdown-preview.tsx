@@ -14,6 +14,9 @@ import {
   codeMirrorPlugin,
   frontmatterPlugin,
   diffSourcePlugin,
+  realmPlugin,
+  markdownProcessingError$,
+  viewMode$,
   BoldItalicUnderlineToggles,
   ListsToggle,
   BlockTypeSelect,
@@ -39,6 +42,20 @@ import { useUpdateFileContent } from "@/hooks/use-update-file-content";
 import { usePreviewActions } from "./preview-actions-context";
 import type { FileItem } from "@/hooks/use-files";
 import { cn } from "@/lib/utils";
+
+/**
+ * When markdown fails to parse for rich-text mode, automatically switch to
+ * source-only mode and suppress the error banner.
+ */
+const sourceOnParseErrorPlugin = realmPlugin({
+  postInit(realm) {
+    realm.sub(markdownProcessingError$, (error) => {
+      if (error !== null) {
+        realm.pub(viewMode$, "source");
+      }
+    });
+  },
+});
 
 interface MarkdownPreviewProps {
   file: FileItem;
@@ -149,6 +166,7 @@ export function MarkdownPreview({ file, content, projectId }: MarkdownPreviewPro
           }),
           frontmatterPlugin(),
           diffSourcePlugin({ viewMode: "rich-text" }),
+          sourceOnParseErrorPlugin(),
           markdownShortcutPlugin(),
           toolbarPlugin({
             toolbarContents: () => (

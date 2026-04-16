@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { tool } from "@openrouter/sdk/lib/tool.js";
+import { tool } from "ai";
 import { generateText } from "@/lib/openrouter/text.ts";
 import { getFileByS3Key, insertFile } from "@/db/queries/files.ts";
 import { createFolder as createFolderRecord, getFolderByPath } from "@/db/queries/folders.ts";
@@ -14,6 +14,7 @@ import { log } from "@/lib/utils/logger.ts";
 import { isModelMultimodal } from "@/config/models.ts";
 import { getVisionModelId } from "@/lib/providers/index.ts";
 import { reconcileToContainer, sha256Hex } from "@/lib/execution/workspace-sync.ts";
+import { withProjectLock } from "@/lib/execution/project-lock.ts";
 import sharp from "sharp";
 
 const MAX_READ_CHARS = 15_000;
@@ -121,9 +122,8 @@ export function createFileTools(projectId: string, options?: { chatId?: string; 
 
   const readPaths = new Set<string>(options?.initialReadPaths);
 
-  return [
-    tool({
-      name: "readFile",
+  return {
+    readFile: tool({
       description:
         "Read a file from project storage. Supports text and images. Must read before editing.",
       inputSchema: z.object({
@@ -234,10 +234,9 @@ export function createFileTools(projectId: string, options?: { chatId?: string; 
       // handled by the loop's items-stream adapter (another subagent's scope).
     }),
 
-    tool({
-      name: "writeFile",
+    writeFile: tool({
       description:
-        "Create or overwrite a file in project storage. Must read first before overwriting.",
+        "Create or overwrite a file in project storage. IMPORTANT: before calling this tool, first use readFile to check whether the file already exists. You must read before overwriting.",
       inputSchema: z.object({
         path: z
           .string()
@@ -250,6 +249,7 @@ export function createFileTools(projectId: string, options?: { chatId?: string; 
         const path = sanitizePath(rawPath);
         const folderPath = deriveFolder(path);
         toolLog.info("writeFile", { projectId, path, folderPath, contentLength: content.length });
+        return withProjectLock(projectId, async () => {
         try {
           const s3Key = `projects/${projectId}/${path}`;
 
@@ -316,13 +316,13 @@ export function createFileTools(projectId: string, options?: { chatId?: string; 
           toolLog.error("writeFile failed", err, { projectId, path });
           throw err;
         }
+        });
       },
     }),
 
-    tool({
-      name: "editFile",
+    editFile: tool({
       description:
-        "Edit a file via search-and-replace (oldText/newText) or line-range replacement (startLine/endLine/newText). Must readFile first.",
+        "Edit a file via search-and-replace. IMPORTANT: you must call readFile on the file before using this tool.",
       inputSchema: z.object({
         path: z
           .string()
@@ -331,37 +331,17 @@ export function createFileTools(projectId: string, options?: { chatId?: string; 
           ),
         edits: z
           .array(
-            z.union([
-              z.object({
-                oldText: z
-                  .string()
-                  .describe("The existing text to find in the file."),
-                newText: z
-                  .string()
-                  .describe("The replacement text."),
-              }),
-              z.object({
-                startLine: z
-                  .number()
-                  .int()
-                  .min(1)
-                  .describe("The first line to replace (1-based, inclusive). Use line numbers from readFile output."),
-                endLine: z
-                  .number()
-                  .int()
-                  .min(1)
-                  .describe("The last line to replace (1-based, inclusive)."),
-                newText: z
-                  .string()
-                  .describe("The replacement text. Use empty string to delete lines."),
-              }),
-            ]),
+            z.object({
+              oldText: z.string().describe("The existing text to find in the file."),
+              newText: z.string().describe("The replacement text."),
+            }),
           )
-          .describe("One or more edits to apply. Each edit is either a search-and-replace pair (oldText/newText) or a line-range replacement (startLine/endLine/newText)."),
+          .describe("One or more search-and-replace edits to apply in order."),
       }),
       execute: async ({ path: rawPath, edits }) => {
         const path = sanitizePath(rawPath);
         toolLog.info("editFile", { projectId, path, editCount: edits.length });
+        return withProjectLock(projectId, async () => {
         try {
           if (!readPaths.has(path)) {
             throw new Error(
@@ -414,11 +394,11 @@ export function createFileTools(projectId: string, options?: { chatId?: string; 
           toolLog.error("editFile failed", err, { projectId, path });
           throw err;
         }
+        });
       },
     }),
 
-    tool({
-      name: "displayFile",
+    displayFile: tool({
       description:
         "Display a file inline in chat for the user to see. Does not read contents - use readFile for that.",
       inputSchema: z.object({
@@ -449,5 +429,5 @@ export function createFileTools(projectId: string, options?: { chatId?: string; 
         };
       },
     }),
-  ];
+  };
 }

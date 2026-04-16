@@ -1,5 +1,6 @@
-import { memo, type ReactNode } from "react";
-import { CopyIcon, RefreshCcwIcon, ZapIcon } from "lucide-react";
+import { memo, useState, type ReactNode } from "react";
+import { ChevronRightIcon, CopyIcon, BrainIcon, RefreshCcwIcon, ZapIcon } from "lucide-react";
+import { cn } from "@/lib/utils";
 import type { Message, Role } from "@/lib/messages";
 import { isToolUIPart, getToolName } from "@/lib/messages";
 import { getModelsCache } from "@/stores/model";
@@ -103,6 +104,32 @@ function EventTriggerBubble({
   );
 }
 
+function ReasoningBlock({ text }: { text: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const lines = text.split("\n").length;
+  return (
+    <div className="max-w-2xl w-full my-1">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground py-1 px-1"
+      >
+        <ChevronRightIcon className={cn("size-3 shrink-0 transition-transform", expanded && "rotate-90")} />
+        <BrainIcon className="size-3 shrink-0" />
+        <span className="font-medium">Thinking</span>
+        {!expanded && (
+          <span className="text-muted-foreground/60">{lines} line{lines === 1 ? "" : "s"}</span>
+        )}
+      </button>
+      {expanded && (
+        <div className="ml-5 mt-1 max-h-96 overflow-auto rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground whitespace-pre-wrap font-mono">
+          {text}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MessageRowInner({
   message,
   projectId,
@@ -128,6 +155,11 @@ function MessageRowInner({
         if (isToolUIPart(part)) {
           if (HIDDEN_TOOLS.has(getToolName(part))) return null;
           return <ToolCard key={key} part={part} projectId={projectId} chatId={chatId} />;
+        }
+
+        if (part.type === "reasoning") {
+          if (!part.text) return null;
+          return <ReasoningBlock key={key} text={part.text} />;
         }
 
         if (part.type === "text") {

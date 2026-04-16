@@ -5,7 +5,7 @@
  * Uses the pending-responses system so the blocking semantics, timeout,
  * and multi-channel resolution all come for free.
  */
-import { tool } from "@openrouter/sdk/lib/tool.js";
+import { tool } from "ai";
 import { generateId } from "@/db/index.ts";
 import type { Message } from "@/lib/messages/types.ts";
 import { z } from "zod";
@@ -29,9 +29,8 @@ export function createPlanningTools(
   projectId: string,
   options: { chatId: string; userId: string; projectName: string },
 ) {
-  return [
-    tool({
-      name: "finishPlanning",
+  return {
+    finishPlanning: tool({
       description:
         "Call when the plan is ready for user review. Blocks until the user decides to implement or alter the plan.",
       inputSchema: z.object({
@@ -177,5 +176,5 @@ export function createPlanningTools(
         };
       },
     }),
-  ];
+  };
 }

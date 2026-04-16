@@ -25,6 +25,7 @@ type Part = Message["parts"][number];
 export function isVisiblePart(p: Part): boolean {
   if (isToolUIPart(p)) return !HIDDEN_TOOLS.has(getToolName(p));
   if (p.type === "text") return p.text.length > 0;
+  if (p.type === "reasoning") return p.text.length > 0;
   if (p.type === "file") {
     const mt = (p as { mediaType?: string }).mediaType;
     return typeof mt === "string" && mt.startsWith("image/");
@@ -49,7 +50,7 @@ export const ToolCard = memo(
 
     const isLoading = part.state === "input-streaming" || part.state === "input-available";
     const hasOutput = part.state === "output-available";
-    const args = part.arguments as Record<string, unknown> | undefined;
+    const args = part.input as Record<string, unknown> | undefined;
     const output = part.output as Record<string, unknown> | undefined;
 
     if (toolName === "agent" && part.state !== "input-streaming") {

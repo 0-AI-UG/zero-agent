@@ -26,7 +26,7 @@ interface ModelState {
 export const useModelStore = create<ModelState>()(
   persist(
     (set) => ({
-      selectedModelId: "minimax/minimax-m2.7",
+      selectedModelId: "moonshotai/kimi-k2.5",
       setSelectedModelId: (id) => set({ selectedModelId: id }),
       language: "zh" as Language,
       setLanguage: (language) => set({ language }),

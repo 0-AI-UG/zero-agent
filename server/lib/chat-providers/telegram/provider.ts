@@ -14,7 +14,7 @@
  */
 import sharp from "sharp";
 import type { Message } from "@/lib/messages/types.ts";
-import { getOpenRouterClient } from "@/lib/openrouter/client.ts";
+import { generateText } from "@/lib/openrouter/text.ts";
 
 import {
   sendTelegramText,
@@ -433,30 +433,20 @@ async function runAgentTurn(
     if (imageData) {
       if (!isModelMultimodal(chatModelId)) {
         try {
-          // Vision call: openrouter-sdk chat.send with an image part.
-          const client = getOpenRouterClient();
           const visionModel = getVisionModelId();
-          const res = await client.chat.send({
-            chatRequest: {
-              model: visionModel,
-              messages: [
-                {
-                  role: "user",
-                  content: [
-                    { type: "text", text: "Describe this image in detail. Include all visible text, layout, colors, and key elements." },
-                    {
-                      type: "image_url",
-                      imageUrl: { url: `data:${imageData.mediaType};base64,${imageData.base64}` },
-                    },
-                  ] as any,
-                } as any,
-              ],
-            },
-          } as any);
-          const caption =
-            (res as any)?.choices?.[0]?.message?.content ??
-            (typeof (res as any)?.output_text === "string" ? (res as any).output_text : "");
-          imageCaption = typeof caption === "string" ? caption : "";
+          const dataUrl = `data:${imageData.mediaType};base64,${imageData.base64}`;
+          const { text: caption } = await generateText({
+            model: visionModel,
+            messages: [{
+              id: "tg-caption",
+              role: "user",
+              parts: [{
+                type: "text",
+                text: "Describe this image in detail. Include all visible text, layout, colors, and key elements.\n\n" + dataUrl,
+              }],
+            }],
+          });
+          imageCaption = caption;
           imageData = null;
           tgLog.info("captioned telegram image for non-vision model", {
             chatModelId,

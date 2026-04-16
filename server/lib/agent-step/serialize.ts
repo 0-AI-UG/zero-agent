@@ -6,7 +6,7 @@
  * - `stepsToUIParts` turns step results into the canonical `Part[]` shape
  *   so batch runs persist the same representation as streaming runs.
  */
-import type { Message, Part, ToolCallPart } from "@/lib/messages/types.ts";
+import type { Message, Part, DynamicToolUIPart } from "@/lib/messages/types.ts";
 import type { MessageRow } from "@/db/types.ts";
 
 export function dbMessagesToMessages(dbMessages: MessageRow[]): Message[] {
@@ -45,28 +45,32 @@ export function stepsToUIParts(steps: StepLike[], finalText: string): Part[] {
   for (const step of steps) {
     for (const tc of step.toolCalls) {
       const tr = step.toolResults.find((r) => r.toolCallId === tc.id);
-      const call: ToolCallPart = {
-        type: "tool-call",
-        callId: tc.id,
-        name: tc.name,
-        arguments: tc.arguments,
-        state: tr
-          ? tr.error
-            ? "output-error"
-            : "output-available"
-          : "input-available",
-        output: tr?.result,
-        errorText: tr?.error?.message,
-      };
-      parts.push(call);
-      if (tr) {
-        parts.push({
-          type: "tool-output",
-          callId: tc.id,
-          output: tr.result,
-          errorText: tr.error?.message,
-        });
-      }
+      const toolPart: DynamicToolUIPart = tr
+        ? tr.error
+          ? {
+              type: "dynamic-tool",
+              toolName: tc.name,
+              toolCallId: tc.id,
+              state: "output-error",
+              input: tc.arguments,
+              errorText: tr.error.message,
+            }
+          : {
+              type: "dynamic-tool",
+              toolName: tc.name,
+              toolCallId: tc.id,
+              state: "output-available",
+              input: tc.arguments,
+              output: tr.result,
+            }
+        : {
+            type: "dynamic-tool",
+            toolName: tc.name,
+            toolCallId: tc.id,
+            state: "input-available",
+            input: tc.arguments,
+          };
+      parts.push(toolPart);
     }
   }
   if (finalText) {

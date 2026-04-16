@@ -136,6 +136,45 @@
   color: var(--muted-foreground);
 }
 
+/* Source mode (CodeMirror) */
+.mdxeditor-wrapper .mdxeditor .cm-editor {
+  background: transparent;
+  color: var(--foreground);
+}
+
+.mdxeditor-wrapper .mdxeditor .cm-editor .cm-content,
+.mdxeditor-wrapper .mdxeditor .cm-editor .cm-line {
+  color: var(--foreground);
+}
+
+.mdxeditor-wrapper .mdxeditor .cm-editor .cm-gutters {
+  background: transparent;
+  color: var(--muted-foreground);
+  border-color: var(--border);
+}
+
+.mdxeditor-wrapper .mdxeditor .cm-editor .cm-cursor {
+  border-left-color: var(--foreground);
+}
+
+.mdxeditor-wrapper .mdxeditor .cm-editor .cm-activeLine {
+  background: var(--accent);
+}
+
+.mdxeditor-wrapper .mdxeditor .cm-editor .cm-activeLineGutter {
+  background: var(--accent);
+}
+
+.mdxeditor-wrapper .mdxeditor .cm-editor .cm-selectionBackground,
+.mdxeditor-wrapper .mdxeditor .cm-editor .cm-content ::selection {
+  background: color-mix(in srgb, var(--foreground) 20%, transparent) !important;
+}
+
+/* Hide MDXEditor parse error banner — we auto-switch to source mode instead */
+.mdxeditor-wrapper .mdxeditor [class*="markdownParseError"] {
+  display: none;
+}
+
 /* Hide toolbar when toggled off */
 .mdxeditor-toolbar-hidden .mdxeditor [role="toolbar"] {
   display: none;

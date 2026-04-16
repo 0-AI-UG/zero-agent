@@ -2,7 +2,6 @@ import Database from "better-sqlite3";
 import { nanoid } from "nanoid";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import { runMessageShapeMigration } from "@/db/migrate-message-shape.ts";
 const DB_PATH = process.env.DB_PATH || "./data/app.db";
 
 mkdirSync(dirname(DB_PATH), { recursive: true });
@@ -563,7 +562,6 @@ db.exec(`CREATE INDEX IF NOT EXISTS idx_pending_responses_target ON pending_resp
 db.exec(`CREATE INDEX IF NOT EXISTS idx_pending_responses_expires ON pending_responses(status, expires_at)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_pending_responses_group ON pending_responses(group_id, status)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_tg_notif_msgs_pending ON telegram_notification_messages(pending_response_id)`);
-runMessageShapeMigration(db);
 
 // ── Seed models from JSON if table is empty ──
 

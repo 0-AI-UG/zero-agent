@@ -1,6 +1,6 @@
 import { test, expect, describe } from "vitest";
 import { clearStaleToolResults } from "./clear-stale-results.ts";
-import type { Message, ToolCallPart } from "@/lib/messages/types.ts";
+import type { Message, DynamicToolUIPart } from "@/lib/messages/types.ts";
 
 let callSeq = 0;
 function nextCallId(prefix = "call"): string {
@@ -8,33 +8,24 @@ function nextCallId(prefix = "call"): string {
   return `${prefix}-${callSeq}`;
 }
 
-function makeAssistantWithToolCall(toolName: string, callId: string, args: unknown = {}): Message {
+function makeAssistantWithToolResult(
+  toolName: string,
+  callId: string,
+  output: unknown,
+  args: unknown = {},
+): Message {
+  const part: DynamicToolUIPart = {
+    type: "dynamic-tool",
+    toolName,
+    toolCallId: callId,
+    state: "output-available",
+    input: args,
+    output,
+  };
   return {
     id: `m-${callId}`,
     role: "assistant",
-    parts: [
-      {
-        type: "tool-call",
-        callId,
-        name: toolName,
-        arguments: args,
-        state: "output-available",
-      } as ToolCallPart,
-    ],
-  };
-}
-
-function makeToolMsg(output: unknown, callId: string): Message {
-  return {
-    id: `t-${callId}`,
-    role: "tool",
-    parts: [
-      {
-        type: "tool-output",
-        callId,
-        output,
-      },
-    ],
+    parts: [part],
   };
 }
 
@@ -54,9 +45,9 @@ function makeUserMsg(text = "hello"): Message {
   };
 }
 
-function getOutput(msg: Message | undefined): unknown {
+function getToolOutput(msg: Message | undefined): unknown {
   const p = msg?.parts?.[0];
-  if (p && p.type === "tool-output") return p.output;
+  if (p && p.type === "dynamic-tool" && p.state === "output-available") return p.output;
   return undefined;
 }
 
@@ -65,8 +56,7 @@ describe("clearStaleToolResults", () => {
     const callId = nextCallId();
     const messages: Message[] = [
       makeUserMsg(),
-      makeAssistantWithToolCall("fetchUrl", callId),
-      makeToolMsg({ url: "https://example.com", title: "Example" }, callId),
+      makeAssistantWithToolResult("fetchUrl", callId, { url: "https://example.com", title: "Example" }),
       makeAssistantMsg(), // age 1 - fetchUrl maxAge 2, should keep
     ];
 
@@ -78,8 +68,7 @@ describe("clearStaleToolResults", () => {
     const callId = nextCallId();
     const messages: Message[] = [
       makeUserMsg(),
-      makeAssistantWithToolCall("fetchUrl", callId),
-      makeToolMsg({ url: "https://example.com", title: "Example" }, callId),
+      makeAssistantWithToolResult("fetchUrl", callId, { url: "https://example.com", title: "Example" }),
       makeAssistantMsg(),
       makeUserMsg(),
       makeAssistantMsg(),
@@ -90,7 +79,7 @@ describe("clearStaleToolResults", () => {
     const result = clearStaleToolResults(messages);
     expect(result).not.toBe(messages);
 
-    const output = getOutput(result[2]);
+    const output = getToolOutput(result[1]);
     expect(output).toEqual({
       type: "text",
       value: "[fetched https://example.com - Example]",
@@ -103,24 +92,21 @@ describe("clearStaleToolResults", () => {
     const c3 = nextCallId("b");
     const messages: Message[] = [
       makeUserMsg(),
-      makeAssistantWithToolCall("browser", c1),
-      makeToolMsg({ url: "https://page1.com", content: "tree1" }, c1),
-      makeAssistantWithToolCall("browser", c2),
-      makeToolMsg({ url: "https://page2.com", content: "tree2" }, c2),
-      makeAssistantWithToolCall("browser", c3),
-      makeToolMsg({ url: "https://page3.com", content: "tree3" }, c3),
+      makeAssistantWithToolResult("browser", c1, { url: "https://page1.com", content: "tree1" }),
+      makeAssistantWithToolResult("browser", c2, { url: "https://page2.com", content: "tree2" }),
+      makeAssistantWithToolResult("browser", c3, { url: "https://page3.com", content: "tree3" }),
     ];
 
     const result = clearStaleToolResults(messages);
-    expect(getOutput(result[2])).toEqual({
+    expect(getToolOutput(result[1])).toEqual({
       type: "text",
       value: "[snapshot: https://page1.com]",
     });
-    expect(getOutput(result[4])).toEqual({
+    expect(getToolOutput(result[2])).toEqual({
       type: "text",
       value: "[snapshot: https://page2.com]",
     });
-    expect(getOutput(result[6])).toEqual({ url: "https://page3.com", content: "tree3" });
+    expect(getToolOutput(result[3])).toEqual({ url: "https://page3.com", content: "tree3" });
   });
 
   test("passes through messages with no tool results", () => {
@@ -137,8 +123,7 @@ describe("clearStaleToolResults", () => {
   test("preserves unknown tool names", () => {
     const callId = nextCallId();
     const messages: Message[] = [
-      makeAssistantWithToolCall("unknownTool", callId),
-      makeToolMsg({ data: "something" }, callId),
+      makeAssistantWithToolResult("unknownTool", callId, { data: "something" }),
       makeAssistantMsg(),
       makeAssistantMsg(),
       makeAssistantMsg(),

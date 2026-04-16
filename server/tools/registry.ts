@@ -1,4 +1,4 @@
-import type { Tool } from "@openrouter/sdk/lib/tool-types.js";
+import type { ToolSet } from "ai";
 import { createFileTools } from "@/tools/files.ts";
 import { createProgressTools } from "@/tools/progress.ts";
 import { createSkillTools } from "@/tools/skills.ts";
@@ -8,16 +8,7 @@ import { createCodeTools } from "@/tools/code.ts";
 // search, etc.) live in server/cli-handlers/ and are reached by the agent via
 // `bash` → `zero ...` → the runner-proxy. Only in-process tools live here.
 
-export type ToolRegistry = readonly Tool[];
-
-/** Name-indexed lookup over a tool array (for callers that need record-style access). */
-export function toolsByName(tools: ToolRegistry): Record<string, Tool> {
-  const out: Record<string, Tool> = {};
-  for (const t of tools) {
-    out[t.function.name] = t;
-  }
-  return out;
-}
+export type ToolRegistry = ToolSet;
 
 // Core tools that survive an `onlyTools` allowlist - the agent can't function
 // without file/bash/skill access.
@@ -37,7 +28,7 @@ export function createToolRegistry(
     autonomous?: boolean;
   },
 ): ToolRegistry {
-  const all: Tool[] = [
+  const all: ToolSet = {
     ...createFileTools(projectId, {
       chatId: options.chatId,
       userId: options.userId,
@@ -46,18 +37,22 @@ export function createToolRegistry(
     }),
     ...(options.chatId
       ? createProgressTools({ projectId, chatId: options.chatId, runId: options.runId })
-      : []),
+      : {}),
     ...createSkillTools(projectId, options.chatId),
     ...(options.userId
       ? createCodeTools(options.userId, projectId, { autonomous: options.autonomous })
-      : []),
-  ];
+      : {}),
+  };
 
   if (options.onlyTools) {
     const allowed = new Set(options.onlyTools);
-    return all.filter(
-      (t) => allowed.has(t.function.name) || CORE_TOOLS.has(t.function.name),
-    );
+    const filtered: ToolSet = {};
+    for (const [name, t] of Object.entries(all)) {
+      if (allowed.has(name) || CORE_TOOLS.has(name)) {
+        filtered[name] = t;
+      }
+    }
+    return filtered;
   }
 
   return all;
@@ -68,16 +63,16 @@ export function createToolRegistry(
  * up front - there is no on-demand loading step.
  */
 export function buildToolIndex(registry: ToolRegistry): string {
-  const names = registry.map((t) => t.function.name).sort();
+  const names = Object.keys(registry).sort();
   if (names.length === 0) return "";
   return `## Available Tools\n\n${names.join(", ")}`;
 }
 
 /**
  * Build the full toolset for an agent. Callers pass the result directly to
- * callModel. Subagent discrimination is done by the caller - subagents are
- * constructed via the separate path in `server/tools/agent.ts` which
- * deliberately does not inject the `agent` spawner (no recursive fan-out).
+ * streamText/generateText. Subagent discrimination is done by the caller -
+ * subagents are constructed via the separate path in `server/tools/agent.ts`
+ * which deliberately does not inject the `agent` spawner (no recursive fan-out).
  */
 export function createToolset(
   projectId: string,
@@ -98,7 +93,13 @@ export function createToolset(
 
   if (options.excludeTools) {
     const excluded = new Set(options.excludeTools);
-    tools = tools.filter((t) => !excluded.has(t.function.name));
+    const filtered: ToolSet = {};
+    for (const [name, t] of Object.entries(tools)) {
+      if (!excluded.has(name)) {
+        filtered[name] = t;
+      }
+    }
+    tools = filtered;
   }
 
   return { tools, toolIndex: buildToolIndex(tools) };

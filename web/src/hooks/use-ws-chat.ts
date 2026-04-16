@@ -84,6 +84,24 @@ function ensureWired() {
         notify(chatId);
         return;
       }
+      case "chat.delta": {
+        if (!msg.messageId || msg.partIndex == null || typeof msg.text !== "string") return;
+        const msgIdx = current.messages.findIndex((m) => m.id === msg.messageId);
+        if (msgIdx < 0) return;
+        const oldMsg = current.messages[msgIdx]!;
+        const part = oldMsg.parts[msg.partIndex as number];
+        if (part && (part.type === "text" || part.type === "reasoning")) {
+          const updatedPart = { ...part, text: part.text + msg.text };
+          const updatedParts = oldMsg.parts.slice();
+          updatedParts[msg.partIndex as number] = updatedPart;
+          const updatedMsg = { ...oldMsg, parts: updatedParts };
+          const updatedMessages = current.messages.slice();
+          updatedMessages[msgIdx] = updatedMsg;
+          scenes.set(chatId, { ...current, messages: updatedMessages });
+          notify(chatId);
+        }
+        return;
+      }
       case "chat.streamBegin": {
         scenes.set(chatId, {
           ...current,

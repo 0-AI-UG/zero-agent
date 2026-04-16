@@ -336,7 +336,7 @@ function stripPlanToolParts(messages: Message[]): Message[] {
   return messages.map((m) => {
     if (!m.parts) return m;
     const filtered = m.parts.filter((p) => {
-      if (p.type === "tool-call" && p.name === "finishPlanning") return false;
+      if (p.type === "dynamic-tool" && p.toolName === "finishPlanning") return false;
       return true;
     });
     if (filtered.length === m.parts.length) return m;

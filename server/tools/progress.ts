@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { tool } from "@openrouter/sdk/lib/tool.js";
+import { tool } from "ai";
 import {
   insertTodo,
   getTodosByProjectAndChat,
@@ -64,9 +64,8 @@ async function syncToCompactionState(
 }
 
 export function createProgressTools({ projectId, chatId, runId }: ProgressToolsOptions) {
-  return [
-    tool({
-      name: "progressCreate",
+  return {
+    progressCreate: tool({
       description:
         "Create a progress item to track a step.",
       inputSchema: z.object({
@@ -86,8 +85,7 @@ export function createProgressTools({ projectId, chatId, runId }: ProgressToolsO
       },
     }),
 
-    tool({
-      name: "progressUpdate",
+    progressUpdate: tool({
       description:
         "Update a progress item's status, title, or description.",
       inputSchema: z.object({
@@ -119,8 +117,7 @@ export function createProgressTools({ projectId, chatId, runId }: ProgressToolsO
       },
     }),
 
-    tool({
-      name: "progressList",
+    progressList: tool({
       description:
         "List progress items, optionally filtered by status.",
       inputSchema: z.object({
@@ -143,5 +140,5 @@ export function createProgressTools({ projectId, chatId, runId }: ProgressToolsO
         }));
       },
     }),
-  ];
+  };
 }

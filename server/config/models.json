@@ -15,7 +15,6 @@
         "recommended",
         "function-calling"
       ],
-      "default": true,
       "multimodal": false,
       "providerConfig": {
         "order": [
@@ -131,6 +130,7 @@
         "long-context",
         "agents"
       ],
+      "default": true,
       "multimodal": true,
       "providerConfig": {
         "order": [

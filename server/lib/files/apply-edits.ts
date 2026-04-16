@@ -2,21 +2,9 @@ import { log } from "@/lib/utils/logger.ts";
 
 const editLog = log.child({ module: "apply-edits" });
 
-interface SearchReplaceEdit {
+export interface Edit {
   oldText: string;
   newText: string;
-}
-
-interface LineRangeEdit {
-  startLine: number;
-  endLine: number;
-  newText: string;
-}
-
-export type Edit = SearchReplaceEdit | LineRangeEdit;
-
-function isLineRangeEdit(edit: Edit): edit is LineRangeEdit {
-  return "startLine" in edit && "endLine" in edit;
 }
 
 /**
@@ -132,53 +120,25 @@ export async function applyEdits(
 
   let result = content;
   for (let i = 0; i < edits.length; i++) {
-    const edit = edits[i]!;
+    const { oldText, newText } = edits[i]!;
 
-    if (isLineRangeEdit(edit)) {
-      const lines = result.split("\n");
-      const { startLine, endLine, newText } = edit;
-
-      if (startLine < 1 || endLine < startLine || startLine > lines.length) {
-        throw new Error(
-          `Edit ${i + 1} failed: line range ${startLine}-${endLine} is out of bounds (file has ${lines.length} lines).`,
-        );
-      }
-
-      // Clamp endLine to file length
-      const clampedEnd = Math.min(endLine, lines.length);
-
-      // Replace lines startLine..endLine (1-based, inclusive) with newText
-      const before = lines.slice(0, startLine - 1);
-      const after = lines.slice(clampedEnd);
-      const replacement = newText === "" ? [] : newText.split("\n");
-      result = [...before, ...replacement, ...after].join("\n");
-
-      editLog.info(`edit ${i + 1}: replaced lines ${startLine}-${clampedEnd}`, {
-        linesRemoved: clampedEnd - startLine + 1,
-        linesInserted: replacement.length,
-      });
-    } else {
-      const { oldText, newText } = edit;
-
-      // Try exact match first
-      const exactIndex = result.indexOf(oldText);
-      if (exactIndex !== -1) {
-        result = result.slice(0, exactIndex) + newText + result.slice(exactIndex + oldText.length);
-      } else {
-        // Fall back to fuzzy whitespace matching
-        const fuzzyMatch = fuzzyFind(result, oldText);
-        if (!fuzzyMatch) {
-          throw new Error(
-            `Edit ${i + 1} failed: could not find the specified old text in the file (exact and fuzzy match both failed).`,
-          );
-        }
-        editLog.info(`edit ${i + 1}: used fuzzy whitespace matching`);
-        result =
-          result.slice(0, fuzzyMatch.index) +
-          newText +
-          result.slice(fuzzyMatch.index + fuzzyMatch.length);
-      }
+    const exactIndex = result.indexOf(oldText);
+    if (exactIndex !== -1) {
+      result = result.slice(0, exactIndex) + newText + result.slice(exactIndex + oldText.length);
+      continue;
     }
+
+    const fuzzyMatch = fuzzyFind(result, oldText);
+    if (!fuzzyMatch) {
+      throw new Error(
+        `Edit ${i + 1} failed: could not find the specified old text in the file (exact and fuzzy match both failed).`,
+      );
+    }
+    editLog.info(`edit ${i + 1}: used fuzzy whitespace matching`);
+    result =
+      result.slice(0, fuzzyMatch.index) +
+      newText +
+      result.slice(fuzzyMatch.index + fuzzyMatch.length);
   }
 
   editLog.info("edits applied", {

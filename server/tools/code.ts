@@ -1,9 +1,10 @@
 import { z } from "zod";
-import { tool } from "@openrouter/sdk/lib/tool.js";
+import { tool } from "ai";
 import { ensureBackend } from "@/lib/execution/lifecycle.ts";
 import { writeToS3, readFromS3, deleteFromS3, writeStreamToS3 } from "@/lib/s3.ts";
 import { insertFile, getFileByS3Key, deleteFile as deleteFileRecord } from "@/db/queries/files.ts";
 import { reconcileToContainer, sha256Hex } from "@/lib/execution/workspace-sync.ts";
+import { withProjectLock } from "@/lib/execution/project-lock.ts";
 import { getFolderByPath, createFolder as createFolderRecord } from "@/db/queries/folders.ts";
 import { getProjectById } from "@/db/queries/projects.ts";
 import { removeFileIndex } from "@/db/queries/search.ts";
@@ -373,9 +374,8 @@ export function createCodeTools(
     return backend;
   }
 
-  return [
-    tool({
-      name: "bash",
+  return {
+    bash: tool({
       description:
         "Run a bash command in the project workspace. The `zero` CLI is preinstalled - run `zero --help` to discover commands. Changed files auto-sync back. Output truncated to ~8KB.",
       inputSchema: z.object({
@@ -386,6 +386,7 @@ export function createCodeTools(
       execute: async ({ command, timeout, background }) => {
         toolLog.info("bash", { userId, projectId, command, background });
 
+        return withProjectLock(projectId, async () => {
         try {
           const backend = await ensureWorkspace();
           markActivity(projectId);
@@ -507,7 +508,8 @@ export function createCodeTools(
           toolLog.error("bash failed", err, { userId });
           return { error: message };
         }
+        });
       },
     }),
-  ];
+  };
 }

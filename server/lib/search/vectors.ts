@@ -161,8 +161,8 @@ export function chunkText(
     }
 
     chunks.push(text.slice(start, end));
+    if (end >= text.length) break;
     start = end - overlap;
-    if (start >= text.length) break;
   }
 
   return chunks;

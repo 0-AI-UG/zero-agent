@@ -80,9 +80,11 @@ function formatMessagesForExtraction(messages: Message[]): string {
       for (const p of m.parts) {
         if (p.type === "text") chunks.push(p.text);
         else if (p.type === "reasoning") chunks.push(`(thinking) ${p.text}`);
-        else if (p.type === "tool-call") chunks.push(`tool-call: ${p.name}`);
-        else if (p.type === "tool-output")
-          chunks.push(`tool-result: ${(p.errorText ?? "").slice(0, 200) || "ok"}`);
+        else if (p.type === "dynamic-tool") {
+          chunks.push(`tool-call: ${(p as any).toolName}`);
+          if (p.state === "output-available") chunks.push(`tool-result: ok`);
+          else if (p.state === "output-error") chunks.push(`tool-result: ${(p.errorText ?? "error").slice(0, 200)}`);
+        }
       }
       return `${m.role}: ${chunks.join(" ")}`;
     })

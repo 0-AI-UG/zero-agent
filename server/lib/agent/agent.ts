@@ -1,5 +1,5 @@
-import { stepCountIs } from "@openrouter/sdk/lib/stop-conditions.js";
-import type { StopCondition, Tool } from "@openrouter/sdk/lib/tool-types.js";
+import { stepCountIs } from "ai";
+import type { StopCondition, ToolSet } from "ai";
 import {
   getChatModelId,
   resolveChatModelId,
@@ -67,18 +67,20 @@ export interface AgentOptions {
 
 /**
  * Handle returned by `createAgent`. A passive configuration bundle — the
- * entrypoints in `agent-step/index.ts` wire these fields into `callModel`
- * from `@openrouter/sdk`.
+ * entrypoints in `agent-step/index.ts` wire these fields into `streamText`
+ * / `generateText` from the AI SDK.
  */
 export interface AgentHandle {
   /** OpenRouter model ID. */
   model: string;
   /** System-prompt string. */
   systemPrompt: string;
-  /** Tools in the order they're exposed to the model. */
-  tools: readonly Tool[];
+  /** Tools keyed by name. */
+  tools: ToolSet;
+  /** Maximum number of agent loop steps. */
+  maxSteps: number;
   /** Tool-loop stop conditions. */
-  stopWhen: ReadonlyArray<StopCondition<readonly Tool[]>>;
+  stopWhen: StopCondition<ToolSet>[];
   /** Per-turn message/system rewriter (compaction, orphan patching, background notifications). */
   prepareStep: PrepareStepFn;
   /** Fired after each step with the step number and cumulative response messages. */
@@ -194,7 +196,7 @@ export async function createAgent(
     autonomous: options.autonomous,
   });
 
-  const tools: Tool[] = [...baseTools];
+  const tools: ToolSet = { ...baseTools };
 
   // Plan mode - append finishPlanning tool.
   if (options.planMode && options.chatId && options.userId) {
@@ -203,26 +205,27 @@ export async function createAgent(
       userId: options.userId,
       projectName: project.name,
     });
-    for (const t of planningTools) tools.push(t as unknown as Tool);
+    Object.assign(tools, planningTools);
   }
 
   // Sub-agent spawner.
-  tools.push(
-    createAgentTool(project.id, {
-      userId: options.userId,
-      projectId: project.id,
-      projectName: project.name,
-      onlyTools: options.onlyTools,
-      modelId: options.model,
-      chatId: options.chatId,
-    }) as unknown as Tool,
-  );
+  const agentTool = createAgentTool(project.id, {
+    userId: options.userId,
+    projectId: project.id,
+    projectName: project.name,
+    onlyTools: options.onlyTools,
+    modelId: options.model,
+    chatId: options.chatId,
+  });
+  Object.assign(tools, agentTool);
 
   // Remove disabled tools.
   const disabled = new Set(options.disabledTools ?? []);
-  const filtered = disabled.size
-    ? tools.filter((t) => !disabled.has(t.function.name))
-    : tools;
+  if (disabled.size) {
+    for (const name of disabled) {
+      delete tools[name];
+    }
+  }
 
   const model = options.fast
     ? getEnrichModelId()
@@ -230,7 +233,8 @@ export async function createAgent(
       ? resolveChatModelId(options.model)
       : getChatModelId();
 
-  const stopConditions = [stepCountIs(options.maxSteps ?? 100)];
+  const maxSteps = options.maxSteps ?? 100;
+  const stopConditions = [stepCountIs(maxSteps)];
 
   const systemPrompt = await buildSystemPrompt(
     { id: project.id, name: project.name },
@@ -267,8 +271,9 @@ export async function createAgent(
   return {
     model,
     systemPrompt,
-    tools: filtered,
-    stopWhen: stopConditions as ReadonlyArray<StopCondition<readonly Tool[]>>,
+    tools,
+    maxSteps,
+    stopWhen: stopConditions,
     prepareStep,
     onStepFinish,
     options,

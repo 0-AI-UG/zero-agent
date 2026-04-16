@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { tool } from "@openrouter/sdk/lib/tool.js";
+import { tool } from "ai";
 import { runAutonomousTask } from "@/lib/agent/autonomous-agent.ts";
 import { runAgentStepBatch } from "@/lib/agent-step/index.ts";
 import { events } from "@/lib/scheduling/events.ts";
@@ -26,8 +26,7 @@ export interface AgentToolOptions {
 }
 
 export function createAgentTool(projectId: string, toolOptions: AgentToolOptions) {
-  return tool({
-    name: "agent",
+  return { agent: tool({
     description:
       "Spawn agents for autonomous tasks. Pass multiple tasks to run in parallel. Set background=true for long-running work. Agents have no conversation history - make prompts self-contained.",
     inputSchema: z.object({
@@ -55,8 +54,7 @@ export function createAgentTool(projectId: string, toolOptions: AgentToolOptions
         )
         .min(1),
     }),
-    execute: async ({ background, tasks }, ctx) => {
-      const toolCallId = ctx?.toolCall?.callId;
+    execute: async ({ background, tasks }, { toolCallId }) => {
       toolLog.info("spawn", { toolCallId, taskCount: tasks.length, background });
 
       // ── Background mode: fire-and-forget via runAutonomousTask ──
@@ -169,5 +167,5 @@ export function createAgentTool(projectId: string, toolOptions: AgentToolOptions
 
       return { status: "done" as const, results: completedResults };
     },
-  });
+  }) };
 }

@@ -8,7 +8,7 @@
  *   - previously-read-path seeding
  *   - agent instantiation with checkpoint wiring
  */
-import type { Message, ToolCallPart } from "@/lib/messages/types.ts";
+import type { Message, DynamicToolUIPart } from "@/lib/messages/types.ts";
 import { getFileById } from "@/db/queries/files.ts";
 import { semanticSearch, isEmbeddingConfigured, embedValue } from "@/lib/search/vectors.ts";
 import { getUserTokenTotal } from "@/db/queries/usage-logs.ts";
@@ -56,10 +56,10 @@ export function extractReadPathsFromUIMessages(messages: Message[]): string[] {
   const out: string[] = [];
   for (const msg of messages) {
     for (const part of msg.parts ?? []) {
-      if (part.type !== "tool-call") continue;
-      const tc = part as ToolCallPart;
-      if (tc.name !== "readFile" && tc.name !== "writeFile") continue;
-      const args = tc.arguments as { path?: unknown } | undefined;
+      if (part.type !== "dynamic-tool") continue;
+      const tc = part as DynamicToolUIPart;
+      if (tc.toolName !== "readFile" && tc.toolName !== "writeFile") continue;
+      const args = (tc as any).input as { path?: unknown } | undefined;
       if (typeof args?.path === "string") out.push(args.path);
     }
   }

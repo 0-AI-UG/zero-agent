@@ -1,4 +1,4 @@
-import type { Message, Part, ToolCallPart } from "@/lib/messages/types.ts";
+import type { Message, DynamicToolUIPart } from "@/lib/messages/types.ts";
 import { clearStaleToolResults } from "@/lib/conversation/clear-stale-results.ts";
 import { getUndeliveredResults } from "@/lib/agent/background-task-store.ts";
 import {
@@ -48,47 +48,47 @@ function estimateTokensFromMessages(messages: Message[]): number {
 
 /**
  * Patch orphaned tool calls left over from an aborted stream: any
- * assistant tool-call whose callId has no paired tool-output in history
- * gets a synthetic interrupted-output injected so the next turn doesn't
- * reject the transcript.
+ * assistant DynamicToolUIPart with state "input-streaming" or
+ * "input-available" (no output yet) gets updated to "output-error" so the
+ * next turn doesn't produce an invalid transcript.
  */
 function patchOrphanedToolCalls(messages: Message[]): Message[] {
-  const resultIds = new Set<string>();
-  for (const msg of messages) {
-    for (const p of msg.parts) {
-      if (p.type === "tool-output") resultIds.add(p.callId);
-    }
-  }
-
-  const patched: Message[] = [];
   let mutated = false;
-  for (const msg of messages) {
-    patched.push(msg);
-    if (msg.role !== "assistant") continue;
+  const patched = messages.map((msg) => {
+    if (msg.role !== "assistant") return msg;
 
-    const orphaned: ToolCallPart[] = msg.parts.filter(
-      (p): p is ToolCallPart =>
-        p.type === "tool-call" && !resultIds.has(p.callId),
+    const hasOrphans = msg.parts.some(
+      (p) =>
+        p.type === "dynamic-tool" &&
+        (p.state === "input-streaming" || p.state === "input-available"),
     );
-    if (orphaned.length === 0) continue;
+    if (!hasOrphans) return msg;
 
-    const outputParts: Part[] = orphaned.map((p) => ({
-      type: "tool-output",
-      callId: p.callId,
-      output: null,
-      errorText: "[interrupted - tool call was aborted before completing]",
-    }));
-    patched.push({
-      id: generateId(),
-      role: "tool",
-      parts: outputParts,
+    const patchedParts = msg.parts.map((p) => {
+      if (
+        p.type === "dynamic-tool" &&
+        (p.state === "input-streaming" || p.state === "input-available")
+      ) {
+        mutated = true;
+        return {
+          ...p,
+          state: "output-error" as const,
+          input: (p as any).input ?? {},
+          errorText: "[interrupted - tool call was aborted before completing]",
+        } as DynamicToolUIPart;
+      }
+      return p;
     });
-    mutated = true;
+
     compactLog.debug("patched orphaned tool calls", {
-      count: orphaned.length,
-      toolCallIds: orphaned.map((p) => p.callId),
+      count: patchedParts.filter((p) => p.type === "dynamic-tool" && p.state === "output-error").length,
+      toolCallIds: patchedParts
+        .filter((p): p is DynamicToolUIPart => p.type === "dynamic-tool" && p.state === "output-error")
+        .map((p) => p.toolCallId),
     });
-  }
+
+    return { ...msg, parts: patchedParts };
+  });
 
   return mutated ? patched : messages;
 }

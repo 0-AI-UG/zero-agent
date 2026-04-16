@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { tool } from "@openrouter/sdk/lib/tool.js";
+import { tool } from "ai";
 import { loadFullSkill, checkGating } from "@/lib/skills/loader.ts";
 import { events } from "@/lib/scheduling/events.ts";
 import { log } from "@/lib/utils/logger.ts";
@@ -7,9 +7,8 @@ import { log } from "@/lib/utils/logger.ts";
 const toolLog = log.child({ module: "tool:skills" });
 
 export function createSkillTools(projectId: string, chatId?: string) {
-  return [
-    tool({
-      name: "loadSkill",
+  return {
+    loadSkill: tool({
       description:
         "Load a skill's instructions by name.",
       inputSchema: z.object({
@@ -44,5 +43,5 @@ export function createSkillTools(projectId: string, chatId?: string) {
         }
       },
     }),
-  ];
+  };
 }

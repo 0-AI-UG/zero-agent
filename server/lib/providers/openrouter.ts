@@ -1,10 +1,9 @@
 /**
- * OpenRouter provider. Post-AI-SDK: resolves model IDs only. The shared
- * `@openrouter/sdk` client lives in `server/lib/openrouter/client.ts`, and
- * the `callModel`/`embed`/`generateImage` helpers take a plain model ID.
+ * OpenRouter provider. Resolves model IDs only. The AI SDK provider
+ * singleton lives in `server/lib/ai/provider.ts`.
  *
  * `getRoutingForModel` exposes the per-model `provider_config` JSON so
- * callers can merge `{ provider: routing }` into the SDK request.
+ * callers can merge `{ provider: routing }` into providerOptions.
  */
 
 import { getModelById } from "@/db/queries/models.ts";
@@ -34,7 +33,7 @@ function parseRouting(raw: string | null | undefined): OpenRouterRouting | undef
 }
 
 function getDefaultModelId(): string {
-  return getSetting("OPENROUTER_MODEL") ?? "minimax/minimax-m2.7";
+  return getSetting("OPENROUTER_MODEL") ?? "moonshotai/kimi-k2.5";
 }
 
 const SPECIALIZED_DEFAULTS: Record<SpecializedKind, () => string> = {

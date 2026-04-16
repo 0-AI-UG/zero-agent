@@ -120,7 +120,7 @@ function estimateContextTokens(messages: Message[]): number {
   for (const msg of messages) {
     for (const part of msg.parts) {
       if (part.type === "text") chars += part.text.length;
-      else if (part.type === "tool-call") chars += JSON.stringify(part).length;
+      else if (part.type === "dynamic-tool") chars += JSON.stringify(part).length;
     }
   }
   return Math.ceil(chars / 3);

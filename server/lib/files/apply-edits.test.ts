@@ -16,66 +16,6 @@ test("search-and-replace edit still works", async () => {
   expect(result).toContain("# My Document");
 });
 
-test("line-range edit replaces lines", async () => {
-  const result = await applyEdits(sampleFile, [
-    { startLine: 2, endLine: 3, newText: "Replaced line 2\nReplaced line 3" },
-  ]);
-  const lines = result.split("\n");
-  expect(lines[0]).toBe("# My Document");
-  expect(lines[1]).toBe("Replaced line 2");
-  expect(lines[2]).toBe("Replaced line 3");
-  expect(lines[3]).toBe("Line 4 content");
-});
-
-test("line-range edit can delete lines (empty newText)", async () => {
-  const result = await applyEdits(sampleFile, [
-    { startLine: 2, endLine: 3, newText: "" },
-  ]);
-  const lines = result.split("\n");
-  expect(lines[0]).toBe("# My Document");
-  expect(lines[1]).toBe("Line 4 content");
-  expect(lines.length).toBe(3);
-});
-
-test("line-range edit can insert more lines than removed", async () => {
-  const result = await applyEdits(sampleFile, [
-    { startLine: 2, endLine: 2, newText: "New A\nNew B\nNew C" },
-  ]);
-  const lines = result.split("\n");
-  expect(lines[1]).toBe("New A");
-  expect(lines[2]).toBe("New B");
-  expect(lines[3]).toBe("New C");
-  expect(lines[4]).toBe("Line 3 content");
-});
-
-test("line-range edit clamps endLine to file length", async () => {
-  const result = await applyEdits(sampleFile, [
-    { startLine: 4, endLine: 100, newText: "Last line" },
-  ]);
-  const lines = result.split("\n");
-  expect(lines.length).toBe(4);
-  expect(lines[3]).toBe("Last line");
-});
-
-test("line-range edit throws on out-of-bounds startLine", async () => {
-  expect(
-    applyEdits(sampleFile, [{ startLine: 0, endLine: 2, newText: "x" }])
-  ).rejects.toThrow("out of bounds");
-
-  expect(
-    applyEdits(sampleFile, [{ startLine: 100, endLine: 200, newText: "x" }])
-  ).rejects.toThrow("out of bounds");
-});
-
-test("mixed edit types in single call", async () => {
-  const result = await applyEdits(sampleFile, [
-    { startLine: 2, endLine: 2, newText: "Replaced via line range" },
-    { oldText: "Line 4 content", newText: "Replaced via search" },
-  ]);
-  expect(result).toContain("Replaced via line range");
-  expect(result).toContain("Replaced via search");
-});
-
 // --- Fuzzy matching tests ---
 
 describe("fuzzy whitespace matching", () => {

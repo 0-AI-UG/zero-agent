@@ -4,13 +4,12 @@
  * pattern (clear_tool_uses).
  *
  * Runs on every prepareStep call. Cheap (no LLM), invisible to the UI
- * (only affects what the model sees).
+ * (only affects what the model sees via the converter).
  *
- * Operates on canonical `Message[]`. Tool messages carry `tool-output` parts;
- * the tool name is resolved by matching the part's callId to a prior
- * assistant `tool-call` part in the same message history.
+ * Operates on canonical `Message[]` using DynamicToolUIPart. Tool outputs are
+ * embedded directly in the assistant message's `dynamic-tool` parts.
  */
-import type { Message, Part, ToolCallPart, ToolOutputPart } from "@/lib/messages/types.ts";
+import type { Message, DynamicToolUIPart } from "@/lib/messages/types.ts";
 import { log } from "@/lib/utils/logger.ts";
 
 const clearLog = log.child({ module: "clear-stale" });
@@ -139,23 +138,49 @@ function bashBrowserStub(resolved: string, output: unknown): string {
     : `[bash: zero browser snapshot → ${url} (stubbed)]`;
 }
 
-function buildToolNameIndex(messages: Message[]): Map<string, string> {
-  const byCallId = new Map<string, string>();
-  for (const msg of messages) {
+/**
+ * Find the message index of the most recent assistant message containing a
+ * tool call with the given resolved name and output-available state.
+ */
+function findLatestBrowserIndices(messages: Message[]): {
+  latestSnapshotIdx: number;
+  latestScreenshotIdx: number;
+} {
+  let latestSnapshotIdx = -1;
+  let latestScreenshotIdx = -1;
+
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i]!;
     if (msg.role !== "assistant") continue;
     for (const p of msg.parts) {
-      if (p.type === "tool-call") byCallId.set(p.callId, p.name);
+      if (p.type !== "dynamic-tool" || p.state !== "output-available") continue;
+      const toolName = (p as DynamicToolUIPart & { state: "output-available" }).toolName;
+      if (toolName !== "browser" && toolName !== "bash") continue;
+      const output = (p as any).output;
+      const resolved = resolveToolName(toolName, output);
+      if (!isBrowserObservation(resolved)) continue;
+      if (resolved === "browser_snapshot" && latestSnapshotIdx === -1) {
+        latestSnapshotIdx = i;
+      }
+      if (resolved === "browser_screenshot" && latestScreenshotIdx === -1) {
+        latestScreenshotIdx = i;
+      }
     }
+    if (latestSnapshotIdx !== -1 && latestScreenshotIdx !== -1) break;
   }
-  return byCallId;
+
+  return { latestSnapshotIdx, latestScreenshotIdx };
 }
 
 /**
  * Clear stale tool results from a conversation, replacing them with compact
  * one-line summaries. Returns the original array if nothing changed.
+ *
+ * Works on DynamicToolUIPart — modifies the `output` field of
+ * output-available parts that are stale.
  */
 export function clearStaleToolResults(messages: Message[]): Message[] {
-  const nameByCallId = buildToolNameIndex(messages);
+  const { latestSnapshotIdx, latestScreenshotIdx } = findLatestBrowserIndices(messages);
 
   // Count assistant turns from the end to determine age
   let assistantTurnCount = 0;
@@ -165,58 +190,33 @@ export function clearStaleToolResults(messages: Message[]): Message[] {
     messageAges.set(i, assistantTurnCount);
   }
 
-  // Track latest browser snapshot/screenshot indices (by message index).
-  let latestBrowserSnapshotIdx = -1;
-  let latestBrowserScreenshotIdx = -1;
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const msg = messages[i]!;
-    if (msg.role !== "tool") continue;
-    for (const p of msg.parts) {
-      if (p.type !== "tool-output") continue;
-      const toolName = nameByCallId.get(p.callId);
-      if (toolName !== "browser" && toolName !== "bash") continue;
-      const resolved = resolveToolName(toolName, p.output);
-      if (!isBrowserObservation(resolved)) continue;
-      if (resolved === "browser_snapshot" && latestBrowserSnapshotIdx === -1) {
-        latestBrowserSnapshotIdx = i;
-      }
-      if (resolved === "browser_screenshot" && latestBrowserScreenshotIdx === -1) {
-        latestBrowserScreenshotIdx = i;
-      }
-    }
-    if (latestBrowserSnapshotIdx !== -1 && latestBrowserScreenshotIdx !== -1) break;
-  }
-
   let changed = false;
   const result: Message[] = [];
 
   for (let i = 0; i < messages.length; i++) {
     const msg = messages[i]!;
-    if (msg.role !== "tool") {
+    if (msg.role !== "assistant") {
       result.push(msg);
       continue;
     }
 
     const age = messageAges.get(i) ?? 0;
     let partsChanged = false;
-    const newParts: Part[] = msg.parts.map((part) => {
-      if (part.type !== "tool-output") return part;
-      const toolOutputPart = part as ToolOutputPart;
-      const toolName = nameByCallId.get(toolOutputPart.callId);
-      if (!toolName) return part;
+    const newParts = msg.parts.map((part) => {
+      if (part.type !== "dynamic-tool" || part.state !== "output-available") return part;
 
-      const resolved = resolveToolName(toolName, toolOutputPart.output);
+      const toolPart = part as DynamicToolUIPart & { state: "output-available" };
+      const toolName = toolPart.toolName;
+      const output = toolPart.output;
+      const resolved = resolveToolName(toolName, output);
 
       if (toolName === "bash" && isBrowserObservation(resolved)) {
         const isLatest =
-          (resolved === "browser_snapshot" && i === latestBrowserSnapshotIdx) ||
-          (resolved === "browser_screenshot" && i === latestBrowserScreenshotIdx);
+          (resolved === "browser_snapshot" && i === latestSnapshotIdx) ||
+          (resolved === "browser_screenshot" && i === latestScreenshotIdx);
         if (!isLatest) {
           partsChanged = true;
-          return {
-            ...toolOutputPart,
-            output: { type: "text" as const, value: bashBrowserStub(resolved, toolOutputPart.output) },
-          };
+          return { ...toolPart, output: { type: "text" as const, value: bashBrowserStub(resolved, output) } };
         }
         return part;
       }
@@ -224,27 +224,24 @@ export function clearStaleToolResults(messages: Message[]): Message[] {
       const rule = STALENESS_RULES[resolved];
       if (!rule) return part;
 
-      if (resolved === "browser_snapshot" && i !== latestBrowserSnapshotIdx) {
-        partsChanged = true;
-        return {
-          ...toolOutputPart,
-          output: { type: "text" as const, value: rule.summary(toolOutputPart.output) },
-        };
+      if (resolved === "browser_snapshot") {
+        if (i !== latestSnapshotIdx) {
+          partsChanged = true;
+          return { ...toolPart, output: { type: "text" as const, value: rule.summary(output) } };
+        }
+        return part; // keep the latest browser snapshot as-is
       }
-      if (resolved === "browser_screenshot" && i !== latestBrowserScreenshotIdx) {
-        partsChanged = true;
-        return {
-          ...toolOutputPart,
-          output: { type: "text" as const, value: rule.summary(toolOutputPart.output) },
-        };
+      if (resolved === "browser_screenshot") {
+        if (i !== latestScreenshotIdx) {
+          partsChanged = true;
+          return { ...toolPart, output: { type: "text" as const, value: rule.summary(output) } };
+        }
+        return part; // keep the latest browser screenshot as-is
       }
 
       if (age > rule.maxAge) {
         partsChanged = true;
-        return {
-          ...toolOutputPart,
-          output: { type: "text" as const, value: rule.summary(toolOutputPart.output) },
-        };
+        return { ...toolPart, output: { type: "text" as const, value: rule.summary(output) } };
       }
 
       return part;
@@ -268,4 +265,4 @@ export function clearStaleToolResults(messages: Message[]): Message[] {
 // Internal helper kept for any direct caller needing the classifier.
 export const __internal = { resolveToolName, STALENESS_RULES };
 
-export type { ToolCallPart };
+export type { DynamicToolUIPart };
