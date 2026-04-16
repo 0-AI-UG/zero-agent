@@ -21,10 +21,10 @@ export function sanitizePath(path: string): string {
   // Normalize backslashes
   let normalized = path.replace(/\\/g, "/");
 
-  // Accept container-absolute paths under /project/ by stripping the prefix
+  // Accept container-absolute paths under /workspace/ by stripping the prefix
   // (the agent often copies these from bash output verbatim).
-  if (/^\/project(\/|$)/.test(normalized)) {
-    normalized = normalized.replace(/^\/project\/?/, "");
+  if (/^\/workspace(\/|$)/.test(normalized)) {
+    normalized = normalized.replace(/^\/workspace\/?/, "");
   } else if (normalized.startsWith("/")) {
     // Any other absolute path is a container filesystem path - not readable
     // via this tool. Tell the agent to use bash/cat instead.

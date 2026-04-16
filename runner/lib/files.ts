@@ -31,7 +31,7 @@ function shellQuote(s: string): string {
 export async function detectBlobDirs(containerName: string): Promise<string[]> {
   const script = `
 set -e
-cd /project 2>/dev/null || exit 0
+cd /workspace 2>/dev/null || exit 0
 echo .git
 echo .tmp
 if [ -f .gitignore ]; then
@@ -63,7 +63,7 @@ const MAX_FILE_BYTES = 10 * 1024 * 1024;   // 10 MB per file
 const MAX_TOTAL_BYTES = 50 * 1024 * 1024;   // 50 MB total
 
 const SYSTEM_SNAPSHOT_EXCLUDES = [
-  "./project", "./proc", "./sys", "./dev", "./tmp", "./run", "./var/run",
+  "./workspace", "./proc", "./sys", "./dev", "./tmp", "./run", "./var/run",
   "./etc/hostname", "./etc/hosts", "./etc/resolv.conf",
   // The `zero` CLI/SDK is baked into the image and must track image
   // upgrades — never freeze it inside a per-project snapshot.
@@ -78,7 +78,7 @@ export async function touchMarker(containerName: string): Promise<void> {
 
 export async function listFiles(
   containerName: string,
-  dir = "/project",
+  dir = "/workspace",
   blobDirs: readonly string[] = STATIC_BLOB_DIRS,
 ): Promise<Set<string>> {
   const pruneArgs = buildPruneArgs(blobDirs);
@@ -104,7 +104,7 @@ export async function listFiles(
  */
 export async function manifest(
   containerName: string,
-  dir = "/project",
+  dir = "/workspace",
   blobDirs: readonly string[] = STATIC_BLOB_DIRS,
 ): Promise<Record<string, string>> {
   const pruneArgs = buildPruneArgs(blobDirs);
@@ -138,7 +138,7 @@ export interface DetectedChanges {
 export async function detectChanges(
   containerName: string,
   preFileList: Set<string>,
-  dir = "/project",
+  dir = "/workspace",
   blobDirs: readonly string[] = STATIC_BLOB_DIRS,
 ): Promise<DetectedChanges> {
   const prefix = dir.endsWith("/") ? dir : dir + "/";
@@ -176,7 +176,7 @@ export interface ReadFile {
   sizeBytes: number;
 }
 
-export async function readFiles(containerName: string, relativePaths: string[], baseDir = "/project"): Promise<ReadFile[]> {
+export async function readFiles(containerName: string, relativePaths: string[], baseDir = "/workspace"): Promise<ReadFile[]> {
   if (relativePaths.length === 0) return [];
 
   const results: ReadFile[] = [];
@@ -230,14 +230,14 @@ export async function readFiles(containerName: string, relativePaths: string[], 
 export async function writeFiles(
   containerName: string,
   files: Array<{ path: string; data: Buffer }>,
-  baseDir = "/project",
+  baseDir = "/workspace",
 ): Promise<void> {
   if (files.length === 0) return;
   const tar = buildTar(files.map(f => ({ path: f.path, data: f.data })));
   await docker.putArchive(containerName, baseDir, tar);
 }
 
-export async function deleteFiles(containerName: string, relativePaths: string[], baseDir = "/project"): Promise<void> {
+export async function deleteFiles(containerName: string, relativePaths: string[], baseDir = "/workspace"): Promise<void> {
   if (relativePaths.length === 0) return;
   const escaped = relativePaths.map(p => `'${baseDir}/${p}'`).join(" ");
   await docker.exec(containerName, [
@@ -245,7 +245,7 @@ export async function deleteFiles(containerName: string, relativePaths: string[]
   ], { workingDir: "/" });
 }
 
-// -- System snapshot (everything outside /project) --
+// -- System snapshot (everything outside /workspace) --
 
 export async function saveSystemSnapshot(containerName: string): Promise<Buffer | null> {
   try {
@@ -359,7 +359,7 @@ export async function tarWorkspaceDir(containerName: string, dir: string): Promi
     const target = `/tmp/blob-${safe}.tar.gz`;
     const result = await docker.exec(containerName, [
       "bash", "-c",
-      `cd /project && [ -e ${shellQuote(dir)} ] && tar czf ${shellQuote(target)} ${shellQuote(dir)} 2>&1 || exit 9`,
+      `cd /workspace && [ -e ${shellQuote(dir)} ] && tar czf ${shellQuote(target)} ${shellQuote(dir)} 2>&1 || exit 9`,
     ], { workingDir: "/", timeout: 120_000 });
 
     if (result.exitCode === 9) return null; // dir doesn't exist
@@ -391,7 +391,7 @@ export async function untarWorkspaceDir(containerName: string, dir: string, data
 
     const result = await docker.exec(containerName, [
       "bash", "-c",
-      `mkdir -p /project && cd /project && tar xzf /tmp/${inner} 2>/dev/null; rm -f /tmp/${inner}`,
+      `mkdir -p /workspace && cd /workspace && tar xzf /tmp/${inner} 2>/dev/null; rm -f /tmp/${inner}`,
     ], { workingDir: "/", timeout: 120_000 });
 
     if (result.exitCode !== 0) {
@@ -412,7 +412,7 @@ export async function tarWorkspaceDirStream(containerName: string, dir: string):
     const target = `/tmp/blob-${safe}.tar.gz`;
     const result = await docker.exec(containerName, [
       "bash", "-c",
-      `cd /project && [ -e ${shellQuote(dir)} ] && tar czf ${shellQuote(target)} ${shellQuote(dir)} 2>&1 || exit 9`,
+      `cd /workspace && [ -e ${shellQuote(dir)} ] && tar czf ${shellQuote(target)} ${shellQuote(dir)} 2>&1 || exit 9`,
     ], { workingDir: "/", timeout: 120_000 });
 
     if (result.exitCode === 9) return null;
@@ -440,7 +440,7 @@ export async function untarWorkspaceDirStream(containerName: string, dir: string
 
     const result = await docker.exec(containerName, [
       "bash", "-c",
-      `mkdir -p /project && cd /project && tar xzf /tmp/${inner} 2>/dev/null; rm -f /tmp/${inner}`,
+      `mkdir -p /workspace && cd /workspace && tar xzf /tmp/${inner} 2>/dev/null; rm -f /tmp/${inner}`,
     ], { workingDir: "/", timeout: 120_000 });
 
     if (result.exitCode !== 0) {

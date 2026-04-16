@@ -16,7 +16,7 @@ ENV PATH="/root/.bun/bin:$PATH"
 # The build context for this image is the repo's `./zero` package (set in
 # docker-compose.yml), so we COPY the whole context in directly.
 # The CLI exposes `zero` on PATH; the SDK is importable as
-# `import { ... } from "zero"` from any Bun script in /project.
+# `import { ... } from "zero"` from any Bun script in /workspace.
 #
 # The bundled dist/cli.js has no shebang (Bun.build doesn't add one), so
 # we install `zero` as a tiny wrapper that execs `bun` against the bundle.
@@ -36,7 +36,7 @@ ENV UV_PYTHON_PREFERENCE=only-managed
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-WORKDIR /project
+WORKDIR /workspace
 EXPOSE 5900 9222 9223
 
 ENTRYPOINT ["/entrypoint.sh"]

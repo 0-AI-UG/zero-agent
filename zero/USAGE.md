@@ -202,7 +202,7 @@ if you need to distinguish `not_found` from `unauthorized` etc.
   in bash. For anything involving loops, composition, error handling, or reuse,
   write a bun script and import the SDK.
 - **Scripts persist, CLI modifications don't.** Write reusable tools as `.ts`
-  files in `/project` — they sync to project storage and survive container
+  files in `/workspace` — they sync to project storage and survive container
   restarts. Never modify `/opt/zero/` directly; those changes are lost on restart.
 - **Build tools with `llm` + other SDK calls.** The `llm` group lets scripts
   call any model without API keys. Combine it with `web`, `creds`, `message` etc.

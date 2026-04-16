@@ -54,7 +54,7 @@ export class PortManager {
 
     for (const port of restartable) {
       try {
-        const workingDir = port.working_dir || "/project";
+        const workingDir = port.working_dir || "/workspace";
         const envVars: Record<string, string> = JSON.parse(port.env_vars || "{}");
         const envExports = [`PORT=${port.port}`, ...Object.entries(envVars).map(([k, v]) => `${k}=${v}`)].map(
           (e) => `export ${e}`
@@ -108,7 +108,7 @@ export class PortManager {
 
     // If we have a start command, run it
     if (port.start_command) {
-      const workingDir = port.working_dir || "/project";
+      const workingDir = port.working_dir || "/workspace";
       const envVars: Record<string, string> = JSON.parse(port.env_vars || "{}");
       const envExports = [`PORT=${port.port}`, ...Object.entries(envVars).map(([k, v]) => `${k}=${v}`)].map(
         (e) => `export ${e}`

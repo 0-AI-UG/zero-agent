@@ -86,7 +86,7 @@ async function detectStartCommand(
     ]);
 
     const command = cmdResult.stdout.trim();
-    const cwd = cwdResult.stdout.trim() || "/project";
+    const cwd = cwdResult.stdout.trim() || "/workspace";
 
     return command ? { command, cwd } : null;
   } catch {
@@ -137,7 +137,7 @@ export async function handlePortsForward(
     label: portLabel,
     containerIp: session.containerIp,
     startCommand: detected?.command,
-    workingDir: detected?.cwd ?? "/project",
+    workingDir: detected?.cwd ?? "/workspace",
   });
 
   handlerLog.info("port forwarded", { portId: record.id, slug, port, detectedCommand: detected?.command });

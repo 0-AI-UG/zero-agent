@@ -400,7 +400,7 @@ db.exec(`
       CHECK (status IN ('active', 'stopped')),
     pinned        INTEGER NOT NULL DEFAULT 0,
     start_command TEXT,
-    working_dir   TEXT DEFAULT '/project',
+    working_dir   TEXT DEFAULT '/workspace', -- existing rows with '/project' are untouched; callers fall back to '/workspace' when reading
     env_vars      TEXT DEFAULT '{}',
     error         TEXT,
     created_at    TEXT NOT NULL DEFAULT (datetime('now')),

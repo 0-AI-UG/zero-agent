@@ -91,11 +91,11 @@ export function invalidateManifestCache(projectId: string): void {
 }
 
 /**
- * Convert a container path like "/project/posts/" to a workspace-relative
+ * Convert a container path like "/workspace/posts/" to a workspace-relative
  * prefix like "posts/". Returns "" for the workspace root.
  */
 function stripWorkspacePrefix(subpath: string): string {
-  let p = subpath.replace(/^\/project\/?/, "");
+  let p = subpath.replace(/^\/workspace\/?/, "");
   if (p && !p.endsWith("/")) p += "/";
   return p;
 }
@@ -104,14 +104,14 @@ function stripWorkspacePrefix(subpath: string): string {
  * Reconcile a project's container with its database state. Cheap when nothing
  * has changed; only the differing files are transferred.
  *
- * - `subpath` is a runner-side absolute path (default `/project`). Pass a
- *   sub-tree like `/project/posts/` to limit the reconcile scope.
+ * - `subpath` is a runner-side absolute path (default `/workspace`). Pass a
+ *   sub-tree like `/workspace/posts/` to limit the reconcile scope.
  * - Best-effort: if no backend is configured or the project has no live
  *   container, this is a no-op. Errors are logged and swallowed.
  */
 export async function reconcileToContainer(
   projectId: string,
-  subpath: string = "/project",
+  subpath: string = "/workspace",
 ): Promise<void> {
   const backend = getLocalBackend();
   if (!backend?.isReady()) return;

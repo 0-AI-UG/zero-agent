@@ -523,7 +523,7 @@ export class DockerClient {
           Cmd: cmd,
           AttachStdout: true,
           AttachStderr: true,
-          WorkingDir: opts?.workingDir ?? "/project",
+          WorkingDir: opts?.workingDir ?? "/workspace",
         }),
       },
     );
