@@ -1,220 +1,103 @@
 # zero — agent toolkit reference
 
-The `zero` CLI and SDK are the agent's bridge back to the server. Everything
-here runs as `bash` inside the session container; requests are forwarded over
-the trusted runner proxy so the container never sees credentials or API keys.
+CLI and SDK bridge back to the server. Runs inside the session container; requests go via the trusted runner proxy (no credentials exposed).
 
-Two equivalent forms:
+Two forms: `zero <group> <action> [flags]` (CLI) or `import { web, browser, ... } from "zero"` (SDK, for bun scripts). SDK types at `/opt/zero/src/sdk/index.ts`.
 
-- **CLI**: `zero <group> <action> [flags]` — use from bash scripts and one-offs.
-- **SDK**: `import { web, browser, creds, llm, message, ... } from "zero"` — use from bun scripts
-  when you need to compose results or avoid shelling out. Types are at
-  `/opt/zero/src/sdk/index.ts`; individual group modules at `/opt/zero/src/sdk/<group>.ts`.
-
-Every CLI command supports `--json` for structured output. Without `--json`,
-output is a short human-readable form suitable for pipes and shell substitution.
+Every CLI command supports `--json`. `zero <group> --help` is authoritative; this file is an overview.
 
 ---
 
-## web — search and fetch pages
-
+## web
 ```
-zero web search <query> [--json]
-zero web fetch <url> [--query <q>] [--json]
+zero web search <query>
+zero web fetch <url> [--query <q>]
 ```
+`search` returns ranked results. `fetch` extracts readable text; `--query` focuses extraction.
 
-- `search` returns ranked results with titles, URLs, snippets.
-- `fetch` pulls a page and extracts readable text. Pass `--query` to focus the
-  extraction on a topic.
-
-SDK:
-```ts
-import { web } from "zero";
-const hits = await web.search("rust async runtime");
-const page = await web.fetch({ url: "https://...", query: "install" });
-```
-
----
-
-## browser — headful Chromium automation
-
+## browser
 ```
 zero browser open <url> [--stealth]
+zero browser snapshot [--mode interactive|full] [--selector <css>] [--stealth]
 zero browser click <ref> [--stealth]
 zero browser fill <ref> <text> [--submit] [--stealth]
 zero browser screenshot [--stealth]
 zero browser evaluate <js> [--await-promise] [--stealth]
 zero browser wait <ms> [--stealth]
-zero browser snapshot [--mode interactive|full] [--selector <css>] [--stealth]
 ```
+`<ref>` comes from the most recent `snapshot` — always snapshot before interacting with an unfamiliar page. `--stealth` routes through an anti-detection profile.
 
-`<ref>` identifiers come from the most recent `snapshot` — it returns an
-interactive tree where each element has a stable `ref` you use for `click`
-and `fill`. Always snapshot before interacting with an unfamiliar page.
-
-`--stealth` routes through an anti-detection profile; use sparingly.
-
-SDK exposes `browser.open`, `browser.click`, `browser.fill`, `browser.screenshot`,
-`browser.evaluate`, `browser.wait`, `browser.snapshot` with the same shapes.
-
----
-
-## image — generate images
-
+## image
 ```
-zero image generate <prompt> [--path <file>] [--json]
+zero image generate <prompt> [--path <file>]
 ```
+Writes to workspace (`generated/` by default); `--path` overrides destination.
 
-Writes the image into the workspace (default under `generated/`) and prints
-the path. `--path` overrides the destination.
-
----
-
-## schedule — recurring agent runs
-
+## schedule
 ```
-zero schedule add --name <n> --prompt <p> [--schedule <cron>] [--event <e>]
-                  [--filter key=value ...] [--cooldown <seconds>]
-zero schedule ls [--json]
+zero schedule add --name <n> --prompt <p> [--schedule <cron>|--event <e>] [--filter key=value ...] [--cooldown <seconds>]
+zero schedule ls
 zero schedule update --id <id> [--name ...] [--prompt ...] [--enabled true|false] ...
 zero schedule rm --id <id>
 ```
+Pass `--schedule` (cron) or `--event`, not both. `ls` before adding to avoid duplicates. Cooldown (seconds) prevents event storms.
 
-Pass either `--schedule` (cron expression) or `--event` (event name), not both.
-Use `zero schedule ls` before adding to avoid duplicates. Cooldown is in seconds
-and prevents event storms.
-
----
-
-## message — send a message to the user
-
+## message
 ```
-zero message send <text> [--json]
+zero message send <text>
 ```
+Delivers to all configured channels (Telegram, push, in-app).
 
-Delivers to all configured channels (Telegram, push notifications, in-app
-toast). Use for long-running automations that need to reach the user.
-
-SDK:
-```ts
-import { message } from "zero";
-await message.send("Deploy finished — all checks passed");
+## creds
 ```
-
----
-
-## creds — stored credentials
-
-```
-zero creds ls [--json]
-zero creds get <label-or-domain> [--field password|totp|username] [--json]
+zero creds ls
+zero creds get <label-or-domain> [--field password|totp|username]
 zero creds set --label <l> --site <url> --user <u> --password <p> [--totp <secret>]
 zero creds rm <id-or-label>
 ```
-
-**CRITICAL**: `zero creds get` prints ONLY the raw secret value to stdout so
-it's safe inside shell substitution:
-
+`get` prints only the raw secret to stdout — safe in shell substitution:
 ```bash
 curl -H "Authorization: Bearer $(zero creds get github)" https://api.github.com/...
 ```
+Never echo, log, or surface credential values in output or messages.
 
-Never echo, log, or include credential values in any tool output, file, or
-message to the user. Refer to them as "your saved login" in prose.
-
----
-
-## ports — forward workspace ports to the browser
-
+## ports
 ```
-zero ports forward <port> [--label <label>] [--json]
+zero ports forward <port> [--label <label>]
 ```
+Exposes a container port at `/app/<slug>`. Slug is stable per (project, port); calling twice returns the same URL.
 
-After starting a dev server on a port inside the container, call this to
-expose it at a URL of the form `/app/<slug>`. The slug is stable per (project,
-port), so calling `forward` twice returns the same URL. The handler
-auto-detects the process start command via `/proc` inspection for the UI.
-
-SDK:
-```ts
-import { ports } from "zero";
-const { url } = await ports.forward({ port: 3000, label: "vite dev" });
+## llm
 ```
-
----
-
-## llm — proxy LLM calls through the server
-
+zero llm generate <prompt> [--system <s>] [--model <m>] [--max-tokens <n>]
 ```
-zero llm generate <prompt> [--system <s>] [--model <m>] [--max-tokens <n>] [--json]
-```
-
-Calls a model via the server's configured provider — no API key needed inside
-the container. Defaults to the enrich model (fast/cheap); pass `--model` to
-override. Reads from stdin when prompt is `-`:
-
+Proxies model calls through the server (no API key needed). Pass `-` as prompt to read from stdin:
 ```bash
-cat report.txt | zero llm generate - --system "Summarize in 3 bullet points"
+cat report.txt | zero llm generate - --system "Summarize in 3 bullets"
 ```
 
-SDK:
-```ts
-import { llm } from "zero";
-const { text } = await llm.generate("Classify this text: ...", {
-  system: "Return exactly one of: positive, negative, neutral",
-  maxTokens: 10,
-});
+## embed / search
 ```
-
-Usage is tracked in the standard billing system. Use this to build tools that
-need AI without hardcoding API keys or providers.
-
----
-
----
+zero embed generate <text> [--model <m>]
+zero search query <text> [--limit <n>] [--type files|memory|messages]
+```
 
 ## health
-
 ```
 zero health
 ```
-
-Sanity-check the runner→server proxy is reachable. Returns `{ ok: true }` on
-success. Use this when debugging why another `zero` command is failing.
+Sanity-check the runner→server proxy. Returns `{ ok: true }` on success.
 
 ---
 
 ## Error handling
+- `0` success, `1` runtime/network error (stderr: `code: message`), `2` usage error.
+- SDK throws `ZeroError` with `.code` and `.message`.
 
-Every command exits:
-- `0` on success
-- `1` on runtime/network error (stderr has `code: message`)
-- `2` on argument/usage error
-
-The SDK throws a `ZeroError` with `.code` and `.message` on failure; catch it
-if you need to distinguish `not_found` from `unauthorized` etc.
-
----
+## Workspace durability
+Files in `/workspace` have a ≤5 min recovery point: a watcher signals changes; a background scheduler flushes to S3 every 60s (also on container destroy). Ephemeral dirs (`node_modules`, `.venv`, `dist`, `.next`, `target`, etc.) are excluded from snapshots and must be regenerated on cold start.
 
 ## Tips
-
-- **One-liners → CLI. Anything else → SDK.** Prefer the CLI for quick commands
-  in bash. For anything involving loops, composition, error handling, or reuse,
-  write a bun script and import the SDK.
-- **Scripts persist, CLI modifications don't.** Write reusable tools as `.ts`
-  files in `/workspace` — they sync to project storage and survive container
-  restarts. Never modify `/opt/zero/` directly; those changes are lost on restart.
-- **Build tools with `llm` + other SDK calls.** The `llm` group lets scripts
-  call any model without API keys. Combine it with `web`, `creds`, `message` etc.
-  to build self-contained tools the user can rerun:
-  ```ts
-  import { web, llm, message } from "zero";
-  const page = await web.fetch("https://...");
-  const { text } = await llm.generate(page.content!, { system: "Summarize in 3 bullets" });
-  await message.send(text);
-  ```
-- `zero <group> --help` always prints authoritative, up-to-date usage for that
-  group — treat this file as an overview, and `--help` as the source of truth
-  if they ever disagree.
-- The SDK source is readable at `/opt/zero/src/sdk/` — `cat /opt/zero/src/sdk/llm.ts`
-  etc. shows exact input/output types. Use this when `--help` isn't enough.
+- One-liners → CLI. Loops/composition/error handling → SDK bun script.
+- Write reusable tools as `.ts` in `/workspace` — they survive restarts. Never modify `/opt/zero/` directly (lost on restart).
+- SDK source at `/opt/zero/src/sdk/<group>.ts` shows exact input/output types.

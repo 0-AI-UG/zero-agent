@@ -1,7 +1,7 @@
 import type { Message } from "@/lib/messages/types.ts";
 import { generateText } from "@/lib/openrouter/text.ts";
 import { getEnrichModelId } from "@/lib/providers/index.ts";
-import { readFromS3, writeToS3, deleteFromS3 } from "@/lib/s3.ts";
+import { getLocalBackend } from "@/lib/execution/lifecycle.ts";
 import { log } from "@/lib/utils/logger.ts";
 
 const csLog = log.child({ module: "compaction-state" });
@@ -33,8 +33,8 @@ export interface CompactionState {
   updatedAt: string;
 }
 
-function s3Key(projectId: string, runId: string): string {
-  return `projects/${projectId}/compaction-state/${runId}.json`;
+function compactionPath(runId: string): string {
+  return `compaction-state/${runId}.json`;
 }
 
 export function createEmptyCompactionState(runId: string): CompactionState {
@@ -235,7 +235,10 @@ export async function saveCompactionState(
 ): Promise<void> {
   state.runId = runId;
   state.updatedAt = new Date().toISOString();
-  await writeToS3(s3Key(projectId, runId), JSON.stringify(state));
+  const backend = getLocalBackend();
+  if (backend) {
+    await backend.writeFile(projectId, compactionPath(runId), Buffer.from(JSON.stringify(state), "utf-8"));
+  }
   csLog.debug("saved compaction state", { projectId, runId });
 }
 
@@ -243,9 +246,12 @@ export async function loadCompactionState(
   projectId: string,
   runId: string,
 ): Promise<CompactionState | null> {
+  const backend = getLocalBackend();
+  if (!backend) return null;
+  const buf = await backend.readFile(projectId, compactionPath(runId));
+  if (!buf) return null;
   try {
-    const raw = await readFromS3(s3Key(projectId, runId));
-    return JSON.parse(raw) as CompactionState;
+    return JSON.parse(buf.toString("utf-8")) as CompactionState;
   } catch {
     return null;
   }
@@ -255,8 +261,10 @@ export async function deleteCompactionState(
   projectId: string,
   runId: string,
 ): Promise<void> {
+  const backend = getLocalBackend();
+  if (!backend) return;
   try {
-    await deleteFromS3(s3Key(projectId, runId));
+    await backend.deletePath?.(projectId, compactionPath(runId));
     csLog.debug("deleted compaction state", { projectId, runId });
   } catch {
     // Ignore - state may not exist

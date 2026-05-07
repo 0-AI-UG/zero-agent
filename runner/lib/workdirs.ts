@@ -83,9 +83,10 @@ export async function allocateWorkdir(containerName: string): Promise<WorkdirSta
     throw new Error(`mkdir for workdir ${id} failed: ${mk.stderr}`);
   }
 
+  // fuse-overlayfs instead of `mount -t overlay`: works on hosts where the
+  // kernel blocks overlay-on-overlay from inside a container (OrbStack, Docker Desktop).
   const mount = await dockerExec(containerName, [
-    "mount",
-    "-t", "overlay", "overlay",
+    "fuse-overlayfs",
     "-o", `lowerdir=${lower},upperdir=${upper},workdir=${workDir}`,
     merged,
   ]);
@@ -141,42 +142,28 @@ export async function flushWorkdir(
 
   let changes = 0;
 
-  // 1. Find whiteouts: character devices under upper. Use `find` with
-  //    -printf so we get stat info; char-dev 0/0 == whiteout.
-  //    Paths from find are relative when we `cd` into upper via -w.
+  // fuse-overlayfs encodes whiteouts as `.wh.<name>` files (AUFS style),
+  // not char devices 0:0 like the kernel overlay driver.
   const findRes = await dockerExec(
     containerName,
-    [
-      "sh", "-c",
-      // %y=type, %T=device major:minor on some systems; use stat per-match
-      // to be portable. List all char devices under upper.
-      `find . -type c -printf '%p\\n' 2>/dev/null || true`,
-    ],
+    ["sh", "-c", `find . -name '.wh.*' -printf '%p\\n' 2>/dev/null || true`],
     { workingDir: state.upper },
   );
 
-  const charPaths = findRes.stdout.split("\n").map((s) => s.trim()).filter(Boolean);
-  for (const rel of charPaths) {
-    // rel looks like "./foo/bar"
+  const whPaths = findRes.stdout.split("\n").map((s) => s.trim()).filter(Boolean);
+  for (const rel of whPaths) {
+    // rel looks like "./dir/.wh.filename" — drop "./", then strip the
+    // ".wh." prefix from the basename.
     const cleanRel = rel.replace(/^\.\//, "");
-    // stat the device numbers
-    const stat = await dockerExec(containerName, [
-      "stat", "-c", "%t:%T", `${state.upper}/${cleanRel}`,
-    ]);
-    if (stat.exitCode !== 0) continue;
-    // %t and %T are hex major/minor. Whiteout == 0:0.
-    const trimmed = stat.stdout.trim();
-    if (trimmed === "0:0") {
-      // Delete from /workspace
-      const del = await dockerExec(containerName, [
-        "rm", "-rf", `${state.lower}/${cleanRel}`,
-      ]);
-      if (del.exitCode === 0) changes++;
-      // Also drop the whiteout from upper so the subsequent cp -a doesn't
-      // try to copy a char device into /workspace (cp -a preserves device
-      // files and would recreate a 0/0 char dev in lower).
-      await dockerExec(containerName, ["rm", "-f", `${state.upper}/${cleanRel}`]).catch(() => {});
-    }
+    const slash = cleanRel.lastIndexOf("/");
+    const dir = slash >= 0 ? cleanRel.slice(0, slash) : "";
+    const base = slash >= 0 ? cleanRel.slice(slash + 1) : cleanRel;
+    if (!base.startsWith(".wh.")) continue;
+    const targetRel = (dir ? dir + "/" : "") + base.slice(".wh.".length);
+    const del = await dockerExec(containerName, ["rm", "-rf", `${state.lower}/${targetRel}`]);
+    if (del.exitCode === 0) changes++;
+    // Drop the marker so the subsequent cp -a doesn't copy it into lower.
+    await dockerExec(containerName, ["rm", "-f", `${state.upper}/${cleanRel}`]).catch(() => {});
   }
 
   // 2. Copy remaining upper contents into /workspace. Count top-level
@@ -210,7 +197,7 @@ export async function dropWorkdir(containerName: string, id: string): Promise<vo
     return;
   }
 
-  const umount = await dockerExec(containerName, ["umount", state.merged]);
+  const umount = await dockerExec(containerName, ["fusermount", "-u", state.merged]);
   if (umount.exitCode !== 0) {
     wdLog.warn("umount failed, continuing cleanup", {
       containerName, id, stderr: umount.stderr.slice(0, 200),

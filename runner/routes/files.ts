@@ -3,7 +3,9 @@ import {
   readFiles as libReadFiles,
   writeFiles as libWriteFiles,
   deleteFiles as libDeleteFiles,
+  extractSingleFileStream,
 } from "../lib/files.ts";
+import { docker } from "../lib/docker-client.ts";
 import { resolveWorkdirPath } from "../lib/workdirs.ts";
 
 /**
@@ -127,81 +129,51 @@ export function fileRoutes(mgr: ContainerManager) {
       }
     },
 
-    async changes(req: Request, name: string): Promise<Response> {
-      // workdirId is accepted for API uniformity but container-level change
-      // tracking is scoped to /workspace; threading per-workdir change
-      // detection requires container-manager state changes that are out of
-      // scope for this wave. Current behavior is preserved.
-      void parseWorkdirId(req);
-      try {
-        const result = await mgr.getChanges(name);
-        return Response.json(result);
-      } catch (err) {
-        return Response.json({ error: String(err) }, { status: 500 });
+    async stream(req: Request, name: string): Promise<Response> {
+      const url = new URL(req.url);
+      const relPath = url.searchParams.get("path");
+      if (!relPath) {
+        return Response.json({ error: "path query parameter is required" }, { status: 400 });
       }
-    },
 
-    async saveSnapshot(_req: Request, name: string): Promise<Response> {
-      try {
-        const stream = await mgr.saveSnapshotStream(name);
-        if (!stream) return Response.json({ error: "snapshot failed" }, { status: 500 });
-        return new Response(stream, {
-          headers: { "Content-Type": "application/gzip" },
-        });
-      } catch (err) {
-        return Response.json({ error: String(err) }, { status: 500 });
-      }
-    },
+      const workdirId = parseWorkdirId(req);
+      const baseDir = workdirId ? resolveWorkdirPath(name, workdirId, "") : "/workspace";
+      const fullPath = `${baseDir}/${relPath}`.replace(/\/+/g, "/");
 
-    async restoreSnapshot(req: Request, name: string): Promise<Response> {
       try {
-        const contentLength = parseInt(req.headers.get("Content-Length") ?? "0", 10);
-        if (!contentLength || !req.body) {
-          return Response.json({ error: "Content-Length header required" }, { status: 411 });
+        // Stat the file first to get size and verify existence
+        const statResult = await docker.exec(name, [
+          "bash", "-c",
+          `stat -c%s ${JSON.stringify(fullPath)} 2>/dev/null && echo OK || echo MISSING`,
+        ], { workingDir: "/" });
+
+        const statOut = statResult.stdout.trim();
+        if (statOut.endsWith("MISSING") || statResult.exitCode !== 0) {
+          return Response.json({ error: "File not found" }, { status: 404 });
         }
-        const ok = await mgr.restoreSnapshotStream(name, req.body as ReadableStream<Uint8Array>, contentLength);
-        return Response.json({ ok });
-      } catch (err) {
-        return Response.json({ error: String(err) }, { status: 500 });
-      }
-    },
 
-    async listBlobDirs(_req: Request, name: string): Promise<Response> {
-      try {
-        const dirs = await mgr.getBlobDirs(name);
-        return Response.json({ dirs });
-      } catch (err) {
-        return Response.json({ error: String(err) }, { status: 500 });
-      }
-    },
+        const lines = statOut.split("\n");
+        const sizeStr = lines[0]?.trim() ?? "0";
+        const sizeBytes = parseInt(sizeStr, 10);
 
-    async saveBlob(req: Request, name: string): Promise<Response> {
-      try {
-        const url = new URL(req.url);
-        const dir = url.searchParams.get("dir");
-        if (!dir) return Response.json({ error: "missing ?dir" }, { status: 400 });
-        const stream = await mgr.saveBlobStream(name, dir);
-        if (!stream) return Response.json({ error: "blob not found or empty" }, { status: 404 });
-        return new Response(stream, { headers: { "Content-Type": "application/gzip" } });
-      } catch (err) {
-        return Response.json({ error: String(err) }, { status: 500 });
-      }
-    },
-
-    async restoreBlob(req: Request, name: string): Promise<Response> {
-      try {
-        const url = new URL(req.url);
-        const dir = url.searchParams.get("dir");
-        if (!dir) return Response.json({ error: "missing ?dir" }, { status: 400 });
-        const contentLength = parseInt(req.headers.get("Content-Length") ?? "0", 10);
-        if (!contentLength || !req.body) {
-          return Response.json({ error: "Content-Length header required" }, { status: 411 });
+        if (isNaN(sizeBytes)) {
+          return Response.json({ error: "Could not stat file" }, { status: 500 });
         }
-        const ok = await mgr.restoreBlobStream(name, dir, req.body as ReadableStream<Uint8Array>, contentLength);
-        return Response.json({ ok });
+
+        // Stream the file via docker getArchive
+        const tarStream = await docker.getArchiveStream(name, fullPath);
+        const fileStream = extractSingleFileStream(tarStream);
+
+        const headers: Record<string, string> = {
+          "Content-Length": String(sizeBytes),
+          "Content-Type": "application/octet-stream",
+        };
+
+        return new Response(fileStream, { headers });
       } catch (err) {
         return Response.json({ error: String(err) }, { status: 500 });
       }
     },
+
   };
 }

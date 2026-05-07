@@ -1,7 +1,7 @@
 import { generateText } from "@/lib/openrouter/text.ts";
 import type { Message } from "@/lib/messages/types.ts";
 import { getEnrichModelId } from "@/lib/providers/index.ts";
-import { readFromS3, writeToS3 } from "@/lib/s3.ts";
+import { getLocalBackend } from "@/lib/execution/lifecycle.ts";
 import { extractConversationText } from "@/lib/conversation/message-utils.ts";
 import { embedEntries } from "@/lib/search/vectors.ts";
 import { log } from "@/lib/utils/logger.ts";
@@ -113,10 +113,10 @@ export async function flushLearnings(
   if (learnings.length === 0) return;
 
   let existingRaw = "";
-  try {
-    existingRaw = await readFromS3(`projects/${projectId}/MEMORY.md`);
-  } catch {
-    // No existing memory
+  const backend = getLocalBackend();
+  if (backend) {
+    const buf = await backend.readFile(projectId, "MEMORY.md");
+    if (buf) existingRaw = buf.toString("utf-8");
   }
 
   const sections = parseMemory(existingRaw);
@@ -145,7 +145,9 @@ export async function flushLearnings(
   }
 
   const newMemoryMd = renderMemory(sections);
-  await writeToS3(`projects/${projectId}/MEMORY.md`, newMemoryMd);
+  if (backend) {
+    await backend.writeFile(projectId, "MEMORY.md", Buffer.from(newMemoryMd, "utf-8"));
+  }
 
   // Embed for semantic retrieval
   const allEntries: { id: string; text: string }[] = [];
@@ -181,10 +183,11 @@ export async function flushConversationMemory(
 
   // Read existing memory
   let existingRaw = "";
-  try {
-    existingRaw = await readFromS3(`projects/${projectId}/MEMORY.md`);
-  } catch {
-    memLog.debug("no existing MEMORY.md", { projectId });
+  const backend = getLocalBackend();
+  if (backend) {
+    const buf = await backend.readFile(projectId, "MEMORY.md");
+    if (buf) existingRaw = buf.toString("utf-8");
+    else memLog.debug("no existing MEMORY.md", { projectId });
   }
 
   const existingSections = parseMemory(existingRaw);
@@ -284,7 +287,9 @@ ${conversationText}`,
   }
 
   const newMemoryMd = renderMemory(existingSections);
-  await writeToS3(`projects/${projectId}/MEMORY.md`, newMemoryMd);
+  if (backend) {
+    await backend.writeFile(projectId, "MEMORY.md", Buffer.from(newMemoryMd, "utf-8"));
+  }
 
   // Embed all memory entries for semantic retrieval
   const allEntries: { id: string; text: string }[] = [];

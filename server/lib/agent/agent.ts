@@ -14,7 +14,7 @@ import {
   type PrepareStepFn,
 } from "@/lib/conversation/compact-conversation.ts";
 import { createPlanningTools } from "@/tools/planning.ts";
-import { readFromS3 } from "@/lib/s3.ts";
+import { ensureBackend } from "@/lib/execution/lifecycle.ts";
 import { log } from "@/lib/utils/logger.ts";
 
 const agentLog = log.child({ module: "agent" });
@@ -41,8 +41,6 @@ export interface AgentOptions {
   preloadedFiles?: {
     soulMd?: string;
   };
-  /** File paths already read/written in prior turns - seeds the read guard so the agent doesn't need to re-read. */
-  initialReadPaths?: string[];
   /** Semantically relevant memory entries retrieved via RAG for this conversation. */
   relevantMemories?: { content: string; score: number }[];
   /** Semantically relevant files retrieved via RAG for this conversation (paths only). */
@@ -93,7 +91,7 @@ export interface AgentHandle {
 async function buildSystemPrompt(project: {
   id: string;
   name: string;
-}, options: AgentOptions & { toolIndex?: string } = {}): Promise<string> {
+}, options: AgentOptions = {}): Promise<string> {
   const language = options.language ?? "en";
   const today = new Date().toISOString().split("T")[0];
   let skillSummaries = await getSkillSummaries(project.id);
@@ -102,18 +100,17 @@ async function buildSystemPrompt(project: {
     skillSummaries = skillSummaries.filter(s => allowed.has(s.name));
   }
   const skillsIndex = buildSkillsIndex(skillSummaries);
-  const toolIndex = options.toolIndex ?? "";
   const files = options.preloadedFiles ?? {};
 
   const MAX_FILE_LEN = 20_000;
 
-  const identity = files.soulMd
-    ? files.soulMd.slice(0, MAX_FILE_LEN)
-    : `You are an AI assistant.`;
-
   const sections: string[] = [];
 
-  sections.push(`${identity} Project: "${project.name}". Date: ${today}.`);
+  // Item 3: only push identity if soulMd is present; always push project-meta.
+  if (files.soulMd) {
+    sections.push(files.soulMd.slice(0, MAX_FILE_LEN));
+  }
+  sections.push(`Project: "${project.name}". Date: ${today}.`);
 
   if (language === "zh") {
     sections.push("Write all responses and generated content in Chinese unless the user explicitly asks for another language.");
@@ -123,40 +120,23 @@ async function buildSystemPrompt(project: {
     sections.push(`## Skills\n\n${skillsIndex}`);
   }
 
-  if (toolIndex) {
-    sections.push(toolIndex);
-  }
-
-  sections.push(`Use the \`zero\` CLI (via bash) or SDK (installed in global node_modules: \`import { web, browser, llm, ... } from "zero"\` in bun scripts) for web search, fetching pages, browser automation, image generation, scheduling, messaging the user, credentials, port forwarding, and LLM calls. Run \`zero --help\` for usage. Don't install other tools when zero already covers it.`);
-
-  sections.push(`Never expose internal thinking. Just act and respond concisely. Never print credentials - use shell substitution.`);
+  // Item 1: compressed zero CLI blurb.
+  sections.push(`Use the \`zero\` CLI (via bash) or SDK (\`import { web, browser, llm, ... } from "zero"\`) for web, browser, images, scheduling, messaging, credentials, and LLM calls. Run \`zero --help\` for details.`);
 
   if (options.planMode) {
     sections.push(`## Plan Mode
 
-You are in planning mode. Design a thorough plan before any implementation.
-
-1. **Explore**: Use subagents to read files, understand architecture, gather context.
-2. **Ask questions**: If anything is unclear, ask the user before proceeding.
-3. **Write a plan**: Use writeFile to save the plan at \`plans/{descriptive-name}.md\` covering:
-   - Summary of what will be built
-   - Step-by-step implementation approach
-   - Files to create or modify
-   - Potential risks or trade-offs
-4. **Finish**: Call finishPlanning with the plan file path and a brief summary. The user will then choose to implement or alter the plan.
-
-If the user asks to revise the plan and no specific feedback is provided (empty feedback), ask the user what they'd like changed before making revisions. Once you understand their feedback, revise the plan file and call finishPlanning again.
-
-Do NOT implement anything. Focus only on exploration and planning.`);
+Explore the code, then write a plan to \`plans/{descriptive-name}.md\` covering the summary, approach, files touched, and risks. Call \`finishPlanning\` with the path when ready. If the user asks for revisions with no specific feedback, ask what they want changed before revising. Do not implement yet.`);
   }
 
+  // Item 2: drop "(auto-retrieved)" and "Read if needed:" nagging.
   if (options.relevantMemories?.length) {
     const memLines = options.relevantMemories.map((m) => `- ${m.content}`).join("\n");
-    sections.push(`## Relevant Memories (auto-retrieved)\n\n${memLines}`);
+    sections.push(`## Memories\n\n${memLines}`);
   }
   if (options.relevantFiles?.length) {
     const fileLines = options.relevantFiles.map((f) => `- ${f.path}`).join("\n");
-    sections.push(`## Relevant Files (auto-retrieved)\n\nRead if needed:\n${fileLines}`);
+    sections.push(`## Files\n\n${fileLines}`);
   }
 
   return sections.join("\n\n");
@@ -164,7 +144,10 @@ Do NOT implement anything. Focus only on exploration and planning.`);
 
 async function readProjectFile(projectId: string, filename: string): Promise<string | undefined> {
   try {
-    return await readFromS3(`projects/${projectId}/${filename}`);
+    const backend = await ensureBackend();
+    if (!backend) return undefined;
+    const buf = await backend.readFile(projectId, filename);
+    return buf?.toString("utf-8");
   } catch {
     return undefined;
   }
@@ -184,15 +167,13 @@ export async function createAgent(
 
   let stepCount = 0;
 
-  const { tools: baseTools, toolIndex } = createToolset(project.id, {
+  const baseTools = createToolset(project.id, {
     chatId: options.chatId,
     userId: options.userId,
     onlyTools: options.onlyTools,
     onlySkills: options.onlySkills,
     modelId: options.model,
-    initialReadPaths: options.initialReadPaths,
     runId: options.runId,
-    autonomous: options.autonomous,
   });
 
   const tools: ToolSet = { ...baseTools };
@@ -239,7 +220,6 @@ export async function createAgent(
     { id: project.id, name: project.name },
     {
       ...options,
-      toolIndex,
       preloadedFiles: { soulMd },
     },
   );

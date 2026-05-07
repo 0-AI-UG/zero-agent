@@ -17,6 +17,7 @@ import { watcherRoutes } from "./routes/watcher.ts";
 import { snapshotsRoutes } from "./routes/snapshots.ts";
 import { importRoutes } from "./routes/import.ts";
 import { workdirsRoutes } from "./routes/workdirs.ts";
+import { snapshotIncrementalRoutes } from "./routes/snapshot-incremental.ts";
 import { ensureSocketDir } from "./lib/socket-proxy.ts";
 import { log } from "./lib/logger.ts";
 
@@ -34,6 +35,7 @@ const watcher = watcherRoutes(mgr);
 const snapshots = snapshotsRoutes(mgr);
 const importer = importRoutes(mgr);
 const workdirs = workdirsRoutes(mgr);
+const snapInc = snapshotIncrementalRoutes();
 
 function matchRoute(method: string, pathname: string): { handler: (req: Request) => Promise<Response> | Response; } | null {
   // Health (no auth required)
@@ -119,25 +121,18 @@ function matchRoute(method: string, pathname: string): { handler: (req: Request)
   if (method === "GET" && sub === "/files/manifest") {
     return { handler: (req) => files.manifest(req, name!) };
   }
-  if (method === "POST" && sub === "/files/changes") {
-    return { handler: (req) => files.changes(req, name!) };
+  if (method === "GET" && sub === "/files/stream") {
+    return { handler: (req) => files.stream(req, name!) };
   }
-  if (method === "POST" && sub === "/files/snapshot") {
-    return { handler: (req) => files.saveSnapshot(req, name!) };
+  if (method === "POST" && sub === "/snapshot/incremental") {
+    return { handler: (req) => snapInc.run(req, name!) };
   }
-  if (method === "PUT" && sub === "/files/snapshot") {
-    return { handler: (req) => files.restoreSnapshot(req, name!) };
+  if (method === "GET" && sub === "/snapshot/last-snar") {
+    return { handler: (req) => snapInc.lastSnar(req, name!) };
   }
-  if (method === "GET" && sub === "/files/blob-dirs") {
-    return { handler: (req) => files.listBlobDirs(req, name!) };
+  if (method === "PUT" && sub === "/snapshot/restore") {
+    return { handler: (req) => snapInc.restore(req, name!) };
   }
-  if (method === "POST" && sub === "/files/blob") {
-    return { handler: (req) => files.saveBlob(req, name!) };
-  }
-  if (method === "PUT" && sub === "/files/blob") {
-    return { handler: (req) => files.restoreBlob(req, name!) };
-  }
-
   // Watcher
   if (method === "GET" && sub === "/watcher/events") {
     return { handler: (req) => watcher.events(req, name!) };

@@ -10,6 +10,7 @@
  */
 import { log } from "@/lib/utils/logger.ts";
 import type { ExecutionBackend } from "./backend-interface.ts";
+import { flushSnapshot } from "@/lib/snapshots/stream.ts";
 
 const snapLog = log.child({ module: "snapshot" });
 
@@ -32,15 +33,11 @@ export function markActivity(projectId: string): void {
 export async function persistSystemSnapshot(projectId: string): Promise<void> {
   const backend = getBackend?.();
   if (!backend) return;
-  // Backends may expose this via a typed method on their concrete class.
-  const fn = (backend as any).persistSystemSnapshot;
-  if (typeof fn === "function") {
-    try {
-      await fn.call(backend, projectId);
-      lastSnapshotAt.set(projectId, Date.now());
-    } catch (err) {
-      snapLog.warn("persist failed", { projectId, error: String(err) });
-    }
+  try {
+    await flushSnapshot(backend, projectId);
+    lastSnapshotAt.set(projectId, Date.now());
+  } catch (err) {
+    snapLog.warn("persist failed", { projectId, error: String(err) });
   }
 }
 

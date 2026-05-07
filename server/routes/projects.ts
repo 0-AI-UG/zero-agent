@@ -16,9 +16,10 @@ import {
 } from "@/db/queries/projects.ts";
 import { getUserById } from "@/db/queries/users.ts";
 import { ForbiddenError } from "@/lib/utils/errors.ts";
-import { insertFile, getFileByS3Key, updateFileSize } from "@/db/queries/files.ts";
+import { insertFile, getFileByPath, updateFileSize } from "@/db/queries/files.ts";
 import { indexFileContent } from "@/db/queries/search.ts";
-import { writeToS3, readFromS3 } from "@/lib/s3.ts";
+import { getLocalBackend } from "@/lib/execution/lifecycle.ts";
+import type { ExecutionBackend } from "@/lib/execution/backend-interface.ts";
 import { handleError, formatProject, verifyProjectOwnership, verifyProjectAccess } from "@/routes/utils.ts";
 import { insertProjectMember, getMemberRole, getMemberCount } from "@/db/queries/members.ts";
 import { createHeartbeatTask } from "@/lib/scheduling/heartbeat.ts";
@@ -52,7 +53,7 @@ export async function handleListProjects(request: Request): Promise<Response> {
   }
 }
 
-async function createDefaultProjectFiles(projectId: string, projectName: string): Promise<void> {
+async function createDefaultProjectFiles(projectId: string, projectName: string, backend: ExecutionBackend): Promise<void> {
   const memoryMd = `# Memory
 
 ## Facts
@@ -118,10 +119,9 @@ target/
   ];
 
   for (const file of files) {
-    const s3Key = `projects/${projectId}/${file.path}`;
     const buffer = Buffer.from(file.content, "utf-8");
-    await writeToS3(s3Key, buffer);
-    const fileRow = insertFile(projectId, s3Key, file.path, file.mime, buffer.length, "/");
+    await backend.writeFile(projectId, file.path, buffer);
+    const fileRow = insertFile(projectId, file.path, file.mime, buffer.length, "/");
     indexFileContent(fileRow.id, projectId, file.path, file.content);
   }
 }
@@ -136,7 +136,10 @@ export async function handleCreateProject(request: Request): Promise<Response> {
     const body = await validateBody(request, createProjectSchema);
     const row = insertProject(userId, body.name, body.description ?? "");
     insertProjectMember(row.id, userId, "owner");
-    await createDefaultProjectFiles(row.id, body.name);
+    const backend = getLocalBackend();
+    if (!backend) throw new Error("Execution backend unavailable");
+    await backend.ensureContainer(userId, row.id);
+    await createDefaultProjectFiles(row.id, body.name, backend);
 
     createHeartbeatTask(row.id, userId);
     createDefaultTasks(row.id, userId);
@@ -237,7 +240,9 @@ export async function handleGetSoul(request: Request): Promise<Response> {
 
     let content: string;
     try {
-      content = await readFromS3(`projects/${projectId}/SOUL.md`);
+      const backend = getLocalBackend();
+      const buf = backend ? await backend.readFile(projectId, "SOUL.md") : null;
+      content = buf ? buf.toString("utf-8") : DEFAULT_SOUL;
     } catch {
       content = DEFAULT_SOUL;
     }
@@ -255,16 +260,18 @@ export async function handleUpdateSoul(request: Request): Promise<Response> {
     verifyProjectOwnership(projectId, userId);
 
     const body = await validateBody(request, updateSoulSchema);
-    const s3Key = `projects/${projectId}/SOUL.md`;
     const buffer = Buffer.from(body.content, "utf-8");
-    await writeToS3(s3Key, buffer);
+
+    const backend = getLocalBackend();
+    if (!backend) throw new Error("Execution backend unavailable");
+    await backend.writeFile(projectId, "SOUL.md", buffer);
 
     // Upsert the file row
-    const existing = getFileByS3Key(projectId, s3Key);
+    const existing = getFileByPath(projectId, "/", "SOUL.md");
     if (existing) {
       updateFileSize(existing.id, buffer.length);
     } else {
-      const fileRow = insertFile(projectId, s3Key, "SOUL.md", "text/markdown", buffer.length, "/");
+      const fileRow = insertFile(projectId, "SOUL.md", "text/markdown", buffer.length, "/");
       indexFileContent(fileRow.id, projectId, "SOUL.md", body.content);
     }
 

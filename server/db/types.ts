@@ -71,12 +71,10 @@ export interface MessageRow {
 export interface FileRow {
   id: string;
   project_id: string;
-  s3_key: string;
   filename: string;
   mime_type: string;
   size_bytes: number;
   folder_path: string;
-  thumbnail_s3_key: string | null;
   hash: string;
   created_at: string;
 }

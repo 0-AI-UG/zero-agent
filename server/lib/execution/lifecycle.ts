@@ -7,6 +7,7 @@ import type { ExecutionBackend } from "./backend-interface.ts";
 import { PortManager } from "./app-manager.ts";
 import { setSetting, getSetting } from "@/lib/settings.ts";
 import { setSnapshotBackendGetter, startSnapshotLoop, stopSnapshotLoop } from "./snapshot.ts";
+import { startFlushScheduler, type FlushSchedulerHandle } from "./flush-scheduler.ts";
 import { setRoutePortManager } from "@/routes/apps.ts";
 import { log } from "@/lib/utils/logger.ts";
 
@@ -20,6 +21,7 @@ let backend: ExecutionBackend | null = null;
 let portManager: PortManager | null = null;
 let supervisor: ReturnType<typeof setInterval> | null = null;
 let reconciling: Promise<{ healthy: number; total: number }> | null = null;
+let flushSchedulerHandle: FlushSchedulerHandle | null = null;
 
 const RECONCILE_INTERVAL_MS = 30_000;
 
@@ -87,6 +89,9 @@ export async function reconcile(): Promise<{ healthy: number; total: number }> {
         backend = pool;
         setSnapshotBackendGetter(() => backend);
         startSnapshotLoop();
+        if (!flushSchedulerHandle) {
+          flushSchedulerHandle = startFlushScheduler(pool);
+        }
         await startPortManager();
       }
       return result;
@@ -134,6 +139,8 @@ export async function teardownExecution(): Promise<void> {
 async function teardownInternal(): Promise<void> {
   stopPortManager();
   stopSnapshotLoop();
+  flushSchedulerHandle?.stop();
+  flushSchedulerHandle = null;
   setSnapshotBackendGetter(null);
   if (backend) {
     await pool.destroyAll();

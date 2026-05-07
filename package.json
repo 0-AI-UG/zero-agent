@@ -13,6 +13,7 @@
     "compile": "tsx build.ts",
     "start": "NODE_ENV=production node --max-old-space-size=1024 --trace-gc --heapsnapshot-near-heap-limit=2 --import tsx/esm server/index.ts",
     "test": "vitest run",
+    "test:integration": "vitest run -c vitest.integration.config.ts",
     "typecheck": "tsc --noEmit"
   },
   "trustedDependencies": ["sharp", "bcrypt", "better-sqlite3", "esbuild"],

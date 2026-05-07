@@ -1,7 +1,7 @@
 import { generateText } from "@/lib/openrouter/text.ts";
 import type { Message } from "@/lib/messages/types.ts";
 import { getEnrichModelId } from "@/lib/providers/index.ts";
-import { readFromS3, writeToS3 } from "@/lib/s3.ts";
+import { getLocalBackend } from "@/lib/execution/lifecycle.ts";
 import { extractConversationText } from "@/lib/conversation/message-utils.ts";
 import { log } from "@/lib/utils/logger.ts";
 
@@ -56,10 +56,13 @@ export async function detectExploreItems(
 
   // Read existing heartbeat
   let existingRaw = "";
-  try {
-    existingRaw = await readFromS3(`projects/${projectId}/HEARTBEAT.md`);
-  } catch {
-    hbLog.debug("no existing HEARTBEAT.md", { projectId });
+  const backend = getLocalBackend();
+  if (backend) {
+    const buf = await backend.readFile(projectId, "HEARTBEAT.md");
+    if (buf) existingRaw = buf.toString("utf-8");
+    else hbLog.debug("no existing HEARTBEAT.md", { projectId });
+  } else {
+    hbLog.debug("no backend, skipping heartbeat read", { projectId });
   }
 
   const { before, items: existingItems } = parseExploreItems(existingRaw);
@@ -145,7 +148,9 @@ ${conversationText}`,
   const allItems = [...existingItems, ...newItems].slice(-MAX_EXPLORE_ITEMS);
 
   const newHeartbeat = renderHeartbeat(before, allItems);
-  await writeToS3(`projects/${projectId}/HEARTBEAT.md`, newHeartbeat);
+  if (backend) {
+    await backend.writeFile(projectId, "HEARTBEAT.md", Buffer.from(newHeartbeat, "utf-8"));
+  }
 
   hbLog.info("explore items added to heartbeat", {
     projectId,

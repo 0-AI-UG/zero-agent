@@ -33,8 +33,11 @@ export async function getSkillSummaries(projectId: string): Promise<SkillSummary
 
   const summaries = await Promise.all(
     rows.map(async (row): Promise<SkillSummary | null> => {
+      // Reconstruct S3 key from folder_path + filename.
+      // Skills installer uses: projects/${projectId}${folder_path}${filename}
+      const s3Key = `projects/${projectId}${row.folder_path}${row.filename}`;
       try {
-        const content = await readFromS3(row.s3_key);
+        const content = await readFromS3(s3Key);
         const { frontmatter } = parseSkillMd(content);
         // Derive skill name from folder path: /skills/{name}/ -> name
         const name = row.folder_path.split("/").filter(Boolean)[1]!;
@@ -43,10 +46,10 @@ export async function getSkillSummaries(projectId: string): Promise<SkillSummary
           name: resolvedName,
           description: frontmatter.description || "",
           metadata: frontmatter.metadata,
-          s3Key: row.s3_key,
+          s3Key,
         };
       } catch (err) {
-        skillLog.error("failed to parse skill", err, { s3Key: row.s3_key });
+        skillLog.error("failed to parse skill", err, { s3Key });
         return null;
       }
     }),
@@ -61,10 +64,12 @@ export async function loadFullSkill(projectId: string, name: string): Promise<Lo
   const row = getSkillFileByName(projectId, name);
   if (!row) return null;
 
-  skillLog.info("loading full skill", { projectId, name, s3Key: row.s3_key });
+  // Reconstruct S3 key from folder_path + filename.
+  const s3Key = `projects/${projectId}${row.folder_path}${row.filename}`;
+  skillLog.info("loading full skill", { projectId, name, s3Key });
 
   try {
-    const content = await readFromS3(row.s3_key);
+    const content = await readFromS3(s3Key);
     const { frontmatter, body } = parseSkillMd(content);
 
     // List helper files from files DB
@@ -76,7 +81,7 @@ export async function loadFullSkill(projectId: string, name: string): Promise<Lo
 
     return {
       ...frontmatter,
-      s3Key: row.s3_key,
+      s3Key,
       instructions: body,
       files,
     };

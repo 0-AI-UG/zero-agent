@@ -112,26 +112,30 @@ export function XlsxPreview({ file, url, projectId }: XlsxPreviewProps) {
         type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       });
 
-      // Re-upload to the same presigned URL pattern
-      const urlRes = await apiFetch<{ url: string }>(
-        `/projects/${projectId}/files/${file.id}/upload-url`,
-        { method: "POST" },
-      );
-      const uploadRes = await fetch(urlRes.url, {
-        method: "PUT",
-        headers: { "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
+      // Upload binary directly to the server
+      const { useAuthStore } = await import("@/stores/auth");
+      const token = useAuthStore.getState().token;
+      const uploadHeaders: Record<string, string> = {
+        "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "Content-Length": String(blob.size),
+      };
+      if (token) uploadHeaders["Authorization"] = `Bearer ${token}`;
+
+      const uploadRes = await fetch(`/api/projects/${projectId}/files/${file.id}/binary`, {
+        method: "POST",
+        headers: uploadHeaders,
         body: blob,
       });
 
       if (!uploadRes.ok) throw new Error("Upload failed");
 
-      // Index text content for FTS and update file size
+      // Index text content for FTS
       const textContent = sheets
         .map((s) => [s.name, ...s.headers, ...s.rows.flat()].join(" "))
         .join("\n");
       await apiFetch(`/projects/${projectId}/files/${file.id}/binary`, {
         method: "POST",
-        body: JSON.stringify({ textContent, sizeBytes: buf.byteLength }),
+        body: JSON.stringify({ textContent }),
       }).catch(() => {});
 
       // Update initial state to reflect save

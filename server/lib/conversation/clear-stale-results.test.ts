@@ -82,7 +82,7 @@ describe("clearStaleToolResults", () => {
     const output = getToolOutput(result[1]);
     expect(output).toEqual({
       type: "text",
-      value: "[fetched https://example.com - Example]",
+      value: "[stale result elided]",
     });
   });
 
@@ -100,11 +100,11 @@ describe("clearStaleToolResults", () => {
     const result = clearStaleToolResults(messages);
     expect(getToolOutput(result[1])).toEqual({
       type: "text",
-      value: "[snapshot: https://page1.com]",
+      value: "[stale result elided]",
     });
     expect(getToolOutput(result[2])).toEqual({
       type: "text",
-      value: "[snapshot: https://page2.com]",
+      value: "[stale result elided]",
     });
     expect(getToolOutput(result[3])).toEqual({ url: "https://page3.com", content: "tree3" });
   });

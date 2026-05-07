@@ -1,15 +1,15 @@
 import { deleteProjectIndex, ensureIndex, putProjectVectors, isEmbeddingConfigured, chunkText, textToSparseVector } from "@/lib/search/vectors.ts";
-import { readFromS3 } from "@/lib/s3.ts";
 import { embed } from "@/lib/openrouter/embed.ts";
 import { getEmbeddingModelId } from "@/lib/providers/index.ts";
 import { log } from "@/lib/utils/logger.ts";
 import { db } from "@/db/index.ts";
+import { getLocalBackend } from "@/lib/execution/lifecycle.ts";
 import type { SparseVector } from "@0-ai/s3lite/vectors";
 
 const reindexLog = log.child({ module: "reindex" });
 
 const getTextFiles = db.prepare(
-  "SELECT id, s3_key, filename, mime_type FROM files WHERE project_id = ? AND (mime_type LIKE 'text/%' OR mime_type = 'application/json')",
+  "SELECT id, folder_path, filename, mime_type FROM files WHERE project_id = ? AND (mime_type LIKE 'text/%' OR mime_type = 'application/json')",
 );
 
 const getRecentMessagesPaged = db.prepare(
@@ -132,13 +132,20 @@ async function doReindex(projectId: string, overallSignal: AbortSignal): Promise
   let messageCount = 0;
 
   // Phase 1: Files
-  const files = getTextFiles.all(projectId) as { id: string; s3_key: string; filename: string; mime_type: string }[];
+  const files = getTextFiles.all(projectId) as { id: string; folder_path: string; filename: string; mime_type: string }[];
   emitProgress(projectId, { phase: "files", current: 0, total: files.length });
+
+  const backend = getLocalBackend();
 
   await processInBatches(files, FILE_CONCURRENCY, async (file) => {
     if (overallSignal.aborted) return;
     try {
-      const content = await readFromS3(file.s3_key);
+      // Derive workspace-relative path from folder_path ("/src/") + filename.
+      const trimmedFolder = file.folder_path.replace(/^\/+/, "").replace(/\/+$/, "");
+      const workspacePath = trimmedFolder ? `${trimmedFolder}/${file.filename}` : file.filename;
+      const buf = backend ? await backend.readFile(projectId, workspacePath) : null;
+      if (!buf) return;
+      const content = buf.toString("utf-8");
       if (!content.trim()) return;
 
       const chunks = chunkText(content);
@@ -171,7 +178,9 @@ async function doReindex(projectId: string, overallSignal: AbortSignal): Promise
   // Phase 2: Memory
   emitProgress(projectId, { phase: "memories", current: 0, total: 0 });
   try {
-    const memoryRaw = await readFromS3(`projects/${projectId}/MEMORY.md`);
+    const memoryBuf = backend ? await backend.readFile(projectId, "MEMORY.md") : null;
+    if (!memoryBuf) throw new Error("MEMORY.md not found");
+    const memoryRaw = memoryBuf.toString("utf-8");
     const entries = parseMemoryEntries(memoryRaw);
 
     if (entries.length > 0) {

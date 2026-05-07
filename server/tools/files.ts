@@ -1,9 +1,8 @@
 import { z } from "zod";
 import { tool } from "ai";
 import { generateText } from "@/lib/openrouter/text.ts";
-import { getFileByS3Key } from "@/db/queries/files.ts";
+import { getFileByPath } from "@/db/queries/files.ts";
 import { applyEdits } from "@/lib/files/apply-edits.ts";
-import { lintContent } from "@/lib/files/lint.ts";
 import { sanitizePath } from "@/lib/files/sanitize.ts";
 import { truncateText } from "@/lib/conversation/truncate-result.ts";
 import { log } from "@/lib/utils/logger.ts";
@@ -65,25 +64,6 @@ function getImageMediaType(path: string): string {
 
 const toolLog = log.child({ module: "tool:files" });
 
-function guessMimeType(filename: string): string {
-  const ext = filename.split(".").pop()?.toLowerCase();
-  const map: Record<string, string> = {
-    md: "text/markdown",
-    txt: "text/plain",
-    json: "application/json",
-    csv: "text/csv",
-    xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    xls: "application/vnd.ms-excel",
-    png: "image/png",
-    jpg: "image/jpeg",
-    jpeg: "image/jpeg",
-    webp: "image/webp",
-    gif: "image/gif",
-    pdf: "application/pdf",
-    html: "text/html",
-  };
-  return map[ext ?? ""] ?? "application/octet-stream";
-}
 
 function deriveFolder(path: string): string {
   const parts = path.split("/");
@@ -101,20 +81,15 @@ async function getBackend() {
 }
 
 
-export function createFileTools(projectId: string, options?: { chatId?: string; userId?: string; modelId?: string; initialReadPaths?: string[] }) {
-
-  const readPaths = new Set<string>(options?.initialReadPaths);
-
+export function createFileTools(projectId: string, options?: { chatId?: string; userId?: string; modelId?: string }) {
   return {
     readFile: tool({
       description:
-        "Read a file from the workspace. Supports text and images. Must read before editing.",
+        "Read a file from the workspace. Supports text and images.",
       inputSchema: z.object({
         path: z
           .string()
-          .describe(
-            "The file path relative to the project namespace (e.g., 'posts/product-tips.md').",
-          ),
+          .describe("Workspace-relative file path."),
         offset: z
           .number()
           .int()
@@ -143,7 +118,6 @@ export function createFileTools(projectId: string, options?: { chatId?: string; 
               throw new Error(`File not found: ${path}`);
             }
             const buffer = Buffer.from(b64Result.stdout.replace(/\s/g, ""), "base64");
-            readPaths.add(path);
             const originalMediaType = getImageMediaType(path);
             const { buffer: resized, mediaType } = await resizeImageForModel(buffer, originalMediaType);
 
@@ -194,7 +168,6 @@ export function createFileTools(projectId: string, options?: { chatId?: string; 
             throw new Error(`File not found: ${path}`);
           }
           let content = catResult.stdout;
-          readPaths.add(path);
           const totalLength = content.length;
 
           // Apply line-based offset/limit if specified
@@ -230,13 +203,11 @@ export function createFileTools(projectId: string, options?: { chatId?: string; 
 
     writeFile: tool({
       description:
-        "Create or overwrite a file in the workspace. Persistence to project storage happens in the background. IMPORTANT: before calling this tool, first use readFile to check whether the file already exists. You must read before overwriting.",
+        "Create or overwrite a file in the workspace. Persistence to project storage happens in the background.",
       inputSchema: z.object({
         path: z
           .string()
-          .describe(
-            "The file path relative to the project namespace (e.g., 'posts/2025-01-15-health-tips.md').",
-          ),
+          .describe("Workspace-relative file path."),
         content: z.string().describe("The file content to write."),
       }),
       execute: async ({ path: rawPath, content }) => {
@@ -248,40 +219,11 @@ export function createFileTools(projectId: string, options?: { chatId?: string; 
           const backend = await getBackend();
           await backend.ensureContainer(userId, projectId);
 
-          // Block overwriting files the agent hasn't read (new files are OK)
-          if (!readPaths.has(path)) {
-            const result = await backend.execInContainer(projectId, ["test", "-f", `/workspace/${path}`]);
-            if (result.exitCode === 0) {
-              throw new Error(
-                `Cannot overwrite "${path}" - you must readFile first.`,
-              );
-            }
-          }
-
           const buffer = Buffer.from(content, "utf-8");
           await backend.pushFile(projectId, path, buffer);
 
-          const filename = path.split("/").pop() ?? path;
-          const mimeType = guessMimeType(filename);
-
-          // Lint the written content and surface any issues
-          const diagnostics = lintContent(content, mimeType);
-          if (diagnostics.length > 0) {
-            toolLog.warn("writeFile lint issues", { projectId, path, diagnostics });
-          }
-
-          // Mark as read so subsequent edits don't require a redundant readFile
-          readPaths.add(path);
-
           toolLog.info("writeFile success", { projectId, path, sizeBytes: buffer.length });
-          return {
-            ...(diagnostics.length > 0 && {
-              lint: {
-                issues: diagnostics,
-                hint: "The file was written but has lint issues. Please review and fix.",
-              },
-            }),
-          };
+          return {};
         } catch (err) {
           toolLog.error("writeFile failed", err, { projectId, path });
           throw err;
@@ -291,13 +233,11 @@ export function createFileTools(projectId: string, options?: { chatId?: string; 
 
     editFile: tool({
       description:
-        "Edit a file via search-and-replace. IMPORTANT: you must call readFile on the file before using this tool.",
+        "Edit a file via search-and-replace.",
       inputSchema: z.object({
         path: z
           .string()
-          .describe(
-            "The file path relative to the project namespace (e.g., 'posts/product-tips.md').",
-          ),
+          .describe("Workspace-relative file path."),
         edits: z
           .array(
             z.object({
@@ -311,12 +251,6 @@ export function createFileTools(projectId: string, options?: { chatId?: string; 
         const path = sanitizePath(rawPath);
         toolLog.info("editFile", { projectId, path, editCount: edits.length });
         try {
-          if (!readPaths.has(path)) {
-            throw new Error(
-              `Cannot edit "${path}" - you must readFile first.`,
-            );
-          }
-
           const userId = options?.userId ?? "";
           const backend = await getBackend();
           await backend.ensureContainer(userId, projectId);
@@ -333,25 +267,8 @@ export function createFileTools(projectId: string, options?: { chatId?: string; 
           const buffer = Buffer.from(updated, "utf-8");
           await backend.pushFile(projectId, path, buffer);
 
-          const filename = path.split("/").pop() ?? path;
-          const mimeType = guessMimeType(filename);
-
-          // Lint the updated content and surface any issues
-          const diagnostics = lintContent(updated, mimeType);
-          if (diagnostics.length > 0) {
-            toolLog.warn("editFile lint issues", { projectId, path, diagnostics });
-          }
-
           toolLog.info("editFile success", { projectId, path, sizeBytes: buffer.length });
-          return {
-            path,
-            ...(diagnostics.length > 0 && {
-              lint: {
-                issues: diagnostics,
-                hint: "The edit was applied but introduced lint issues. Please review and fix.",
-              },
-            }),
-          };
+          return { path };
         } catch (err) {
           toolLog.error("editFile failed", err, { projectId, path });
           throw err;
@@ -365,7 +282,7 @@ export function createFileTools(projectId: string, options?: { chatId?: string; 
       inputSchema: z.object({
         path: z
           .string()
-          .describe("Path to an existing file, relative to the project (e.g. 'charts/sales.png')."),
+          .describe("Workspace-relative file path."),
         caption: z
           .string()
           .optional()
@@ -373,9 +290,12 @@ export function createFileTools(projectId: string, options?: { chatId?: string; 
       }),
       execute: async ({ path: rawPath, caption }) => {
         const path = sanitizePath(rawPath);
-        const s3Key = `projects/${projectId}/${path}`;
         toolLog.info("displayFile", { projectId, path });
-        const file = getFileByS3Key(projectId, s3Key);
+        // Derive folderPath + filename from the workspace-relative path.
+        const parts = path.split("/").filter(Boolean);
+        const filename = parts[parts.length - 1] ?? path;
+        const folderPath = parts.length <= 1 ? "/" : "/" + parts.slice(0, -1).join("/") + "/";
+        const file = getFileByPath(projectId, folderPath, filename);
         if (!file) {
           throw new Error(`File not found: ${path}`);
         }

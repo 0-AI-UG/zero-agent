@@ -198,7 +198,7 @@ export const TelegramProvider: ChatProvider = {
           payload.actions.map((a) => ({
             text: a.label,
             callback_data: payload.pendingResponseId
-              ? `syncv:${payload.pendingResponseId}:${a.id}`
+              ? `act:${payload.pendingResponseId}:${a.id}`
               : `noop:${a.id}`,
           })),
         ];
@@ -642,6 +642,42 @@ async function handleCallbackQuery(cb: TelegramCallbackQuery): Promise<void> {
           token,
           String(cb.message.chat.id),
           `Active project: <b>${escapeTelegramHtml(project.name)}</b>. Send a message or use /new for a fresh chat.`,
+        );
+      } catch {
+        // best-effort
+      }
+    }
+    return;
+  }
+
+  // `act:<pendingResponseId>:<actionId>` - generic pending-response action
+  // (CLI requests, plan reviews, etc). Clicking the button resolves the
+  // pending row with the action id as the response text.
+  if (cb.data.startsWith("act:")) {
+    const [, pendingId, actionId] = cb.data.split(":");
+    if (!pendingId || !actionId) {
+      await answerTelegramCallbackQuery(token, cb.id, "Invalid action");
+      return;
+    }
+    const telegramUserId = String(cb.from.id);
+    const link = getLinkForTelegramUser(telegramUserId);
+    if (!link) {
+      await answerTelegramCallbackQuery(token, cb.id, "Not linked");
+      return;
+    }
+    const ok = resolvePendingResponse(pendingId, actionId, "telegram");
+    await answerTelegramCallbackQuery(
+      token,
+      cb.id,
+      ok ? "Got it" : "Already answered",
+    );
+    if (cb.message) {
+      try {
+        await editTelegramReplyMarkup(
+          token,
+          String(cb.message.chat.id),
+          cb.message.message_id,
+          null,
         );
       } catch {
         // best-effort

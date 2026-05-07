@@ -77,8 +77,6 @@ export async function runAutonomousTask(
         contextBlock,
         taskName,
         checkpointMetadata: { taskName },
-        // Sync approvals raised inside an autonomous run fan out to every
-        // project member; first to approve/reject wins.
         autonomous: true,
       });
       runId = result.runId;

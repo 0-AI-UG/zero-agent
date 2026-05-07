@@ -9,7 +9,7 @@ import { tool } from "ai";
 import { generateId } from "@/db/index.ts";
 import type { Message } from "@/lib/messages/types.ts";
 import { z } from "zod";
-import { readFromS3 } from "@/lib/s3.ts";
+import { ensureBackend } from "@/lib/execution/lifecycle.ts";
 import { createPendingGroup } from "@/lib/pending-responses/store.ts";
 import { NOTIFICATION_KINDS } from "@/lib/notifications/kinds.ts";
 import { broadcastToProject } from "@/lib/http/ws.ts";
@@ -46,7 +46,11 @@ export function createPlanningTools(
         let planContent = "";
         if (planFilePath) {
           try {
-            planContent = await readFromS3(`projects/${projectId}/${planFilePath}`);
+            const backend = await ensureBackend();
+            if (backend) {
+              const buf = await backend.readFile(projectId, planFilePath);
+              planContent = buf?.toString("utf-8") ?? "";
+            }
           } catch {
             planLog.warn("could not read plan file", { planFilePath, projectId });
           }

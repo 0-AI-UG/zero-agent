@@ -28,6 +28,8 @@ export class RunnerPool implements ExecutionBackend {
   private runnerNames = new Map<string, string>();
   /** Ephemeral cache: projectId → runnerId. Only valid while container is alive. */
   private projectRunner = new Map<string, string>();
+  /** Dedup concurrent ensureContainer calls for the same project. */
+  private ensureInflight = new Map<string, Promise<void>>();
   private _ready = false;
 
   /**
@@ -155,19 +157,27 @@ export class RunnerPool implements ExecutionBackend {
   // ── ExecutionBackend implementation ──
 
   async ensureContainer(userId: string, projectId: string): Promise<void> {
-    // Check if already running somewhere
-    let resolved = await this.resolveRunner(projectId);
-    if (resolved) {
+    const existing = this.ensureInflight.get(projectId);
+    if (existing) return existing;
+
+    const p = (async () => {
+      let resolved = await this.resolveRunner(projectId);
+      if (resolved) {
+        await resolved.client.ensureContainer(userId, projectId);
+        return;
+      }
+      resolved = await this.pickRunner();
+      if (!resolved) throw new Error("No healthy runners available");
       await resolved.client.ensureContainer(userId, projectId);
-      return;
+      this.projectRunner.set(projectId, resolved.runnerId);
+    })();
+
+    this.ensureInflight.set(projectId, p);
+    try {
+      await p;
+    } finally {
+      this.ensureInflight.delete(projectId);
     }
-
-    // Pick a runner for new container
-    resolved = await this.pickRunner();
-    if (!resolved) throw new Error("No healthy runners available");
-
-    await resolved.client.ensureContainer(userId, projectId);
-    this.projectRunner.set(projectId, resolved.runnerId);
   }
 
   async destroyContainer(projectId: string): Promise<void> {
@@ -193,28 +203,31 @@ export class RunnerPool implements ExecutionBackend {
     await client.deleteFile(projectId, relativePath, workdirId);
   }
 
-  async listBlobDirs(projectId: string): Promise<string[]> {
-    const resolved = await this.resolveRunner(projectId);
-    if (!resolved) return [];
-    return resolved.client.listBlobDirs(projectId);
+  async readFile(projectId: string, relativePath: string, workdirId?: string): Promise<Buffer | null> {
+    const { client } = await this.getClientForProject(projectId);
+    return client.readFile(projectId, relativePath, workdirId);
   }
 
-  async saveBlobDir(projectId: string, dir: string): Promise<ReadableStream<Uint8Array> | null> {
-    const resolved = await this.resolveRunner(projectId);
-    if (!resolved) return null;
-    return resolved.client.saveBlobDir(projectId, dir);
+  async writeFile(projectId: string, relativePath: string, buffer: Buffer, workdirId?: string): Promise<void> {
+    const { client } = await this.getClientForProject(projectId);
+    await client.writeFile(projectId, relativePath, buffer, workdirId);
   }
 
-  async restoreBlobDir(projectId: string, dir: string, data: ReadableStream<Uint8Array>, size?: number): Promise<void> {
-    const resolved = await this.resolveRunner(projectId);
-    if (!resolved) return;
-    return resolved.client.restoreBlobDir(projectId, dir, data, size);
+  async readFileStream(projectId: string, relativePath: string, workdirId?: string): Promise<{ stream: ReadableStream<Uint8Array>; size: number; mimeType?: string } | null> {
+    const { client } = await this.getClientForProject(projectId);
+    return client.readFileStream(projectId, relativePath, workdirId);
   }
 
-  async persistSystemSnapshot(projectId: string): Promise<void> {
+  async tarIncremental(projectId: string, inputSnar: Buffer | null) {
     const resolved = await this.resolveRunner(projectId);
-    if (!resolved) return;
-    await resolved.client.persistSystemSnapshot(projectId);
+    if (!resolved) throw new Error(`no runner for project ${projectId}`);
+    return resolved.client.tarIncremental(projectId, inputSnar);
+  }
+
+  async untarIncremental(projectId: string, tarStream: ReadableStream<Uint8Array>) {
+    const resolved = await this.resolveRunner(projectId);
+    if (!resolved) throw new Error(`no runner for project ${projectId}`);
+    return resolved.client.untarIncremental(projectId, tarStream);
   }
 
   touchActivity(projectId: string): void {

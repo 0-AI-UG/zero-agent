@@ -71,33 +71,34 @@ async function uploadOne(
   file: File,
   folderPath: string,
 ): Promise<FileItem> {
-  const res = await apiFetch<{ url: string; s3Key: string; file: FileItem }>(
-    `/projects/${projectId}/files/upload`,
-    {
-      method: "POST",
-      body: JSON.stringify({
-        filename: file.name,
-        mimeType: file.type || "application/octet-stream",
-        folderPath,
-        sizeBytes: file.size,
-      }),
-    },
-  );
+  const mimeType = file.type || "application/octet-stream";
+  const qs = new URLSearchParams({
+    filename: file.name,
+    mimeType,
+    folderPath,
+  });
 
-  const uploadRes = await fetch(res.url, {
-    method: "PUT",
-    headers: { "Content-Type": file.type || "application/octet-stream" },
+  const { useAuthStore } = await import("@/stores/auth");
+  const token = useAuthStore.getState().token;
+  const headers: Record<string, string> = {
+    "Content-Type": mimeType,
+    "Content-Length": String(file.size),
+  };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
+  const res = await fetch(`/api/projects/${projectId}/files/upload?${qs.toString()}`, {
+    method: "POST",
+    headers,
     body: file,
   });
 
-  if (!uploadRes.ok) {
-    await apiFetch(`/projects/${projectId}/files/${res.file.id}`, {
-      method: "DELETE",
-    }).catch(() => {});
-    throw new Error("S3 upload failed");
+  if (!res.ok) {
+    const err = await res.text().catch(() => "Upload failed");
+    throw new Error(err);
   }
 
-  return res.file;
+  const data = await res.json() as { file: FileItem };
+  return data.file;
 }
 
 export function useUploadFiles(projectId: string) {

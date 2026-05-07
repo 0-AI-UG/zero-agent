@@ -3,85 +3,23 @@
  * or the Docker archive API. No host filesystem access.
  */
 import { docker } from "./docker-client.ts";
-import { log } from "./logger.ts";
-
-const fsLog = log.child({ module: "container-fs" });
-
-/**
- * Static fallback for projects without a .gitignore (or before the first
- * detectBlobDirs call). Always-opaque dirs that should never appear in the
- * source-file change feed.
- */
-export const STATIC_BLOB_DIRS = [".git", ".tmp"];
-
-function buildPruneArgs(dirs: readonly string[]): string {
-  if (dirs.length === 0) return "-false";
-  return dirs.map(d => `-name ${shellQuote(d)} -prune`).join(" -o ");
-}
-
-function shellQuote(s: string): string {
-  return `'${s.replace(/'/g, "'\\''")}'`;
-}
-
-/**
- * Detect "opaque" workspace directories — anything ignored by `.gitignore`
- * (plus `.git`/`.tmp` always). Used to prune the source-file change feed and
- * to drive blob-dir tarball persistence.
- */
-export async function detectBlobDirs(containerName: string): Promise<string[]> {
-  const script = `
-set -e
-cd /workspace 2>/dev/null || exit 0
-echo .git
-echo .tmp
-if [ -f .gitignore ]; then
-  for entry in */; do
-    d="\${entry%/}"
-    if [ "$d" = ".git" ] || [ "$d" = ".tmp" ]; then continue; fi
-    if git check-ignore --no-index -q "$d" 2>/dev/null; then
-      echo "$d"
-    fi
-  done
-fi
-`;
-  try {
-    const result = await docker.exec(containerName, ["bash", "-c", script], {
-      workingDir: "/", timeout: 15_000,
-    });
-    const seen = new Set<string>();
-    for (const line of result.stdout.split("\n")) {
-      const trimmed = line.trim();
-      if (trimmed) seen.add(trimmed);
-    }
-    return [...seen];
-  } catch {
-    return [...STATIC_BLOB_DIRS];
-  }
-}
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024;   // 10 MB per file
 const MAX_TOTAL_BYTES = 50 * 1024 * 1024;   // 50 MB total
 
-const SYSTEM_SNAPSHOT_EXCLUDES = [
-  "./workspace", "./proc", "./sys", "./dev", "./tmp", "./run", "./var/run",
-  "./etc/hostname", "./etc/hosts", "./etc/resolv.conf",
-  // The `zero` CLI/SDK is baked into the image and must track image
-  // upgrades — never freeze it inside a per-project snapshot.
-  "./opt/zero",
-].map(d => `--exclude=${d}`).join(" ");
+// Always-exclude dirs for find commands — prevent noise and traversal into VCS/tmp.
+const FIND_EXCLUDES = [".git", ".tmp"];
 
-// -- Marker-based change detection --
-
-export async function touchMarker(containerName: string): Promise<void> {
-  await docker.exec(containerName, ["bash", "-c", "touch /tmp/.snapshot-marker"], { workingDir: "/" });
+function buildFindPruneArgs(dirs: readonly string[]): string {
+  if (dirs.length === 0) return "-false";
+  return dirs.map(d => `-name '${d}' -prune`).join(" -o ");
 }
 
 export async function listFiles(
   containerName: string,
   dir = "/workspace",
-  blobDirs: readonly string[] = STATIC_BLOB_DIRS,
 ): Promise<Set<string>> {
-  const pruneArgs = buildPruneArgs(blobDirs);
+  const pruneArgs = buildFindPruneArgs(FIND_EXCLUDES);
   const result = await docker.exec(containerName, [
     "bash", "-c",
     `find ${dir} \\( ${pruneArgs} \\) -o -type f -print`,
@@ -105,9 +43,8 @@ export async function listFiles(
 export async function manifest(
   containerName: string,
   dir = "/workspace",
-  blobDirs: readonly string[] = STATIC_BLOB_DIRS,
 ): Promise<Record<string, string>> {
-  const pruneArgs = buildPruneArgs(blobDirs);
+  const pruneArgs = buildFindPruneArgs(FIND_EXCLUDES);
   // sha256sum prints "<hex>  <path>" per line. Use -print0/xargs-style safe form via -exec.
   const result = await docker.exec(containerName, [
     "bash", "-c",
@@ -130,43 +67,6 @@ export async function manifest(
   return out;
 }
 
-export interface DetectedChanges {
-  changed: string[];
-  deleted: string[];
-}
-
-export async function detectChanges(
-  containerName: string,
-  preFileList: Set<string>,
-  dir = "/workspace",
-  blobDirs: readonly string[] = STATIC_BLOB_DIRS,
-): Promise<DetectedChanges> {
-  const prefix = dir.endsWith("/") ? dir : dir + "/";
-  const pruneArgs = buildPruneArgs(blobDirs);
-
-  const findResult = await docker.exec(containerName, [
-    "bash", "-c",
-    `find ${dir} \\( ${pruneArgs} \\) -o -type f -newer /tmp/.snapshot-marker -print`,
-  ], { workingDir: "/" });
-
-  const changed: string[] = [];
-  for (const line of findResult.stdout.split("\n")) {
-    const trimmed = line.trim();
-    if (trimmed && trimmed.startsWith(prefix)) {
-      changed.push(trimmed.slice(prefix.length));
-    }
-  }
-
-  const postFileList = await listFiles(containerName, dir, blobDirs);
-  const deleted: string[] = [];
-  for (const file of preFileList) {
-    if (!postFileList.has(file)) {
-      deleted.push(file);
-    }
-  }
-
-  return { changed, deleted };
-}
 
 // -- Read files from container --
 
@@ -243,215 +143,6 @@ export async function deleteFiles(containerName: string, relativePaths: string[]
   await docker.exec(containerName, [
     "bash", "-c", `rm -f ${escaped}`,
   ], { workingDir: "/" });
-}
-
-// -- System snapshot (everything outside /workspace) --
-
-export async function saveSystemSnapshot(containerName: string): Promise<Buffer | null> {
-  try {
-    const result = await docker.exec(containerName, [
-      "bash", "-c",
-      `tar czf /tmp/system-snapshot.tar.gz -C / ${SYSTEM_SNAPSHOT_EXCLUDES} . 2>&1 || true`,
-    ], { workingDir: "/", timeout: 120_000 });
-
-    if (result.exitCode !== 0) {
-      fsLog.warn("system snapshot tar failed", { stderr: result.stderr });
-      return null;
-    }
-
-    const outerTar = await docker.getArchive(containerName, "/tmp/system-snapshot.tar.gz");
-    docker.exec(containerName, ["rm", "-f", "/tmp/system-snapshot.tar.gz"], { workingDir: "/" }).catch(() => {});
-
-    const inner = extractSingleFileFromTar(outerTar);
-    if (!inner) {
-      fsLog.warn("failed to extract system snapshot from archive response");
-      return null;
-    }
-
-    fsLog.info("system snapshot saved", { sizeBytes: inner.byteLength });
-    return inner;
-  } catch (err) {
-    fsLog.warn("failed to save system snapshot", { error: String(err) });
-    return null;
-  }
-}
-
-/** Streaming variant — returns a ReadableStream of the snapshot gzip without buffering. */
-export async function saveSystemSnapshotStream(containerName: string): Promise<ReadableStream<Uint8Array> | null> {
-  try {
-    const result = await docker.exec(containerName, [
-      "bash", "-c",
-      `tar czf /tmp/system-snapshot.tar.gz -C / ${SYSTEM_SNAPSHOT_EXCLUDES} . 2>&1 || true`,
-    ], { workingDir: "/", timeout: 120_000 });
-
-    if (result.exitCode !== 0) {
-      fsLog.warn("system snapshot tar failed", { stderr: result.stderr });
-      return null;
-    }
-
-    const tarStream = await docker.getArchiveStream(containerName, "/tmp/system-snapshot.tar.gz");
-    docker.exec(containerName, ["rm", "-f", "/tmp/system-snapshot.tar.gz"], { workingDir: "/" }).catch(() => {});
-
-    // Strip the outer tar wrapper, stream just the inner .tar.gz content
-    return extractSingleFileStream(tarStream);
-  } catch (err) {
-    fsLog.warn("failed to save system snapshot (stream)", { error: String(err) });
-    return null;
-  }
-}
-
-export async function restoreSystemSnapshot(containerName: string, buffer: Buffer): Promise<boolean> {
-  try {
-    const wrappedTar = buildTar([{ path: "system-snapshot.tar.gz", data: buffer }]);
-    await docker.putArchive(containerName, "/tmp", wrappedTar);
-
-    const result = await docker.exec(containerName, [
-      "bash", "-c",
-      `tar xzf /tmp/system-snapshot.tar.gz -C / 2>/dev/null; rm -f /tmp/system-snapshot.tar.gz`,
-    ], { workingDir: "/", timeout: 120_000 });
-
-    if (result.exitCode !== 0) {
-      fsLog.warn("system snapshot restore failed", { stderr: result.stderr });
-      return false;
-    }
-
-    fsLog.info("system snapshot restored");
-    return true;
-  } catch (err) {
-    fsLog.warn("failed to restore system snapshot", { error: String(err) });
-    return false;
-  }
-}
-
-/** Streaming variant — pipes snapshot data into the container without buffering. */
-export async function restoreSystemSnapshotStream(containerName: string, dataStream: ReadableStream<Uint8Array>, dataSize: number): Promise<boolean> {
-  try {
-    const tarStream = wrapInTarStream("system-snapshot.tar.gz", dataSize, dataStream);
-    await docker.putArchiveStream(containerName, "/tmp", tarStream);
-
-    const result = await docker.exec(containerName, [
-      "bash", "-c",
-      `tar xzf /tmp/system-snapshot.tar.gz -C / 2>/dev/null; rm -f /tmp/system-snapshot.tar.gz`,
-    ], { workingDir: "/", timeout: 120_000 });
-
-    if (result.exitCode !== 0) {
-      fsLog.warn("system snapshot restore (stream) failed", { stderr: result.stderr });
-      return false;
-    }
-
-    fsLog.info("system snapshot restored (stream)");
-    return true;
-  } catch (err) {
-    fsLog.warn("failed to restore system snapshot (stream)", { error: String(err) });
-    return false;
-  }
-}
-
-// -- Workspace blob dir snapshots (per-dir tarballs) --
-
-function safeBlobName(dir: string): string {
-  return dir.replace(/[^a-zA-Z0-9._-]/g, "_");
-}
-
-export async function tarWorkspaceDir(containerName: string, dir: string): Promise<Buffer | null> {
-  try {
-    const safe = safeBlobName(dir);
-    const target = `/tmp/blob-${safe}.tar.gz`;
-    const result = await docker.exec(containerName, [
-      "bash", "-c",
-      `cd /workspace && [ -e ${shellQuote(dir)} ] && tar czf ${shellQuote(target)} ${shellQuote(dir)} 2>&1 || exit 9`,
-    ], { workingDir: "/", timeout: 120_000 });
-
-    if (result.exitCode === 9) return null; // dir doesn't exist
-    if (result.exitCode !== 0) {
-      fsLog.warn("blob tar failed", { dir, stderr: result.stderr });
-      return null;
-    }
-
-    const outerTar = await docker.getArchive(containerName, target);
-    docker.exec(containerName, ["rm", "-f", target], { workingDir: "/" }).catch(() => {});
-    const inner = extractSingleFileFromTar(outerTar);
-    if (!inner) {
-      fsLog.warn("blob extract failed", { dir });
-      return null;
-    }
-    return inner;
-  } catch (err) {
-    fsLog.warn("tarWorkspaceDir failed", { dir, error: String(err) });
-    return null;
-  }
-}
-
-export async function untarWorkspaceDir(containerName: string, dir: string, data: Buffer): Promise<boolean> {
-  try {
-    const safe = safeBlobName(dir);
-    const inner = `blob-${safe}.tar.gz`;
-    const wrapped = buildTar([{ path: inner, data }]);
-    await docker.putArchive(containerName, "/tmp", wrapped);
-
-    const result = await docker.exec(containerName, [
-      "bash", "-c",
-      `mkdir -p /workspace && cd /workspace && tar xzf /tmp/${inner} 2>/dev/null; rm -f /tmp/${inner}`,
-    ], { workingDir: "/", timeout: 120_000 });
-
-    if (result.exitCode !== 0) {
-      fsLog.warn("blob untar failed", { dir, stderr: result.stderr });
-      return false;
-    }
-    return true;
-  } catch (err) {
-    fsLog.warn("untarWorkspaceDir failed", { dir, error: String(err) });
-    return false;
-  }
-}
-
-/** Streaming variant of tarWorkspaceDir — returns stream without buffering. */
-export async function tarWorkspaceDirStream(containerName: string, dir: string): Promise<ReadableStream<Uint8Array> | null> {
-  try {
-    const safe = safeBlobName(dir);
-    const target = `/tmp/blob-${safe}.tar.gz`;
-    const result = await docker.exec(containerName, [
-      "bash", "-c",
-      `cd /workspace && [ -e ${shellQuote(dir)} ] && tar czf ${shellQuote(target)} ${shellQuote(dir)} 2>&1 || exit 9`,
-    ], { workingDir: "/", timeout: 120_000 });
-
-    if (result.exitCode === 9) return null;
-    if (result.exitCode !== 0) {
-      fsLog.warn("blob tar (stream) failed", { dir, stderr: result.stderr });
-      return null;
-    }
-
-    const tarStream = await docker.getArchiveStream(containerName, target);
-    docker.exec(containerName, ["rm", "-f", target], { workingDir: "/" }).catch(() => {});
-    return extractSingleFileStream(tarStream);
-  } catch (err) {
-    fsLog.warn("tarWorkspaceDirStream failed", { dir, error: String(err) });
-    return null;
-  }
-}
-
-/** Streaming variant of untarWorkspaceDir — pipes data in without buffering. */
-export async function untarWorkspaceDirStream(containerName: string, dir: string, dataStream: ReadableStream<Uint8Array>, dataSize: number): Promise<boolean> {
-  try {
-    const safe = safeBlobName(dir);
-    const inner = `blob-${safe}.tar.gz`;
-    const tarStream = wrapInTarStream(inner, dataSize, dataStream);
-    await docker.putArchiveStream(containerName, "/tmp", tarStream);
-
-    const result = await docker.exec(containerName, [
-      "bash", "-c",
-      `mkdir -p /workspace && cd /workspace && tar xzf /tmp/${inner} 2>/dev/null; rm -f /tmp/${inner}`,
-    ], { workingDir: "/", timeout: 120_000 });
-
-    if (result.exitCode !== 0) {
-      fsLog.warn("blob untar (stream) failed", { dir, stderr: result.stderr });
-      return false;
-    }
-    return true;
-  } catch (err) {
-    fsLog.warn("untarWorkspaceDirStream failed", { dir, error: String(err) });
-    return false;
-  }
 }
 
 // -- Streaming tar helpers --
@@ -663,11 +354,3 @@ function writeOctal(buf: Buffer, offset: number, length: number, value: number):
   Buffer.from(str + "\0", "ascii").copy(buf, offset);
 }
 
-function extractSingleFileFromTar(tar: Buffer): Buffer | null {
-  if (tar.length < 512) return null;
-  const sizeStr = tar.subarray(124, 136).toString("ascii").replace(/\0/g, "").trim();
-  const size = parseInt(sizeStr, 8);
-  if (isNaN(size) || size <= 0) return null;
-  if (tar.length < 512 + size) return null;
-  return Buffer.from(tar.subarray(512, 512 + size));
-}

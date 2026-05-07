@@ -9,6 +9,7 @@ import {
   getFilesByFolder,
   getFileById,
   updateFileSize,
+  updateFileHash,
 } from "@/db/queries/files.ts";
 import { getLocalBackend } from "@/lib/execution/lifecycle.ts";
 import { indexFileContent } from "@/db/queries/search.ts";
@@ -21,14 +22,12 @@ import {
   updateFolderPath,
   updateFolderChildPaths,
 } from "@/db/queries/folders.ts";
-import { generateDownloadUrl, generateUploadUrl, writeToS3, readBinaryFromS3 } from "@/lib/s3.ts";
 import { generateId } from "@/db/index.ts";
 import { searchFileContent } from "@/db/queries/search.ts";
 import { events } from "@/lib/scheduling/events.ts";
 import { embedAndStore, semanticSearch } from "@/lib/search/vectors.ts";
-import { sha256Hex } from "@/lib/execution/workspace-sync.ts";
+import { sha256Hex } from "@/lib/execution/manifest-cache.ts";
 import { importUploadedFile } from "@/lib/uploads/import-event.ts";
-import { updateFileHash } from "@/db/queries/files.ts";
 import { log } from "@/lib/utils/logger.ts";
 
 const routeLog = log.child({ module: "routes:files" });
@@ -91,7 +90,21 @@ export async function handleListFiles(request: Request): Promise<Response> {
 
 export async function handleGetFileUrl(request: Request): Promise<Response> {
   try {
-    const { userId } = await authenticateRequest(request);
+    // Support token via Authorization header OR ?token= query param (for <img src> / direct links).
+    const reqUrl = new URL(request.url);
+    const tokenParam = reqUrl.searchParams.get("token");
+    const inline = reqUrl.searchParams.get("inline") === "1";
+
+    let userId: string;
+    if (tokenParam) {
+      const { verifyToken } = await import("@/lib/auth/auth.ts");
+      const payload = await verifyToken(tokenParam);
+      userId = payload.userId;
+    } else {
+      const auth = await authenticateRequest(request);
+      userId = auth.userId;
+    }
+
     const { projectId, id } = getParams<{ projectId: string; id: string }>(request);
     verifyProjectAccess(projectId, userId);
 
@@ -100,11 +113,46 @@ export async function handleGetFileUrl(request: Request): Promise<Response> {
       throw new NotFoundError("File not found");
     }
 
-    const url = generateDownloadUrl(file.s3_key, file.filename);
-    const thumbnailUrl = file.thumbnail_s3_key
-      ? generateDownloadUrl(file.thumbnail_s3_key, `thumb_${file.filename}`)
-      : undefined;
-    return Response.json({ url, thumbnailUrl, file: formatFile(file) }, { headers: corsHeaders });
+    if (!inline && !tokenParam) {
+      // Return a JSON response with a direct download URL that embeds the user's token.
+      // The token is the same JWT the user already holds — this is safe because it's
+      // scoped to the same session and only valid for 7 days (same as the session token).
+      // The caller (usePresignedUrl) embeds this URL in <img src> or uses it for downloads.
+      const authHeader = request.headers.get("Authorization") ?? "";
+      const sessionToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+      const downloadUrl = sessionToken
+        ? `/api/projects/${projectId}/files/${id}/url?token=${encodeURIComponent(sessionToken)}&inline=1`
+        : `/api/projects/${projectId}/files/${id}/url?inline=1`;
+
+      return Response.json(
+        { url: downloadUrl, file: formatFile(file) },
+        { headers: corsHeaders },
+      );
+    }
+
+    // Stream the file content
+    const backend = getLocalBackend();
+    if (!backend) {
+      throw new Error("Execution backend unavailable");
+    }
+
+    const trimmedFolder = file.folder_path.replace(/^\/+/, "").replace(/\/+$/, "");
+    const workspacePath = trimmedFolder ? `${trimmedFolder}/${file.filename}` : file.filename;
+
+    const result = await backend.readFileStream(projectId, workspacePath);
+    if (!result) {
+      throw new NotFoundError("File not found in container");
+    }
+
+    const headers: Record<string, string> = {
+      "Content-Type": file.mime_type,
+      "Cache-Control": "private, max-age=300",
+    };
+    if (result.size > 0) {
+      headers["Content-Length"] = String(result.size);
+    }
+
+    return new Response(result.stream, { headers });
   } catch (error) {
     return handleError(error);
   }
@@ -116,56 +164,51 @@ export async function handleUploadRequest(request: Request): Promise<Response> {
     const projectId = (getParams<{ projectId: string }>(request)).projectId;
     verifyProjectAccess(projectId, userId);
 
-    const body = await validateBody(request, uploadRequestSchema);
+    // Accept metadata as query params or JSON header block; actual body is the file bytes.
+    // The client sends: POST /files/upload?filename=...&mimeType=...&folderPath=...
+    // Body: raw file bytes.
+    const url = new URL(request.url);
+    const filename = url.searchParams.get("filename") ?? "";
+    const mimeType = url.searchParams.get("mimeType") ?? "application/octet-stream";
+    const folderPath = url.searchParams.get("folderPath") ?? "/";
 
-    // Build S3 key: projects/{projectId}{folderPath}{uuid}_{filename}
-    const uuid = generateId().slice(0, 8);
-    const s3Key = `projects/${projectId}${body.folderPath}${uuid}_${body.filename}`;
-
-    // Pre-create file metadata record
-    const fileRow = insertFile(
-      projectId,
-      s3Key,
-      body.filename,
-      body.mimeType,
-      body.sizeBytes,
-      body.folderPath,
-    );
-
-    // Index filename for FTS search (content not available yet for presigned uploads)
-    indexFileContent(fileRow.id, projectId, body.filename, "");
-
-    // Generate presigned upload URL
-    const url = generateUploadUrl(s3Key, body.mimeType);
-
-    events.emit("file.created", { projectId, path: body.folderPath, filename: body.filename, mimeType: body.mimeType, sizeBytes: body.sizeBytes });
-
-    return Response.json(
-      {
-        url,
-        s3Key,
-        file: formatFile(fileRow),
-      },
-      { headers: corsHeaders },
-    );
-  } catch (error) {
-    return handleError(error);
-  }
-}
-
-export async function handleGetUploadUrl(request: Request): Promise<Response> {
-  try {
-    const { userId } = await authenticateRequest(request);
-    const { projectId, id } = getParams<{ projectId: string; id: string }>(request);
-    verifyProjectAccess(projectId, userId);
-
-    const file = getFileById(id);
-    if (!file || file.project_id !== projectId) {
-      throw new NotFoundError("File not found");
+    if (!filename) {
+      throw new ValidationError("filename query parameter is required");
     }
 
-    const url = generateUploadUrl(file.s3_key, file.mime_type);
-    return Response.json({ url }, { headers: corsHeaders });
+    // Validate with the same schema
+    const parsed = uploadRequestSchema.safeParse({
+      filename,
+      mimeType,
+      folderPath,
+      sizeBytes: parseInt(request.headers.get("Content-Length") ?? "0", 10),
+    });
+    if (!parsed.success) {
+      throw new ValidationError(parsed.error.issues[0]?.message ?? "Invalid upload params");
+    }
+
+    const arrayBuf = await request.arrayBuffer();
+    const buffer = Buffer.from(arrayBuf);
+
+    const backend = getLocalBackend();
+    if (!backend) {
+      throw new Error("Execution backend unavailable");
+    }
+
+    const trimmedFolder = folderPath.replace(/^\/+/, "").replace(/\/+$/, "");
+    const workspacePath = trimmedFolder ? `${trimmedFolder}/${filename}` : filename;
+
+    // Write to container
+    await backend.writeFile(projectId, workspacePath, buffer);
+
+    // Insert/upsert files row
+    const hash = sha256Hex(buffer);
+    const fileRow = insertFile(projectId, filename, mimeType, buffer.byteLength, folderPath, hash);
+    indexFileContent(fileRow.id, projectId, filename, "");
+
+    events.emit("file.created", { projectId, path: folderPath, filename, mimeType, sizeBytes: buffer.byteLength });
+
+    return Response.json({ file: formatFile(fileRow) }, { status: 201, headers: corsHeaders });
   } catch (error) {
     return handleError(error);
   }
@@ -182,32 +225,48 @@ export async function handleUpdateFileBinary(request: Request): Promise<Response
       throw new NotFoundError("File not found");
     }
 
+    // Accept either:
+    //   a) raw binary body (Content-Type: application/octet-stream or mime type) — new path
+    //   b) JSON body with { textContent?, sizeBytes? } — legacy metadata-only path
+    const contentType = request.headers.get("Content-Type") ?? "";
+    const isJson = contentType.includes("application/json");
+
+    const backend = getLocalBackend();
+    if (!backend) {
+      throw new Error("Execution backend unavailable");
+    }
+
+    if (!isJson) {
+      // Binary body — write to container
+      const arrayBuf = await request.arrayBuffer();
+      const buffer = Buffer.from(arrayBuf);
+
+      const trimmedFolder = file.folder_path.replace(/^\/+/, "").replace(/\/+$/, "");
+      const workspacePath = trimmedFolder ? `${trimmedFolder}/${file.filename}` : file.filename;
+
+      await backend.writeFile(projectId, workspacePath, buffer);
+
+      const hash = sha256Hex(buffer);
+      updateFileSize(id, buffer.byteLength);
+      updateFileHash(id, hash);
+
+      events.emit("file.updated", { projectId, path: file.folder_path, filename: file.filename, mimeType: file.mime_type });
+      return Response.json({ success: true }, { headers: corsHeaders });
+    }
+
+    // JSON metadata-only path (used by xlsx-preview for textContent + sizeBytes)
     const body = await request.json() as { textContent?: string; sizeBytes?: number };
 
-    // Update file size if provided
     if (typeof body.sizeBytes === "number") {
       updateFileSize(id, body.sizeBytes);
     }
 
-    // Index text content for FTS if provided (extracted by client from XLSX sheets)
     if (typeof body.textContent === "string") {
       indexFileContent(id, projectId, file.filename, body.textContent);
       embedAndStore(projectId, "file", id, body.textContent, { filename: file.filename }).catch(() => {});
     }
 
     events.emit("file.updated", { projectId, path: file.folder_path, filename: file.filename, mimeType: file.mime_type });
-
-    // Compute hash from the freshly-uploaded blob and import into container.
-    try {
-      const buf = await readBinaryFromS3(file.s3_key);
-      const hash = sha256Hex(buf);
-      updateFileHash(id, hash);
-      const workspacePath = `${file.folder_path}${file.filename}`.replace(/^\/+/, "");
-      await importUploadedFile({ projectId, s3Key: file.s3_key, path: workspacePath, expectedHash: hash });
-    } catch (err) {
-      routeLog.warn("importUploadedFile failed (binary update)", { projectId, fileId: id, error: err instanceof Error ? err.message : String(err) });
-    }
-
     return Response.json({ success: true }, { headers: corsHeaders });
   } catch (error) {
     return handleError(error);
@@ -331,15 +390,13 @@ export async function handleUpdateFileContent(request: Request): Promise<Respons
     }
 
     const buffer = Buffer.from(body.content, "utf-8");
-    await writeToS3(file.s3_key, buffer);
     const updated = updateFileSize(id, buffer.length);
     const hash = sha256Hex(buffer);
     updateFileHash(id, hash);
     const workspacePath = `${file.folder_path}${file.filename}`.replace(/^\/+/, "");
-    await importUploadedFile({ projectId, s3Key: file.s3_key, path: workspacePath, expectedHash: hash });
-    indexFileContent(id, projectId, file.filename, body.content);
-    embedAndStore(projectId, "file", id, body.content, { filename: file.filename }).catch(() => {});
-    events.emit("file.updated", { projectId, path: file.folder_path, filename: file.filename, mimeType: file.mime_type });
+    await importUploadedFile({ projectId, path: workspacePath, buffer });
+    // Indexing, embedding, and file.updated emission happen via the watcher →
+    // mirror-receiver once the imported file lands in /workspace.
 
     return Response.json({ success: true, file: formatFile(updated) }, { headers: corsHeaders });
   } catch (error) {

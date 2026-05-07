@@ -12,11 +12,11 @@ import { ensureBackend } from "@/lib/execution/lifecycle.ts";
 import type { BrowserAction } from "@/lib/browser/protocol.ts";
 import { processHtml } from "@/lib/media/fetch-page.ts";
 import { writeToS3 } from "@/lib/s3.ts";
-import { insertFile, updateFileThumbnail } from "@/db/queries/files.ts";
+import { insertFile } from "@/db/queries/files.ts";
 import { createFolder as createFolderRecord, getFolderByPath } from "@/db/queries/folders.ts";
 import { createThumbnail, thumbnailS3Key } from "@/lib/media/thumbnail.ts";
 import { sanitizePath } from "@/lib/files/sanitize.ts";
-import { reconcileToContainer, sha256Hex } from "@/lib/execution/workspace-sync.ts";
+import { sha256Hex } from "@/lib/execution/manifest-cache.ts";
 import type { CliContext } from "./context.ts";
 import { ok, fail } from "./response.ts";
 
@@ -140,7 +140,7 @@ export const handleBrowserScreenshot = async (
   await writeToS3(s3Key, buffer);
 
   const fileRow = insertFile(
-    ctx.projectId, s3Key, filename, "image/jpeg", buffer.byteLength, folderPath,
+    ctx.projectId, filename, "image/jpeg", buffer.byteLength, folderPath,
     sha256Hex(buffer),
   );
 
@@ -148,15 +148,12 @@ export const handleBrowserScreenshot = async (
     const thumbBuf = await createThumbnail(buffer);
     const thumbKey = thumbnailS3Key(s3Key);
     await writeToS3(thumbKey, thumbBuf);
-    updateFileThumbnail(fileRow.id, thumbKey);
   } catch {
     // thumbnail failure is non-fatal
   }
 
-  // Make the new file visible inside the container so the agent can
-  // reference it via `readFile` (or from a follow-up bash command)
-  // without waiting for the next bash-driven workspace sync.
-  await reconcileToContainer(ctx.projectId);
+  // The watcher will pick up the new file and update the index.
+  // Container visibility happens via the system tarball on next restore.
 
   return ok({
     type: "screenshot",

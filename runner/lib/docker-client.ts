@@ -223,7 +223,13 @@ export class DockerClient {
   private baseUrl: string;
 
   constructor(socket?: string) {
-    this.socket = socket ?? process.env.DOCKER_HOST ?? "/var/run/docker.sock";
+    const raw = socket ?? process.env.DOCKER_HOST ?? "/var/run/docker.sock";
+    // DOCKER_HOST is conventionally a URI (`unix:///path/to/sock`,
+    // `tcp://host:port`). The Docker CLI and most ecosystem tools expect
+    // that form, but this client speaks raw HTTP-over-unix and needs the
+    // bare filesystem path. Accept both so a single env var works for
+    // every consumer.
+    this.socket = raw.startsWith("unix://") ? raw.slice("unix://".length) : raw;
     this.baseUrl = `http://localhost/${API_VERSION}`;
   }
 
@@ -364,6 +370,9 @@ export class DockerClient {
           ? { Name: opts.restartPolicy }
           : undefined,
         CapAdd: ["SYS_ADMIN"],
+        // fuse-overlayfs needs /dev/fuse to mount per-call workdirs; kernel
+        // overlay mount is blocked on macOS+OrbStack/Docker Desktop hosts.
+        Devices: [{ PathOnHost: "/dev/fuse", PathInContainer: "/dev/fuse", CgroupPermissions: "rwm" }],
       },
     };
 
@@ -592,9 +601,10 @@ export class DockerClient {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ Name: name, Driver: "bridge" }),
     });
+    // Swallowing this hid pool-exhaustion behind a later "network not found".
     if (!res.ok) {
       const err = await res.text();
-      dockerLog.warn("failed to create network", { name, error: err });
+      throw new Error(`Failed to create network (${res.status} ${res.statusText}): ${err}`);
     }
   }
 

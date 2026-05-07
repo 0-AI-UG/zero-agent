@@ -22,10 +22,7 @@ export function createToolRegistry(
     modelId?: string;
     onlyTools?: string[];
     onlySkills?: string[];
-    initialReadPaths?: string[];
     runId?: string;
-    /** Autonomous run - sync approvals fan out to every project member. */
-    autonomous?: boolean;
   },
 ): ToolRegistry {
   const all: ToolSet = {
@@ -33,14 +30,13 @@ export function createToolRegistry(
       chatId: options.chatId,
       userId: options.userId,
       modelId: options.modelId,
-      initialReadPaths: options.initialReadPaths,
     }),
     ...(options.chatId
       ? createProgressTools({ projectId, chatId: options.chatId, runId: options.runId })
       : {}),
     ...createSkillTools(projectId, options.chatId),
     ...(options.userId
-      ? createCodeTools(options.userId, projectId, { autonomous: options.autonomous })
+      ? createCodeTools(options.userId, projectId)
       : {}),
   };
 
@@ -59,16 +55,6 @@ export function createToolRegistry(
 }
 
 /**
- * Build a tool index string for the system prompt. All tools are loaded
- * up front - there is no on-demand loading step.
- */
-export function buildToolIndex(registry: ToolRegistry): string {
-  const names = Object.keys(registry).sort();
-  if (names.length === 0) return "";
-  return `## Available Tools\n\n${names.join(", ")}`;
-}
-
-/**
  * Build the full toolset for an agent. Callers pass the result directly to
  * streamText/generateText. Subagent discrimination is done by the caller -
  * subagents are constructed via the separate path in `server/tools/agent.ts`
@@ -80,27 +66,10 @@ export function createToolset(
     chatId?: string;
     userId?: string;
     modelId?: string;
-    excludeTools?: string[];
     onlyTools?: string[];
     onlySkills?: string[];
-    initialReadPaths?: string[];
     runId?: string;
-    /** Autonomous run - sync approvals fan out to every project member. */
-    autonomous?: boolean;
   },
-): { tools: ToolRegistry; toolIndex: string } {
-  let tools = createToolRegistry(projectId, options);
-
-  if (options.excludeTools) {
-    const excluded = new Set(options.excludeTools);
-    const filtered: ToolSet = {};
-    for (const [name, t] of Object.entries(tools)) {
-      if (!excluded.has(name)) {
-        filtered[name] = t;
-      }
-    }
-    tools = filtered;
-  }
-
-  return { tools, toolIndex: buildToolIndex(tools) };
+): ToolRegistry {
+  return createToolRegistry(projectId, options);
 }

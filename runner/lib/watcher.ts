@@ -180,6 +180,24 @@ async function hasInotifywait(containerName: string): Promise<boolean> {
   });
 }
 
+/**
+ * Poll until `rootDir` exists inside the container or the deadline passes.
+ */
+async function waitForWorkspaceDir(containerName: string, rootDir: string, maxWaitMs: number): Promise<boolean> {
+  const deadline = Date.now() + maxWaitMs;
+  const intervalMs = 250;
+  while (Date.now() < deadline) {
+    const ok = await new Promise<boolean>((resolve) => {
+      const proc = spawn("docker", ["exec", containerName, "test", "-d", rootDir]);
+      proc.on("close", (code) => resolve(code === 0));
+      proc.on("error", () => resolve(false));
+    });
+    if (ok) return true;
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+  return false;
+}
+
 export function startWatcher(containerName: string, root = "/workspace"): WatcherHandle {
   const subscribers = new Set<(event: WatcherEvent) => void>();
   const pending = new Map<string, PendingEntry>();
@@ -240,6 +258,12 @@ export function startWatcher(containerName: string, root = "/workspace"): Watche
       const available = await hasInotifywait(containerName);
       if (stopped) return;
       if (available) {
+        // Gate on /workspace existing so cold-start races don't burn the 5x crash cap.
+        const ready = await waitForWorkspaceDir(containerName, root, 10_000);
+        if (stopped) return;
+        if (!ready) {
+          watcherLog.warn("workspace dir probe timed out, starting inotifywait anyway", { containerName, root });
+        }
         watcherLog.info("starting inotifywait watcher", { containerName, root });
         launchInotify();
       } else {

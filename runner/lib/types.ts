@@ -43,11 +43,6 @@ export interface ReadFile {
   sizeBytes: number;
 }
 
-export interface DetectedChanges {
-  changed: string[];
-  deleted: string[];
-}
-
 // -- Container info --
 
 export interface ContainerInfo {

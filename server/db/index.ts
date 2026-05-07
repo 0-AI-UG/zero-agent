@@ -77,16 +77,25 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS files (
     id               TEXT PRIMARY KEY,
     project_id       TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    s3_key           TEXT NOT NULL,
     filename         TEXT NOT NULL,
     mime_type        TEXT NOT NULL DEFAULT 'application/octet-stream',
     size_bytes       INTEGER DEFAULT 0,
     folder_path      TEXT NOT NULL DEFAULT '/',
-    thumbnail_s3_key TEXT,
     hash             TEXT NOT NULL DEFAULT '',
     created_at       TEXT NOT NULL DEFAULT (datetime('now'))
   )
 `);
+
+// Phase 5: drop s3_key and thumbnail_s3_key columns if present (existing installs).
+{
+  const cols = db.prepare("PRAGMA table_info(files)").all() as { name: string }[];
+  if (cols.some((c) => c.name === "s3_key")) {
+    db.exec("ALTER TABLE files DROP COLUMN s3_key");
+  }
+  if (cols.some((c) => c.name === "thumbnail_s3_key")) {
+    db.exec("ALTER TABLE files DROP COLUMN thumbnail_s3_key");
+  }
+}
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS folders (

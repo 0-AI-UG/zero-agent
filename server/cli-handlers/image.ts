@@ -7,11 +7,11 @@
 import type { z } from "zod";
 import { generateImageViaOpenRouter } from "@/lib/media/image.ts";
 import { writeToS3 } from "@/lib/s3.ts";
-import { insertFile, updateFileThumbnail } from "@/db/queries/files.ts";
+import { insertFile } from "@/db/queries/files.ts";
 import { createFolder as createFolderRecord, getFolderByPath } from "@/db/queries/folders.ts";
 import { createThumbnail, thumbnailS3Key } from "@/lib/media/thumbnail.ts";
 import { sanitizePath } from "@/lib/files/sanitize.ts";
-import { reconcileToContainer, sha256Hex } from "@/lib/execution/workspace-sync.ts";
+import { sha256Hex } from "@/lib/execution/manifest-cache.ts";
 import type { CliContext } from "./context.ts";
 import { ok } from "./response.ts";
 import type { ImageGenerateInput } from "zero/schemas";
@@ -47,22 +47,21 @@ export async function handleImageGenerate(
   await writeToS3(s3Key, buffer);
 
   const fileRow = insertFile(
-    ctx.projectId, s3Key, filename, image.mediaType, image.data.length, folderPath,
+    ctx.projectId, filename, image.mediaType, image.data.length, folderPath,
     sha256Hex(buffer),
   );
 
+  // Thumbnail stored to S3 for display; s3 key no longer in DB row.
   const thumbKey = thumbnailS3Key(s3Key);
   try {
     const thumbBuf = await createThumbnail(image.data);
     await writeToS3(thumbKey, thumbBuf);
-    updateFileThumbnail(fileRow.id, thumbKey);
   } catch {
     // thumbnail failures are non-fatal
   }
 
-  // Make the new file visible inside the runner container so the
-  // agent can reference it by its project-relative path immediately.
-  await reconcileToContainer(ctx.projectId);
+  // The watcher will pick up the new file and update the index.
+  // Container visibility happens via the system tarball on next restore.
 
   return ok({
     fileId: fileRow.id,

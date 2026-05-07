@@ -46,12 +46,15 @@ export interface ExecutionBackend {
   destroyContainer(projectId: string): Promise<void>;
   pushFile(projectId: string, relativePath: string, buffer: Buffer, workdirId?: string): Promise<void>;
   deleteFile(projectId: string, relativePath: string, workdirId?: string): Promise<void>;
+  /** Read a single file from /workspace. Returns null if the file does not exist. */
+  readFile(projectId: string, relativePath: string, workdirId?: string): Promise<Buffer | null>;
+  /** Write a single file under /workspace. Alias for pushFile. */
+  writeFile(projectId: string, relativePath: string, buffer: Buffer, workdirId?: string): Promise<void>;
+  /** Stream a single file from /workspace. Returns null if the file does not exist. */
+  readFileStream(projectId: string, relativePath: string, workdirId?: string): Promise<{ stream: ReadableStream<Uint8Array>; size: number; mimeType?: string } | null>;
   /** Fetch a sha256 manifest of files under `subpath` (default /workspace) inside the container. */
   getContainerManifest(projectId: string, subpath?: string, workdirId?: string): Promise<Record<string, string>>;
 
-  listBlobDirs(projectId: string): Promise<string[]>;
-  saveBlobDir(projectId: string, dir: string): Promise<ReadableStream<Uint8Array> | null>;
-  restoreBlobDir(projectId: string, dir: string, data: ReadableStream<Uint8Array>, size?: number): Promise<void>;
   touchActivity(projectId: string): void;
 
   runBash(userId: string, projectId: string, command: string, timeout?: number, background?: boolean, workdirId?: string): Promise<BashResult>;

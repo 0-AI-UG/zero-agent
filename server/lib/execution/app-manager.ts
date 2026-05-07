@@ -102,10 +102,6 @@ export class PortManager {
     const session = backend.getSessionForProject(projectId);
     if (!session) return { success: false, error: "Could not create session" };
 
-    // Sync workspace files so the start command has something to run
-    const { reconcileToContainer } = await import("@/lib/execution/workspace-sync.ts");
-    await reconcileToContainer(projectId);
-
     // If we have a start command, run it
     if (port.start_command) {
       const workingDir = port.working_dir || "/workspace";

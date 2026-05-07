@@ -5,15 +5,14 @@
  * routes/telegram.ts so all three paths go through the same logic for:
  *   - per-user token-limit enforcement
  *   - semantic context retrieval (memories + files)
- *   - previously-read-path seeding
  *   - agent instantiation with checkpoint wiring
  */
-import type { Message, DynamicToolUIPart } from "@/lib/messages/types.ts";
+import type { Message } from "@/lib/messages/types.ts";
 import { getFileById } from "@/db/queries/files.ts";
 import { semanticSearch, isEmbeddingConfigured, embedValue } from "@/lib/search/vectors.ts";
 import { getUserTokenTotal } from "@/db/queries/usage-logs.ts";
 import { db } from "@/db/index.ts";
-import { readFromS3 } from "@/lib/s3.ts";
+import { ensureBackend } from "@/lib/execution/lifecycle.ts";
 import { log } from "@/lib/utils/logger.ts";
 
 const ctxLog = log.child({ module: "agent-step:context" });
@@ -46,24 +45,6 @@ export function checkUserTokenLimit(userId: string | undefined): TokenLimitRejec
       `${limitRow.token_limit.toLocaleString()} tokens). Please ask an ` +
       `administrator to increase your usage limit to continue.`,
   };
-}
-
-/**
- * Walk prior UIMessages and collect file paths the agent has already
- * read/written so the read-guard can be seeded.
- */
-export function extractReadPathsFromUIMessages(messages: Message[]): string[] {
-  const out: string[] = [];
-  for (const msg of messages) {
-    for (const part of msg.parts ?? []) {
-      if (part.type !== "dynamic-tool") continue;
-      const tc = part as DynamicToolUIPart;
-      if (tc.toolName !== "readFile" && tc.toolName !== "writeFile") continue;
-      const args = (tc as any).input as { path?: unknown } | undefined;
-      if (typeof args?.path === "string") out.push(args.path);
-    }
-  }
-  return out;
 }
 
 export interface RagContext {
@@ -169,8 +150,11 @@ export async function retrieveBatchContextBlock(
  */
 export async function readHeartbeatChecklist(projectId: string): Promise<string | null> {
   try {
-    const content = await readFromS3(`projects/${projectId}/HEARTBEAT.md`);
-    const trimmed = content.trim();
+    const backend = await ensureBackend();
+    if (!backend) return null;
+    const buf = await backend.readFile(projectId, "HEARTBEAT.md");
+    if (!buf) return null;
+    const trimmed = buf.toString("utf-8").trim();
     if (!trimmed || /^(#[^\n]*\n?\s*)*$/.test(trimmed)) return null;
     return trimmed;
   } catch {

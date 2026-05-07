@@ -32,8 +32,6 @@ export function createSkillTools(projectId: string, chatId?: string) {
           events.emit("skill.loaded", { projectId, skillName: name, chatId: chatId ?? "" });
 
           return {
-            name: skill.name,
-            version: skill.metadata.version,
             instructions: skill.instructions,
             files: skill.files,
           };

@@ -63,7 +63,7 @@ export async function installSkillFiles(
     }
 
     await writeToS3(s3Key, file.content);
-    const fileRow = insertFile(projectId, s3Key, file.path, mimeType, sizeBytes, folderPath);
+    const fileRow = insertFile(projectId, file.path, mimeType, sizeBytes, folderPath);
     indexFileContent(fileRow.id, projectId, file.path, file.content);
   }
 
@@ -104,13 +104,14 @@ export async function installSkillFiles(
 export async function uninstallSkill(projectId: string, skillName: string): Promise<void> {
   const folderPath = `/skills/${skillName}/`;
 
-  // Delete files from S3
+  // Delete files from S3 — reconstruct s3Key from folder_path + filename.
   const files = getFilesByFolderPath(projectId, folderPath);
   for (const file of files) {
+    const s3Key = `projects/${projectId}${file.folder_path}${file.filename}`;
     try {
-      await deleteFromS3(file.s3_key);
+      await deleteFromS3(s3Key);
     } catch (err) {
-      installLog.error("failed to delete file from S3", err, { s3Key: file.s3_key });
+      installLog.error("failed to delete file from S3", err, { s3Key });
     }
   }
 

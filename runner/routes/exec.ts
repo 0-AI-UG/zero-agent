@@ -27,12 +27,11 @@ export function execRoutes(mgr: ContainerManager) {
         return Response.json({ error: "command is required" }, { status: 400 });
       }
 
-      const workingDir = body.workingDir ?? (body.workdirId ? `/workspace-${body.workdirId}` : undefined);
-
       try {
         const result = await mgr.bash(name, body.command, {
           timeout: body.timeout,
-          workingDir,
+          workingDir: body.workingDir,
+          workdirId: body.workdirId,
         });
         return Response.json(result);
       } catch (err) {

@@ -53,7 +53,6 @@ import {
   handleMoveFolder,
   handleSearchFiles,
   handleUpdateFileContent,
-  handleGetUploadUrl,
   handleUpdateFileBinary,
 } from "@/routes/files.ts";
 import {
@@ -335,7 +334,6 @@ app.get("/api/projects/:projectId/reindex/status", h(handleReindexStatus));
 app.get("/api/projects/:projectId/reindex/stream", h(handleReindexStream));
 app.post("/api/projects/:projectId/files/upload", h(handleUploadRequest));
 app.get("/api/projects/:projectId/files/:id/url", h(handleGetFileUrl));
-app.post("/api/projects/:projectId/files/:id/upload-url", h(handleGetUploadUrl));
 app.post("/api/projects/:projectId/files/:id/binary", h(handleUpdateFileBinary));
 app.delete("/api/projects/:projectId/files/:id", h(handleDeleteFile));
 app.put("/api/projects/:projectId/files/:id", h(handleUpdateFileContent));
@@ -477,6 +475,16 @@ app.delete("/api/admin/containers/:sessionId", h(async (req: Request) => {
   const sessionId = (req as any).params.sessionId;
   await getLocalBackend()?.destroyContainer(sessionId);
   return Response.json({ ok: true }, { headers: corsHeaders });
+}));
+
+// Flush status for a project (authenticated) — surfaces dirty duration, last flush time, and
+// last tarball size. Useful for observability / smoke-testing the ≤5-min RPO guarantee.
+app.get("/api/projects/:projectId/flush-status", h(async (req: Request) => {
+  const { userId } = await authenticateRequest(req);
+  const projectId = (req as any).params.projectId as string;
+  verifyProjectAccess(projectId, userId);
+  const { getFlushStatus } = await import("@/lib/execution/flush-scheduler.ts");
+  return Response.json(getFlushStatus(projectId), { headers: corsHeaders });
 }));
 
 // Container status for a project (authenticated)
