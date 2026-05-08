@@ -156,7 +156,6 @@ import {
 
 import { startScheduler, stopScheduler } from "@/lib/scheduling/scheduler.ts";
 import { requestShutdown, drainActiveRuns, isShuttingDown } from "@/lib/durability/shutdown.ts";
-import { recoverInterruptedRuns } from "@/lib/durability/recovery.ts";
 import { pruneOrphanedMessageVectors } from "@/lib/search/vectors.ts";
 import { handleListUsers, handleCreateUser, handleDeleteUser, handleUpdateUser } from "@/routes/admin.ts";
 import {
@@ -176,16 +175,8 @@ import {
   handleDeleteModel,
 } from "@/routes/models.ts";
 import { handleUsageSummary, handleUsageByModel, handleUsageByUser } from "@/routes/usage.ts";
-import {
-  handleListRunners,
-  handleCreateRunner,
-  handleUpdateRunner,
-  handleDeleteRunner,
-  handleTestRunner,
-} from "@/routes/runners.ts";
 import { requireAdmin, authenticateRequest } from "@/lib/auth/auth.ts";
 import { verifyProjectAccess } from "@/routes/utils.ts";
-import { mountCliHandlers } from "@/cli-handlers/index.ts";
 import { db } from "@/db/index.ts";
 
 const httpLog = log.child({ module: "http" });
@@ -426,13 +417,6 @@ app.delete("/api/admin/invitations/:id", h(handleDeleteInvitation));
 app.get("/api/user-invitations/:token", h(handleLookupInvitation));
 app.post("/api/user-invitations/:token/accept", h(handleAcceptUserInvitation));
 
-// Runners (admin)
-app.get("/api/admin/runners", h(handleListRunners));
-app.post("/api/admin/runners", h(handleCreateRunner));
-app.put("/api/admin/runners/:runnerId", h(handleUpdateRunner));
-app.delete("/api/admin/runners/:runnerId", h(handleDeleteRunner));
-app.post("/api/admin/runners/:runnerId/test", h(handleTestRunner));
-
 // Models
 app.get("/api/models", h(handleListEnabledModels));
 app.get("/api/admin/models", h(handleListAllModels));
@@ -657,10 +641,9 @@ app.all("/_apps/:slug/*", (c) => {
   return new Response("Not found", { status: 404 });
 });
 
-// Runner-proxy CLI handlers - only reachable via the trusted runner
-// proxy on behalf of an in-container `zero` CLI/SDK call. See
-// server/cli-handlers/middleware.ts for the auth model.
-mountCliHandlers(app);
+// Note: CLI handlers are no longer mounted on the public HTTP server.
+// They live on the per-turn unix socket spun up by `runTurn`; see
+// `server/lib/pi/cli-socket.ts` and `server/cli-handlers/index.ts`.
 
 // API 404 catch-all
 app.all("/api/*", (c) => {
@@ -700,19 +683,10 @@ const honoListener = getRequestListener(app.fetch);
 const nodeServer = createHttpServer(honoListener);
 
 import { attachWebSocketServer, closeWebSocketServer, shedChatScenes, chatSceneStats } from "@/lib/http/ws.ts";
-import { shedBackgroundTasks } from "@/lib/agent/background-task-store.ts";
-import { startWsBridge, startBackgroundBridge } from "@/lib/http/ws-bridge.ts";
-import { initBackgroundTaskListeners } from "@/lib/agent/background-task-store.ts";
-import { initBackgroundResume } from "@/lib/agent/background-resume.ts";
+import { startWsBridge } from "@/lib/http/ws-bridge.ts";
 
 attachWebSocketServer(nodeServer);
 startWsBridge();
-startBackgroundBridge();
-initBackgroundTaskListeners();
-// Must init after initBackgroundTaskListeners so the store-update listener
-// runs before the resume listener reads from it (Set iteration preserves
-// insertion order, and EventBus dispatches in that order).
-initBackgroundResume();
 
 const server = nodeServer.listen(PORT, "0.0.0.0");
 
@@ -726,9 +700,6 @@ process.on("uncaughtException", (err) => {
 process.on("unhandledRejection", (reason) => {
   log.error("unhandled rejection", reason instanceof Error ? reason : new Error(String(reason)));
 });
-
-// Recover any interrupted runs from a previous crash before starting scheduler
-recoverInterruptedRuns();
 
 startScheduler();
 
@@ -776,8 +747,7 @@ const _heapMonitor = setInterval(() => {
   if (heapUsedMB > HEAP_SHED_THRESHOLD_MB && Date.now() - lastShedAt > 60_000) {
     lastShedAt = Date.now();
     const scenes = shedChatScenes();
-    const tasks = shedBackgroundTasks();
-    log.warn("heap pressure: shed caches", { heapUsedMB: heapUsedMB.toFixed(0), scenes, tasks });
+    log.warn("heap pressure: shed caches", { heapUsedMB: heapUsedMB.toFixed(0), scenes });
     if (typeof (globalThis as any).gc === "function") (globalThis as any).gc();
   }
 }, HEAP_MONITOR_INTERVAL_MS);
@@ -795,20 +765,6 @@ const _vectorPruneInterval = setInterval(() => {
   }
 }, 30 * 60 * 1000);
 if (typeof _vectorPruneInterval === "object" && "unref" in _vectorPruneInterval) _vectorPruneInterval.unref();
-
-// ── Local Docker Backend ──
-// Only initialize Docker if admin has explicitly enabled server execution
-(async () => {
-  if (getSetting("SERVER_EXECUTION_ENABLED") !== "true") {
-    log.info("server execution not enabled - skipping Docker initialization");
-    return;
-  }
-
-  const result = await enableExecution();
-  if (!result.success) {
-    log.info("Docker execution not available", { error: result.error });
-  }
-})();
 
 // ── Graceful Shutdown ──
 

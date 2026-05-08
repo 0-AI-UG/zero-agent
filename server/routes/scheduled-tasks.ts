@@ -11,7 +11,7 @@ import {
   deleteTask,
 } from "@/db/queries/scheduled-tasks.ts";
 import { insertTaskRun, updateTaskRun, getRunsByTask } from "@/db/queries/task-runs.ts";
-import { runAutonomousTask } from "@/lib/agent/autonomous-agent.ts";
+import { runAutonomousTurn } from "@/lib/pi/autonomous.ts";
 import { markTaskRun } from "@/db/queries/scheduled-tasks.ts";
 import { parseSchedule } from "@/lib/scheduling/schedule-parser.ts";
 import { formatDateForSQLite } from "@/lib/scheduling/schedule-parser.ts";
@@ -261,12 +261,10 @@ export async function handleRunTaskNow(request: Request): Promise<Response> {
     // Run async, don't block the response
     (async () => {
       try {
-        const onlyTools = task.required_tools ? JSON.parse(task.required_tools) : undefined;
-        const result = await runAutonomousTask(
+        const result = await runAutonomousTurn(
           { id: project.id, name: project.name },
           task.name,
           task.prompt,
-          { onlyTools, maxSteps: task.max_steps ?? undefined },
         );
         updateTaskRun(run.id, {
           status: "completed",

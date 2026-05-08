@@ -131,6 +131,9 @@ export async function call<T = unknown>(
       headers: {
         "Content-Type": "application/json",
         "X-Zero-Deadline": String(timeoutMs),
+        ...(process.env.ZERO_PROXY_TOKEN
+          ? { "X-Pi-Run-Token": process.env.ZERO_PROXY_TOKEN }
+          : {}),
       },
       body: JSON.stringify(body ?? {}),
       signal,

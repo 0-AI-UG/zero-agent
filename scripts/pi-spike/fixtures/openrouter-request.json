@@ -1,0 +1,24 @@
+{
+  "model": "openai/gpt-4o-mini",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You MUST call the provided tools. Do not write code or describe steps in text.\nCurrent date: 2026-05-07\nCurrent working directory: /var/folders/w9/m2rxqftj5d5_lg_ph2w3kz1w0000gn/T/pi-spike-probe/project"
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "Call the read tool with path='hello.txt'. Then call the bash tool with command='ls'. Reply DONE after both tool results return."
+        }
+      ]
+    }
+  ],
+  "stream": true,
+  "stream_options": {
+    "include_usage": true
+  },
+  "store": false,
+  "max_completion_tokens": 16384
+}

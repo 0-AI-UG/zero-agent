@@ -13,8 +13,9 @@
  *    replies can resolve the right pending response.
  */
 import sharp from "sharp";
-import type { Message } from "@/lib/messages/types.ts";
 import { generateText } from "@/lib/openrouter/text.ts";
+import { runTurn } from "@/lib/pi/run-turn.ts";
+import { resolveModelForPi } from "@/lib/pi/model.ts";
 
 import {
   sendTelegramText,
@@ -29,7 +30,6 @@ import {
   type TelegramMessage,
   type TelegramCallbackQuery,
 } from "@/lib/telegram-global/telegram.ts";
-import { isModelMultimodal } from "@/config/models.ts";
 import { getActiveProvider, getVisionModelId } from "@/lib/providers/index.ts";
 import {
   getBotToken,
@@ -38,7 +38,7 @@ import {
 } from "@/lib/telegram-global/bot.ts";
 import { log } from "@/lib/utils/logger.ts";
 import { generateId, db } from "@/db/index.ts";
-import type { ChatRow, MessageRow, UserTelegramLinkRow } from "@/db/types.ts";
+import type { ChatRow, UserTelegramLinkRow } from "@/db/types.ts";
 
 import {
   mintLinkCode,
@@ -58,8 +58,6 @@ import {
   type ProviderSendResult,
 } from "@/lib/chat-providers/index.ts";
 
-import { runAgentStepBatch } from "@/lib/agent-step/index.ts";
-import { dbMessagesToMessages } from "@/lib/agent-step/serialize.ts";
 import {
   getProjectById,
   getVisibleProjectsForUser,
@@ -98,14 +96,6 @@ const insertChatStmt = db.prepare(
 );
 
 const getChatStmt = db.prepare("SELECT * FROM chats WHERE id = ?");
-
-const insertMsgStmt = db.prepare(
-  "INSERT OR REPLACE INTO messages (id, project_id, chat_id, role, content, user_id) VALUES (?, ?, ?, ?, ?, ?)",
-);
-
-const getMessagesStmt = db.prepare(
-  "SELECT * FROM messages WHERE chat_id = ? ORDER BY created_at ASC",
-);
 
 const touchChatStmt = db.prepare(
   "UPDATE chats SET updated_at = datetime('now') WHERE id = ?",
@@ -423,40 +413,31 @@ async function runAgentTurn(
     // capability check below and the actual run share one source of truth.
     const chatModelId = getActiveProvider().getDefaultChatModelId();
 
-    // If the active chat model can't accept images, caption the image with
-    // the vision model and pass that text to the agent instead. Mirrors the
-    // readFile tool's fallback so non-vision models still get useful context.
+    // Pi has no native image parts in v1 of the Zero bridge; if the
+    // active model is non-multimodal we caption with the vision model
+    // and inline the result. Multimodal-direct image passthrough is
+    // open question §8 alongside chat import semantics.
     let imageCaption: string | null = null;
     if (imageData) {
-      if (!isModelMultimodal(chatModelId)) {
-        try {
-          const visionModel = getVisionModelId();
-          const dataUrl = `data:${imageData.mediaType};base64,${imageData.base64}`;
-          const { text: caption } = await generateText({
-            model: visionModel,
-            messages: [{
-              id: "tg-caption",
-              role: "user",
-              parts: [{
-                type: "text",
-                text: "Describe this image in detail. Include all visible text, layout, colors, and key elements.\n\n" + dataUrl,
-              }],
-            }],
-          });
-          imageCaption = caption;
-          imageData = null;
-          tgLog.info("captioned telegram image for non-vision model", {
-            chatModelId,
-            captionLength: caption.length,
-          });
-        } catch (err) {
-          tgLog.warn("image captioning failed; dropping image", {
-            chatModelId,
-            error: err instanceof Error ? err.message : String(err),
-          });
-          imageData = null;
-          imageCaption = "[Image attached, but could not be processed]";
-        }
+      try {
+        const visionModel = getVisionModelId();
+        const dataUrl = `data:${imageData.mediaType};base64,${imageData.base64}`;
+        const { text: caption } = await generateText({
+          model: visionModel,
+          messages:
+            "Describe this image in detail. Include all visible text, layout, colors, and key elements.\n\n" +
+            dataUrl,
+        });
+        imageCaption = caption;
+        imageData = null;
+        tgLog.info("captioned telegram image", { chatModelId, captionLength: caption.length });
+      } catch (err) {
+        tgLog.warn("image captioning failed; dropping image", {
+          chatModelId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        imageData = null;
+        imageCaption = "[Image attached, but could not be processed]";
       }
     }
 
@@ -466,66 +447,49 @@ async function runAgentTurn(
         return text ? `${prefix}\n\n${text}` : prefix;
       }
       if (text) return text;
-      if (imageData) return "What's in this image?";
       return "";
     })();
 
-    // Replay prior history.
-    const dbMessages = getMessagesStmt.all(chatId) as MessageRow[];
-    const messages: Message[] = dbMessagesToMessages(dbMessages);
-
-    // Append the current user turn. Images are currently carried via the
-    // captioning path above (which folds them into userText); a future
-    // enhancement will add native image parts to canonical Messages.
-    messages.push({
-      id: generateId(),
-      role: "user",
-      parts: [{ type: "text", text: userText }],
-    });
-
-    // Persist user message immediately.
-    const userMsgId = generateId();
-    const userParts: any[] = [{ type: "text" as const, text: userText }];
-    if (imageData) userParts.unshift({ type: "image" as const, hasImage: true });
-    insertMsgStmt.run(
-      userMsgId,
-      projectId,
-      chatId,
-      "user",
-      JSON.stringify({ id: userMsgId, role: "user", parts: userParts }),
-      link.user_id,
-    );
-
-    tgLog.info("running agent for telegram message", {
+    tgLog.info("running pi turn for telegram message", {
       userId: link.user_id,
       projectId,
       chatId,
       telegramChatId,
     });
 
-    const result = await runAgentStepBatch({
-      project,
-      chatId,
-      userId: link.user_id,
-      model: chatModelId,
-      messages,
-    });
-
-    const responseText = result.text || "Sorry, I couldn't generate a response.";
-    const assistantParts =
-      result.assistantParts.length > 0
-        ? result.assistantParts
-        : [{ type: "text" as const, text: responseText }];
-
-    const assistantMsgId = generateId();
-    insertMsgStmt.run(
-      assistantMsgId,
+    const resolved = resolveModelForPi(chatModelId);
+    const collected: string[] = [];
+    const result = await runTurn({
       projectId,
       chatId,
-      "assistant",
-      JSON.stringify({ id: assistantMsgId, role: "assistant", parts: assistantParts }),
-      null,
-    );
+      userId: link.user_id,
+      userMessage: userText,
+      model: resolved.model,
+      authStorage: resolved.authStorage,
+      onEvent: (env) => {
+        // The agent_end event carries the full final assistant message
+        // list. Pull text content out for telegram delivery; intermediate
+        // tool/reasoning events are kept in the Pi JSONL for the chat UI
+        // but not echoed to telegram.
+        if (env.event.type === "agent_end") {
+          for (const m of env.event.messages) {
+            if ((m as any).role === "assistant") {
+              const content = (m as any).content;
+              if (Array.isArray(content)) {
+                for (const c of content) {
+                  if (c && c.type === "text" && typeof c.text === "string") {
+                    collected.push(c.text);
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+    });
+
+    const responseText = collected.join("\n").trim() || "(no response)";
+    void result;
     touchChatStmt.run(chatId);
 
     try {

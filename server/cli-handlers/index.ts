@@ -1,26 +1,24 @@
 /**
- * Mount point for /api/runner-proxy/zero/* - the server-side handlers
- * for the in-container `zero` CLI/SDK.
+ * Builder for the per-turn unix-socket Hono app served by `cli-socket.ts`.
  *
  * IMPORTANT: this directory is the ONLY place CLI-originated handlers
- * live. Code in server/tools/ is for in-process AI SDK tool functions
- * (called by ToolLoopAgent). Code here is for HTTP handlers reachable
- * only via a trusted runner proxy on behalf of a container CLI call.
- * The two trust models do not overlap. Do not cross-import.
+ * live. Code here is for HTTP handlers reachable only via a per-turn
+ * unix socket bind-mounted into a Pi sandbox. Authentication is the
+ * `X-Pi-Run-Token` header registered by `runTurn`. Do not import
+ * `authenticateRequest` here — the trust model is different.
  *
  * All handlers go through the `bind()` helper, which:
- *   1. Authenticates the runner bearer + resolves the container's
- *      (projectId, userId) into a CliContext.
+ *   1. Resolves the per-turn token into a CliContext.
  *   2. Parses the request body with the route's zod schema (shared with
  *      the SDK in zero/src/sdk/schemas.ts), so handlers receive a typed,
  *      already-validated input and never see raw JSON.
  *   3. Converts thrown ZodError / framework errors into the uniform
  *      { ok:false, error:{ code, message } } envelope.
  */
-import type { Hono } from "hono";
+import { Hono } from "hono";
 import type { z, ZodTypeAny } from "zod";
 import { ZodError } from "zod";
-import { requireRunner } from "./middleware.ts";
+import { requirePi } from "./middleware.ts";
 import type { CliContext } from "./context.ts";
 import { fail, failFromError } from "./response.ts";
 
@@ -84,8 +82,6 @@ import {
   SearchInput,
 } from "zero/schemas";
 
-type HonoApp = Hono<any, any, any>;
-
 export type CliHandler<S extends ZodTypeAny> = (
   ctx: CliContext,
   input: z.infer<S>,
@@ -102,7 +98,7 @@ function bind<S extends ZodTypeAny>(schema: S, handler: CliHandler<S>) {
     const req: Request = c.req.raw;
     let ctx: CliContext;
     try {
-      ctx = await requireRunner(req);
+      ctx = await requirePi(req);
     } catch (err) {
       return failFromError(err);
     }
@@ -137,46 +133,50 @@ function bind<S extends ZodTypeAny>(schema: S, handler: CliHandler<S>) {
   };
 }
 
-/** Register all /api/runner-proxy/zero/* routes on the given Hono app. */
-export function mountCliHandlers(app: HonoApp): void {
-  app.post("/api/runner-proxy/zero/health", bind(HealthInput, handleHealth));
+/**
+ * Returns the Hono app served on a per-turn unix socket. Mounted by
+ * `runTurn` via `cli-socket.ts`; nothing in `server/index.ts` needs to
+ * call this anymore.
+ */
+export function buildCliHandlerApp(): Hono {
+  const app = new Hono();
 
-  app.post("/api/runner-proxy/zero/web/search", bind(WebSearchInput, handleWebSearch));
-  app.post("/api/runner-proxy/zero/web/fetch", bind(WebFetchInput, handleWebFetch));
+  app.post("/zero/health", bind(HealthInput, handleHealth));
 
-  app.post("/api/runner-proxy/zero/schedule/add", bind(ScheduleAddInput, handleScheduleAdd));
-  app.post("/api/runner-proxy/zero/schedule/list", bind(ScheduleListInput, handleScheduleList));
-  app.post("/api/runner-proxy/zero/schedule/update", bind(ScheduleUpdateInput, handleScheduleUpdate));
-  app.post("/api/runner-proxy/zero/schedule/remove", bind(ScheduleRemoveInput, handleScheduleRemove));
+  app.post("/zero/web/search", bind(WebSearchInput, handleWebSearch));
+  app.post("/zero/web/fetch", bind(WebFetchInput, handleWebFetch));
 
-  app.post("/api/runner-proxy/zero/image/generate", bind(ImageGenerateInput, handleImageGenerate));
+  app.post("/zero/schedule/add", bind(ScheduleAddInput, handleScheduleAdd));
+  app.post("/zero/schedule/list", bind(ScheduleListInput, handleScheduleList));
+  app.post("/zero/schedule/update", bind(ScheduleUpdateInput, handleScheduleUpdate));
+  app.post("/zero/schedule/remove", bind(ScheduleRemoveInput, handleScheduleRemove));
 
-  app.post("/api/runner-proxy/zero/creds/list", bind(CredsListInput, handleCredsList));
-  app.post("/api/runner-proxy/zero/creds/get", bind(CredsGetInput, handleCredsGet));
-  app.post("/api/runner-proxy/zero/creds/set", bind(CredsSetInput, handleCredsSet));
-  app.post("/api/runner-proxy/zero/creds/remove", bind(CredsRemoveInput, handleCredsRemove));
+  app.post("/zero/image/generate", bind(ImageGenerateInput, handleImageGenerate));
 
-  app.post("/api/runner-proxy/zero/browser/open", bind(BrowserOpenInput, handleBrowserOpen));
-  app.post("/api/runner-proxy/zero/browser/click", bind(BrowserClickInput, handleBrowserClick));
-  app.post("/api/runner-proxy/zero/browser/fill", bind(BrowserFillInput, handleBrowserFill));
-  app.post("/api/runner-proxy/zero/browser/screenshot", bind(BrowserScreenshotInput, handleBrowserScreenshot));
-  app.post("/api/runner-proxy/zero/browser/evaluate", bind(BrowserEvaluateInput, handleBrowserEvaluate));
-  app.post("/api/runner-proxy/zero/browser/wait", bind(BrowserWaitInput, handleBrowserWait));
-  app.post("/api/runner-proxy/zero/browser/snapshot", bind(BrowserSnapshotInput, handleBrowserSnapshot));
-  app.post("/api/runner-proxy/zero/browser/extract", bind(BrowserExtractInput, handleBrowserExtract));
+  app.post("/zero/creds/list", bind(CredsListInput, handleCredsList));
+  app.post("/zero/creds/get", bind(CredsGetInput, handleCredsGet));
+  app.post("/zero/creds/set", bind(CredsSetInput, handleCredsSet));
+  app.post("/zero/creds/remove", bind(CredsRemoveInput, handleCredsRemove));
 
-  app.post("/api/runner-proxy/zero/ports/forward", bind(PortsForwardInput, handlePortsForward));
+  app.post("/zero/browser/open", bind(BrowserOpenInput, handleBrowserOpen));
+  app.post("/zero/browser/click", bind(BrowserClickInput, handleBrowserClick));
+  app.post("/zero/browser/fill", bind(BrowserFillInput, handleBrowserFill));
+  app.post("/zero/browser/screenshot", bind(BrowserScreenshotInput, handleBrowserScreenshot));
+  app.post("/zero/browser/evaluate", bind(BrowserEvaluateInput, handleBrowserEvaluate));
+  app.post("/zero/browser/wait", bind(BrowserWaitInput, handleBrowserWait));
+  app.post("/zero/browser/snapshot", bind(BrowserSnapshotInput, handleBrowserSnapshot));
+  app.post("/zero/browser/extract", bind(BrowserExtractInput, handleBrowserExtract));
 
-  // -- llm --
-  app.post("/api/runner-proxy/zero/llm/generate", bind(LlmGenerateInput, handleLlmGenerate));
+  app.post("/zero/ports/forward", bind(PortsForwardInput, handlePortsForward));
 
-  // -- message --
-  app.post("/api/runner-proxy/zero/message/send", bind(MessageSendInput, handleMessageSend));
-  app.post("/api/runner-proxy/zero/message/response", bind(MessageResponseInput, handleMessageResponse));
+  app.post("/zero/llm/generate", bind(LlmGenerateInput, handleLlmGenerate));
 
-  // -- embed --
-  app.post("/api/runner-proxy/zero/embed", bind(EmbedInput, handleEmbed));
+  app.post("/zero/message/send", bind(MessageSendInput, handleMessageSend));
+  app.post("/zero/message/response", bind(MessageResponseInput, handleMessageResponse));
 
-  // -- search --
-  app.post("/api/runner-proxy/zero/search", bind(SearchInput, handleSearch));
+  app.post("/zero/embed", bind(EmbedInput, handleEmbed));
+
+  app.post("/zero/search", bind(SearchInput, handleSearch));
+
+  return app;
 }

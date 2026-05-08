@@ -2,7 +2,7 @@ import { getDueTasks, markTaskRun, skipTaskRun } from "@/db/queries/scheduled-ta
 import { insertTaskRun, updateTaskRun } from "@/db/queries/task-runs.ts";
 import { getProjectById } from "@/db/queries/projects.ts";
 import { getProjectMembers } from "@/db/queries/members.ts";
-import { runAutonomousTask } from "@/lib/agent/autonomous-agent.ts";
+import { runAutonomousTurn } from "@/lib/pi/autonomous.ts";
 import { formatDateForSQLite } from "@/lib/scheduling/schedule-parser.ts";
 import { events } from "@/lib/scheduling/events.ts";
 import { isShuttingDown } from "@/lib/durability/shutdown.ts";
@@ -53,15 +53,13 @@ async function tick() {
         schedLog.info("executing task", { taskId: task.id, taskName: task.name, projectId: task.project_id });
         events.emit("task.started", { taskId: task.id, projectId: task.project_id, prompt: task.prompt });
 
-        const onlyTools = task.required_tools ? JSON.parse(task.required_tools) : undefined;
-
         const prompt = `${task.prompt} Current time: ${new Date().toISOString()}`;
 
-        const result = await runAutonomousTask(
+        const result = await runAutonomousTurn(
           { id: project.id, name: project.name },
           task.name,
           prompt,
-          { onlyTools, userId, maxSteps: task.max_steps ?? undefined },
+          { userId },
         );
 
         updateTaskRun(run.id, {

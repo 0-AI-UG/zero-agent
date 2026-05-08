@@ -7,8 +7,6 @@
  * path and does not implement this interface; providers here are non-web
  * surfaces that want agent parity with the chat UI.
  */
-import type { Part } from "@/lib/messages/types.ts";
-
 export type ChatProviderName = "telegram" | "discord" | "slack";
 
 export interface ProviderIncomingMessage {
@@ -18,7 +16,6 @@ export interface ProviderIncomingMessage {
 
 export interface ProviderSendContent {
   text: string;
-  parts?: Part[];
 }
 
 export interface ProviderSendResult {

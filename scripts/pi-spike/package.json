@@ -1,0 +1,16 @@
+{
+  "name": "pi-spike",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Phase 0 spike for the Pi migration. Standalone — not part of the Zero server build.",
+  "type": "module",
+  "scripts": {
+    "spike": "tsx spike.ts",
+    "spike:live": "LIVE=1 tsx spike.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sandbox-runtime": "^0.0.50",
+    "@mariozechner/pi-coding-agent": "^0.73.1",
+    "tsx": "^4.21.0"
+  }
+}
