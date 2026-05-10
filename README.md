@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>Self-hosted AI agent platform for teams.</strong><br>
-  Chat, browse the web, execute code, manage files, automate tasks — with any model.
+  Chat, browse the web, execute code, manage files, automate tasks.
 </p>
 
 <p align="center">
@@ -51,55 +51,51 @@ A single `server` container exposes port `3000` (API, web UI, and the in-process
 
 ## Features
 
-### 1. Chat with 100+ models
+### 1. Multi-model chat
 
-Streaming responses, tool use, and chain-of-thought reasoning powered by [OpenRouter](https://openrouter.ai). Switch models per message. One API key, every provider.
+Streaming responses with tool use and reasoning streams via [OpenRouter](https://openrouter.ai). Models are configured per-deployment in the admin panel; switch between them per message.
 
 ### 2. Code execution
 
-Each project is a real working directory the agent edits and runs commands in via the [Pi](https://github.com/block/pi-ai) runtime — read/write/edit, bash, grep, find, ls — with a sandbox extension that blocks writes to `.pi`, `.git-snapshots`, and credential files. Per-turn snapshots let you diff and restore.
+Each project is a real working directory the agent edits and runs commands in via the [Pi](https://github.com/block/pi-ai) runtime — read/write/edit, bash, grep, find, ls. A sandbox extension blocks writes to `.pi`, `.git-snapshots`, and credential files. Per-turn git snapshots let you diff and restore.
 
 ### 3. Headless browser
 
-Automated web browsing via a host-side Chromium pool with Chrome DevTools Protocol. Navigate pages, fill forms, take screenshots, and extract content — with stealth mode to bypass bot detection.
+A host-side Chromium pool driven via Chrome DevTools Protocol. Navigate pages, fill forms, take screenshots, and extract content — with stealth mode to bypass bot detection.
 
 ### 4. Web search
 
-Integrated search via Brave Search API with automatic page content extraction and markdown conversion.
+Integrated search via the Brave Search API with automatic page content extraction and markdown conversion.
 
 ### 5. File management
 
-Upload, organize, preview, and edit files. Supports images, code, CSV, XLSX, JSON, PDF, and more. Includes semantic search (hybrid dense + sparse retrieval) across files and conversation history.
+Upload, organize, preview, and edit files. Built-in previews for images, code, CSV, XLSX, JSON, and PDF. Per-project semantic search combines dense embeddings and BM25-like sparse vectors over files and chat content.
 
 ### 6. Image generation
 
-Generate images through OpenRouter-supported models (FLUX and others) with customizable aspect ratios.
+Generate images via OpenRouter image models — the agent calls `zero image generate <prompt>` and the bytes land in the project workspace as a regular file.
 
-### 7. App deployment
+### 7. Apps
 
-Run user apps inside the project workspace with automatic port detection and HTTP proxying. Build and preview web apps without leaving the chat.
+The agent allocates a host port via `zero apps create`, runs a server in the workspace, and the gateway HTTP-proxies a public URL to it — so it can build and preview web apps without leaving the chat.
 
 ### 8. Scheduled tasks & event triggers
 
-Cron-based autonomous agents that run on a schedule. Event triggers react to file changes, new messages, and other project events with filters and cooldowns.
+Cron-based autonomous agents that run on a schedule. Event triggers react to file changes, new messages, and other project events with filters and cooldowns. A per-project `HEARTBEAT.md` drives a recurring autonomous loop.
 
-### 9. Persistent memory
+### 9. Credential vault
 
-Per-project `SOUL.md` (identity/instructions), `MEMORY.md` (facts and decisions), and `HEARTBEAT.md` (autonomous agent goals) — editable by both users and the agent.
+Encrypted storage for usernames, passwords, and TOTP secrets the agent can use during automated browsing and logins.
 
-### 10. Credential vault
+### 10. Multi-user projects
 
-Securely store usernames, passwords, and TOTP secrets for the agent to use during automated browsing and logins.
+Workspaces with roles, invitations, and realtime presence — see who's online and who's typing.
 
-### 11. Multi-user projects
+### 11. Notifications
 
-Workspaces with roles, invitations, and realtime presence. See who's online, who's typing, and collaborate on the same project.
+Web Push (VAPID) and Telegram bot integration. Get notified when tasks complete or the agent needs your input — Telegram replies feed back into the same chat.
 
-### 12. Notifications
-
-Web Push notifications and Telegram bot integration. Get notified when tasks complete or the agent needs your input.
-
-### 13. Security
+### 12. Security
 
 Passkey (WebAuthn) and TOTP 2FA authentication. JWT sessions with per-user token limits. Admin panel for user management, model configuration, and usage tracking.
 
@@ -109,10 +105,10 @@ Copy `.env.example` to `.env`:
 
 | Variable | Required | Description |
 |---|---|---|
-| `OPENROUTER_API_KEY` | Yes | [OpenRouter](https://openrouter.ai) key — one credential, 100+ models |
+| `OPENROUTER_API_KEY` | Yes | [OpenRouter](https://openrouter.ai) key — single credential routes to multiple providers |
 | `BRAVE_SEARCH_API_KEY` | No | [Brave Search](https://brave.com/search/api/) key for web search |
 
-Models, image providers, credentials, and per-skill settings are configured at runtime through the admin panel.
+Models, image providers, and credentials are configured at runtime through the admin panel.
 
 ## Architecture
 
@@ -177,7 +173,7 @@ bun run compile          # Full build — server binary + frontend assets
 
 ## Contributing
 
-Contributions welcome — bug fixes, new skills, features, or docs. Please open an issue to discuss before sending a pull request.
+Contributions welcome — bug fixes, features, or docs. Please open an issue to discuss before sending a pull request.
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feat/amazing-feature`)
