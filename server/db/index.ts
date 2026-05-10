@@ -581,7 +581,7 @@ db.exec(`CREATE INDEX IF NOT EXISTS idx_tg_notif_msgs_pending ON telegram_notifi
        updated_at = datetime('now')`
   );
   for (let i = 0; i < seedModels.length; i++) {
-    const m = seedModels[i];
+    const m = seedModels[i]!;
     upsertModel.run(
       m.id, m.name, m.provider,
       m.default ? 1 : 0,
