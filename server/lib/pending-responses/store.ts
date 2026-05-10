@@ -47,7 +47,7 @@ const groups = new Map<string, GroupState>();
 export interface CreatePendingGroupInput {
   targetUserIds: string[];
   projectId: string | null;
-  kind: string; // notification kind - 'cli_request' | 'plan_review' | ...
+  kind: string; // notification kind - 'cli_request' | ...
   requesterKind: PendingRequesterKind;
   requesterContext: PendingRequesterContext;
   prompt: string;

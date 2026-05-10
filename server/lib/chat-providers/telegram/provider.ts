@@ -72,6 +72,11 @@ import {
 } from "@/db/queries/telegram-notification-messages.ts";
 import { resolvePendingResponse } from "@/lib/pending-responses/store.ts";
 import { registerTelegramNotifier } from "@/lib/notifications/dispatcher.ts";
+import {
+  beginChatStream,
+  endChatStream,
+  publishPiEvent,
+} from "@/lib/http/ws.ts";
 
 const tgLog = log.child({ module: "chat-providers/telegram" });
 
@@ -466,37 +471,51 @@ async function runAgentTurn(
       hasImages: !!runTurnImages,
     });
     const collected: string[] = [];
-    const result = await runTurn({
-      projectId,
-      chatId,
-      userId: link.user_id,
-      userMessage: userText,
-      images: runTurnImages,
-      model: resolved,
-      onEvent: (env) => {
-        // The agent_end event carries the full final assistant message
-        // list. Pull text content out for telegram delivery; intermediate
-        // tool/reasoning events are kept in the Pi JSONL for the chat UI
-        // but not echoed to telegram.
-        if (env.event.type === "agent_end") {
-          for (const m of env.event.messages) {
-            if ((m as any).role === "assistant") {
-              const content = (m as any).content;
-              if (Array.isArray(content)) {
-                for (const c of content) {
-                  if (c && c.type === "text" && typeof c.text === "string") {
-                    collected.push(c.text);
+    // Drive the web chat scene the same way ws-chat does: begin/publish/end.
+    // Without this the in-memory ChatState is never re-hydrated from the
+    // JSONL after a telegram-driven turn, so subsequent turns never appear
+    // in the web UI (even after reload — the scene is cached for ~1h).
+    beginChatStream(chatId, "");
+    let turnError: string | null = null;
+    try {
+      const result = await runTurn({
+        projectId,
+        chatId,
+        userId: link.user_id,
+        userMessage: userText,
+        images: runTurnImages,
+        model: resolved,
+        onEvent: (env) => {
+          publishPiEvent(env);
+          // The agent_end event carries the full final assistant message
+          // list. Pull text content out for telegram delivery; intermediate
+          // tool/reasoning events are kept in the Pi JSONL for the chat UI
+          // but not echoed to telegram.
+          if (env.event.type === "agent_end") {
+            for (const m of env.event.messages) {
+              if ((m as any).role === "assistant") {
+                const content = (m as any).content;
+                if (Array.isArray(content)) {
+                  for (const c of content) {
+                    if (c && c.type === "text" && typeof c.text === "string") {
+                      collected.push(c.text);
+                    }
                   }
                 }
               }
             }
           }
-        }
-      },
-    });
+        },
+      });
+      void result;
+    } catch (err) {
+      turnError = err instanceof Error ? err.message : String(err);
+      throw err;
+    } finally {
+      endChatStream(chatId, turnError ? "error" : "completed", turnError ?? undefined);
+    }
 
     const responseText = collected.join("\n").trim() || "(no response)";
-    void result;
     touchChatStmt.run(chatId);
 
     try {
@@ -622,8 +641,8 @@ async function handleCallbackQuery(cb: TelegramCallbackQuery): Promise<void> {
   }
 
   // `act:<pendingResponseId>:<actionId>` - generic pending-response action
-  // (CLI requests, plan reviews, etc). Clicking the button resolves the
-  // pending row with the action id as the response text.
+  // (CLI requests, etc). Clicking the button resolves the pending row with
+  // the action id as the response text.
   if (cb.data.startsWith("act:")) {
     const [, pendingId, actionId] = cb.data.split(":");
     if (!pendingId || !actionId) {
