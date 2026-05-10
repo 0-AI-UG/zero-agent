@@ -24,13 +24,9 @@
   <a href="https://github.com/0-AI-UG/zero-agent/issues"><img alt="Issues" src="https://img.shields.io/github/issues/0-AI-UG/zero-agent"></a>
 </p>
 
-<p align="center">
-  <img src="docs/screenshots/chat.png" width="860" alt="Zero Agent chat interface">
-</p>
-
 ## Quick Start
 
-**Prerequisites:** [Bun](https://bun.sh) v1.3+, [Docker](https://docs.docker.com/get-docker/)
+**Prerequisites:** [Bun](https://bun.sh) v1.3+ (web tooling), Node.js 20+ (server runtime)
 
 ```bash
 git clone https://github.com/0-AI-UG/zero-agent.git
@@ -51,10 +47,7 @@ Open [http://localhost:3000](http://localhost:3000) and complete the setup wizar
 docker compose up
 ```
 
-| Service | Port | Description |
-|---|---|---|
-| **server** | 3000 | API, web UI, agent orchestration |
-| **runner** | 3100 | Container lifecycle, browser, code execution |
+A single `server` container exposes port `3000` (API, web UI, and the in-process agent runtime).
 
 ## Features
 
@@ -62,13 +55,13 @@ docker compose up
 
 Streaming responses, tool use, and chain-of-thought reasoning powered by [OpenRouter](https://openrouter.ai). Switch models per message. One API key, every provider.
 
-### 2. Sandboxed code execution
+### 2. Code execution
 
-Every project gets an isolated Docker container with Python, Bun, git, and standard tooling. The agent writes and runs code in a real environment — not a toy interpreter.
+Each project is a real working directory the agent edits and runs commands in via the [Pi](https://github.com/block/pi-ai) runtime — read/write/edit, bash, grep, find, ls — with a sandbox extension that blocks writes to `.pi`, `.git-snapshots`, and credential files. Per-turn snapshots let you diff and restore.
 
 ### 3. Headless browser
 
-Automated web browsing with Chromium and Chrome DevTools Protocol. Navigate pages, fill forms, take screenshots, and extract content — with stealth mode to bypass bot detection.
+Automated web browsing via a host-side Chromium pool with Chrome DevTools Protocol. Navigate pages, fill forms, take screenshots, and extract content — with stealth mode to bypass bot detection.
 
 ### 4. Web search
 
@@ -76,7 +69,7 @@ Integrated search via Brave Search API with automatic page content extraction an
 
 ### 5. File management
 
-Upload, organize, preview, and edit files with S3-compatible storage. Supports images, code, CSV, XLSX, JSON, PDF, and more. Includes semantic search (hybrid dense + sparse retrieval) across files and conversation history.
+Upload, organize, preview, and edit files. Supports images, code, CSV, XLSX, JSON, PDF, and more. Includes semantic search (hybrid dense + sparse retrieval) across files and conversation history.
 
 ### 6. Image generation
 
@@ -84,41 +77,29 @@ Generate images through OpenRouter-supported models (FLUX and others) with custo
 
 ### 7. App deployment
 
-Run containerized apps inside projects with automatic port detection and HTTP proxying. Build and preview web apps without leaving the chat.
+Run user apps inside the project workspace with automatic port detection and HTTP proxying. Build and preview web apps without leaving the chat.
 
-### 8. Skills system
-
-Extensible markdown-defined skill modules. Built-in skills include presentation builder, spreadsheet analyzer, and a skill creator for building your own.
-
-### 9. Scheduled tasks & event triggers
+### 8. Scheduled tasks & event triggers
 
 Cron-based autonomous agents that run on a schedule. Event triggers react to file changes, new messages, and other project events with filters and cooldowns.
 
-### 10. Parallel sub-agents
-
-Spawn up to 5 sub-agents in parallel with live progress UI. Break complex tasks into concurrent work streams.
-
-### 11. Plan mode
-
-The agent writes a detailed plan for your review before executing. Approve, revise, or reject before any changes are made.
-
-### 12. Persistent memory
+### 9. Persistent memory
 
 Per-project `SOUL.md` (identity/instructions), `MEMORY.md` (facts and decisions), and `HEARTBEAT.md` (autonomous agent goals) — editable by both users and the agent.
 
-### 13. Credential vault
+### 10. Credential vault
 
 Securely store usernames, passwords, and TOTP secrets for the agent to use during automated browsing and logins.
 
-### 14. Multi-user projects
+### 11. Multi-user projects
 
 Workspaces with roles, invitations, and realtime presence. See who's online, who's typing, and collaborate on the same project.
 
-### 15. Notifications
+### 12. Notifications
 
-Web Push notifications and Telegram bot integration. Get notified when tasks complete, plans need review, or the agent needs approval.
+Web Push notifications and Telegram bot integration. Get notified when tasks complete or the agent needs your input.
 
-### 16. Security
+### 13. Security
 
 Passkey (WebAuthn) and TOTP 2FA authentication. JWT sessions with per-user token limits. Admin panel for user management, model configuration, and usage tracking.
 
@@ -136,31 +117,30 @@ Models, image providers, credentials, and per-skill settings are configured at r
 ## Architecture
 
 ```
-┌────────────────────────────────────────┐
-│  Web Frontend (React 19)               │  :3000
-│  Chat · Files · Tasks · Skills · Admin │
-└──────────────┬─────────────────────────┘
+┌────────────────────────────────────────────┐
+│  Web Frontend (React 19)                   │  :3000
+│  Chat · Files · Tasks · Apps · Admin       │
+└──────────────┬─────────────────────────────┘
+               │  HTTP + WebSocket
+┌──────────────▼─────────────────────────────┐
+│  Server (Node + SQLite)                    │  :3000
+│  API · Scheduler · Triggers · RAG · Auth   │
+│  ChatState relay · Project FS · Snapshots  │
+└──────────────┬─────────────────────────────┘
+               │  spawn() per turn, JSONL events
+┌──────────────▼─────────────────────────────┐
+│  Pi runtime (child Node process)           │
+│  Tool loop · read/write/edit · bash · grep │
+│  zero CLI extension → web/browser/image/…  │
+└────────────────────────────────────────────┘
                │
-┌──────────────▼─────────────────────────┐
-│  Server (Bun + SQLite)                 │  :3000
-│  Agent loop · Scheduler · Triggers     │
-│  Durability · RAG · Auth · Memory      │
-└──────────────┬─────────────────────────┘
-               │  HTTP
-┌──────────────▼─────────────────────────┐
-│  Runner (Bun + Docker)                 │  :3100
-│  Container lifecycle · Bash · Browser  │
-│  Workspace sync · Snapshots · Proxy    │
-└──────────────┬─────────────────────────┘
-               │
-        Docker Engine
-        └── Per-project session containers
-            └── Chromium + Python + Bun
+        Project workspace on disk
+        + host-side Chromium pool
 ```
 
-**Server** — Bun process serving API and frontend. SQLite (WAL mode) for relational data, S3-compatible storage for files and snapshots. Agents built on [AI SDK](https://ai-sdk.dev) with dynamic tool loading, checkpointing, and crash recovery.
+**Server** — Node process serving API and frontend. SQLite (WAL mode) for relational data; project workspaces, per-turn git snapshots, and Pi session JSONLs live on disk under `/var/zero` (a mounted volume in Docker). Streams Pi events to web and Telegram clients via WebSockets.
 
-**Runner** — Standalone Bun service managing Docker containers via Engine API. Provides bash execution, Chromium control (CDP), file I/O, workspace sync, snapshotting, and HTTP proxying.
+**Pi runtime** — [Block's Pi](https://github.com/block/pi-ai) spawned per turn with the project workspace as cwd. Built-in tools (read/write/edit/bash/grep/find/ls) plus a `zero` CLI extension that exposes web search/fetch, browser, image generation, scheduling, credentials, apps, and SDK calls.
 
 **Frontend** — React 19 + Tailwind CSS v4 + shadcn/ui. TanStack Query for server state, Zustand for client state, React Router v7 for routing, WebSockets for realtime events.
 
@@ -168,24 +148,22 @@ Models, image providers, credentials, and per-skill settings are configured at r
 
 | Layer | Technology |
 |---|---|
-| Runtime | [Bun](https://bun.sh) |
-| AI | [AI SDK](https://ai-sdk.dev) + [OpenRouter](https://openrouter.ai) |
+| Server runtime | Node.js 20+ |
+| Web tooling | [Bun](https://bun.sh) |
+| Agent | [Pi](https://github.com/block/pi-ai) + [OpenRouter](https://openrouter.ai) |
 | Frontend | React 19, Tailwind CSS v4, shadcn/ui, TanStack Query, Zustand, React Router v7 |
 | Database | SQLite (WAL mode) |
 | Vectors | SQLite + HNSW via [`@0-ai/s3lite`](https://github.com/0-AI-UG/s3lite) |
-| Storage | S3-compatible |
-| Sandbox | Docker Engine API, Chromium + CDP |
+| Browser | Host Chromium pool via Chrome DevTools Protocol |
 | Auth | Passkeys (WebAuthn) + TOTP 2FA |
 | Notifications | Web Push + Telegram |
 
 ## Project Structure
 
 ```
-server/    Backend — API, agent loop, scheduler, auth, RAG
-runner/    Sandbox service — containers, browser, code execution
+server/    Backend — API, Pi runtime, scheduler, auth, RAG
 web/       Frontend — React 19, Tailwind v4, shadcn/ui
-zero/      CLI + SDK — the `zero` command agents call from bash
-skills/    Built-in skills — presentation, spreadsheet, skill-creator
+zero/      CLI + SDK — the `zero` command Pi calls from bash
 data/      Runtime data — SQLite, files, vectors
 ```
 
