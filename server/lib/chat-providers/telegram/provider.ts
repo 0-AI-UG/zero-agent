@@ -13,8 +13,9 @@
  *    replies can resolve the right pending response.
  */
 import sharp from "sharp";
-import type { Message } from "@/lib/messages/types.ts";
 import { generateText } from "@/lib/openrouter/text.ts";
+import { runTurn } from "@/lib/pi/run-turn.ts";
+import { resolveModelForPi } from "@/lib/pi/model.ts";
 
 import {
   sendTelegramText,
@@ -29,7 +30,6 @@ import {
   type TelegramMessage,
   type TelegramCallbackQuery,
 } from "@/lib/telegram-global/telegram.ts";
-import { isModelMultimodal } from "@/config/models.ts";
 import { getActiveProvider, getVisionModelId } from "@/lib/providers/index.ts";
 import {
   getBotToken,
@@ -38,7 +38,7 @@ import {
 } from "@/lib/telegram-global/bot.ts";
 import { log } from "@/lib/utils/logger.ts";
 import { generateId, db } from "@/db/index.ts";
-import type { ChatRow, MessageRow, UserTelegramLinkRow } from "@/db/types.ts";
+import type { ChatRow, UserTelegramLinkRow } from "@/db/types.ts";
 
 import {
   mintLinkCode,
@@ -58,8 +58,6 @@ import {
   type ProviderSendResult,
 } from "@/lib/chat-providers/index.ts";
 
-import { runAgentStepBatch } from "@/lib/agent-step/index.ts";
-import { dbMessagesToMessages } from "@/lib/agent-step/serialize.ts";
 import {
   getProjectById,
   getVisibleProjectsForUser,
@@ -73,8 +71,12 @@ import {
   findPendingByReplyTarget,
 } from "@/db/queries/telegram-notification-messages.ts";
 import { resolvePendingResponse } from "@/lib/pending-responses/store.ts";
-import { resolvePendingSync, getSyncRow } from "@/lib/sync-approval.ts";
 import { registerTelegramNotifier } from "@/lib/notifications/dispatcher.ts";
+import {
+  beginChatStream,
+  endChatStream,
+  publishPiEvent,
+} from "@/lib/http/ws.ts";
 
 const tgLog = log.child({ module: "chat-providers/telegram" });
 
@@ -99,14 +101,6 @@ const insertChatStmt = db.prepare(
 );
 
 const getChatStmt = db.prepare("SELECT * FROM chats WHERE id = ?");
-
-const insertMsgStmt = db.prepare(
-  "INSERT OR REPLACE INTO messages (id, project_id, chat_id, role, content, user_id) VALUES (?, ?, ?, ?, ?, ?)",
-);
-
-const getMessagesStmt = db.prepare(
-  "SELECT * FROM messages WHERE chat_id = ? ORDER BY created_at ASC",
-);
 
 const touchChatStmt = db.prepare(
   "UPDATE chats SET updated_at = datetime('now') WHERE id = ?",
@@ -193,15 +187,13 @@ export const TelegramProvider: ChatProvider = {
     const text = formatNotification(payload);
     try {
       let messageId: number | undefined;
-      // If we have sync_approval-style actions, use an inline keyboard.
+      // If we have action buttons, render them as an inline keyboard.
       if (payload.actions && payload.actions.length > 0) {
-        // Sync approval keyboard uses callback_data of the form
-        // `syncv:<pendingResponseId>:<actionId>`.
         const keyboard = [
           payload.actions.map((a) => ({
             text: a.label,
             callback_data: payload.pendingResponseId
-              ? `syncv:${payload.pendingResponseId}:${a.id}`
+              ? `act:${payload.pendingResponseId}:${a.id}`
               : `noop:${a.id}`,
           })),
         ];
@@ -426,41 +418,39 @@ async function runAgentTurn(
     // capability check below and the actual run share one source of truth.
     const chatModelId = getActiveProvider().getDefaultChatModelId();
 
-    // If the active chat model can't accept images, caption the image with
-    // the vision model and pass that text to the agent instead. Mirrors the
-    // readFile tool's fallback so non-vision models still get useful context.
+    const resolved = resolveModelForPi(chatModelId);
+    const modelSupportsImages = resolved.supportsImages;
+
+    // Native passthrough when the chat model is multimodal; vision-caption
+    // fallback otherwise so a non-multimodal default still gets *something*
+    // useful out of the photo.
     let imageCaption: string | null = null;
+    let runTurnImages: Array<{ data: string; mimeType: string }> | undefined;
     if (imageData) {
-      if (!isModelMultimodal(chatModelId)) {
+      if (modelSupportsImages) {
+        runTurnImages = [{ data: imageData.base64, mimeType: imageData.mediaType }];
+        tgLog.info("forwarding telegram image natively", { chatModelId });
+      } else {
         try {
           const visionModel = getVisionModelId();
           const dataUrl = `data:${imageData.mediaType};base64,${imageData.base64}`;
           const { text: caption } = await generateText({
             model: visionModel,
-            messages: [{
-              id: "tg-caption",
-              role: "user",
-              parts: [{
-                type: "text",
-                text: "Describe this image in detail. Include all visible text, layout, colors, and key elements.\n\n" + dataUrl,
-              }],
-            }],
+            messages:
+              "Describe this image in detail. Include all visible text, layout, colors, and key elements.\n\n" +
+              dataUrl,
           });
           imageCaption = caption;
-          imageData = null;
-          tgLog.info("captioned telegram image for non-vision model", {
-            chatModelId,
-            captionLength: caption.length,
-          });
+          tgLog.info("captioned telegram image", { chatModelId, captionLength: caption.length });
         } catch (err) {
           tgLog.warn("image captioning failed; dropping image", {
             chatModelId,
             error: err instanceof Error ? err.message : String(err),
           });
-          imageData = null;
           imageCaption = "[Image attached, but could not be processed]";
         }
       }
+      imageData = null;
     }
 
     const userText = (() => {
@@ -469,66 +459,63 @@ async function runAgentTurn(
         return text ? `${prefix}\n\n${text}` : prefix;
       }
       if (text) return text;
-      if (imageData) return "What's in this image?";
+      if (runTurnImages) return "Describe this image.";
       return "";
     })();
 
-    // Replay prior history.
-    const dbMessages = getMessagesStmt.all(chatId) as MessageRow[];
-    const messages: Message[] = dbMessagesToMessages(dbMessages);
-
-    // Append the current user turn. Images are currently carried via the
-    // captioning path above (which folds them into userText); a future
-    // enhancement will add native image parts to canonical Messages.
-    messages.push({
-      id: generateId(),
-      role: "user",
-      parts: [{ type: "text", text: userText }],
-    });
-
-    // Persist user message immediately.
-    const userMsgId = generateId();
-    const userParts: any[] = [{ type: "text" as const, text: userText }];
-    if (imageData) userParts.unshift({ type: "image" as const, hasImage: true });
-    insertMsgStmt.run(
-      userMsgId,
-      projectId,
-      chatId,
-      "user",
-      JSON.stringify({ id: userMsgId, role: "user", parts: userParts }),
-      link.user_id,
-    );
-
-    tgLog.info("running agent for telegram message", {
+    tgLog.info("running pi turn for telegram message", {
       userId: link.user_id,
       projectId,
       chatId,
       telegramChatId,
+      hasImages: !!runTurnImages,
     });
+    const collected: string[] = [];
+    // Drive the web chat scene the same way ws-chat does: begin/publish/end.
+    // Without this the in-memory ChatState is never re-hydrated from the
+    // JSONL after a telegram-driven turn, so subsequent turns never appear
+    // in the web UI (even after reload — the scene is cached for ~1h).
+    beginChatStream(chatId, "");
+    let turnError: string | null = null;
+    try {
+      const result = await runTurn({
+        projectId,
+        chatId,
+        userId: link.user_id,
+        userMessage: userText,
+        images: runTurnImages,
+        model: resolved,
+        onEvent: (env) => {
+          publishPiEvent(env);
+          // The agent_end event carries the full final assistant message
+          // list. Pull text content out for telegram delivery; intermediate
+          // tool/reasoning events are kept in the Pi JSONL for the chat UI
+          // but not echoed to telegram.
+          if (env.event.type === "agent_end") {
+            for (const m of env.event.messages) {
+              if ((m as any).role === "assistant") {
+                const content = (m as any).content;
+                if (Array.isArray(content)) {
+                  for (const c of content) {
+                    if (c && c.type === "text" && typeof c.text === "string") {
+                      collected.push(c.text);
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+      });
+      void result;
+    } catch (err) {
+      turnError = err instanceof Error ? err.message : String(err);
+      throw err;
+    } finally {
+      endChatStream(chatId, turnError ? "error" : "completed", turnError ?? undefined);
+    }
 
-    const result = await runAgentStepBatch({
-      project,
-      chatId,
-      userId: link.user_id,
-      model: chatModelId,
-      messages,
-    });
-
-    const responseText = result.text || "Sorry, I couldn't generate a response.";
-    const assistantParts =
-      result.assistantParts.length > 0
-        ? result.assistantParts
-        : [{ type: "text" as const, text: responseText }];
-
-    const assistantMsgId = generateId();
-    insertMsgStmt.run(
-      assistantMsgId,
-      projectId,
-      chatId,
-      "assistant",
-      JSON.stringify({ id: assistantMsgId, role: "assistant", parts: assistantParts }),
-      null,
-    );
+    const responseText = collected.join("\n").trim() || "(no response)";
     touchChatStmt.run(chatId);
 
     try {
@@ -653,8 +640,10 @@ async function handleCallbackQuery(cb: TelegramCallbackQuery): Promise<void> {
     return;
   }
 
-  // `syncv:<pendingResponseId>:<actionId>` - workspace sync approval.
-  if (cb.data.startsWith("syncv:")) {
+  // `act:<pendingResponseId>:<actionId>` - generic pending-response action
+  // (CLI requests, etc). Clicking the button resolves the pending row with
+  // the action id as the response text.
+  if (cb.data.startsWith("act:")) {
     const [, pendingId, actionId] = cb.data.split(":");
     if (!pendingId || !actionId) {
       await answerTelegramCallbackQuery(token, cb.id, "Invalid action");
@@ -666,30 +655,12 @@ async function handleCallbackQuery(cb: TelegramCallbackQuery): Promise<void> {
       await answerTelegramCallbackQuery(token, cb.id, "Not linked");
       return;
     }
-
-    // Verify the row exists and that this telegram user is its target. The
-    // row's target_user_id matches the linked user_id (sync approvals are
-    // single-target per Stage 6 - project-wide fanout is deferred).
-    const row = getSyncRow(pendingId);
-    if (!row) {
-      await answerTelegramCallbackQuery(token, cb.id, "Sync not found");
-      return;
-    }
-    if (row.target_user_id !== link.user_id) {
-      await answerTelegramCallbackQuery(token, cb.id, "Not your sync");
-      return;
-    }
-
-    const verdict = actionId === "approve" ? "approve" : "reject";
-    const resolved = resolvePendingSync(pendingId, verdict, "telegram");
-    const ok = !!resolved;
+    const ok = resolvePendingResponse(pendingId, actionId, "telegram");
     await answerTelegramCallbackQuery(
       token,
       cb.id,
-      ok ? (verdict === "approve" ? "Kept" : "Discarded") : "Already answered",
+      ok ? "Got it" : "Already answered",
     );
-    // Disable the inline keyboard on the notification message so it can't be
-    // clicked again.
     if (cb.message) {
       try {
         await editTelegramReplyMarkup(

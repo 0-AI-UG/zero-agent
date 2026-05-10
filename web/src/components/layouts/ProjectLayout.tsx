@@ -55,6 +55,9 @@ import {
   PanelLeftIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { renderWithFileChips } from "@/lib/file-chips";
+
+const SIDEBAR_CHIP_CLASS = "text-[11px] px-1 py-0 mx-0.5";
 import { useState, useEffect, useMemo } from "react";
 import { useModelStore, type ModelConfig } from "@/stores/model";
 import { useModels } from "@/api/models";
@@ -62,8 +65,6 @@ import { ModelLogo } from "@/components/chat-ui/ModelLogo";
 import { useFilesStore } from "@/stores/files-store";
 import { useRealtime } from "@/hooks/use-realtime";
 import { InstallBanner } from "@/components/InstallBanner";
-import { PlanModeToggle } from "@/components/chat/PlanModeToggle";
-import { ToolSelector } from "@/components/chat/ToolSelector";
 import { useChats, useCreateChat, useDeleteChat, useSearchChats } from "@/api/chats";
 import { useMembers } from "@/api/members";
 import { useRealtimeStore } from "@/stores/realtime";
@@ -161,7 +162,6 @@ function MobileProjectHeader({ projectName, projectId }: { projectName: string; 
   const navigate = useNavigate();
   const createChat = useCreateChat(projectId);
   const { setOpenMobile } = useSidebar();
-  const { chatId } = useParams<{ chatId: string }>();
 
   const handleNewChat = async () => {
     const result = await createChat.mutateAsync();
@@ -177,8 +177,6 @@ function MobileProjectHeader({ projectName, projectId }: { projectName: string; 
         <MobileModelDropdown />
       </div>
       <div className="flex items-center gap-0.5">
-        {chatId && <PlanModeToggle chatId={chatId} />}
-        <ToolSelector />
         <Button variant="ghost" size="icon-sm" onClick={handleNewChat} disabled={createChat.isPending}>
           <PlusIcon className="size-4" />
         </Button>
@@ -306,7 +304,7 @@ function ProjectSidebar({
       label: "Tasks",
     },
     {
-      to: `${basePath}/services`,
+      to: `${basePath}/apps`,
       icon: NetworkIcon,
       label: "Apps",
     },
@@ -396,7 +394,9 @@ function ProjectSidebar({
                         <SendIcon className={`size-3.5 shrink-0 ${iconColor}`} />
                       )}
                       <div className="flex flex-col min-w-0 flex-1">
-                        <span className="truncate">{chat.title}</span>
+                        <span className="truncate">
+                          {renderWithFileChips(chat.title, { chipClassName: SIDEBAR_CHIP_CLASS })}
+                        </span>
                         {isMultiMember && chat.createdBy && (
                           <span className="text-[10px] text-muted-foreground truncate">
                             {memberMap.get(chat.createdBy)?.split("@")[0] ?? ""}
@@ -595,9 +595,13 @@ function ChatSearchDialog({
                 >
                   <MessageSquareIcon className="size-5 shrink-0 text-muted-foreground" />
                   <div className="flex flex-col min-w-0 flex-1">
-                    <span className="truncate">{chat.title}</span>
+                    <span className="truncate">
+                      {renderWithFileChips(chat.title, { chipClassName: SIDEBAR_CHIP_CLASS })}
+                    </span>
                     {chat.snippet && (
-                      <span className="truncate text-xs text-muted-foreground mt-0.5">{chat.snippet}</span>
+                      <span className="truncate text-xs text-muted-foreground mt-0.5">
+                        {renderWithFileChips(chat.snippet, { chipClassName: SIDEBAR_CHIP_CLASS })}
+                      </span>
                     )}
                   </div>
                 </button>
@@ -645,7 +649,9 @@ function ActivityGroup({
                 onClick={() => onNavigate(chat.id)}
               >
                 <BotIcon className="size-3.5 shrink-0" />
-                <span className="truncate">{chat.title}</span>
+                <span className="truncate">
+                  {renderWithFileChips(chat.title, { chipClassName: SIDEBAR_CHIP_CLASS })}
+                </span>
               </SidebarMenuButton>
               <SidebarMenuAction
                 showOnHover

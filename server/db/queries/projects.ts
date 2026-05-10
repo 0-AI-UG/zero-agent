@@ -109,10 +109,3 @@ export function updateProject(
 export function deleteProject(id: string): void {
   db.prepare("DELETE FROM projects WHERE id = ?").run(id);
 }
-
-export function getLastMessageByProject(projectId: string): string | null {
-  const row = db.prepare(
-    "SELECT content FROM messages WHERE project_id = ? AND role = 'assistant' ORDER BY created_at DESC LIMIT 1",
-  ).get(projectId);
-  return (row as { content: string } | undefined)?.content ?? null;
-}

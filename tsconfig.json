@@ -34,5 +34,10 @@
     "noPropertyAccessFromIndexSignature": false
   },
   "include": ["server/**/*"],
-  "exclude": ["node_modules", "web", "companion"]
+  "exclude": [
+    "node_modules",
+    "web",
+    "companion",
+    "**/node_modules/**"
+  ]
 }

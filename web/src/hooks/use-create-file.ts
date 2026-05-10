@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "@/api/client";
 import { queryKeys } from "@/lib/query-keys";
+import { useAuthStore } from "@/stores/auth";
 import type { FileItem } from "@/hooks/use-files";
 
 interface CreateFileParams {
@@ -12,48 +13,41 @@ interface CreateFileParams {
 
 export function useCreateFile(projectId: string) {
   const queryClient = useQueryClient();
+  const token = useAuthStore((s) => s.token);
 
   return useMutation({
     mutationFn: async ({ filename, content, mimeType, folderPath }: CreateFileParams) => {
-      // 1. Request presigned upload URL
       const blob = new Blob([content], { type: mimeType });
-      const res = await apiFetch<{
-        url: string;
-        s3Key: string;
-        file: FileItem;
-      }>(`/projects/${projectId}/files/upload`, {
-        method: "POST",
-        body: JSON.stringify({
-          filename,
-          mimeType,
-          folderPath,
-          sizeBytes: blob.size,
-        }),
-      });
+      const qs = new URLSearchParams({ filename, mimeType, folderPath });
 
-      // 2. Upload to S3
-      const uploadRes = await fetch(res.url, {
-        method: "PUT",
-        headers: { "Content-Type": mimeType },
+      const headers: Record<string, string> = {
+        "Content-Type": mimeType,
+        "Content-Length": String(blob.size),
+      };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+
+      const res = await fetch(`/api/projects/${projectId}/files/upload?${qs.toString()}`, {
+        method: "POST",
+        headers,
         body: blob,
       });
 
-      if (!uploadRes.ok) {
-        await apiFetch(`/projects/${projectId}/files/${res.file.id}`, {
-          method: "DELETE",
-        }).catch(() => {});
-        throw new Error("S3 upload failed");
+      if (!res.ok) {
+        const err = await res.text().catch(() => "Upload failed");
+        throw new Error(err);
       }
 
-      // 3. Index text content for FTS search
+      const data = await res.json() as { file: FileItem };
+
+      // Index text content for FTS search if the server didn't already
       if (mimeType.startsWith("text/") || mimeType === "application/json") {
-        await apiFetch(`/projects/${projectId}/files/${res.file.id}`, {
+        await apiFetch(`/projects/${projectId}/files/${data.file.id}`, {
           method: "PUT",
           body: JSON.stringify({ content }),
         }).catch(() => {});
       }
 
-      return res.file;
+      return data.file;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({

@@ -11,7 +11,7 @@ import { parseSkillMd } from "@/lib/skills/parser.ts";
 import { loadFullSkill, getSkillSummaries } from "@/lib/skills/loader.ts";
 import { installSkillFiles, uninstallSkill } from "@/lib/skills/installer.ts";
 import { parseGitHubUrl, discoverSkills, fetchSkillFiles } from "@/lib/skills/github.ts";
-import { getSkillFileByName } from "@/db/queries/files.ts";
+import { getSkillByName } from "@/db/queries/skills.ts";
 import { NotFoundError } from "@/lib/utils/errors.ts";
 import { log } from "@/lib/utils/logger.ts";
 import type { InstallResult } from "@/lib/skills/installer.ts";
@@ -25,7 +25,7 @@ function formatInstallResult(result: InstallResult) {
   return {
     name: result.name,
     description: result.description,
-    s3Key: result.s3Key,
+    skillDir: result.skillDir,
     metadata: result.metadata,
   };
 }
@@ -105,7 +105,7 @@ export async function handleInstallFromGithub(request: Request): Promise<Respons
     const installed: InstallResult[] = [];
     for (const skill of toInstall) {
       const files = await fetchSkillFiles(owner, repo, branch, skill.path);
-      const result = await installSkillFiles(projectId, skill.name, files);
+      const result = await installSkillFiles(projectId, skill.name, files, url);
       installed.push(result);
     }
 
@@ -144,7 +144,7 @@ export async function handleDeleteSkill(request: Request): Promise<Response> {
     const { projectId, name } = (request as SkillByNameRequest).params;
     verifyProjectAccess(projectId, userId);
 
-    const existing = getSkillFileByName(projectId, name);
+    const existing = getSkillByName(projectId, name);
     if (!existing) {
       throw new NotFoundError(`Skill "${name}" not found`);
     }

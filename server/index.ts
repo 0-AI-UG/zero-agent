@@ -32,8 +32,6 @@ import {
   handleGetProject,
   handleUpdateProject,
   handleDeleteProject,
-  handleGetSoul,
-  handleUpdateSoul,
 } from "@/routes/projects.ts";
 import {
   handleListChats,
@@ -53,9 +51,13 @@ import {
   handleMoveFolder,
   handleSearchFiles,
   handleUpdateFileContent,
-  handleGetUploadUrl,
   handleUpdateFileBinary,
 } from "@/routes/files.ts";
+import {
+  handleGetTurnSnapshotDiff,
+  handleGetTurnSnapshotFile,
+  handleRevertTurnSnapshot,
+} from "@/routes/turn-snapshots.ts";
 import {
   handleReindex,
   handleReindexStatus,
@@ -110,10 +112,6 @@ import {
 import { ensureWebhookRegistered } from "@/lib/telegram-global/bot.ts";
 import { startupExpirySweep } from "@/lib/pending-responses/store.ts";
 import {
-  cancelAllPendingSyncs,
-  recoverSyncOrphansOnStartup,
-} from "@/lib/sync-approval.ts";
-import {
   handleGetVapidKey,
   handlePushSubscribe,
   handlePushUnsubscribe,
@@ -127,21 +125,12 @@ import {
   handleRespondPendingResponse,
 } from "@/routes/pending-responses.ts";
 import {
-  handleListServices,
-  handleDeleteService,
-  handlePinService,
-  handleUnpinService,
+  handleListApps,
+  handleDeleteApp,
   handleAppStatus,
   handleCreateShareLink,
 } from "@/routes/apps.ts";
-import { presignHandler, s3 } from "@/lib/s3.ts";
-import {
-  enableExecution,
-  disableExecution,
-  teardownExecution,
-  reconcile,
-  getLocalBackend,
-} from "@/lib/execution/lifecycle.ts";
+import { startBrowserPool, stopBrowserPool } from "@/lib/browser/host-pool.ts";
 import { proxyAppRequest } from "@/lib/http/app-proxy.ts";
 import { getSetting } from "@/lib/settings.ts";
 
@@ -156,7 +145,6 @@ import {
 
 import { startScheduler, stopScheduler } from "@/lib/scheduling/scheduler.ts";
 import { requestShutdown, drainActiveRuns, isShuttingDown } from "@/lib/durability/shutdown.ts";
-import { recoverInterruptedRuns } from "@/lib/durability/recovery.ts";
 import { pruneOrphanedMessageVectors } from "@/lib/search/vectors.ts";
 import { handleListUsers, handleCreateUser, handleDeleteUser, handleUpdateUser } from "@/routes/admin.ts";
 import {
@@ -176,17 +164,8 @@ import {
   handleDeleteModel,
 } from "@/routes/models.ts";
 import { handleUsageSummary, handleUsageByModel, handleUsageByUser } from "@/routes/usage.ts";
-import { handleSyncVerdict, handleSyncDiff, handleSyncStatus } from "@/routes/sync.ts";
-import {
-  handleListRunners,
-  handleCreateRunner,
-  handleUpdateRunner,
-  handleDeleteRunner,
-  handleTestRunner,
-} from "@/routes/runners.ts";
 import { requireAdmin, authenticateRequest } from "@/lib/auth/auth.ts";
 import { verifyProjectAccess } from "@/routes/utils.ts";
-import { mountCliHandlers } from "@/cli-handlers/index.ts";
 import { db } from "@/db/index.ts";
 
 const httpLog = log.child({ module: "http" });
@@ -316,10 +295,6 @@ app.get("/api/projects/:id", h(handleGetProject));
 app.put("/api/projects/:id", h(handleUpdateProject));
 app.delete("/api/projects/:id", h(handleDeleteProject));
 
-// Soul (identity)
-app.get("/api/projects/:projectId/soul", h(handleGetSoul));
-app.put("/api/projects/:projectId/soul", h(handleUpdateSoul));
-
 // Chat CRUD
 app.get("/api/projects/:projectId/chats", h(handleListChats));
 app.post("/api/projects/:projectId/chats", h(handleCreateChat));
@@ -335,11 +310,15 @@ app.get("/api/projects/:projectId/reindex/status", h(handleReindexStatus));
 app.get("/api/projects/:projectId/reindex/stream", h(handleReindexStream));
 app.post("/api/projects/:projectId/files/upload", h(handleUploadRequest));
 app.get("/api/projects/:projectId/files/:id/url", h(handleGetFileUrl));
-app.post("/api/projects/:projectId/files/:id/upload-url", h(handleGetUploadUrl));
 app.post("/api/projects/:projectId/files/:id/binary", h(handleUpdateFileBinary));
 app.delete("/api/projects/:projectId/files/:id", h(handleDeleteFile));
 app.put("/api/projects/:projectId/files/:id", h(handleUpdateFileContent));
 app.patch("/api/projects/:projectId/files/:id", h(handleMoveFile));
+
+// Turn snapshots (per-turn git diff / file / revert)
+app.get("/api/turns/:snapshotId/diff", h(handleGetTurnSnapshotDiff));
+app.get("/api/turns/:snapshotId/file", h(handleGetTurnSnapshotFile));
+app.post("/api/turns/:snapshotId/revert", h(handleRevertTurnSnapshot));
 
 // Folders
 app.post("/api/projects/:projectId/folders", h(handleCreateFolder));
@@ -423,13 +402,6 @@ app.delete("/api/admin/invitations/:id", h(handleDeleteInvitation));
 app.get("/api/user-invitations/:token", h(handleLookupInvitation));
 app.post("/api/user-invitations/:token/accept", h(handleAcceptUserInvitation));
 
-// Runners (admin)
-app.get("/api/admin/runners", h(handleListRunners));
-app.post("/api/admin/runners", h(handleCreateRunner));
-app.put("/api/admin/runners/:runnerId", h(handleUpdateRunner));
-app.delete("/api/admin/runners/:runnerId", h(handleDeleteRunner));
-app.post("/api/admin/runners/:runnerId/test", h(handleTestRunner));
-
 // Models
 app.get("/api/models", h(handleListEnabledModels));
 app.get("/api/admin/models", h(handleListAllModels));
@@ -442,11 +414,6 @@ app.get("/api/admin/usage/summary", h(handleUsageSummary));
 app.get("/api/admin/usage/by-model", h(handleUsageByModel));
 app.get("/api/admin/usage/by-user", h(handleUsageByUser));
 
-// Workspace sync approval
-app.post("/api/sync/:id/verdict", h(handleSyncVerdict));
-app.get("/api/sync/:id/diff", h(handleSyncDiff));
-app.get("/api/sync/:id", h(handleSyncStatus));
-
 // Settings
 app.get("/api/settings", h(handleGetSettings));
 app.put("/api/settings/:key", h(handleUpdateSettings));
@@ -457,74 +424,11 @@ app.post("/api/projects/:projectId/credentials", h(handleCreateCredential));
 app.put("/api/projects/:projectId/credentials/:id", h(handleUpdateCredential));
 app.delete("/api/projects/:projectId/credentials/:id", h(handleDeleteCredential));
 
-// Services (forwarded ports)
-app.get("/api/projects/:projectId/services", h(handleListServices));
-app.delete("/api/projects/:projectId/services/:serviceId", h(handleDeleteService));
-app.post("/api/projects/:projectId/services/:serviceId/pin", h(handlePinService));
-app.post("/api/projects/:projectId/services/:serviceId/unpin", h(handleUnpinService));
-app.post("/api/projects/:projectId/services/:serviceId/share", h(handleCreateShareLink));
+// Apps (slug ↔ port reverse-proxy mappings)
+app.get("/api/projects/:projectId/apps", h(handleListApps));
+app.delete("/api/projects/:projectId/apps/:appId", h(handleDeleteApp));
+app.post("/api/projects/:projectId/apps/:appId/share", h(handleCreateShareLink));
 app.get("/api/apps/:slug/status", h(handleAppStatus));
-
-// Containers (admin)
-app.get("/api/admin/containers", h(async (req: Request) => {
-  await requireAdmin(req);
-  const backend = getLocalBackend();
-  const containers = backend ? await backend.listContainersAsync() : [];
-  return Response.json({ containers }, { headers: corsHeaders });
-}));
-app.delete("/api/admin/containers/:sessionId", h(async (req: Request) => {
-  await requireAdmin(req);
-  const sessionId = (req as any).params.sessionId;
-  await getLocalBackend()?.destroyContainer(sessionId);
-  return Response.json({ ok: true }, { headers: corsHeaders });
-}));
-
-// Container status for a project (authenticated)
-app.get("/api/projects/:projectId/chats/:chatId/container", h(async (req: Request) => {
-  const projectId = (req as any).params.projectId;
-  const backend = getLocalBackend();
-  const session = backend?.getSessionForProject(projectId);
-  if (session) {
-    return Response.json({ status: "running" }, { headers: corsHeaders });
-  }
-  const running = await backend?.hasContainer(projectId) ?? false;
-  return Response.json({ status: running ? "running" : "none" }, { headers: corsHeaders });
-}));
-
-// Latest browser screenshot for a project's session.
-// Returns a ref ({hash, contentType, title, url, timestamp}) instead of the
-// base64 blob. The bytes are written to the content-addressed blob store;
-// the frontend loads the image via `/api/blobs/:hash` so the base64 never
-// enters the server's long-lived heap and identical frames dedupe for free.
-app.get("/api/projects/:projectId/chats/:chatId/browser-screenshot", h(async (req: Request) => {
-  const { userId } = await authenticateRequest(req);
-  const projectId = (req as any).params.projectId;
-  verifyProjectAccess(projectId, userId);
-  const ifNoneMatch = (req.headers.get("if-none-match") ?? "").replace(/^"|"$/g, "");
-  const screenshot = await getLocalBackend()?.getLatestScreenshot(projectId) ?? null;
-  if (!screenshot) {
-    return Response.json({ screenshot: null }, { headers: corsHeaders });
-  }
-  const { putBlob } = await import("@/lib/media/blob-store.ts");
-  const bytes = Buffer.from(screenshot.base64, "base64");
-  const { hash, size, contentType } = await putBlob(bytes, "image/jpeg", projectId);
-  if (ifNoneMatch === hash) {
-    return new Response(null, { status: 304, headers: { ...corsHeaders, ETag: `"${hash}"` } });
-  }
-  return Response.json(
-    {
-      screenshot: {
-        hash,
-        contentType,
-        size,
-        title: screenshot.title,
-        url: screenshot.url,
-        timestamp: screenshot.timestamp,
-      },
-    },
-    { headers: { ...corsHeaders, ETag: `"${hash}"` } },
-  );
-}));
 
 // Content-addressed blob serving, scoped to a project the caller is a member of.
 // Scoping is enforced via an in-memory ownership index populated at `putBlob`
@@ -558,53 +462,9 @@ app.get("/api/projects/:projectId/blobs/:hash", h(async (req: Request) => {
   });
 }));
 
-// Execution lifecycle (admin)
-app.post("/api/admin/execution/enable", h(async (req: Request) => {
-  await requireAdmin(req);
-  const result = await enableExecution();
-  return Response.json(result, { status: result.success ? 200 : 500, headers: corsHeaders });
-}));
-app.post("/api/admin/execution/disable", h(async (req: Request) => {
-  await requireAdmin(req);
-  await disableExecution();
-  return Response.json({ success: true }, { headers: corsHeaders });
-}));
-app.post("/api/admin/execution/reconnect", h(async (req: Request) => {
-  await requireAdmin(req);
-  const r = await reconcile();
-  const success = r.healthy > 0;
-  if (!success) {
-    log.warn("reconnect failed", { healthy: r.healthy, total: r.total });
-  } else {
-    log.info("reconnect succeeded", { healthy: r.healthy, total: r.total });
-  }
-  return Response.json({
-    success,
-    error: success ? undefined : "No healthy runners available",
-  }, { status: success ? 200 : 500, headers: corsHeaders });
-}));
-app.get("/api/admin/runner/status", h(async (req: Request) => {
-  await requireAdmin(req);
-  const backend = getLocalBackend();
-  if (!backend) {
-    return Response.json({ connected: false, containers: 0, runners: [] }, { headers: corsHeaders });
-  }
-  try {
-    const containers = await backend.listContainersAsync();
-    return Response.json({ connected: true, containers: containers.length }, { headers: corsHeaders });
-  } catch {
-    return Response.json({ connected: false, containers: 0 }, { headers: corsHeaders });
-  }
-}));
-
 // Capabilities
-app.get("/api/capabilities", h((req: Request) => {
-  const backend = getLocalBackend();
-  const hasDocker = !!backend?.isReady();
+app.get("/api/capabilities", h((_req: Request) => {
   return Response.json({
-    serverDocker: hasDocker,
-    serverBrowser: hasDocker,
-    appDeployments: hasDocker,
     theme: getSetting("UI_THEME") ?? "default",
   }, { headers: corsHeaders });
 }));
@@ -634,14 +494,6 @@ app.post("/api/app-token", h(async (req: Request) => {
   return Response.json({ token: appToken }, { headers: corsHeaders });
 }));
 
-// S3 presigned file serving
-// Clone the response so @hono/node-server doesn't mutate the shared corsHeaders
-// object when it sets Content-Length (which would corrupt all subsequent responses).
-app.all("/api/s3/*", async (c) => {
-  const res = await presignHandler.handleRequest(c.req.raw);
-  return new Response(res.body, { status: res.status, headers: new Headers(res.headers) });
-});
-
 // Reverse proxy for forwarded ports
 app.all("/_apps/:slug/*", (c) => {
   const slug = c.req.param("slug");
@@ -649,10 +501,12 @@ app.all("/_apps/:slug/*", (c) => {
   return new Response("Not found", { status: 404 });
 });
 
-// Runner-proxy CLI handlers - only reachable via the trusted runner
-// proxy on behalf of an in-container `zero` CLI/SDK call. See
-// server/cli-handlers/middleware.ts for the auth model.
-mountCliHandlers(app);
+// Mount the in-sandbox `zero` CLI handlers under `/v1/proxy/zero/*`.
+// Auth is the per-turn token registered by `runTurn` (see
+// `server/lib/pi/cli-server.ts`). Pi is pointed here via
+// `ZERO_PROXY_URL=http://127.0.0.1:<port>` in the spawned env.
+import { buildCliHandlerApp } from "@/cli-handlers/index.ts";
+app.route("/v1/proxy", buildCliHandlerApp());
 
 // API 404 catch-all
 app.all("/api/*", (c) => {
@@ -692,19 +546,10 @@ const honoListener = getRequestListener(app.fetch);
 const nodeServer = createHttpServer(honoListener);
 
 import { attachWebSocketServer, closeWebSocketServer, shedChatScenes, chatSceneStats } from "@/lib/http/ws.ts";
-import { shedBackgroundTasks } from "@/lib/agent/background-task-store.ts";
-import { startWsBridge, startBackgroundBridge } from "@/lib/http/ws-bridge.ts";
-import { initBackgroundTaskListeners } from "@/lib/agent/background-task-store.ts";
-import { initBackgroundResume } from "@/lib/agent/background-resume.ts";
+import { startWsBridge } from "@/lib/http/ws-bridge.ts";
 
 attachWebSocketServer(nodeServer);
 startWsBridge();
-startBackgroundBridge();
-initBackgroundTaskListeners();
-// Must init after initBackgroundTaskListeners so the store-update listener
-// runs before the resume listener reads from it (Set iteration preserves
-// insertion order, and EventBus dispatches in that order).
-initBackgroundResume();
 
 const server = nodeServer.listen(PORT, "0.0.0.0");
 
@@ -719,10 +564,11 @@ process.on("unhandledRejection", (reason) => {
   log.error("unhandled rejection", reason instanceof Error ? reason : new Error(String(reason)));
 });
 
-// Recover any interrupted runs from a previous crash before starting scheduler
-recoverInterruptedRuns();
-
 startScheduler();
+
+// Host browser pool — Chromium launches lazily on first action. Starting
+// here just installs the idle-eviction sweep + frame event emitter wiring.
+startBrowserPool();
 
 import { startEventTriggers, stopAllEventTriggers } from "@/lib/scheduling/event-trigger.ts";
 startEventTriggers();
@@ -739,10 +585,6 @@ registerGlobalPollerHandler(handleGlobalUpdate);
 
 // Sweep pending-responses that expired while the server was down.
 startupExpirySweep();
-// Reject any still-pending sync approvals from a prior process - their
-// owning runs are gone, so auto-reject and broadcast so any reconnecting
-// UI flips the card.
-recoverSyncOrphansOnStartup();
 
 // ── Heap monitoring + self-defense (every 60s) ──
 // heap cap is 400MB (--max-old-space-size=400). Above 300MB we aggressively
@@ -772,8 +614,7 @@ const _heapMonitor = setInterval(() => {
   if (heapUsedMB > HEAP_SHED_THRESHOLD_MB && Date.now() - lastShedAt > 60_000) {
     lastShedAt = Date.now();
     const scenes = shedChatScenes();
-    const tasks = shedBackgroundTasks();
-    log.warn("heap pressure: shed caches", { heapUsedMB: heapUsedMB.toFixed(0), scenes, tasks });
+    log.warn("heap pressure: shed caches", { heapUsedMB: heapUsedMB.toFixed(0), scenes });
     if (typeof (globalThis as any).gc === "function") (globalThis as any).gc();
   }
 }, HEAP_MONITOR_INTERVAL_MS);
@@ -792,20 +633,6 @@ const _vectorPruneInterval = setInterval(() => {
 }, 30 * 60 * 1000);
 if (typeof _vectorPruneInterval === "object" && "unref" in _vectorPruneInterval) _vectorPruneInterval.unref();
 
-// ── Local Docker Backend ──
-// Only initialize Docker if admin has explicitly enabled server execution
-(async () => {
-  if (getSetting("SERVER_EXECUTION_ENABLED") !== "true") {
-    log.info("server execution not enabled - skipping Docker initialization");
-    return;
-  }
-
-  const result = await enableExecution();
-  if (!result.success) {
-    log.info("Docker execution not available", { error: result.error });
-  }
-})();
-
 // ── Graceful Shutdown ──
 
 async function handleShutdown(signal: string) {
@@ -815,18 +642,9 @@ async function handleShutdown(signal: string) {
   stopScheduler();
   stopAllEventTriggers();
   stopGlobalPoller();
-  // Unblock any tool calls waiting on a sync approval so their runs can
-  // finish instead of timing out at the drain deadline.
-  const cancelledSyncs = cancelAllPendingSyncs("shutdown");
-  if (cancelledSyncs > 0) {
-    log.info("cancelled pending sync approvals on shutdown", {
-      count: cancelledSyncs,
-    });
-  }
   await drainActiveRuns(IS_PROD ? 30_000 : 2_000);
   closeWebSocketServer();
-  await teardownExecution();
-  s3.close();
+  await stopBrowserPool().catch(() => {});
   db.close();
   log.info("shutdown complete");
   server.close();

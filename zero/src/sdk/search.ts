@@ -1,7 +1,7 @@
 /**
- * Search group - hybrid vector search over project files, memory, and
- * messages. Lets scripts find relevant content without direct access to
- * the vector index.
+ * Search group - hybrid vector search over project files and messages.
+ * Lets scripts find relevant content without direct access to the
+ * vector index.
  */
 import { call, type CallOptions } from "./client.ts";
 import { SearchInput } from "./schemas.ts";
@@ -21,7 +21,7 @@ export const search = {
   query(
     query: string,
     opts?: {
-      collections?: ("file" | "memory" | "message")[];
+      collections?: ("file" | "message")[];
       topK?: number;
     },
     callOptions?: CallOptions,

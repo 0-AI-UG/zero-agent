@@ -62,7 +62,7 @@ export async function handleMessageSend(
             requesterContext: {
               userId: ctx.userId,
               projectId: ctx.projectId,
-              containerName: ctx.containerName,
+              chatId: ctx.chatId,
             },
           }
         : undefined,

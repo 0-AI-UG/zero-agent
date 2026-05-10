@@ -1,38 +1,33 @@
 /**
  * Reverse proxy for forwarded ports.
- * Routes /_apps/{slug}/* to the port's process inside its session container.
- * Auth via short-lived app tokens in the query string (issued by the gate page).
+ * Routes `/_apps/{slug}/*` to a host-side service listening on
+ * `127.0.0.1:<port>`. Auth via short-lived app tokens in the query string
+ * (issued by the gate page) or share tokens.
  */
-import { getPortBySlug } from "@/db/queries/apps.ts";
+import { getAppBySlug } from "@/db/queries/apps.ts";
 import { verifyAppToken, verifyShareToken } from "@/lib/auth/auth.ts";
 import { corsHeaders } from "@/lib/http/cors.ts";
 import { log } from "@/lib/utils/logger.ts";
 
 const proxyLog = log.child({ module: "app-proxy" });
 
-// Simple in-memory cache for slug → { ip, port, pinned, projectId } lookups
-const slugCache = new Map<string, { ip: string; port: number; pinned: boolean; projectId: string; expiresAt: number }>();
+const slugCache = new Map<string, { port: number; projectId: string; expiresAt: number }>();
 const CACHE_TTL = 60_000;
 
-function getCached(slug: string): { ip: string; port: number; pinned: boolean; projectId: string } | null {
+function getCached(slug: string): { port: number; projectId: string } | null {
   const cached = slugCache.get(slug);
-  if (cached && Date.now() < cached.expiresAt) {
-    return cached;
-  }
+  if (cached && Date.now() < cached.expiresAt) return cached;
   slugCache.delete(slug);
   return null;
 }
 
-function setCache(slug: string, ip: string, port: number, pinned: boolean, projectId: string): void {
-  slugCache.set(slug, { ip, port, pinned, projectId, expiresAt: Date.now() + CACHE_TTL });
+function setCache(slug: string, port: number, projectId: string): void {
+  slugCache.set(slug, { port, projectId, expiresAt: Date.now() + CACHE_TTL });
 }
 
-/** Invalidate cache for a slug (call after changes). */
 export function invalidateAppCache(slug: string): void {
   slugCache.delete(slug);
 }
-
-// ── Main proxy handler ──
 
 export async function proxyAppRequest(slug: string, request: Request): Promise<Response> {
   const url = new URL(request.url);
@@ -40,20 +35,12 @@ export async function proxyAppRequest(slug: string, request: Request): Promise<R
   let entry = getCached(slug);
 
   if (!entry) {
-    const row = getPortBySlug(slug);
-    if (!row) {
-      return new Response("Not found", { status: 404 });
-    }
-
-    if (row.status !== "active" || !row.container_ip) {
-      return new Response("Service is not active", { status: 503 });
-    }
-
-    setCache(slug, row.container_ip, row.port, row.pinned === 1, row.project_id);
-    entry = { ip: row.container_ip, port: row.port, pinned: row.pinned === 1, projectId: row.project_id };
+    const row = getAppBySlug(slug);
+    if (!row) return new Response("Not found", { status: 404 });
+    setCache(slug, row.port, row.project_id);
+    entry = { port: row.port, projectId: row.project_id };
   }
 
-  // Auth via short-lived app token in query string
   const appToken = url.searchParams.get("token");
   if (!appToken) {
     return Response.json({ error: "Authentication required" }, { status: 401, headers: corsHeaders });
@@ -68,21 +55,11 @@ export async function proxyAppRequest(slug: string, request: Request): Promise<R
     return Response.json({ error: "Invalid or expired token" }, { status: 401, headers: corsHeaders });
   }
 
-  // Build upstream URL - strip /_apps/{slug} prefix and token param
   const prefixLen = `/_apps/${slug}`.length;
   const upstreamPath = url.pathname.slice(prefixLen) || "/";
   url.searchParams.delete("token");
   const upstreamSearch = url.searchParams.toString();
-
-  const { getLocalBackend } = await import("@/lib/execution/lifecycle.ts");
-  const backend = getLocalBackend();
-  if (!backend) {
-    return new Response("Execution not available", { status: 503 });
-  }
-
-  const pathSuffix = upstreamPath.startsWith("/") ? upstreamPath.slice(1) : upstreamPath;
-  const proxyPath = `${pathSuffix}${upstreamSearch ? `?${upstreamSearch}` : ""}`;
-  const { url: upstreamUrl, apiKey } = backend.getProxyInfo(entry.projectId, entry.port, proxyPath);
+  const upstreamUrl = `http://127.0.0.1:${entry.port}${upstreamPath}${upstreamSearch ? `?${upstreamSearch}` : ""}`;
 
   try {
     const headers = new Headers(request.headers);
@@ -91,15 +68,8 @@ export async function proxyAppRequest(slug: string, request: Request): Promise<R
     headers.set("X-Forwarded-Host", url.host);
     headers.delete("host");
 
-    // Add runner auth when proxying through runner
-    if (apiKey) {
-      headers.set("Authorization", `Bearer ${apiKey}`);
-    }
-
     const isIdempotent = request.method === "GET" || request.method === "HEAD" || request.method === "OPTIONS";
-    if (!isIdempotent) {
-      headers.set("Connection", "close");
-    }
+    if (!isIdempotent) headers.set("Connection", "close");
 
     const upstream = await fetch(upstreamUrl, {
       method: request.method,

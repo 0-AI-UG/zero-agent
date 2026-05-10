@@ -1,0 +1,74 @@
+{
+  "when": "2026-05-07T17:05:07.654Z",
+  "platform": "darwin",
+  "results": [
+    {
+      "name": "sandbox: bash can read project file",
+      "ok": true,
+      "detail": "exit=0 out=\"hello from spike\\n\""
+    },
+    {
+      "name": "sandbox: bash can write inside project",
+      "ok": true,
+      "detail": "exit=0"
+    },
+    {
+      "name": "sandbox: bash cannot read ~/.ssh",
+      "ok": true,
+      "detail": "denied as expected"
+    },
+    {
+      "name": "sandbox: bash cannot write outside allowWrite paths",
+      "ok": true,
+      "detail": "denied as expected"
+    },
+    {
+      "name": "pi tool: read can read project file",
+      "ok": true,
+      "detail": "{\"content\":[{\"type\":\"text\",\"text\":\"hello from spike\\n\"}]}"
+    },
+    {
+      "name": "pi tool: confirms sandbox gap on built-in fs tools (expected)",
+      "ok": true,
+      "detail": "read returned secret contents — gap reproduced as finding"
+    },
+    {
+      "name": "socket: bash inside sandbox round-trips scoped context",
+      "ok": true,
+      "detail": "runId=run-1778173502748 chatId=chat-A"
+    },
+    {
+      "name": "sessions: explicit per-chat path is honored",
+      "ok": true,
+      "detail": "A=/var/folders/w9/m2rxqftj5d5_lg_ph2w3kz1w0000gn/T/pi-spike/projects/spike-project/.pi-sessions/chat-A.jsonl B=/var/folders/w9/m2rxqftj5d5_lg_ph2w3kz1w0000gn/T/pi-spike/projects/spike-project/.pi-sessions/chat-B.jsonl"
+    },
+    {
+      "name": "sessions: two chats produce distinct files in the same project",
+      "ok": true,
+      "detail": "A=true bytes=664, B=true bytes=664"
+    },
+    {
+      "name": "sessions: re-opening a chat path resumes the same JSONL",
+      "ok": true,
+      "detail": "entries=2"
+    },
+    {
+      "name": "auth: two AuthStorage instances stay isolated",
+      "ok": true,
+      "detail": "a1=key-A a2=key-B"
+    },
+    {
+      "name": "live: captured streaming text + lifecycle events",
+      "ok": true,
+      "detail": "types=agent_start,turn_start,message_start,message_end,message_update,tool_execution_start,tool_execution_update,tool_execution_end,turn_end,agent_end count=59"
+    },
+    {
+      "name": "live: write tool produced expected file (model-dependent)",
+      "ok": true,
+      "detail": "file present"
+    }
+  ],
+  "findings": [
+    "GAP — Pi's built-in `read` tool is NOT constrained by the OS sandbox. sandbox-exec/bubblewrap only confine the bash *child process* spawned by SandboxManager.wrapWithSandbox; Pi's read/write/edit/grep/find/ls run in the host Node process and bypass denyRead/allowWrite entirely. runTurn must enforce the policy at the tool layer for read/write/edit/grep/find/ls. Practical options: (a) override these tools with shelled-out equivalents (cat / cp / sed / rg / find / ls) wrapped via wrapWithSandbox, or (b) write a Pi extension that intercepts `tool_call` for these tool names and path-checks the input against the same policy. Option (b) is preferred because it keeps Pi's nicer tool I/O and event shape."
+  ]
+}

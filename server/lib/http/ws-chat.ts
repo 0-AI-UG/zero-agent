@@ -1,33 +1,36 @@
 /**
- * WebSocket chat handlers.
+ * WebSocket chat handlers — Pi-backed.
  *
- * Dispatches `chat.send` / `chat.stop` / `chat.regenerate` /
- * `chat.approve` from the per-connection switch in `ws.ts`. Owns the
- * per-`chatId` AbortController for `chat.stop`. The streaming run kicks
- * off `ws-entrypoint.ts`, which mutates the per-chat scene in `ws.ts` —
- * that module broadcasts to current viewers directly.
+ * Routes `chat.send` / `chat.stop` from `ws.ts` into `runTurn(...)`. Pi
+ * owns conversation history (one JSONL per chat under
+ * `<project>/.pi-sessions/<chatId>.jsonl`) so this module no longer
+ * persists messages, builds prompt history, or strips planning parts —
+ * Pi's session manager handles all of that.
+ *
+ * Per-`chatId` AbortController is preserved for `chat.stop`.
  */
 import type { WebSocket } from "ws";
-import { generateId } from "@/db/index.ts";
 import { log } from "@/lib/utils/logger.ts";
 
 import { getProjectById } from "@/db/queries/projects.ts";
-import { getChatById } from "@/db/queries/chats.ts";
+import { getChatById, updateChat } from "@/db/queries/chats.ts";
 import { isProjectMember } from "@/db/queries/members.ts";
 import { getUserById } from "@/db/queries/users.ts";
-import { getMessagesByChat } from "@/db/queries/messages.ts";
-import { saveChatMessages } from "@/db/queries/messages.ts";
 
 import {
   createAbortController,
   requestAbort,
   clearAbortController,
 } from "@/lib/http/chat-aborts.ts";
-import { runAgentStepStreaming } from "@/lib/agent-step/index.ts";
-import { isChatStreaming as chatIsStreaming } from "@/lib/http/ws.ts";
-import { resolvePendingSync } from "@/lib/sync-approval.ts";
-
-import type { Message, Part } from "@/lib/messages/types.ts";
+import {
+  beginChatStream,
+  endChatStream,
+  isChatStreaming as chatIsStreaming,
+  publishPiEvent,
+} from "@/lib/http/ws.ts";
+import { runTurn } from "@/lib/pi/run-turn.ts";
+import { resolveModelForPi } from "@/lib/pi/model.ts";
+import { events } from "@/lib/scheduling/events.ts";
 
 const chatLog = log.child({ module: "ws-chat" });
 
@@ -49,15 +52,18 @@ type AuthorizedChatContext =
     }
   | { error: string };
 
+interface ChatImage {
+  /** Base64-encoded image bytes (no data: prefix). */
+  data: string;
+  mimeType: string;
+}
+
 interface ChatSendMessage {
   type: "chat.send";
   chatId: string;
   text?: string;
-  attachments?: Part[];
   model?: string;
-  language?: "en" | "zh";
-  disabledTools?: string[];
-  planMode?: boolean;
+  images?: ChatImage[];
 }
 
 interface ChatStopMessage {
@@ -65,27 +71,7 @@ interface ChatStopMessage {
   chatId: string;
 }
 
-interface ChatRegenerateMessage {
-  type: "chat.regenerate";
-  chatId: string;
-  messageId: string;
-  model?: string;
-  language?: "en" | "zh";
-  disabledTools?: string[];
-  planMode?: boolean;
-}
-
-interface ChatApproveMessage {
-  type: "chat.approve";
-  syncId: string;
-  verdict: "approve" | "reject";
-}
-
-export type ChatWsMessage =
-  | ChatSendMessage
-  | ChatStopMessage
-  | ChatRegenerateMessage
-  | ChatApproveMessage;
+export type ChatWsMessage = ChatSendMessage | ChatStopMessage;
 
 // ────────────────────────────────────────────────────────────────────────
 //  Dispatcher
@@ -106,12 +92,6 @@ export async function handleChatMessage(
       return;
     case "chat.stop":
       handleChatStop(ws, meta, msg);
-      return;
-    case "chat.regenerate":
-      await handleChatRegenerate(ws, meta, msg);
-      return;
-    case "chat.approve":
-      handleChatApprove(ws, meta, msg);
       return;
   }
 }
@@ -142,152 +122,57 @@ async function handleChatSend(
     return;
   }
 
-  // Build the new user message from text + attachments. Server owns history.
-  const newUserParts: Part[] = [];
-  if (msg.text) newUserParts.push({ type: "text", text: msg.text });
-  if (Array.isArray(msg.attachments)) newUserParts.push(...msg.attachments);
-  if (newUserParts.length === 0) {
+  const text = (msg.text ?? "").trim();
+  const images = (msg.images ?? []).filter(
+    (img) => typeof img?.data === "string" && typeof img?.mimeType === "string",
+  );
+  if (!text && images.length === 0) {
     sendError(ws, "chat.send: empty message");
     return;
   }
-  const userMessage: Message = {
-    id: generateId(),
-    role: "user",
-    parts: newUserParts,
-  };
 
-  // Load prior history from DB, append the new user message.
-  const prior = getMessagesByChat(chat.id)
-    .map((row) => {
-      try {
-        return JSON.parse(row.content) as Message;
-      } catch {
-        return null;
-      }
-    })
-    .filter((m): m is Message => m != null && (m.parts?.length ?? 0) > 0);
-  const messages: Message[] = [...prior, userMessage];
+  const abortController = createAbortController(chat.id);
 
-  // Persist the user message up front so a hard crash mid-stream doesn't lose
-  // the user's input.
+  let resolved;
   try {
-    saveChatMessages(
-      project.id,
-      chat.id,
-      [{ id: userMessage.id, role: userMessage.role, content: JSON.stringify(userMessage) }],
-      meta.userId,
-    );
+    resolved = resolveModelForPi(msg.model);
   } catch (err) {
-    chatLog.warn("failed to pre-persist user message", {
-      chatId: chat.id,
-      error: err instanceof Error ? err.message : String(err),
-    });
+    sendError(ws, `chat.send: ${err instanceof Error ? err.message : String(err)}`);
+    clearAbortController(chat.id);
+    return;
+  }
+  const piModel = resolved;
+
+  // Begin the WS scene before runTurn so viewer joins mid-run see the
+  // streaming flag immediately. The runId comes back from runTurn but we
+  // don't have it yet; emit a placeholder and let the first pi.event
+  // carry the canonical runId.
+  if (chat.title === "New Chat" && text) {
+    const title = text.length > 60 ? `${text.slice(0, 60).trimEnd()}…` : text;
+    updateChat(chat.id, { title });
+    events.emit("chat.created", { chatId: chat.id, projectId: project.id, title });
   }
 
-  // Strip planning tool parts from prior history when plan mode is off.
-  const cleaned = msg.planMode ? messages : stripPlanToolParts(messages);
+  beginChatStream(chat.id, "");
 
-  const streamId = generateId();
-  const abortController = createAbortController(chat.id);
-
-  // Fire off the streaming run. ws-entrypoint mutates the per-chat scene
-  // in ws.ts, which broadcasts to current viewers. We don't await so the
-  // WS handler doesn't block the connection's read loop.
-  void runAgentStepStreaming({
-    project: { id: project.id, name: project.name },
+  void runTurn({
+    projectId: project.id,
     chatId: chat.id,
     userId: meta.userId,
-    username: meta.username,
-    model: msg.model,
-    language: msg.language,
-    disabledTools: msg.disabledTools,
-    planMode: msg.planMode,
-    messages: cleaned,
+    userMessage: text || "Describe these image(s).",
+    images: images.length > 0 ? images : undefined,
+    model: piModel,
     abortSignal: abortController.signal,
-    streamId,
+    onEvent: (env) => publishPiEvent(env),
   })
-    .catch((err) => {
-      chatLog.error("ws chat run failed", err, { chatId: chat.id });
+    .then(({ runId, aborted }) => {
+      endChatStream(chat.id, aborted ? "aborted" : "completed");
+      chatLog.info("pi turn finished", { chatId: chat.id, runId, aborted });
     })
-    .finally(() => {
-      clearAbortController(chat.id);
-    });
-}
-
-// ────────────────────────────────────────────────────────────────────────
-//  chat.regenerate
-// ────────────────────────────────────────────────────────────────────────
-
-async function handleChatRegenerate(
-  ws: WebSocket,
-  meta: ChatConnectionMeta,
-  msg: ChatRegenerateMessage,
-): Promise<void> {
-  if (!msg.chatId || !msg.messageId) {
-    sendError(ws, "chat.regenerate: missing chatId or messageId");
-    return;
-  }
-
-  const context = getAuthorizedChatContext(meta.userId, msg.chatId);
-  if ("error" in context) {
-    sendError(ws, context.error.replace("chat.send", "chat.regenerate"));
-    return;
-  }
-  const { chat, project } = context;
-
-  if (chatIsStreaming(chat.id)) {
-    sendError(ws, "chat.regenerate: chat is already streaming");
-    return;
-  }
-
-  const messages = getMessagesByChat(chat.id)
-    .map((row) => {
-      try {
-        return JSON.parse(row.content) as Message;
-      } catch {
-        return null;
-      }
-    })
-    .filter((m): m is Message => m != null && (m.parts?.length ?? 0) > 0);
-
-  const targetIndex = messages.findIndex((m) => m.id === msg.messageId);
-  if (targetIndex < 0) {
-    sendError(ws, "chat.regenerate: message not found");
-    return;
-  }
-
-  const target = messages[targetIndex]!;
-  if (target.role !== "assistant") {
-    sendError(ws, "chat.regenerate: target message must be assistant");
-    return;
-  }
-
-  const trimmed = messages.slice(0, targetIndex);
-  const last = trimmed[trimmed.length - 1];
-  if (!last || last.role !== "user") {
-    sendError(ws, "chat.regenerate: no preceding user turn to replay");
-    return;
-  }
-
-  const cleaned = msg.planMode ? trimmed : stripPlanToolParts(trimmed);
-  const streamId = generateId();
-  const abortController = createAbortController(chat.id);
-
-  void runAgentStepStreaming({
-    project: { id: project.id, name: project.name },
-    chatId: chat.id,
-    userId: meta.userId,
-    username: meta.username,
-    model: msg.model,
-    language: msg.language,
-    disabledTools: msg.disabledTools,
-    planMode: msg.planMode,
-    messages: cleaned,
-    abortSignal: abortController.signal,
-    streamId,
-  })
     .catch((err) => {
-      chatLog.error("ws chat regenerate failed", err, { chatId: chat.id });
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      chatLog.error("pi turn failed", err, { chatId: chat.id });
+      endChatStream(chat.id, "error", errorMsg);
     })
     .finally(() => {
       clearAbortController(chat.id);
@@ -313,36 +198,8 @@ function handleChatStop(
 }
 
 // ────────────────────────────────────────────────────────────────────────
-//  chat.approve
-// ────────────────────────────────────────────────────────────────────────
-
-function handleChatApprove(
-  ws: WebSocket,
-  _meta: ChatConnectionMeta,
-  msg: ChatApproveMessage,
-): void {
-  if (!msg.syncId || (msg.verdict !== "approve" && msg.verdict !== "reject")) {
-    sendError(ws, "chat.approve: missing syncId or invalid verdict");
-    return;
-  }
-  resolvePendingSync(msg.syncId, msg.verdict, "ws");
-}
-
-// ────────────────────────────────────────────────────────────────────────
 //  Helpers
 // ────────────────────────────────────────────────────────────────────────
-
-function stripPlanToolParts(messages: Message[]): Message[] {
-  return messages.map((m) => {
-    if (!m.parts) return m;
-    const filtered = m.parts.filter((p) => {
-      if (p.type === "dynamic-tool" && p.toolName === "finishPlanning") return false;
-      return true;
-    });
-    if (filtered.length === m.parts.length) return m;
-    return { ...m, parts: filtered };
-  });
-}
 
 function getAuthorizedChatContext(userId: string, chatId: string): AuthorizedChatContext {
   const chat = getChatById(chatId);

@@ -1,5 +1,5 @@
 import { db, generateId } from "@/db/index.ts";
-import type { PendingResponseRow, PendingResponseStatus } from "@/db/types.ts";
+import type { PendingResponseRow } from "@/db/types.ts";
 
 export interface CreatePendingResponseInput {
   groupId: string | null;
@@ -139,15 +139,3 @@ export function expirePendingResponseRow(id: string): boolean {
   return expireOneStmt.run(id).changes > 0;
 }
 
-// Read all rows matching a (kind, status) pair - used by the sync-approval
-// orphan sweep that runs on startup.
-const byKindStatusStmt = db.prepare(
-  "SELECT * FROM pending_responses WHERE kind = ? AND status = ? ORDER BY created_at ASC"
-);
-
-export function getPendingResponsesByKindAndStatus(
-  kind: string,
-  status: PendingResponseStatus
-): PendingResponseRow[] {
-  return byKindStatusStmt.all(kind, status) as PendingResponseRow[];
-}

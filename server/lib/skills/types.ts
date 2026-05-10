@@ -16,9 +16,7 @@ export interface SkillFrontmatter {
   metadata: SkillMetadata;
 }
 
-export interface SkillSummary extends SkillFrontmatter {
-  s3Key: string;
-}
+export type SkillSummary = SkillFrontmatter;
 
 export interface LoadedSkill extends SkillSummary {
   instructions: string;

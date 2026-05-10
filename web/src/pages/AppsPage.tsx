@@ -1,31 +1,22 @@
 import { useState } from "react";
 import { useParams } from "react-router";
 import {
-  useServices,
-  useDeleteService,
-  usePinService,
-  useUnpinService,
+  useApps,
+  useDeleteApp,
   useCreateShareLink,
 } from "@/api/apps";
-import type { ForwardedPort } from "@/api/apps";
+import type { App } from "@/api/apps";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   NetworkIcon,
   Trash2Icon,
   ExternalLinkIcon,
-  PinIcon,
-  PinOffIcon,
-  CheckCircle2Icon,
-  CircleDotIcon,
-  TriangleAlertIcon,
   Share2Icon,
   CopyIcon,
   CheckIcon,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
 
 const SHARE_DURATIONS = [
   { value: "5m", label: "5 minutes" },
@@ -33,7 +24,7 @@ const SHARE_DURATIONS = [
   { value: "1h", label: "1 hour" },
 ];
 
-function ShareAppPopover({ projectId, serviceId }: { projectId: string; serviceId: string }) {
+function ShareAppPopover({ projectId, appId }: { projectId: string; appId: string }) {
   const [duration, setDuration] = useState("15m");
   const [link, setLink] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -41,7 +32,7 @@ function ShareAppPopover({ projectId, serviceId }: { projectId: string; serviceI
 
   const generate = async () => {
     setCopied(false);
-    const res = await createShareLink.mutateAsync({ serviceId, duration });
+    const res = await createShareLink.mutateAsync({ appId, duration });
     setLink(`${window.location.origin}${res.path}`);
   };
 
@@ -110,129 +101,45 @@ function ShareAppPopover({ projectId, serviceId }: { projectId: string; serviceI
   );
 }
 
-function StatusBadge({ status }: { status: ForwardedPort["status"] }) {
-  if (status === "active") {
-    return (
-      <Badge variant="outline" className="text-emerald-600 border-emerald-200 bg-emerald-50 dark:bg-emerald-950 dark:text-emerald-400 dark:border-emerald-800 gap-1">
-        <CheckCircle2Icon className="size-3" />
-        Active
-      </Badge>
-    );
-  }
-  if (status === "unavailable") {
-    return (
-      <Badge variant="outline" className="text-amber-600 border-amber-200 bg-amber-50 dark:bg-amber-950 dark:text-amber-400 dark:border-amber-800 gap-1">
-        <TriangleAlertIcon className="size-3" />
-        Unavailable
-      </Badge>
-    );
-  }
-  return (
-    <Badge variant="outline" className="text-muted-foreground gap-1">
-      <CircleDotIcon className="size-3" />
-      Stopped
-    </Badge>
-  );
-}
-
-function ServiceCard({
-  service,
-  projectId,
-}: {
-  service: ForwardedPort;
-  projectId: string;
-}) {
-  const deleteService = useDeleteService(projectId);
-  const pinService = usePinService(projectId);
-  const unpinService = useUnpinService(projectId);
-
-  const serviceUrl = `${window.location.origin}${service.url}`;
+function AppCard({ app, projectId }: { app: App; projectId: string }) {
+  const deleteApp = useDeleteApp(projectId);
+  const appUrl = `${window.location.origin}${app.url}`;
 
   return (
     <div className="border rounded-lg p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 flex-wrap">
-            <h3 className="text-sm font-medium truncate">{service.label || "Untitled app"}</h3>
-            <StatusBadge status={service.status} />
-            {service.pinned && (
-              <Badge variant="outline" className="text-xs gap-1">
-                <PinIcon className="size-2.5" />
-                Always on
-              </Badge>
-            )}
-          </div>
-          <div className="flex items-center gap-3 mt-2 text-[11px] text-muted-foreground flex-wrap">
+          <h3 className="text-sm font-medium truncate">{app.name}</h3>
+          <div className="flex items-center gap-3 mt-1 text-[11px] text-muted-foreground flex-wrap">
+            <span className="font-mono">port {app.port}</span>
             <a
-              href={serviceUrl}
+              href={appUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className={cn(
-                "hover:text-foreground inline-flex items-center gap-1 underline-offset-2 hover:underline",
-                service.status !== "active" && !service.pinned && "opacity-50 pointer-events-none",
-              )}
+              className="hover:text-foreground inline-flex items-center gap-1 underline-offset-2 hover:underline"
             >
               Open link
               <ExternalLinkIcon className="size-2.5" />
             </a>
           </div>
-          {!service.startCommand && (
-            <p className="flex items-center gap-1 mt-2 text-[10px] text-amber-600 dark:text-amber-400">
-              <TriangleAlertIcon className="size-3 shrink-0" />
-              This app won't restart automatically after the project sleeps
-            </p>
-          )}
-          {service.error && (
-            <p className="text-xs text-destructive mt-2 line-clamp-2">{service.error}</p>
-          )}
         </div>
 
         <div className="flex items-center gap-1 shrink-0">
-          {(service.status === "active" || service.pinned) && (
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={() => window.open(serviceUrl, "_blank")}
-              aria-label="Open service"
-            >
-              <ExternalLinkIcon className="size-3.5" />
-            </Button>
-          )}
-
-          {service.pinned && (
-            <ShareAppPopover projectId={projectId} serviceId={service.id} />
-          )}
-
-          {service.pinned ? (
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={() => unpinService.mutate(service.id)}
-              disabled={unpinService.isPending}
-              aria-label="Don't keep running"
-              title="Stop keeping this app running when the project sleeps"
-            >
-              <PinOffIcon className="size-3.5" />
-            </Button>
-          ) : (
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={() => pinService.mutate(service.id)}
-              disabled={pinService.isPending}
-              aria-label="Keep running"
-              title="Keep this app available even after the project sleeps"
-            >
-              <PinIcon className="size-3.5" />
-            </Button>
-          )}
-
           <Button
             variant="ghost"
             size="icon-sm"
-            onClick={() => deleteService.mutate(service.id)}
-            disabled={deleteService.isPending}
-            aria-label="Delete service"
+            onClick={() => window.open(appUrl, "_blank")}
+            aria-label="Open app"
+          >
+            <ExternalLinkIcon className="size-3.5" />
+          </Button>
+          <ShareAppPopover projectId={projectId} appId={app.id} />
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={() => deleteApp.mutate(app.id)}
+            disabled={deleteApp.isPending}
+            aria-label="Delete app"
           >
             <Trash2Icon className="size-3.5" />
           </Button>
@@ -244,63 +151,33 @@ function ServiceCard({
 
 export function AppsPage() {
   const { projectId } = useParams<{ projectId: string }>();
-  const { data: services, isLoading } = useServices(projectId!);
-
-  const unpinned = services?.filter(s => !s.pinned) ?? [];
-  const pinned = services?.filter(s => s.pinned) ?? [];
+  const { data: apps, isLoading } = useApps(projectId!);
 
   return (
     <div className="h-full overflow-y-auto">
       <div className="max-w-2xl mx-auto px-4 md:px-5 py-6 space-y-5">
         <div>
-          <h2 className="text-xl font-bold tracking-tight font-display">
-            Apps
-          </h2>
+          <h2 className="text-xl font-bold tracking-tight font-display">Apps</h2>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Things running in this project that you can open in your browser
+            Each app gets a permanent URL that proxies to a port on the host.
           </p>
         </div>
 
         {isLoading ? (
-          <div className="space-y-3">
-            {Array.from({ length: 2 }).map((_, i) => (
-              <Skeleton key={i} className="h-20 rounded-lg" />
-            ))}
-          </div>
-        ) : !services || services.length === 0 ? (
+          <Skeleton className="h-20 rounded-lg" />
+        ) : !apps || apps.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center">
             <NetworkIcon className="size-10 text-muted-foreground/40 mb-3" />
-            <p className="text-sm font-medium mb-1">Nothing running yet</p>
+            <p className="text-sm font-medium mb-1">No apps yet</p>
             <p className="text-xs text-muted-foreground max-w-[280px]">
-              Ask the agent to build or start an app - it will show up here so you can open it.
+              Create an app to get a port + URL. Bind your server to that port and the URL will proxy to it.
             </p>
           </div>
         ) : (
-          <div className="space-y-5">
-            {unpinned.length > 0 && (
-              <div className="space-y-3">
-                {unpinned.map((service) => (
-                  <ServiceCard key={service.id} service={service} projectId={projectId!} />
-                ))}
-              </div>
-            )}
-
-            {pinned.length > 0 && (
-              <div className="space-y-3">
-                <div className="pt-2">
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <PinIcon className="size-3" />
-                    <span className="font-medium">Always on</span>
-                  </div>
-                  <p className="text-[11px] text-muted-foreground/80 mt-0.5">
-                    These apps stay available even when the project is idle.
-                  </p>
-                </div>
-                {pinned.map((service) => (
-                  <ServiceCard key={service.id} service={service} projectId={projectId!} />
-                ))}
-              </div>
-            )}
+          <div className="space-y-3">
+            {apps.map((app) => (
+              <AppCard key={app.id} app={app} projectId={projectId!} />
+            ))}
           </div>
         )}
       </div>

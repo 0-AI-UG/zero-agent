@@ -10,11 +10,7 @@ import {
   type NotificationAction,
 } from "@/components/notifications/NotificationToast";
 import { createElement } from "react";
-import {
-  usePendingApprovalsStore,
-  type SyncUiStatus,
-} from "@/stores/pending-approvals";
-import { usePlanModeStore } from "@/stores/plan-mode";
+import { turnDiffsStore } from "@/stores/turn-diffs";
 
 const toastIdForResponse = (responseId: string) => `pending-${responseId}`;
 
@@ -81,75 +77,23 @@ export function useRealtime(projectId: string | undefined) {
           }
           break;
 
-        case "sync.resolved": {
-          // Authoritative update: flip any open SyncApproval card to its
-          // terminal state regardless of which channel resolved it.
-          //
-          // Multi-user (autonomous) fan-outs include sibling row ids in
-          // `ids[]` so the canonical card flips even when a remote member
-          // resolved a non-canonical row. Also dismiss any open toast for
-          // the same response ids so a stale "Approve / Discard" toast
-          // doesn't sit there after the sync was decided elsewhere.
-          if (typeof msg.status === "string") {
-            const status = msg.status as SyncUiStatus;
-            const ids = Array.isArray(msg.ids)
-              ? (msg.ids as unknown[]).filter(
-                  (x): x is string => typeof x === "string",
-                )
-              : typeof msg.id === "string"
-              ? [msg.id]
-              : [];
-            const store = usePendingApprovalsStore.getState();
-            for (const id of ids) {
-              store.setStatus(id, status);
-              if (status !== "awaiting") store.clear(id);
-              toast.dismiss(toastIdForResponse(id));
-            }
-          }
-          break;
-        }
-
-        case "sync.created":
-        case "chat.sync.created": {
-          const syncId =
-            (typeof msg.syncId === "string" ? msg.syncId : undefined) ??
-            (typeof msg.id === "string" ? msg.id : undefined);
+        case "turn.diff.ready": {
+          // Server broadcasts this after a turn completes with a post-snapshot
+          // available. We stash the snapshot pair so the TurnDiffPanel can
+          // fetch and render the diff on demand.
           const chatId = typeof msg.chatId === "string" ? msg.chatId : undefined;
-          if (syncId && chatId) {
-            usePendingApprovalsStore.getState().upsertProposal({
-              id: syncId,
-              chatId,
-              source: typeof msg.source === "string" ? msg.source : undefined,
-              status: "awaiting",
-              changes: Array.isArray(msg.changes) ? (msg.changes as any[]) : undefined,
+          const runId = typeof msg.runId === "string" ? msg.runId : undefined;
+          const preSnapshotId =
+            typeof msg.preSnapshotId === "string" ? msg.preSnapshotId : undefined;
+          const postSnapshotId =
+            typeof msg.postSnapshotId === "string" ? msg.postSnapshotId : undefined;
+          if (chatId && runId && preSnapshotId && postSnapshotId) {
+            turnDiffsStore.addTurnDiff(chatId, {
+              runId,
+              preSnapshotId,
+              postSnapshotId,
+              createdAt: Date.now(),
             });
-          }
-          break;
-        }
-
-        case "plan.ready": {
-          const chatId = msg.chatId as string | undefined;
-          const responseId = msg.responseId as string | undefined;
-          const planFilePath = msg.planFilePath as string | undefined;
-          const planContent = msg.planContent as string | undefined;
-          const summary = msg.summary as string | undefined;
-          if (chatId && responseId) {
-            usePlanModeStore.getState().setPlanReview(chatId, {
-              responseId,
-              planFilePath: planFilePath ?? "",
-              planContent: planContent ?? "",
-              summary: summary ?? "",
-              status: "pending",
-            });
-          }
-          break;
-        }
-
-        case "plan.new_chat_created": {
-          const sourceChatId = msg.sourceChatId as string | undefined;
-          const newChatId = msg.newChatId as string | undefined;
-          if (sourceChatId && newChatId) {
-            usePlanModeStore.getState().setNewChatRedirect(sourceChatId, newChatId);
           }
           break;
         }
@@ -206,49 +150,6 @@ export function useRealtime(projectId: string | undefined) {
           break;
         }
 
-        case "background.completed": {
-          if (pid) {
-            queryClient.invalidateQueries({ queryKey: queryKeys.chats.byProject(pid) });
-          }
-          const taskName = (msg.taskName as string | undefined) ?? "Background task";
-          const summary = (msg.summary as string | undefined)?.slice(0, 240) ?? "";
-          const chatId = msg.chatId as string | undefined;
-          const url = chatId && pid ? `/projects/${pid}/c/${chatId}` : undefined;
-          toast.custom(
-            (t: string | number) =>
-              createElement(NotificationToast, {
-                toastId: t,
-                title: `Background task completed: ${taskName}`,
-                body: summary,
-                kind: "task_completed",
-                url,
-              }),
-            {
-              id: `bg-completed-${chatId ?? taskName}-${Date.now()}`,
-              duration: 8000,
-            },
-          );
-          break;
-        }
-
-        case "background.failed": {
-          const taskName = (msg.taskName as string | undefined) ?? "Background task";
-          const error = (msg.error as string | undefined)?.slice(0, 240) ?? "";
-          toast.custom(
-            (t: string | number) =>
-              createElement(NotificationToast, {
-                toastId: t,
-                title: `Background task failed: ${taskName}`,
-                body: error,
-                kind: "task_failed",
-              }),
-            {
-              id: `bg-failed-${taskName}-${Date.now()}`,
-              duration: 10000,
-            },
-          );
-          break;
-        }
       }
     });
   }, [setPresence, addTyping]);

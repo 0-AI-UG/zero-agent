@@ -1,85 +1,71 @@
 /**
  * Browser-preview subscriptions over WS.
  *
- * Replaces the 5s `/api/projects/:id/chats/:cid/browser-screenshot` client
- * poll. A viewer that opens the preview sends `subscribeBrowser {projectId}`.
- * Server fetches frames from the runner on a bounded interval, hashes them
- * through the blob store, and broadcasts `browser.screenshot` only on
- * change — so an idle browser emits zero WS traffic after the first frame.
- *
- * Per-project so multiple chats in the same project share one tick loop;
- * `chat.browser-screenshot` has always been project-scoped in practice.
+ * Event-driven (vs. the old 3s poll loop): the host browser pool emits a
+ * `frame` event after every successful action that visibly changes the
+ * page. We dedupe via the blob store hash and forward `browser.screenshot`
+ * to project subscribers. Idle browsers emit zero WS traffic.
  */
 import { WebSocket } from "ws";
 import { log } from "@/lib/utils/logger.ts";
-import { getLocalBackend } from "@/lib/execution/lifecycle.ts";
+import { getBrowserPool, type ScreenshotFrame } from "@/lib/browser/host-pool.ts";
 import { putBlob } from "@/lib/media/blob-store.ts";
 
 const wsbLog = log.child({ module: "ws-browser" });
 
-interface Subscription {
+interface ProjectSub {
   subscribers: Set<WebSocket>;
-  interval: ReturnType<typeof setInterval> | null;
   lastHash: string | null;
-  inFlight: boolean;
 }
 
-const subs = new Map<string, Subscription>();
+const subs = new Map<string, ProjectSub>();
+let frameListener: ((f: ScreenshotFrame) => void) | null = null;
 
-const TICK_MS = 3_000;
+function ensureListener() {
+  if (frameListener) return;
+  const handler = (frame: ScreenshotFrame) => {
+    void publish(frame).catch((err) =>
+      wsbLog.debug("publish failed", { projectId: frame.projectId, err: String(err) }),
+    );
+  };
+  frameListener = handler;
+  getBrowserPool().on("frame", handler);
+}
 
-async function tick(projectId: string): Promise<void> {
-  const s = subs.get(projectId);
-  if (!s || s.subscribers.size === 0) return;
-  if (s.inFlight) return;
-  s.inFlight = true;
-  try {
-    const backend = getLocalBackend();
-    const shot = (await backend?.getLatestScreenshot(projectId)) ?? null;
-    if (!shot?.base64) return;
-    const bytes = Buffer.from(shot.base64, "base64");
-    const { hash, size, contentType } = await putBlob(bytes, "image/jpeg", projectId);
-    if (hash === s.lastHash) return;
-    s.lastHash = hash;
-    const frame = {
-      type: "browser.screenshot",
-      projectId,
-      screenshot: {
-        hash,
-        contentType,
-        size,
-        title: shot.title,
-        url: shot.url,
-        timestamp: shot.timestamp,
-      },
-    };
-    const data = JSON.stringify(frame);
-    for (const ws of s.subscribers) {
-      if (ws.readyState === WebSocket.OPEN) ws.send(data);
-    }
-  } catch (err) {
-    wsbLog.debug("browser tick failed", { projectId, err: String(err) });
-  } finally {
-    s.inFlight = false;
+async function publish(frame: ScreenshotFrame): Promise<void> {
+  const sub = subs.get(frame.projectId);
+  if (!sub || sub.subscribers.size === 0) return;
+  const bytes = Buffer.from(frame.base64, "base64");
+  const { hash, size, contentType } = await putBlob(bytes, "image/jpeg", frame.projectId);
+  if (hash === sub.lastHash) return;
+  sub.lastHash = hash;
+  const data = JSON.stringify({
+    type: "browser.screenshot",
+    projectId: frame.projectId,
+    screenshot: {
+      hash, contentType, size,
+      title: frame.title,
+      url: frame.url,
+      timestamp: frame.timestamp,
+    },
+  });
+  for (const ws of sub.subscribers) {
+    if (ws.readyState === WebSocket.OPEN) ws.send(data);
   }
 }
 
 export function subscribeBrowser(ws: WebSocket, projectId: string): void {
   if (!projectId) return;
+  ensureListener();
   let s = subs.get(projectId);
   if (!s) {
-    s = { subscribers: new Set(), interval: null, lastHash: null, inFlight: false };
+    s = { subscribers: new Set(), lastHash: null };
     subs.set(projectId, s);
   }
   s.subscribers.add(ws);
-  if (!s.interval) {
-    s.interval = setInterval(() => { void tick(projectId); }, TICK_MS);
-    void tick(projectId); // emit first frame immediately
-  } else if (s.lastHash) {
-    // Re-seed a late joiner with the most recent frame we already have.
-    // Causes one extra runner fetch so we also get the fresh title/url.
-    void tick(projectId);
-  }
+  // Re-seed late joiners with the most recent frame.
+  const last = getBrowserPool().lastFrameFor(projectId);
+  if (last) void publish(last).catch(() => {});
 }
 
 export function unsubscribeBrowser(ws: WebSocket, projectId?: string): void {
@@ -88,13 +74,13 @@ export function unsubscribeBrowser(ws: WebSocket, projectId?: string): void {
     const s = subs.get(pid);
     if (!s) continue;
     s.subscribers.delete(ws);
-    if (s.subscribers.size === 0) {
-      if (s.interval) clearInterval(s.interval);
-      subs.delete(pid);
-    }
+    if (s.subscribers.size === 0) subs.delete(pid);
   }
 }
 
 export function browserSubStats() {
-  return { projects: subs.size, totalSubscribers: [...subs.values()].reduce((n, s) => n + s.subscribers.size, 0) };
+  return {
+    projects: subs.size,
+    totalSubscribers: [...subs.values()].reduce((n, s) => n + s.subscribers.size, 0),
+  };
 }

@@ -58,8 +58,8 @@ export interface DispatchInput {
   requestResponse?: DispatchRequestResponse;
   /**
    * Internal - when the caller has already created a pending_responses group
-   * (e.g. sync-approval creates its own so it can track waiters), reuse it
-   * instead of making a new one. Mutually exclusive with `requestResponse`.
+   * (so it can track waiters), reuse it instead of making a new one.
+   * Mutually exclusive with `requestResponse`.
    */
   overridePending?: {
     groupId: string;

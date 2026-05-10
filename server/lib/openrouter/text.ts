@@ -1,6 +1,11 @@
-import { generateText as aiGenerateText, convertToModelMessages } from "ai";
+/**
+ * Thin string-in / string-out wrapper around the AI SDK `generateText` for
+ * server-side helpers (image captioning, llm CLI handler) that just want
+ * a quick model call. Pi owns conversation-shaped calls now; this only
+ * supports a flat string prompt.
+ */
+import { generateText as aiGenerateText } from "ai";
 import { getLanguageModel } from "@/lib/ai/provider.ts";
-import type { Message } from "@/lib/messages/types.ts";
 
 export interface GenerateTextUsage {
   inputTokens?: number;
@@ -12,7 +17,7 @@ export interface GenerateTextUsage {
 
 export interface GenerateTextArgs {
   model: string;
-  messages: string | Message[];
+  messages: string;
   system?: string;
   maxOutputTokens?: number;
   temperature?: number;
@@ -27,38 +32,14 @@ export interface GenerateTextResult {
 export async function generateText(args: GenerateTextArgs): Promise<GenerateTextResult> {
   const { model, messages, system, maxOutputTokens, temperature, providerOptions } = args;
 
-  if (typeof messages === "string") {
-    const result = await aiGenerateText({
-      model: getLanguageModel(model),
-      prompt: messages,
-      ...(system !== undefined ? { system } : {}),
-      ...(maxOutputTokens !== undefined ? { maxOutputTokens } : {}),
-      ...(temperature !== undefined ? { temperature } : {}),
-      ...(providerOptions ? { providerOptions: providerOptions as any } : {}),
-    });
-    return {
-      text: result.text,
-      usage: result.usage
-        ? {
-            inputTokens: result.usage.inputTokens,
-            outputTokens: result.usage.outputTokens,
-            reasoningTokens: (result.usage as any).reasoningTokens,
-            cachedInputTokens: (result.usage as any).cachedInputTokens,
-            totalTokens: result.usage.totalTokens,
-          }
-        : undefined,
-    };
-  }
-
   const result = await aiGenerateText({
     model: getLanguageModel(model),
-    messages: await convertToModelMessages(messages),
+    prompt: messages,
     ...(system !== undefined ? { system } : {}),
     ...(maxOutputTokens !== undefined ? { maxOutputTokens } : {}),
     ...(temperature !== undefined ? { temperature } : {}),
     ...(providerOptions ? { providerOptions: providerOptions as any } : {}),
   });
-
   return {
     text: result.text,
     usage: result.usage

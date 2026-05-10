@@ -20,22 +20,21 @@ export function getProjectFileVersion(projectId: string): number {
 
 export function insertFile(
   projectId: string,
-  s3Key: string,
   filename: string,
   mimeType: string,
   sizeBytes: number,
   folderPath: string,
   hash: string = "",
 ): FileRow {
-  // Check if a file with this s3_key already exists (upsert)
+  // Upsert by (project_id, folder_path, filename)
   const existing = db.prepare(
-    "SELECT * FROM files WHERE project_id = ? AND s3_key = ?",
-  ).get(projectId, s3Key) as FileRow | undefined;
+    "SELECT * FROM files WHERE project_id = ? AND folder_path = ? AND filename = ?",
+  ).get(projectId, folderPath, filename) as FileRow | undefined;
 
   if (existing) {
     db.prepare(
-      "UPDATE files SET filename = ?, mime_type = ?, size_bytes = ?, folder_path = ?, hash = ? WHERE id = ?",
-    ).run(filename, mimeType, sizeBytes, folderPath, hash, existing.id);
+      "UPDATE files SET mime_type = ?, size_bytes = ?, hash = ? WHERE id = ?",
+    ).run(mimeType, sizeBytes, hash, existing.id);
     bumpVersion(projectId);
     return db.prepare(
       "SELECT * FROM files WHERE id = ?",
@@ -44,8 +43,8 @@ export function insertFile(
 
   const id = generateId();
   db.prepare(
-    "INSERT INTO files (id, project_id, s3_key, filename, mime_type, size_bytes, folder_path, hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-  ).run(id, projectId, s3Key, filename, mimeType, sizeBytes, folderPath, hash);
+    "INSERT INTO files (id, project_id, filename, mime_type, size_bytes, folder_path, hash) VALUES (?, ?, ?, ?, ?, ?, ?)",
+  ).run(id, projectId, filename, mimeType, sizeBytes, folderPath, hash);
 
   bumpVersion(projectId);
   return db.prepare(
@@ -97,24 +96,17 @@ export function updateFileFolderPath(id: string, folderPath: string): FileRow {
   return db.prepare("SELECT * FROM files WHERE id = ?").get(id) as FileRow;
 }
 
-export function updateFileRecord(id: string, filename: string, s3Key: string, mimeType: string, folderPath: string): FileRow {
+export function updateFileRecord(id: string, filename: string, mimeType: string, folderPath: string): FileRow {
   db.prepare(
-    "UPDATE files SET filename = ?, s3_key = ?, mime_type = ?, folder_path = ? WHERE id = ?",
-  ).run(filename, s3Key, mimeType, folderPath, id);
+    "UPDATE files SET filename = ?, mime_type = ?, folder_path = ? WHERE id = ?",
+  ).run(filename, mimeType, folderPath, id);
   return db.prepare("SELECT * FROM files WHERE id = ?").get(id) as FileRow;
 }
 
-
-export function updateFileThumbnail(id: string, thumbnailS3Key: string): void {
-  db.prepare(
-    "UPDATE files SET thumbnail_s3_key = ? WHERE id = ?",
-  ).run(thumbnailS3Key, id);
-}
-
-export function getFileByS3Key(projectId: string, s3Key: string): FileRow | null {
+export function getFileByPath(projectId: string, folderPath: string, filename: string): FileRow | null {
   return (db.prepare(
-    "SELECT * FROM files WHERE project_id = ? AND s3_key = ?",
-  ).get(projectId, s3Key) as FileRow | undefined) ?? null;
+    "SELECT * FROM files WHERE project_id = ? AND folder_path = ? AND filename = ?",
+  ).get(projectId, folderPath, filename) as FileRow | undefined) ?? null;
 }
 
 export function updateFileSize(id: string, sizeBytes: number): FileRow {
@@ -142,14 +134,3 @@ export function deleteFile(id: string): void {
   if (row?.project_id) bumpVersion(row.project_id);
 }
 
-export function getSkillFiles(projectId: string): FileRow[] {
-  return db.prepare(
-    "SELECT * FROM files WHERE project_id = ? AND filename = 'SKILL.md' AND folder_path LIKE '/skills/%/' ORDER BY folder_path",
-  ).all(projectId) as FileRow[];
-}
-
-export function getSkillFileByName(projectId: string, name: string): FileRow | null {
-  return (db.prepare(
-    "SELECT * FROM files WHERE project_id = ? AND filename = 'SKILL.md' AND folder_path = ?",
-  ).get(projectId, `/skills/${name}/`) as FileRow | undefined) ?? null;
-}

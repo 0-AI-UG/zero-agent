@@ -49,9 +49,13 @@ export function ThemeApplier() {
       if (!el) {
         el = document.createElement("style");
         el.id = id;
-        document.head.appendChild(el);
       }
       el.textContent = css;
+      // Always (re-)append to move the element to the end of <head>. The
+      // pre-paint inline script in index.html injects this style tag before
+      // globals.css loads, so without re-appending it would lose the cascade
+      // and the user's custom theme would be silently overridden.
+      document.head.appendChild(el);
     } else if (el) {
       el.remove();
     }

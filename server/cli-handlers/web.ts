@@ -8,12 +8,17 @@
 import type { z } from "zod";
 import { search } from "@/lib/search/search.ts";
 import { fetchPage } from "@/lib/media/fetch-page.ts";
-import { truncateText } from "@/lib/conversation/truncate-result.ts";
 import type { CliContext } from "./context.ts";
 import { ok } from "./response.ts";
 import type { WebSearchInput, WebFetchInput } from "zero/schemas";
 
 const MAX_CONTENT_CHARS = 12_000;
+
+function truncateText(text: string, maxChars: number): string {
+  if (text.length <= maxChars) return text;
+  const half = Math.floor(maxChars / 2);
+  return `${text.slice(0, half)}\n\n[...${text.length - half * 2} chars omitted...]\n\n${text.slice(-half)}`;
+}
 
 export async function handleWebSearch(
   _ctx: CliContext,

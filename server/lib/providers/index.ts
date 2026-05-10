@@ -1,5 +1,4 @@
 import { getSetting } from "@/lib/settings.ts";
-import { getModelById } from "@/db/queries/models.ts";
 import { log } from "@/lib/utils/logger.ts";
 import type {
   InferenceProvider,
@@ -39,16 +38,11 @@ export function getActiveProvider(): InferenceProvider {
 }
 
 /**
- * Resolve the provider for a specific model id by reading the model row's
- * `inference_provider` column. Falls back to the active provider when the
- * model row is missing or its provider is not registered.
+ * Resolve the provider for a specific model id. Today we only register
+ * openrouter, so this collapses to the active provider — the per-model
+ * `inference_provider` column was dropped in the Pi cutover.
  */
-export function getProviderForModel(modelId: string): InferenceProvider {
-  const row = getModelById(modelId);
-  if (row?.inference_provider) {
-    const p = PROVIDERS[row.inference_provider];
-    if (p) return p;
-  }
+export function getProviderForModel(_modelId: string): InferenceProvider {
   return getActiveProvider();
 }
 

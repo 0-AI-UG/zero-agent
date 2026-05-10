@@ -18,7 +18,6 @@ export interface Project {
   memberCount: number;
   createdAt: string;
   updatedAt: string;
-  lastMessage?: string | null;
 }
 
 export function useProjects() {

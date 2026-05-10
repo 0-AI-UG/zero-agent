@@ -1,17 +1,16 @@
 /**
- * Image generation handler - wraps generateImageViaOpenRouter, writes
- * to S3 and the project's file table, creates a thumbnail, and
- * reconciles the file into the runner container so the agent can
- * immediately read/display it by its project-relative path.
+ * Image generation handler — wraps generateImageViaOpenRouter, writes the
+ * bytes into the project directory so the agent can read them back, and
+ * inserts a `files` row. The inotify watcher converges FTS / vectors
+ * after the file lands.
  */
 import type { z } from "zod";
 import { generateImageViaOpenRouter } from "@/lib/media/image.ts";
-import { writeToS3 } from "@/lib/s3.ts";
-import { insertFile, updateFileThumbnail } from "@/db/queries/files.ts";
+import { insertFile } from "@/db/queries/files.ts";
 import { createFolder as createFolderRecord, getFolderByPath } from "@/db/queries/folders.ts";
-import { createThumbnail, thumbnailS3Key } from "@/lib/media/thumbnail.ts";
+import { writeProjectFile, workspacePathFor } from "@/lib/projects/fs-ops.ts";
 import { sanitizePath } from "@/lib/files/sanitize.ts";
-import { reconcileToContainer, sha256Hex } from "@/lib/execution/workspace-sync.ts";
+import { sha256Hex } from "@/lib/utils/hash.ts";
 import type { CliContext } from "./context.ts";
 import { ok } from "./response.ts";
 import type { ImageGenerateInput } from "zero/schemas";
@@ -36,7 +35,6 @@ export async function handleImageGenerate(
   const timestamp = Date.now();
   const rawPath = input.path ?? `images/${timestamp}.png`;
   const filePath = sanitizePath(rawPath);
-  const s3Key = `projects/${ctx.projectId}/${filePath}`;
   const filename = filePath.split("/").pop() ?? `${timestamp}.png`;
   const folderPath = filePath.includes("/")
     ? "/" + filePath.split("/").slice(0, -1).join("/") + "/"
@@ -44,25 +42,12 @@ export async function handleImageGenerate(
 
   ensureFoldersExist(ctx.projectId, folderPath);
   const buffer = Buffer.from(image.data);
-  await writeToS3(s3Key, buffer);
+  await writeProjectFile(ctx.projectId, workspacePathFor(folderPath, filename), buffer);
 
   const fileRow = insertFile(
-    ctx.projectId, s3Key, filename, image.mediaType, image.data.length, folderPath,
+    ctx.projectId, filename, image.mediaType, image.data.length, folderPath,
     sha256Hex(buffer),
   );
-
-  const thumbKey = thumbnailS3Key(s3Key);
-  try {
-    const thumbBuf = await createThumbnail(image.data);
-    await writeToS3(thumbKey, thumbBuf);
-    updateFileThumbnail(fileRow.id, thumbKey);
-  } catch {
-    // thumbnail failures are non-fatal
-  }
-
-  // Make the new file visible inside the runner container so the
-  // agent can reference it by its project-relative path immediately.
-  await reconcileToContainer(ctx.projectId);
 
   return ok({
     fileId: fileRow.id,

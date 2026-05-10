@@ -1,9 +1,15 @@
-import type { MessageUsage } from "@/lib/messages";
 import { AlertTriangleIcon } from "lucide-react";
+
+interface MessageUsage {
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+  reasoningTokens?: number;
+  cachedInputTokens?: number;
+}
 import { Button } from "@/components/ui/button";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { Progress } from "@/components/ui/progress";
-import { getModelsCache } from "@/stores/model";
 import { cn } from "@/lib/utils";
 
 const WARN = 0.6;
@@ -22,16 +28,12 @@ function indicator(pct: number) {
 }
 
 function calcCost(
-  modelId: string | undefined,
-  t: { input?: number; output?: number; reasoning?: number; cache?: number },
+  _modelId: string | undefined,
+  _t: { input?: number; output?: number; reasoning?: number; cache?: number },
 ): number | undefined {
-  if (!modelId) return undefined;
-  const m = getModelsCache().find((x) => x.id === modelId);
-  if (!m) return undefined;
-  const { input: inP, output: outP } = m.pricing;
-  const inCost = ((t.input ?? 0) + (t.cache ?? 0)) * (inP / 1_000_000);
-  const outCost = ((t.output ?? 0) + (t.reasoning ?? 0)) * (outP / 1_000_000);
-  return inCost + outCost;
+  // Pricing was dropped from the models table in the Pi cutover; usage rows
+  // now omit cost. Re-introduce when Pi exposes its own pricing catalog.
+  return undefined;
 }
 
 const pct = (n: number) =>

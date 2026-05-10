@@ -1,12 +1,10 @@
 /**
- * OpenRouter provider. Resolves model IDs only. The AI SDK provider
- * singleton lives in `server/lib/ai/provider.ts`.
+ * OpenRouter provider. Resolves model IDs only.
  *
- * `getRoutingForModel` exposes the per-model `provider_config` JSON so
- * callers can merge `{ provider: routing }` into providerOptions.
+ * Per-model routing (`provider_config`) was dropped in the Pi cutover —
+ * Pi handles provider fallback through its own settings now.
  */
 
-import { getModelById } from "@/db/queries/models.ts";
 import { getSetting } from "@/lib/settings.ts";
 import type {
   InferenceProvider,
@@ -14,32 +12,14 @@ import type {
   SpecializedKind,
 } from "@/lib/providers/types.ts";
 
-// ── Provider routing (per-model fallback config from `provider_config`) ──
-
-function parseRouting(raw: string | null | undefined): OpenRouterRouting | undefined {
-  if (!raw) return undefined;
-  try {
-    const parsed = JSON.parse(raw) as Partial<OpenRouterRouting>;
-    if (!parsed || !Array.isArray(parsed.order)) return undefined;
-    return {
-      order: parsed.order.filter((x): x is string => typeof x === "string"),
-      ...(typeof parsed.allow_fallbacks === "boolean"
-        ? { allow_fallbacks: parsed.allow_fallbacks }
-        : {}),
-    };
-  } catch {
-    return undefined;
-  }
-}
-
 function getDefaultModelId(): string {
-  return getSetting("OPENROUTER_MODEL") ?? "moonshotai/kimi-k2.5";
+  return getSetting("OPENROUTER_MODEL") ?? "~moonshotai/kimi-latest";
 }
 
 const SPECIALIZED_DEFAULTS: Record<SpecializedKind, () => string> = {
   "search-parse": () => process.env.SEARCH_PARSE_MODEL ?? getDefaultModelId(),
   "edit-apply": () => process.env.EDIT_APPLY_MODEL ?? "openai/gpt-4o",
-  "enrich": () => process.env.ENRICH_MODEL ?? "qwen/qwen3.5-flash-02-23",
+  "enrich": () => process.env.ENRICH_MODEL ?? "qwen/qwen3.6-flash",
   "extract": () => process.env.EXTRACT_MODEL ?? "google/gemini-2.5-flash",
 };
 
@@ -61,7 +41,7 @@ export const openrouterProvider: InferenceProvider = {
   },
 
   getVisionModelId(modelId?: string) {
-    return modelId ?? process.env.VISION_MODEL ?? "qwen/qwen3.5-flash-02-23";
+    return modelId ?? process.env.VISION_MODEL ?? "qwen/qwen3.6-flash";
   },
 
   getEmbeddingModelId(modelId?: string) {
@@ -72,12 +52,11 @@ export const openrouterProvider: InferenceProvider = {
     return modelId ?? SPECIALIZED_DEFAULTS[kind]();
   },
 
-  parseConfig(raw: string | null) {
-    return parseRouting(raw);
+  parseConfig(_raw: string | null) {
+    return undefined;
   },
 
-  getRoutingForModel(modelId: string) {
-    const model = getModelById(modelId);
-    return parseRouting(model?.provider_config ?? null);
+  getRoutingForModel(_modelId: string): OpenRouterRouting | undefined {
+    return undefined;
   },
 };

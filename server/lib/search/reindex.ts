@@ -1,23 +1,19 @@
 import { deleteProjectIndex, ensureIndex, putProjectVectors, isEmbeddingConfigured, chunkText, textToSparseVector } from "@/lib/search/vectors.ts";
-import { readFromS3 } from "@/lib/s3.ts";
 import { embed } from "@/lib/openrouter/embed.ts";
 import { getEmbeddingModelId } from "@/lib/providers/index.ts";
 import { log } from "@/lib/utils/logger.ts";
 import { db } from "@/db/index.ts";
+import { readProjectFile } from "@/lib/projects/fs-ops.ts";
 import type { SparseVector } from "@0-ai/s3lite/vectors";
 
 const reindexLog = log.child({ module: "reindex" });
 
 const getTextFiles = db.prepare(
-  "SELECT id, s3_key, filename, mime_type FROM files WHERE project_id = ? AND (mime_type LIKE 'text/%' OR mime_type = 'application/json')",
-);
-
-const getRecentMessagesPaged = db.prepare(
-  "SELECT id, chat_id, role, content FROM messages WHERE project_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?",
+  "SELECT id, folder_path, filename, mime_type FROM files WHERE project_id = ? AND (mime_type LIKE 'text/%' OR mime_type = 'application/json')",
 );
 
 export interface ReindexProgress {
-  phase: "files" | "memories" | "messages" | "done" | "error" | "queued";
+  phase: "files" | "done" | "error" | "queued";
   current: number;
   total: number;
   detail?: string;
@@ -69,36 +65,9 @@ export function isReindexRunning(projectId: string): boolean {
   return activeProjectId === projectId;
 }
 
-const MEMORY_SECTIONS = ["facts", "preferences", "decisions"] as const;
-
-function parseMemoryEntries(raw: string): { id: string; text: string }[] {
-  const entries: { id: string; text: string }[] = [];
-  let current: string | null = null;
-  let idx = 0;
-
-  for (const line of raw.split("\n")) {
-    const trimmed = line.trim();
-    for (const section of MEMORY_SECTIONS) {
-      if (trimmed === `## ${section.charAt(0).toUpperCase() + section.slice(1)}`) {
-        current = section;
-        idx = 0;
-        break;
-      }
-    }
-    if (current && trimmed.startsWith("- ")) {
-      entries.push({ id: `${current}:${idx}`, text: `[${current}] ${trimmed.slice(2)}` });
-      idx++;
-    }
-  }
-
-  return entries;
-}
-
 const EMBED_BATCH_SIZE = 50;
 const OVERALL_TIMEOUT_MS = 300_000; // 5 minutes
 const FILE_CONCURRENCY = 3;
-const MESSAGE_PAGE_SIZE = 200;
-const MESSAGE_MAX = 1000;
 
 async function embedValues(values: string[]): Promise<number[][]> {
   return embed(values, { model: getEmbeddingModelId() });
@@ -125,20 +94,23 @@ async function processInBatches<T>(
   }
 }
 
-async function doReindex(projectId: string, overallSignal: AbortSignal): Promise<{ files: number; memories: number; messages: number }> {
+async function doReindex(projectId: string, overallSignal: AbortSignal): Promise<{ files: number }> {
   const indexReset = { done: false };
   let fileCount = 0;
-  let memoryCount = 0;
-  let messageCount = 0;
 
   // Phase 1: Files
-  const files = getTextFiles.all(projectId) as { id: string; s3_key: string; filename: string; mime_type: string }[];
+  const files = getTextFiles.all(projectId) as { id: string; folder_path: string; filename: string; mime_type: string }[];
   emitProgress(projectId, { phase: "files", current: 0, total: files.length });
 
   await processInBatches(files, FILE_CONCURRENCY, async (file) => {
     if (overallSignal.aborted) return;
     try {
-      const content = await readFromS3(file.s3_key);
+      // Derive workspace-relative path from folder_path ("/src/") + filename.
+      const trimmedFolder = file.folder_path.replace(/^\/+/, "").replace(/\/+$/, "");
+      const workspacePath = trimmedFolder ? `${trimmedFolder}/${file.filename}` : file.filename;
+      const buf = await readProjectFile(projectId, workspacePath);
+      if (!buf) return;
+      const content = buf.toString("utf-8");
       if (!content.trim()) return;
 
       const chunks = chunkText(content);
@@ -168,94 +140,13 @@ async function doReindex(projectId: string, overallSignal: AbortSignal): Promise
 
   if (overallSignal.aborted) throw new Error("Reindex aborted (overall timeout)");
 
-  // Phase 2: Memory
-  emitProgress(projectId, { phase: "memories", current: 0, total: 0 });
-  try {
-    const memoryRaw = await readFromS3(`projects/${projectId}/MEMORY.md`);
-    const entries = parseMemoryEntries(memoryRaw);
-
-    if (entries.length > 0) {
-      for (let i = 0; i < entries.length; i += EMBED_BATCH_SIZE) {
-        if (overallSignal.aborted) throw new Error("Reindex aborted (overall timeout)");
-        const batch = entries.slice(i, i + EMBED_BATCH_SIZE);
-        const embeddings = await embedValues(batch.map((e) => e.text));
-
-        const vectors: VectorEntry[] = embeddings.map((vector, j) => ({
-          key: `memory:${batch[j]!.id}`,
-          vector,
-          sparseVector: textToSparseVector(batch[j]!.text),
-          metadata: { collection: "memory", sourceId: batch[j]!.id, content: batch[j]!.text },
-        }));
-
-        storeVectors(projectId, vectors, indexReset);
-      }
-      memoryCount = entries.length;
-      emitProgress(projectId, { phase: "memories", current: memoryCount, total: memoryCount });
-    }
-  } catch {
-    // No MEMORY.md or failed - not fatal
-  }
-
-  if (overallSignal.aborted) throw new Error("Reindex aborted (overall timeout)");
-
-  // Phase 3: Messages (paginated)
-  const msgEntries: { id: string; text: string }[] = [];
-  let offset = 0;
-  while (offset < MESSAGE_MAX) {
-    const page = getRecentMessagesPaged.all(projectId, MESSAGE_PAGE_SIZE, offset) as { id: string; chat_id: string; role: string; content: string }[];
-    if (page.length === 0) break;
-
-    for (const msg of page) {
-      try {
-        const parsed = JSON.parse(msg.content);
-        const textContent = (parsed.parts ?? [])
-          .filter((p: any) => p.type === "text")
-          .map((p: any) => p.text)
-          .join("\n");
-
-        if (textContent.length > 50) {
-          msgEntries.push({ id: msg.id, text: textContent.length > 2000 ? textContent.slice(0, 2000) : textContent });
-        }
-      } catch {
-        // Skip unparseable
-      }
-    }
-
-    offset += MESSAGE_PAGE_SIZE;
-  }
-
-  if (msgEntries.length > 0) {
-    emitProgress(projectId, { phase: "messages", current: 0, total: msgEntries.length });
-
-    for (let i = 0; i < msgEntries.length; i += EMBED_BATCH_SIZE) {
-      if (overallSignal.aborted) throw new Error("Reindex aborted (overall timeout)");
-      const batch = msgEntries.slice(i, i + EMBED_BATCH_SIZE);
-      try {
-        const embeddings = await embedValues(batch.map((e) => e.text));
-
-        const vectors: VectorEntry[] = embeddings.map((vector, k) => ({
-          key: `message:${batch[k]!.id}`,
-          vector,
-          sparseVector: textToSparseVector(batch[k]!.text),
-          metadata: { collection: "message", sourceId: batch[k]!.id, content: batch[k]!.text },
-        }));
-
-        storeVectors(projectId, vectors, indexReset);
-        messageCount += batch.length;
-        emitProgress(projectId, { phase: "messages", current: messageCount, total: msgEntries.length });
-      } catch (err) {
-        reindexLog.warn("skip message batch", { batchStart: i, error: String(err) });
-      }
-    }
-  }
-
-  return { files: fileCount, memories: memoryCount, messages: messageCount };
+  return { files: fileCount };
 }
 
 export async function reindexProject(
   projectId: string,
   onProgress?: (progress: ReindexProgress) => void,
-): Promise<{ files: number; memories: number; messages: number }> {
+): Promise<{ files: number }> {
   if (!isEmbeddingConfigured()) {
     throw new Error("Embedding not configured - set OPENROUTER_API_KEY first");
   }
@@ -283,7 +174,7 @@ export async function reindexProject(
       phase: "done",
       current: 0,
       total: 0,
-      detail: `${stats.files} files, ${stats.memories} memories, ${stats.messages} messages`,
+      detail: `${stats.files} files`,
     });
 
     return stats;

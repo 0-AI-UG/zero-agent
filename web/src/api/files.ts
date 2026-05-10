@@ -16,7 +16,7 @@ export async function searchFiles(
 }
 
 export interface ReindexProgress {
-  phase: "files" | "memories" | "messages" | "done" | "error" | "queued";
+  phase: "files" | "done" | "error" | "queued";
   current: number;
   total: number;
   detail?: string;

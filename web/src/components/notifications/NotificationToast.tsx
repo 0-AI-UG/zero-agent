@@ -5,9 +5,8 @@
  * Three render modes derived from the dispatcher payload:
  *
  *   1. **Action buttons** (`actions[]` present) - clicking a button POSTs
- *      that action's `id` as the response text. Used by sync_approval
- *      ([{id:"approve",label:"Keep"},{id:"reject",label:"Discard"}]) so the
- *      user no longer has to type "approve" / "reject" by hand.
+ *      that action's `id` as the response text. Used by pending-response
+ *      flows like CLI requests.
  *
  *   2. **Free-text reply** (`requiresReply` and no actions) - renders an
  *      inline input. Used by `zero message send --respond`.
@@ -38,7 +37,7 @@ export interface NotificationToastProps {
   toastId: string | number;
   title: string;
   body: string;
-  /** Notification kind (e.g. "sync_approval", "cli_request"). Currently unused
+  /** Notification kind (e.g. "cli_request"). Currently unused
    *  visually - kept on the interface so the dispatcher payload can pass it. */
   kind?: string;
   /** When present, render as buttons. The button id is POSTed as the response text. */

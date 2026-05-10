@@ -20,6 +20,13 @@ import {
   CopyIcon,
   CheckIcon,
 } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 type Channel = "ws" | "push" | "telegram";
 
@@ -38,10 +45,6 @@ interface SubsResponse {
 }
 
 const KIND_META: Record<string, { title: string; description: string }> = {
-  sync_approval: {
-    title: "File-change approvals",
-    description: "When an agent needs you to review a write to your project.",
-  },
   cli_request: {
     title: "CLI messages",
     description: "When the agent CLI surfaces a question or request.",
@@ -53,10 +56,6 @@ const KIND_META: Record<string, { title: string; description: string }> = {
   task_failed: {
     title: "Task failed",
     description: "When something the agent was doing errors out.",
-  },
-  plan_review: {
-    title: "Plan review",
-    description: "When an agent submits a plan for your approval.",
   },
 };
 
@@ -314,23 +313,24 @@ export function NotificationsCenter() {
                 Default Telegram project
               </p>
             </div>
-            <select
-              value={tgStatus.activeProjectId ?? ""}
+            <Select
+              value={tgStatus.activeProjectId ?? undefined}
               disabled={
                 setActiveProject.isPending || tgStatus.projects.length < 2
               }
-              onChange={(e) => {
-                const next = e.target.value || null;
-                setActiveProject.mutate(next);
-              }}
-              className="text-xs rounded-md border bg-background px-2 py-1 max-w-[55%] truncate disabled:opacity-60"
+              onValueChange={(next) => setActiveProject.mutate(next || null)}
             >
-              {tgStatus.projects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger className="h-8 text-xs max-w-[55%]">
+                <SelectValue placeholder="Select project" />
+              </SelectTrigger>
+              <SelectContent>
+                {tgStatus.projects.map((p) => (
+                  <SelectItem key={p.id} value={p.id} className="text-xs">
+                    {p.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         )}
 

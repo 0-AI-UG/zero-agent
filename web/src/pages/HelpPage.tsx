@@ -34,10 +34,10 @@ const FAQ_ITEMS: { q: string; a: string }[] = [
     a: 'You can schedule the agent to run tasks automatically using cron expressions or presets (30m, 1h, 2h, 6h, 12h, 1d). Create tasks from the Tasks page and enable automation in project Settings.',
   },
   {
-    q: "What are knowledge files?",
-    a: "Knowledge files (SOUL.md, MEMORY.md, HEARTBEAT.md) are auto-created files that persist context across conversations. SOUL.md defines identity and tone, MEMORY.md stores facts and preferences, and HEARTBEAT.md sets up monitoring checklists.",
+    q: "What is HEARTBEAT.md?",
+    a: "HEARTBEAT.md is an auto-created checklist file used by the scheduled heartbeat task. The agent reads it on each automatic heartbeat run, so you can edit the checklist to control what gets checked.",
   },
-  {
+{
     q: "Can I control which tools the agent uses?",
     a: "Yes. In any conversation you can toggle tool groups on or off — Sub Agents, File Operations, Web & Browse, Image Generation, and Scheduling. This lets you focus the agent on specific capabilities.",
   },
@@ -92,15 +92,15 @@ const HELP_CARDS: HelpCard[] = [
   },
   {
     icon: BrainIcon,
-    title: "Knowledge",
-    description: "Persistent context across conversations",
+    title: "Heartbeat",
+    description: "Recurring agent check-ins",
     details: [
-      "SOUL.md — Identity, personality, and tone",
-      "MEMORY.md — Facts, preferences, and context",
-      "HEARTBEAT.md — Monitoring checklist and alerts",
+      "HEARTBEAT.md — checklist run on each heartbeat",
+      "Scheduled task runs every 2h by default",
+      "Edit the file to change what gets checked",
     ],
   },
-  {
+{
     icon: ZapIcon,
     title: "Automation",
     description: "Schedule the agent to run on autopilot",

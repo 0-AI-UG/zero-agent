@@ -15,16 +15,6 @@ import { useModelStore, type ModelConfig } from "@/stores/model";
 import { useModels } from "@/api/models";
 import { cn } from "@/lib/utils";
 
-function formatContext(tokens: number): string {
-  if (tokens >= 1_000_000) return `${tokens / 1_000_000}M`;
-  return `${tokens / 1_000}K`;
-}
-
-function formatPrice(price: number): string {
-  if (price < 1) return `$${price.toFixed(2)}`;
-  return `$${price}`;
-}
-
 function groupByProvider(list: ModelConfig[]): Record<string, ModelConfig[]> {
   const groups: Record<string, ModelConfig[]> = {};
   for (const model of list) {
@@ -88,7 +78,7 @@ export function ModelSection() {
                   <CommandItem
                     key={model.id}
                     value={model.id}
-                    keywords={[model.name, model.provider, ...model.tags, ...(model.multimodal ? ["vision"] : [])]}
+                    keywords={[model.name, model.provider, ...(model.multimodal ? ["vision"] : [])]}
                     onSelect={() => {
                       setSelectedModelId(model.id);
                       setOpen(false);
@@ -101,7 +91,7 @@ export function ModelSection() {
                         <span className="flex-1 truncate text-left text-sm font-medium">
                           {model.name}
                         </span>
-                        {model.tags.includes("recommended") && (
+                        {model.default && (
                           <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
                             Default
                           </span>
@@ -111,16 +101,6 @@ export function ModelSection() {
                             Vision
                           </span>
                         )}
-                      </div>
-                      <p className="text-xs text-muted-foreground truncate mt-0.5">
-                        {model.description}
-                      </p>
-                      <div className="flex items-center gap-2 mt-1 text-[10px] text-muted-foreground/70">
-                        <span>{formatContext(model.contextWindow)} ctx</span>
-                        <span>·</span>
-                        <span>
-                          {formatPrice(model.pricing.input)}/{formatPrice(model.pricing.output)} per 1M tokens
-                        </span>
                       </div>
                     </div>
                     <CheckIcon

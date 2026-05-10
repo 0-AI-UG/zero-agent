@@ -58,7 +58,7 @@ export function App() {
               <Route path="c/:chatId" element={<ProjectPage />} />
               <Route path="files" element={<FilesPage />} />
               <Route path="tasks" element={<TasksPage />} />
-              <Route path="services" element={<AppsPage />} />
+              <Route path="apps" element={<AppsPage />} />
               <Route path="skills" element={<SkillsPage />} />
               <Route path="settings" element={<SettingsPage />} />
               <Route path="account" element={<AccountPage />} />

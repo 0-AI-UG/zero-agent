@@ -14,7 +14,6 @@ import type { ChatRow } from "@/db/types.ts";
 import { events } from "@/lib/scheduling/events.ts";
 import { semanticSearch } from "@/lib/search/vectors.ts";
 import { ValidationError } from "@/lib/utils/errors.ts";
-import { cancelSyncsForChat } from "@/lib/sync-approval.ts";
 
 function formatChat(row: ChatRow) {
   return {
@@ -142,9 +141,6 @@ export async function handleDeleteChat(request: Request): Promise<Response> {
     verifyProjectAccess(projectId, userId);
     verifyChatOwnership(chatId, projectId);
 
-    // Unblock any bash tool still waiting on a sync approval in this chat so
-    // its run completes with a reject instead of hanging until expiry.
-    cancelSyncsForChat(chatId, "chat deleted");
     deleteChat(chatId);
     events.emit("chat.deleted", { chatId, projectId });
 

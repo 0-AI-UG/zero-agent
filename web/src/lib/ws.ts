@@ -133,6 +133,14 @@ export function refreshWsToken(token: string) {
   send({ type: "refreshToken", token });
 }
 
+export function subscribeBrowser(projectId: string) {
+  send({ type: "subscribeBrowser", projectId });
+}
+
+export function unsubscribeBrowser(projectId?: string) {
+  send({ type: "unsubscribeBrowser", ...(projectId ? { projectId } : {}) });
+}
+
 export function subscribe(handler: MessageHandler): () => void {
   listeners.add(handler);
   return () => listeners.delete(handler);

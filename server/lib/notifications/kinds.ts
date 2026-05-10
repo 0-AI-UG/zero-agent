@@ -8,11 +8,9 @@
  * stable identifier for subscription-grid UIs that may want to surface it.
  */
 export const NOTIFICATION_KINDS = {
-  SYNC_APPROVAL: "sync_approval",
   CLI_REQUEST: "cli_request",
   TASK_COMPLETED: "task_completed",
   TASK_FAILED: "task_failed",
-  PLAN_REVIEW: "plan_review",
   AGENT_MESSAGE: "agent_message",
 } as const;
 
@@ -20,7 +18,6 @@ export type NotificationKind =
   (typeof NOTIFICATION_KINDS)[keyof typeof NOTIFICATION_KINDS];
 
 export const DEFAULT_NOTIFIABLE_KINDS: ReadonlySet<string> = new Set([
-  NOTIFICATION_KINDS.SYNC_APPROVAL,
   NOTIFICATION_KINDS.CLI_REQUEST,
   NOTIFICATION_KINDS.TASK_COMPLETED,
   NOTIFICATION_KINDS.TASK_FAILED,

@@ -1,7 +1,5 @@
 import { events } from "@/lib/scheduling/events.ts";
 import { broadcastToProject } from "@/lib/http/ws.ts";
-import { sendPushToUser } from "@/lib/notifications/web-push.ts";
-import { getProjectMembers } from "@/db/queries/members.ts";
 
 /**
  * Bridges the in-memory EventBus to WebSocket broadcasts.
@@ -34,51 +32,6 @@ export function startWsBridge() {
 
   events.on("file.deleted", ({ projectId, path, filename }) => {
     broadcastToProject(projectId, { type: "file.changed", path, filename, action: "deleted" });
-  });
-}
-
-/**
- * Bridge background agent events to WebSocket.
- */
-export function startBackgroundBridge() {
-  events.on("background.completed", ({ runId, projectId, chatId, taskName, summary }) => {
-    broadcastToProject(projectId, {
-      type: "background.completed",
-      runId,
-      chatId,
-      taskName,
-      summary: summary.slice(0, 500),
-    });
-
-    const members = getProjectMembers(projectId);
-    for (const member of members) {
-      sendPushToUser(member.user_id, {
-        title: `Task completed: ${taskName}`,
-        body: summary.slice(0, 200),
-        url: `/projects/${projectId}/c/${chatId}`,
-        tag: `bg-${runId}`,
-      }).catch(() => {});
-    }
-  });
-
-  events.on("background.failed", ({ runId, projectId, chatId, taskName, error }) => {
-    broadcastToProject(projectId, {
-      type: "background.failed",
-      runId,
-      chatId,
-      taskName,
-      error,
-    });
-
-    const members = getProjectMembers(projectId);
-    for (const member of members) {
-      sendPushToUser(member.user_id, {
-        title: `Task failed: ${taskName}`,
-        body: error.slice(0, 200),
-        url: `/projects/${projectId}/c/${chatId}`,
-        tag: `bg-${runId}`,
-      }).catch(() => {});
-    }
   });
 }
 

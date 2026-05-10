@@ -3,7 +3,7 @@ import { getAllEventTasks, getEventTasksForEvent, getTaskById, markEventTaskRun 
 import { insertTaskRun, updateTaskRun } from "@/db/queries/task-runs.ts";
 import { getProjectById } from "@/db/queries/projects.ts";
 import { getProjectMembers } from "@/db/queries/members.ts";
-import { runAutonomousTask } from "@/lib/agent/autonomous-agent.ts";
+import { runAutonomousTurn } from "@/lib/pi/autonomous.ts";
 import { formatDateForSQLite } from "@/lib/scheduling/schedule-parser.ts";
 import { log } from "@/lib/utils/logger.ts";
 import type { ScheduledTaskRow } from "@/db/types.ts";
@@ -158,8 +158,6 @@ async function flushTask(taskId: string) {
     triggerLog.info("executing event task", { taskId, name: task.name, event: task.trigger_event, bufferedEvents: buffered.length });
     events.emit("task.started", { taskId, projectId: task.project_id, prompt: task.prompt });
 
-    const onlyTools = task.required_tools ? JSON.parse(task.required_tools) : undefined;
-
     // Build prompt with event context
     const prompt = buildEventPrompt(task.prompt, task.trigger_event!, buffered);
 
@@ -167,11 +165,11 @@ async function flushTask(taskId: string) {
     const memberIds = members.map((m) => m.user_id);
     const userId = memberIds[0];
 
-    const result = await runAutonomousTask(
+    const result = await runAutonomousTurn(
       { id: project.id, name: project.name },
       task.name,
       prompt,
-      { onlyTools, userId },
+      { userId },
     );
 
     updateTaskRun(run.id, {

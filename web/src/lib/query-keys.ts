@@ -50,14 +50,7 @@ export const queryKeys = {
   credentials: {
     byProject: (projectId: string) => ["credentials", projectId] as const,
   },
-  services: {
-    byProject: (projectId: string) => ["services", projectId] as const,
-  },
-  containers: {
-    all: ["containers"] as const,
-    byChat: (projectId: string, chatId: string) =>
-      ["containers", projectId, chatId] as const,
-    browserScreenshot: (projectId: string, chatId: string) =>
-      ["containers", "screenshot", projectId, chatId] as const,
+  apps: {
+    byProject: (projectId: string) => ["apps", projectId] as const,
   },
 } as const;
