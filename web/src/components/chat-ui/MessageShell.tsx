@@ -1,6 +1,7 @@
 import type { ComponentProps, HTMLAttributes, ReactNode } from "react";
-import type { Role } from "@/lib/messages";
 import { Button } from "@/components/ui/button";
+
+type Role = "user" | "assistant" | "toolResult" | "system";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 

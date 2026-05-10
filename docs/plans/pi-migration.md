@@ -395,9 +395,9 @@ One feature branch. Each session builds a piece of the new stack and *deletes th
 
 **Exit criteria for the branch as a whole**: every project runs on Pi end-to-end (chat, file diffs, forwarded ports, autonomous/scheduled runs); legacy runner / agent loop / tool-cards / converters / mirror pipeline are gone from the tree; one-time data backfill has run.
 
-### Phase 2 — Post-merge cleanup (small)
+### Phase 2 — Follow-up sessions on this branch
 
-Anything that survives the cutover branch only because it's safer to remove later (e.g. unused DB columns kept for one rollback window, deprecated provider files no longer imported). Each cleanup is its own short PR.
+Continue Session 9+ work directly on `feat/pi-migration` (no merge to `main` yet). The branch stays open until the Pi stack is genuinely usable end-to-end — that means restoring the regressions Sessions 4/7 introduced (browser tooling, native multimodal images), shipping at least a thin Pi-stack integration test, and cleaning the residual dead code. Each session lands as its own commit on this branch.
 
 ---
 
@@ -480,81 +480,584 @@ Notes / contradictions to flag for later sessions:
 
 **Exit**: tree compiles (`tsc --noEmit` is clean across server/ web/ zero/); existing Pi tests still pass; chat over WS is unusable from the browser (Session 5 ships the renderer).
 
-### Session 5 — Pi event renderer (frontend, deletes tool-cards)
+### Session 5 — Pi event renderer (frontend, deletes tool-cards) — DONE
 
 **Goal**: web client consumes `pi.event` directly.
 
-Builds:
+Built:
 
-- `web/src/components/chat/pi-transcript/` — generic renderer for text, reasoning, tool header/body/progress, errors. Adapters only for genuinely user-facing artifacts (image result, browser screenshot, pending-response prompt).
-- New event-stream hook on top of the `pi.event` envelope.
-- Composer drops the container-status gate.
+- `web/src/lib/pi-events.ts` — structural client-side mirror of pi-agent-core's
+  `AgentMessage` / `AgentEvent` plus the `pi.event` envelope from `runTurn`.
+  Web bundle does not import `@mariozechner/pi-coding-agent`.
+- `web/src/hooks/use-pi-chat.ts` — replaces `use-ws-chat`. Reduces
+  `chat.piSnapshot` (recent-events tail emitted on viewer join), `chat.piEvent`
+  deltas, and `chat.streamBegin/End` into `{ messages, executions, isStreaming, error }`
+  via `useSyncExternalStore`. `message_start`/`update`/`end` track the in-flight
+  message by index; `tool_execution_*` writes a per-`toolCallId` map of
+  `{ state: "running" | "done" | "error", args, partial?, result? }`.
+- `web/src/components/chat/pi-transcript/` — generic renderer.
+  - `MessageView` dispatches user / assistant / toolResult. Assistant content
+    parts → markdown (text), reasoning block (thinking), or `ToolCallCard`
+    (toolCall) keyed by `id` against the executions map. ToolResult messages
+    render nothing (their output is shown by the matching tool card).
+  - `ToolCallCard` is generic: collapsed header with state icon + name + a
+    one-line arg summary (`command`/`path`/`url`/etc. when present, otherwise
+    a flat key=value preview); expanded body shows pretty-printed args plus
+    streaming output from `partial.content[]` and final output from
+    `result.content[]`. No per-tool branching in the renderer.
+- `web/src/components/chat/MessageList.tsx` rewritten to drive off
+  `messages` + `executions`, render `MessageView`, and place `TurnDiffPanel`
+  on the last-completed assistant message. Shimmer suppressed while a
+  trailing tool call is `running` (the card already animates).
+- `web/src/components/chat/Composer.tsx`: container-status gate gone
+  (`useChatContainerStatus`, `ReadyIndicator`, "Server Docker" hint),
+  `BrowserPreview` is now always available, and usage totals/context-token
+  estimate compute against Pi `AssistantMessage.usage` instead of the
+  AI-SDK metadata shape. Image-attach UI is preserved but currently
+  drops the file before `chat.send` (native multimodal pass-through is
+  open question §8).
+- `web/src/hooks/use-browser-screenshot.ts` — extracted from the deleted
+  `api/containers.ts`. Same `subscribeBrowser` / `browser.screenshot` WS
+  flow; consumed by `BrowserPreview`.
+- `web/src/pages/AdminPage.tsx`: dropped the "Container Settings" and
+  "Active Containers" sections (along with `useContainers` /
+  `useDestroyContainer`), since the backing admin endpoints go away with
+  the runner backend in Session 6.
 
-Deletes (same commit):
+Deleted (same commit):
 
-- `web/src/components/chat/tool-cards/*`.
-- `web/src/lib/messages.ts` (AI-SDK part shape).
+- `web/src/components/chat/tool-cards/` (whole directory, plus the
+  `MessageRow.tsx` wrapper that only existed to render those cards).
+- `web/src/lib/messages.ts` (AI-SDK part shape). `Role` is inlined in
+  `MessageShell`; `MessageUsage` is inlined in `Context`.
 - `web/src/hooks/use-ws-chat.ts` (legacy hook).
-- `web/src/api/containers.ts` and the `useChatContainerStatus` hook.
+- `web/src/api/containers.ts` and the `useChatContainerStatus` hook;
+  `queryKeys.containers.*` removed.
+- `web/src/components/chat/TodoProgress.tsx` — fed off
+  `progressCreate`/`progressUpdate` Zero-tool outputs that no longer
+  exist under Pi.
 
-**Exit**: a chat in the browser is end-to-end usable for plain chat + bash + file edits. Diffs, forwarded ports still broken.
+Notes / contradictions to flag for later sessions:
 
-### Session 6 — Inotify watcher + host-fs snapshot service (deletes mirror pipeline + runner-backed snapshots)
+- The server still exposes `/api/admin/containers` and
+  `/api/projects/:projectId/chats/:chatId/container` (both call the
+  legacy `getLocalBackend()`); they're now uncalled by the web UI but
+  still imported by `server/index.ts`. They go away in Session 6 with
+  the rest of the runner-backed execution layer.
+- `PiAgentEvent` in `web/src/lib/pi-events.ts` is a *subset* — only
+  the events the renderer reduces are typed. Other Pi session-level
+  events (`compaction_*`, `auto_retry_*`, etc.) currently fall through
+  the reducer's default branch silently. Surface them when we want UI
+  affordances for compaction/retry indicators.
+- Image attachments on `chat.send` are dropped at the Composer until
+  multimodal pass-through lands (open question §8 / Telegram regression
+  noted in Session 4).
+- "Retry" on the error banner now resends the most recent *user* text
+  instead of regenerating a specific assistant message id; Pi-native
+  fork/branch is open question §8.
 
-**Goal**: file indexing and per-turn diffs work without the runner.
+**Exit**: tree compiles (`npm run typecheck` clean for server, web, zero).
+Chat in the browser is end-to-end usable for plain chat + bash + file
+edits and renders Pi events directly. Diffs and forwarded ports remain
+broken (Sessions 6 and 7).
 
-Builds:
+### Session 6 — Inotify watcher + host-fs snapshot service (deletes mirror pipeline + runner-backed snapshots) — DONE
 
-- Inotify watcher rooted at `/var/zero/projects/<id>/`, lazy per project, drives the files table and search reindex queue.
-- Host-fs git snapshot service: pre/post-turn commits, diff/file/revert endpoints used by `TurnDiffPanel`, `turn.diff.ready` broadcast. `server/routes/turn-snapshots.ts` retargets at the new service.
+**Goal**: file indexing and per-turn diffs work without the runner pipeline.
 
-Deletes (same commit):
+Built:
 
-- `server/lib/execution/{mirror-receiver,flush-scheduler,workdir-client,exec-caps,backend-interface,runner-pool,runner-client,lifecycle,snapshot,manifest-cache}.ts` and the `getLocalBackend()` indirection. Inline calls in `uploads/import-event.ts`, `routes/files.ts`, `search/reindex.ts`.
-- `server/lib/snapshots/` runner-backed implementation.
-- `server/lib/uploads/` mirror callsites collapse to plain host fs.
+- `server/lib/projects/watcher.ts` — recursive `fs.watch` per project, ref-counted, debounced. Excludes `.git-snapshots/`, `.pi-sessions/`, `.git/`, `node_modules/`, `.venv/`, `__pycache__/`. On change: upserts the `files` row, runs `indexFileContent`, queues `embedAndStore`, emits `file.updated`/`file.deleted`. `runTurn` lazily attaches the watcher for the duration of a turn.
+- `server/lib/projects/fs-ops.ts` — host-fs primitives (`writeProjectFile`, `readProjectFile`, `streamProjectFile`, `deleteProjectPath`, `moveProjectPath`, `workspacePathFor`) with path-escape guards so callers cannot read/write outside the project dir.
+- `server/lib/snapshots/snapshot-service.ts` — rewritten as a host-fs git service. Uses a separate gitdir at `<projectDir>/.git-snapshots` so it never collides with a user's own `.git`. `snapshotBeforeTurn` / `snapshotAfterTurn` create commits, `getSnapshotDiff` walks `git diff-tree -r -z`, `readSnapshotFile` shells `git show`, `revertSnapshotPaths` does `git checkout sha -- path` (or unlink if the path was added in `sha`). `runTurn` now drives both snapshots and broadcasts `turn.diff.ready`.
+- `server/routes/turn-snapshots.ts` retargets the new service.
+- `server/lib/utils/hash.ts` — relocated `sha256Hex` so the routes/CLI handlers don't need `manifest-cache.ts`.
 
-**Exit**: file list, search reindex, and `TurnDiffPanel` work end-to-end without any runner.
+Inlined host-fs ops:
+- `server/routes/files.ts`: `streamProjectFile`, `writeProjectFile`, `deleteProjectPath`, `moveProjectPath`. Watcher converges DB / FTS / vectors after the response returns.
+- `server/lib/uploads/import-event.ts` writes directly to disk.
+- `server/lib/search/reindex.ts` reads project files via `readProjectFile`.
+- `server/routes/projects.ts` (default-files create + SOUL.md read/write) goes through `fs-ops.ts`.
 
-### Session 7 — Host process manager + ports cutover (deletes container-IP plumbing)
+Deleted (same commit):
 
-**Goal**: forwarded ports work without containers.
+- `server/lib/execution/{mirror-receiver,flush-scheduler,snapshot,manifest-cache}.ts` plus the matching `*.test.ts` files. `runner-pool.test.ts` deleted too — it mocked `enableExecution` which has gone, and the pool itself goes with Session 7.
+- `server/lib/snapshots/{head,restore,stream}.ts`. `types.ts` retained (`TurnDiffEntry` is still the wire shape).
+- Dangling endpoints in `server/index.ts`: `/api/admin/containers`, `/api/projects/:projectId/chats/:chatId/container`, `/api/projects/:projectId/flush-status`, `/api/admin/execution/{enable,disable,reconnect}`, `/api/admin/runner/status`, plus the `enableExecution`/`disableExecution`/`reconcile` imports that fed them.
+- `runner-client.ts` no longer attaches mirror-receivers, restores snapshots on container reuse, or flushes incremental snapshots on destroy. `runner-pool.ts` no longer calls `clearProjectActivity`. Container exec / browser / port operations still work — they're untouched.
 
-Builds:
+**Contradictions to the plan, called out for the rest of the branch:**
 
-- `server/lib/processes/`: start/stop/reconcile services under the project sandbox policy. `forwarded_ports` schema migrated to host port / PID / start command columns; `container_ip` dropped.
-- `server/lib/http/app-proxy.ts` retargets host loopback.
-- `zero ports forward` CLI handler writes the new schema; pinned-app cold-start works.
-- Startup reconciliation: stale services marked stopped; live PIDs adopted.
+- The plan listed `server/lib/execution/{workdir-client,exec-caps,backend-interface,runner-pool,runner-client,lifecycle}.ts` and `app-manager.ts` as Session 6 deletions. They survive into Session 7 because `app-proxy.ts`, `routes/apps.ts`, `cli-handlers/{ports,browser,image}.ts`, and `ws-browser.ts` still call `getLocalBackend()` for forwarded ports / browser / image generation, which Session 7 retargets at the host process manager. The legacy backend is now reachable only when an admin explicitly persisted `SERVER_EXECUTION_ENABLED=true`; Pi-backed projects no longer touch it.
+- `server/index.ts`'s `/api/capabilities` still reports `serverDocker` based on `getLocalBackend()`. Session 7 reshapes that around the host process manager.
+- `tests/integration/*.test.ts` still target the runner-backed pipeline (mirror, snapshot stream, file mirror, restart-recovery). They are not part of the unit-test suite (`vitest.integration.config.ts`) and do not break `npm run typecheck`. Treat them as casualties of the migration; they get rewritten or deleted in Session 8 alongside the runner repo cull.
 
-Deletes (same commit):
+**Exit**: `tsc --noEmit` clean across server/web/zero. Vitest unit tests pass except for two pre-existing failures requiring a `BRAVE_SEARCH_API_KEY`. File list, search reindex, and per-turn diffs run entirely through host fs + the inotify watcher; the runner mirror pipeline is gone.
 
-- `server/lib/execution/app-manager.ts` (or rewrite in place if more practical).
-- Any remaining `container_ip` / runner-IP code paths.
+### Session 7 — Host process manager + ports cutover (deletes container-IP plumbing) — DONE
 
-**Exit**: a project can `zero ports forward 3000`, get a `/app/:slug` URL, and survive a Zero server restart.
+**Goal**: forwarded ports work without containers, and the runner-backed
+execution layer Session 6 left behind for ports/browser/image goes away.
 
-### Session 8 — Backfill + delete `runner/`
+Built:
+
+- `server/lib/processes/process-manager.ts` — `HostProcessManager` with
+  init/reconcile/healthCheck/coldStartPort/restartPinnedForProject plus
+  pure helpers (`checkPort` via `net.connect("127.0.0.1", port)`,
+  `findListeningPids` via `lsof`/`ss`, `inspectProcess` via `/proc` or
+  `ps`/`lsof` on macOS, `isAlive` via `process.kill(pid, 0)`).
+  Singleton `start/stopHostProcessManager()` wired from `server/index.ts`.
+  Reconcile flips active rows whose pid is dead (or whose port is no
+  longer accepting connections) to `stopped`. Cold-start spawns the
+  saved `start_command` via `bash -lc` with a detached child process,
+  cwd set to the project dir, `PORT=<port>` plus persisted env_vars,
+  then waits up to 15s for the loopback bind.
+- `forwarded_ports` schema migrated: `pid INTEGER` added; `container_ip`
+  dropped (idempotent ALTER guarded against pre-3.35 SQLite). `working_dir`
+  default changed to `NULL` (callers fall back to project dir).
+  `ForwardedPortRow.container_ip` removed; `pid` added.
+- `server/db/queries/apps.ts` updates `insertPort`/`updatePort` to the
+  new column set; `containerIp` parameter replaced by `pid`.
+- `server/lib/http/app-proxy.ts` proxies directly to
+  `http://127.0.0.1:<row.port>` — no `getProxyInfo` indirection, no
+  bearer auth needed for upstream, gate-page app/share-token enforcement
+  unchanged.
+- `server/cli-handlers/ports.ts` rewritten: probe `127.0.0.1:<port>`,
+  capture pid + start_command + cwd from the host, persist a row.
+- `server/routes/apps.ts` drops the `_portManager` injection — calls
+  `checkPort()` and `getHostProcessManager()` directly. `formatPort()`
+  no longer leaks any container-shaped fields.
+- `server/index.ts` startup wiring: `startHostProcessManager()` runs
+  after the scheduler. Shutdown calls `stopHostProcessManager()` instead
+  of `teardownExecution()`. `/api/capabilities` collapses to just
+  `{ theme }` — `serverDocker` / `serverBrowser` / `appDeployments`
+  removed. `/api/projects/:projectId/chats/:chatId/browser-screenshot`
+  endpoint deleted.
+- `web/src/api/capabilities.ts` drops `serverDocker`.
+
+Deleted (same commit):
+
+- `server/lib/execution/` (whole directory: `app-manager.ts`,
+  `backend-interface.ts`, `exec-caps.ts`, `lifecycle.ts`,
+  `runner-client.ts`, `runner-pool.ts`, `workdir-client.ts`).
+- `web/src/components/chat/BrowserPreview.tsx` and
+  `web/src/hooks/use-browser-screenshot.ts`. Composer no longer mounts
+  `BrowserPreview`.
+
+Stubbed pending a follow-up "host browser host" (open question §10):
+
+- `server/cli-handlers/browser.ts` — every `zero browser ...` returns
+  `{ error: "browser_unavailable" }` (HTTP 503). The Pi turn surfaces
+  the structured error so the agent can recover; no runner dependency.
+- `server/lib/http/ws-browser.ts` — `subscribeBrowser`/`unsubscribeBrowser`
+  no-op stubs. No frames are emitted until the host browser host lands.
+
+Notes / contradictions to flag for later sessions:
+
+- The plan's Session 7 brief said the host process manager would run
+  services "under the same sandbox policy builder as Pi bash/tool
+  execution". `SandboxManager` from `@anthropic-ai/sandbox-runtime` is
+  process-global and already owned by `runTurn` — running a long-lived
+  service through it would conflict with the next Pi turn. v1 ships
+  services unsandboxed, bound to loopback only. This matches open
+  question §10 ("host process sandboxing — confirm bubblewrap policy
+  works for long-running services") which was already deferred. Real
+  fix: spawn services through a dedicated `bwrap`/`sandbox-exec` child
+  invocation rather than through `SandboxManager.wrapWithSandbox`.
+- Browser tooling regressed in this session. Restoring `zero browser …`
+  needs a host-side Playwright pool keyed by project (or chat); plan
+  was always ambiguous about whether this lives in Session 7 or after.
+  Treating it as a Session 9+ follow-up keeps the current branch
+  shippable for non-browser projects. Telegram image regression from
+  Session 4 is unaffected.
+- `server/cli-handlers/image.ts` did not actually depend on
+  `getLocalBackend()` after Session 6 — only its comment claimed it
+  did. Comment cleaned up; no behavior change.
+- Pre-3.35 SQLite installs keep a dead `container_ip` column; queries
+  no longer read or write it. Drop in a follow-up after the SQLite
+  pin moves up.
+
+**Exit**: a project can `zero ports forward 3000`, get a `/app/:slug` URL,
+and survive a Zero server restart. `tsc --noEmit` clean across server +
+web + zero. Vitest unit tests pass except the two pre-existing
+`BRAVE_SEARCH_API_KEY` failures called out in Session 6.
+
+### Session 8 — Backfill + delete `runner/` — DONE
 
 **Goal**: pre-existing data migrated; the runner service repo dies.
 
-- One-time backfill: existing project files copied from container volumes (or wherever they live today) into `/var/zero/projects/<id>/`. Drop `messages` table after exporting any history we want to preserve into Pi sessions; otherwise just drop and start fresh.
-- Drop `runner/` directory and Dockerfiles.
-- `server/index.ts` startup wiring: per-turn unix socket listener, inotify watcher pool, host process manager — confirm all present and old startup hooks gone.
-- Pi `ModelRegistry` + `AuthStorage` take over provider auth; trim `server/lib/providers/` to whatever Zero still needs (per-tenant credentials storage, model metadata) and delete the rest.
+Built:
 
-**Exit**: branch is ready to merge to `main`. No legacy execution code remains.
+- `scripts/backfill-projects.ts` — one-time host-fs backfill. Walks
+  `projects` rows, copies any legacy `data/workspaces/<projectId>/`
+  contents into `projectDirFor(projectId)` (defaults to
+  `/var/zero/projects/<id>/`) without overwriting, and ensures the
+  `.pi-sessions/` subdir exists. Idempotent; honors `--dry-run` and
+  `--src=<path>`. The legacy mirror dir is left in place for operators
+  to verify and remove themselves. zero-agent has no production data
+  yet, so this is the migration tool for future deployments — not a
+  one-off the cutover commit needs to run.
+- `server/db/index.ts` schema cleanup:
+  - `messages` table dropped wholesale (Pi JSONL is canonical
+    conversation history). zero-agent has no production conversation
+    data to migrate; new chats start fresh under Pi.
+  - `agent_checkpoints` table dropped (durability/recovery is gone;
+    Pi handles session resume).
+  - `runners` table dropped (runner backend deleted).
+  - `idx_messages_*` indexes dropped.
+- `docker-compose.yml` rewritten: only the `server` service remains
+  (no `runner`, no `session-image` build profile, no
+  `zero-runner-sockets` named volume). Added a `zero-projects` named
+  volume mounted at `/var/zero` so Pi project workspaces and per-chat
+  session JSONLs survive container restarts.
+- `server/Dockerfile`: drop `COPY runner/package.json` line — the
+  workspace no longer exists.
+- `package.json`: workspace list trimmed (`web`, `zero` only),
+  `test:integration` script removed (target tests deleted).
 
-### Session 9+ — Post-merge cleanup
+Deleted (same commit):
 
-Small PRs against `main` for residual items: unused DB columns kept for the rollback window, dead provider files only the cutover commit could safely remove, doc updates. Update this plan's "What we delete" as items go.
+- `runner/` — entire workspace (Dockerfile, lib, routes, session image
+  build context).
+- `tests/integration/` (whole directory) plus
+  `vitest.integration.config.ts`. Every test there exercised the
+  runner → Docker container roundtrip (`lifecycle`,
+  `file-mirror`, `bash-overlay`, `snapshots-browser`,
+  `restart-recovery`, `concurrency`, `network-pool-exhaustion`,
+  `agent-tools`, `cli-handlers`, `upload-roundtrip`). All targets are
+  gone; rewriting them against Pi is a Session 9+ task if we want
+  end-to-end coverage of the host process manager / inotify watcher /
+  per-turn socket. The unit suite still covers each piece.
+- `server/db/queries/messages.ts`, `server/db/queries/runners.ts`.
+  `MessageRow` and `RunnerRow` interfaces removed from
+  `server/db/types.ts`.
+- `server/db/queries/projects.ts::getLastMessageByProject` and the
+  `lastMessage` field that route handlers used to attach to project
+  rows. The web client never read it.
+- Message-vector reindex phase in `server/lib/search/reindex.ts`
+  (`getRecentMessagesPaged`, `MESSAGE_PAGE_SIZE`, `MESSAGE_MAX`,
+  the entire phase 3 paging loop, and `messages` from the
+  `ReindexProgress` phase enum and the return type).
+  `pruneOrphanedMessageVectors` repurposed: now deletes every
+  surviving `message:*` vector key as a one-time cleanup, since the
+  source-of-truth table is gone.
+
+Verified, not changed:
+
+- **Per-turn unix socket listener**: lives inside `runTurn` (one
+  socket per turn under `/var/zero/run/pi-turns/<runId>.sock`); not a
+  startup-time singleton. `server/index.ts` correctly does not start
+  one globally.
+- **inotify watcher pool**: `server/lib/projects/watcher.ts` is
+  ref-counted and lazy-attached by `runTurn` for the duration of a
+  turn. No global startup hook needed; `server/index.ts` does not
+  call into it directly.
+- **Host process manager**: `startHostProcessManager()` is invoked
+  after `startScheduler()` (server/index.ts:590). `stopHostProcessManager()`
+  fires from `handleShutdown` (server/index.ts:668).
+- **Provider trimming**: `server/lib/providers/` was already minimal
+  by the end of Session 4 — it now resolves model IDs only, for the
+  non-chat AI-SDK callers (image gen, embed, vision, enrich, extract,
+  edit-apply, search-parse). Pi's `ModelRegistry` + `AuthStorage`
+  took over chat-agent provider auth in Session 4 via
+  `server/lib/pi/model.ts`. There is nothing left in `providers/`
+  that Pi could replace; the file count is identical to the
+  end-of-session-4 state (`index.ts`, `openrouter.ts`, `types.ts`).
+
+Notes / contradictions to flag for later sessions:
+
+- The pre-existing `@0-ai/s3lite` typecheck noise that Session 7
+  reported as "clean" is back in this run — `npm run typecheck`
+  emits dozens of `Type 'undefined' is not assignable to type
+  'number'` errors against `node_modules/.bun/@0-ai+s3lite@0.6.0/...`.
+  None are in our own code (`grep -E "^(server|web|zero|scripts)/.*error TS"`
+  returns nothing). Likely a transient lockfile churn between
+  sessions; worth pinning the dep or filing upstream.
+- `server/lib/scheduling/events.ts` still declares
+  `background.completed`/`background.failed` event types (called out
+  in Session 4 as well) and `web/src/hooks/use-realtime.ts` still has
+  cases for them. Nothing emits the events post-autonomous-agent.
+  Cheap to keep; revisit when the notifications surface lands.
+- Browser tooling (Session 7) and Telegram native multimodal
+  (Session 4) regressions are unchanged here; tracked as Session 9+
+  follow-ups.
+- The integration suite is gone. If we want end-to-end coverage of
+  the Pi stack (host process manager + inotify + per-turn socket +
+  sandbox), that is a Session 9 task — likely under
+  `tests/integration-pi/` against a real Pi child process.
+
+**Exit**: `tsc --noEmit` clean across our own code (server + web +
+zero); pre-existing s3lite node_modules noise unchanged. Vitest unit
+tests pass except the two long-standing `BRAVE_SEARCH_API_KEY`
+failures called out in Sessions 6/7. No legacy execution code
+remains. Branch is **not** merged yet — Session 9+ continues on
+`feat/pi-migration` to close out browser/multimodal regressions and
+land Pi-stack coverage before merge.
+
+### Session 9+ — Stay-on-branch follow-ups
+
+The migration branch stays open. Each follow-up lands as its own commit on `feat/pi-migration`:
+
+- **Browser tooling restore** — DONE in Session 9.
+- **`BrowserPreview` web component** — DONE in Session 10.
+- **Native multimodal pass-through** — DONE in Session 10.
+- **Pi-stack integration tests** — DONE in Session 10
+  (`tests/integration-pi/`). Bigger end-to-end sandbox+per-turn-socket
+  coverage that drives a real Pi child process is still a future
+  follow-up; the suite now covers host process manager, project
+  watcher, and host browser pool against real subsystems.
+- **Remove regenerate end-to-end (open question §8 — resolved)** —
+  DONE in Session 11.
+- **Server-managed auth confirmation (open question §9 — resolved)** —
+  DONE in Session 11.
+- **Host process sandboxing (open question §10 — deferred)** — not
+  shipping with this branch. Track in a separate issue tagged
+  `post-pi-migration` with the trigger conditions: (a) onboarding a
+  second tenant, (b) opening Zero to untrusted users, (c) running
+  pinned services that need stronger isolation than loopback-only.
+  The branch merges with the current unsandboxed status quo.
+- **Residual dead code** — `background.completed`/`background.failed`
+  event types in `server/lib/scheduling/events.ts` +
+  `web/src/hooks/use-realtime.ts` cases (no emitter post-Session 4);
+  pre-3.35 SQLite installs still carry a dead `container_ip` column;
+  s3lite typecheck noise (pin or file upstream).
+
+### Session 9 — Browser tooling restore — DONE
+
+**Goal**: replace the Session 7 browser stubs with a host-side Playwright
+pool so `zero browser ...` works again from inside a Pi turn, and re-arm
+the WS preview channel.
+
+Built:
+
+- `server/lib/browser/host-pool.ts` — host-side `HostBrowserPool`.
+  Singleton `chromium` browser launched lazily on first action; one
+  `BrowserContext` + `Page` per Zero project (keyed by `projectId`).
+  Idle eviction: a project's context is closed after 15 min of
+  inactivity; the browser process stays up. Per-project action queue
+  serializes concurrent calls so CDP messages don't interleave. Emits
+  a debounced (`1s`) `frame` event after every visible action carrying
+  a JPEG screenshot — consumed by `ws-browser`.
+- Action protocol ported from the (now-deleted) runner browser:
+  `Accessibility.getFullAXTree` → ref-mapped a11y snapshot, ref-stale
+  recovery via re-snapshot, incremental snapshot diff vs prev frame,
+  `Input.dispatchMouseEvent`/`Input.insertText` for click+type,
+  `Runtime.evaluate` (`replMode: true`) for evaluate with console-log
+  capture and a 4 KB cap. Same `BrowserResult` shapes the agent's CLI
+  speaks, so nothing in `zero/src/sdk/browser.ts` changed.
+- `server/cli-handlers/browser.ts` rewritten on top of the pool. Calls
+  `getBrowserPool().execute(ctx.projectId, action)` and surfaces errors
+  through the standard `fail("browser_failed", …)` envelope. Screenshot
+  handler still writes the JPEG into `<project>/.zero/screenshots/`,
+  inserts a `files` row, and returns a compact `{path, fileId, …}` —
+  base64 never leaves the server. `extract` re-uses `processHtml`
+  (Readability + keyword ranking) on outerHTML pulled via evaluate.
+- `server/lib/http/ws-browser.ts` is event-driven again. The pool emits
+  `frame`; we dedupe via blob-store hash and broadcast
+  `browser.screenshot` to project subscribers. Idle browsers emit zero
+  WS traffic (no more 3 s poll). Late joiners are re-seeded with the
+  most recent frame on subscribe.
+- Startup wiring: `startBrowserPool()` runs after
+  `startHostProcessManager()` in `server/index.ts`; `stopBrowserPool()`
+  fires from `handleShutdown` after `stopHostProcessManager()`.
+- Dep: `playwright@^1.59.1` added to root `package.json`. First-run
+  setup needs `npx playwright install chromium` on hosts that don't
+  already have a Playwright browser cache.
+
+Deleted:
+
+- The "browser tooling restore" entry from the Session 9+ follow-up
+  list (this section is the answer).
+
+Notes / contradictions to flag for later sessions:
+
+- **Stealth mode not carried over.** The runner's bezier-mouse +
+  human-typing stealth path is dropped — none of the SDK call sites
+  pass `stealth`, and the schema flag is now ignored. If the agent
+  hits a bot wall on a real workflow we re-add it via Playwright's
+  pointer/keyboard APIs rather than raw CDP.
+- **Action surface narrowed to what `zero browser ...` exposes.**
+  `select`, `hover`, `scroll`, `back`, `forward`, `reload`, `tabs`,
+  `switchTab`, `closeTab` from the runner's protocol are gone. The
+  CLI never had commands for them; the agent uses `evaluate` to drive
+  any of those today. Add back to `BrowserAction` + a CLI action when
+  a real workflow needs it.
+- **Frontend `BrowserPreview` still missing.** The web client used to
+  render `chat.browser-screenshot` events as a side panel; that
+  component was deleted before Session 5 and the Pi event renderer
+  doesn't surface `browser.screenshot` yet. Server-side push is wired
+  end-to-end (subscribe → frame → broadcast); only the renderer-side
+  subscriber is missing. Tracked as a follow-up below.
+- **Per-chat scoping deferred.** The pool is keyed by `projectId`, not
+  `chatId`. Two chats in the same project share one Chromium context.
+  Cookies/localStorage are project-scoped, which matches the agent's
+  ergonomic model (you log into Stripe once per project), but means
+  parallel chat turns racing on the browser will queue against each
+  other. Revisit if real concurrent-chat-on-one-project usage shows up.
+- **Sandbox.** Chromium runs unsandboxed (`--no-sandbox`) under the
+  Zero server's UID. That's the same trust boundary as
+  `runTurn`-spawned bash + the host process manager — namespaced/bwrap
+  isolation for browser + services together is open question §10.
+- `server/lib/browser/protocol.ts` still carries the old
+  `CompanionControl`/`CompanionMessage` types from the deleted runner
+  protocol. Nothing imports them post-Session 9 except as dead
+  re-exports; safe to delete in a follow-up cleanup commit.
+
+**Exit**: `tsc --noEmit` clean across our own code (server + web +
+zero); pre-existing s3lite node_modules noise unchanged. `zero browser
+open|click|fill|screenshot|evaluate|wait|snapshot|extract` all flow
+through the host pool. WS `subscribeBrowser` continues to work but
+emits no frames until a `BrowserPreview` web component re-subscribes.
+
+### Session 10 — BrowserPreview + multimodal + integration tests + dead-code sweep — DONE
+
+**Goal**: close the small/medium follow-ups that were blocking a clean
+merge of `feat/pi-migration`. Open-question-driven items (§8/§9/§10)
+remain on the branch.
+
+Built:
+
+- **Web `BrowserPreview`** — `web/src/components/chat-ui/BrowserPreview.tsx`
+  + `web/src/hooks/use-browser-preview.ts`. Subscribes to
+  `chat.browser-screenshot` (server-side push has been live since
+  Session 9), holds the latest frame, renders a small panel under the
+  last assistant message in `MessageList`. Image source is the
+  blob-store endpoint (`/api/projects/:id/blobs/:hash`), so frames are
+  cached by hash and idle browsers stay quiet. `subscribeBrowser` /
+  `unsubscribeBrowser` helpers added to `web/src/lib/ws.ts`.
+- **Native multimodal pass-through** —
+  - `RunTurnOptions.images?: Array<{ data, mimeType }>`. `run-turn.ts`
+    inspects `model.input` (Pi-AI capability flag) and forwards the
+    images via `session.prompt(text, { images })` only if the model
+    declares `image` input; non-multimodal models silently drop them
+    (caller decides whether to pre-caption).
+  - `chat.send` / `chat.regenerate` WS messages now carry an optional
+    `images: [{ data, mimeType }]`. `web/src/components/chat/Composer.tsx`
+    extracts the base64 from the existing `ImageAttachment.dataUrl`
+    and forwards it. The "Image attachments are dropped here" stub is
+    gone.
+  - Telegram provider (`server/lib/chat-providers/telegram/provider.ts`)
+    chooses native passthrough when the active model supports images
+    and falls back to the existing vision-caption path otherwise.
+- **Integration tests** — new `tests/integration-pi/`:
+  - `host-process-manager.test.ts` — drives `findListeningPids`,
+    `checkPort`, `isAlive`, `inspectProcess` against a real loopback
+    listener and a child node process.
+  - `project-watcher.test.ts` — mounts a temp `DB_PATH` +
+    `PI_PROJECTS_ROOT`, attaches the watcher to a real project, and
+    asserts `file.updated` / `file.deleted` events bubble through
+    the in-process bus on a write/delete cycle.
+  - `browser-pool.test.ts` — gated on `BROWSER_TEST=1`. Launches
+    Chromium, drives navigate → snapshot → screenshot → evaluate
+    against a local HTTP server, asserts result shapes, including
+    JPEG magic bytes for the screenshot.
+  - `vitest.config.ts` `include` extended to `tests/**/*.test.ts`.
+- **Residual dead code**:
+  - `server/lib/scheduling/events.ts`: `background.completed` /
+    `background.failed` event types removed. `web/src/hooks/use-realtime.ts`:
+    matching `case` arms removed. `server/lib/http/ws-bridge.ts`:
+    unused `startBackgroundBridge()` and its imports deleted.
+  - `server/db/index.ts`: pre-3.35 SQLite installs that still carry
+    `forwarded_ports.container_ip` now go through a full table
+    rebuild instead of leaving the column as a no-op stub.
+  - `tsconfig.json`: `paths` redirect for `@0-ai/s3lite` +
+    `@0-ai/s3lite/vectors` to `server/types/s3lite.d.ts` /
+    `s3lite-vectors.d.ts`. The package ships its TS source as
+    `main`/`types`, so under our strict settings tsc would re-check
+    ~700 lines of vendor code that fails `noUncheckedIndexedAccess`
+    (`skipLibCheck` only applies to `.d.ts`). Redirecting the import
+    path makes our build green; runtime resolution is unaffected.
+
+Notes:
+
+- `model.input` is the Pi-AI side capability flag (`("text" | "image")[]`).
+  Detected by checking `Array.isArray(model.input) && includes("image")`.
+- `BrowserPreview` renders only when a frame exists for the current
+  project, so chats that don't drive the browser see no UI change.
+- The integration suite lives at `tests/integration-pi/`. There is no
+  separate `vitest.integration.config.ts`; the suite runs as part of
+  the default `npm run test` job. `browser-pool.test.ts` is opt-in
+  via `BROWSER_TEST=1` to avoid forcing the Playwright Chromium
+  download on contributors.
+
+**Exit**: `tsc --noEmit` clean across our own code (s3lite noise gone
+too). Vitest unit + integration suite passes except the two
+long-standing `BRAVE_SEARCH_API_KEY` failures unchanged from
+Sessions 6/7. `npm run build` (web) and `BROWSER_TEST=1 vitest run
+tests/integration-pi` both green. Branch still on
+`feat/pi-migration`; only the open-question follow-ups (§8 chat fork,
+§9 provider/account model, §10 host-process sandboxing) remain before
+merge to main.
+
+### Session 11 — regenerate removal + auth audit — DONE
+
+**Goal**: close the last two open-question follow-ups (§8 regenerate,
+§9 server-managed auth) so `feat/pi-migration` is mergeable to `main`.
+
+Built:
+
+- **Removed `chat.regenerate` end-to-end.** `server/lib/http/ws-chat.ts`
+  no longer has a `ChatRegenerateMessage` arm — the WS union is now
+  just `chat.send | chat.stop`, the dispatch collapses to one case,
+  and `handleChatSend` takes `ChatSendMessage` directly. Error
+  messages no longer rewrite the type prefix.
+- **Removed `regenerate` from the web hook + consumers.**
+  `web/src/hooks/use-pi-chat.ts` drops `regenerate` from
+  `UsePiChatResult` and the returned object. The `chat.autoSend`
+  plumbing (`autoSendRef` + the two `useEffect`s) is gone — nothing
+  on the server emits `chat.autoSend` post-Session 4, so the
+  subscribe path was dead code. `ChatPanel.tsx` stops destructuring
+  and forwarding `regenerate`. `MessageList.tsx` drops the
+  `regenerate` prop, the `handleRetry` callback, and the error-state
+  Retry button (per the "lean toward deletion" call — users can just
+  retype). `RefreshCcwIcon` and `Button` imports removed where no
+  longer used. Pi's `SessionManager` keeps its native fork/branch
+  APIs untouched; we just stopped calling them.
+- **Single shared `AuthStorage` driven by the provider admin UI.**
+  `server/lib/pi/model.ts::getOrBuildAuthStorage` now folds every
+  provider key the admin UI manages — currently OpenRouter and
+  Anthropic — through `getSetting`. Anthropic no longer falls back
+  to `process.env` directly inside this function (`getSetting`
+  already covers the env-var fallback by uppercasing the key).
+  Cache-bust composes a signature from all watched settings, so
+  rotating *any* provider key from the admin UI takes effect on the
+  next `runTurn` without a restart. New providers are added by
+  appending one entry to the `PROVIDER_KEYS` table at the top of
+  the file.
+
+Notes:
+
+- **Auth audit pass.** Grepped `runTurn` / scheduler / Telegram / WS
+  chat for `userId`+`authStorage`, `userId`+`api_key`, and per-user
+  OAuth tokens. The only `userId` plumbed into `runTurn` is the CLI
+  principal for the in-sandbox `zero` callback (see
+  `server/lib/pi/cli-context.ts`); it has nothing to do with
+  inference auth. Telegram (`provider.ts:478`), autonomous
+  (`autonomous.ts:54`), and WS chat (`ws-chat.ts`) all already
+  resolve through `resolveModelForPi()` and share the same
+  `AuthStorage`. No changes needed beyond the model.ts wiring.
+- **No schema, docs, or new settings surface.** Provider keys
+  continue to round-trip through the existing `settings` table /
+  admin UI; no `auth.json`, no per-user UI, no per-project UI.
+- The `chat.autoSend` flow can come back if/when a server tool wants
+  to queue a follow-up turn behind the current stream, but it should
+  be re-introduced with a real emitter rather than left as dead
+  client plumbing.
+
+**Exit**: `npm run typecheck` clean (server + web + zero); `cd web &&
+bun run build` clean; `npx vitest run` is the same baseline as before
+(only the two pre-existing `BRAVE_SEARCH_API_KEY` failures, unchanged);
+`BROWSER_TEST=1 npx vitest run tests/integration-pi/browser-pool.test.ts`
+green. Branch is mergeable to `main`; only open question §10
+(host-process sandboxing) remains, and it's explicitly deferred.
 
 ### Session-sizing notes
 
 - Sessions 2 → 8 must be done in order; each leaves the tree compiling but not user-shippable.
 - Session 4 is the largest single session — it deletes the agent loop, rewrites WS chat, and switches the CLI auth model in one commit. Budget accordingly.
 - Sessions 6 and 7 each touch a lot of surface; expect follow-up fixes.
-- The merge to `main` happens once at the end of Session 8.
+- Session 9+ runs on `feat/pi-migration` directly; pick whichever follow-up is most blocking, land it as one commit, repeat. Merge to `main` happens once those regressions and Pi-stack coverage close out.
+- After Session 11 the branch is mergeable to `main`. The remaining open question §10 (host-process sandboxing) is explicitly deferred and tracked separately.
 
 ---
 
@@ -613,16 +1116,34 @@ questions are deferred to mid-branch sessions as noted.
 
 ### Open / deferred
 
-8. **Chat import/fork semantics** — decide how existing Zero DB messages map into Pi JSONL
-   sessions and how regenerate/fork should behave once Pi owns conversation state.
+8. **Chat fork / regenerate semantics — RESOLVED.** Decision: **remove
+   regenerate end-to-end.** Pi's native fork/branch is powerful but the
+   product doesn't need it; a stand-in `chat.regenerate` WS path is more
+   surface area than the feature is worth. Strip it from server + web
+   instead of investing in either an in-place branch UI or a fork-into-
+   new-chat row. Implementation work captured in the Session 9+ list.
 
-9. **Provider/account model** — decide whether Pi provider auth is per-user, per-project, or
-   server-managed. (§2 confirmed isolation works — the *policy* decision is still open.)
-   Stress test concurrent users in the same project with different credentials.
+9. **Provider/account model — RESOLVED.** Decision: **server-managed,
+   single shared `AuthStorage`, derived from the existing provider
+   admin UI.** The admin already manages model keys (e.g.
+   `OPENROUTER_API_KEY`) via the provider/settings UI; that is the
+   only source of truth. Pi's `AuthStorage` is built in-memory from
+   the settings store on demand — no `auth.json` file, no separate
+   admin step, no docs to write. The current
+   `server/lib/pi/model.ts::getOrBuildAuthStorage` already does this
+   (reads `getSetting("OPENROUTER_API_KEY")`, falls back to env, builds
+   `AuthStorage.inMemory()`, caches until the key changes); the
+   migration work is just an audit pass to confirm nothing else
+   *implies* per-user/per-project keys, and to fold any new providers
+   the admin UI gains into the same in-memory build.
 
-10. **Host process sandboxing** — confirm bubblewrap policy works for long-running services,
-    including child process cleanup, loopback binding, log capture, and package-manager/network
-    allowlists.
+10. **Host process sandboxing — DEFERRED past merge.** Long-running
+    services keep running under the Zero server's UID with loopback-
+    only binding. Acceptable for the single-tenant deployment the
+    branch is targeting at merge. Re-open when we onboard a second
+    tenant or deploy publicly. The follow-up entry below tracks the
+    triggers; the actual bwrap/sandbox-exec/systemd-run design is
+    deferred work, not Session 9+ work.
 
 
 ---

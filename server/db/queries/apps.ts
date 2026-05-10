@@ -1,124 +1,88 @@
+/**
+ * Apps — slug ↔ port reverse-proxy mappings.
+ *
+ * `createApp` allocates an unused port from a reserved range, so two
+ * projects never collide on loopback. The user's process binds to the
+ * returned port; nothing here tracks the process.
+ */
+import { nanoid } from "nanoid";
 import { db, generateId } from "@/db/index.ts";
-import type { ForwardedPortRow } from "@/db/types.ts";
+import type { AppRow } from "@/db/types.ts";
 
-// ── Forwarded Ports ──
+const PORT_RANGE_START = 35000;
+const PORT_RANGE_END = 39999;
 
 const byProjectStmt = db.prepare(
-  "SELECT * FROM forwarded_ports WHERE project_id = ? ORDER BY pinned ASC, created_at DESC",
+  "SELECT * FROM apps WHERE project_id = ? ORDER BY created_at DESC",
 );
-
-const byIdStmt = db.prepare(
-  "SELECT * FROM forwarded_ports WHERE id = ?",
+const bySlugStmt = db.prepare("SELECT * FROM apps WHERE slug = ?");
+const byProjectAndNameStmt = db.prepare(
+  "SELECT * FROM apps WHERE project_id = ? AND name = ?",
 );
-
-const bySlugStmt = db.prepare(
-  "SELECT * FROM forwarded_ports WHERE slug = ?",
+const allPortsStmt = db.prepare("SELECT port FROM apps");
+const insertStmt = db.prepare(
+  `INSERT INTO apps (id, project_id, user_id, slug, name, port)
+   VALUES (?, ?, ?, ?, ?, ?) RETURNING *`,
 );
+const deleteBySlugStmt = db.prepare("DELETE FROM apps WHERE slug = ? RETURNING *");
 
-const deleteStmt = db.prepare(
-  "DELETE FROM forwarded_ports WHERE id = ?",
-);
+function slugify(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 32);
+}
 
-const byProjectAndPortStmt = db.prepare(
-  "SELECT * FROM forwarded_ports WHERE project_id = ? AND port = ? LIMIT 1",
-);
+function allocatePort(): number {
+  const used = new Set((allPortsStmt.all() as { port: number }[]).map((r) => r.port));
+  for (let p = PORT_RANGE_START; p <= PORT_RANGE_END; p++) {
+    if (!used.has(p)) return p;
+  }
+  throw new Error("No free ports available in the app port range");
+}
 
-const pinnedByProjectStmt = db.prepare(
-  "SELECT * FROM forwarded_ports WHERE project_id = ? AND pinned = 1",
-);
+export function listAppsByProject(projectId: string): AppRow[] {
+  return byProjectStmt.all(projectId) as AppRow[];
+}
 
-const allActiveStmt = db.prepare(
-  "SELECT * FROM forwarded_ports WHERE status = 'active'",
-);
+export function getAppBySlug(slug: string): AppRow | null {
+  return (bySlugStmt.get(slug) as AppRow | undefined) ?? null;
+}
 
-const activeByProjectStmt = db.prepare(
-  "SELECT * FROM forwarded_ports WHERE project_id = ? AND status = 'active'",
-);
+export function getAppByProjectAndName(projectId: string, name: string): AppRow | null {
+  return (byProjectAndNameStmt.get(projectId, name) as AppRow | undefined) ?? null;
+}
 
-export function insertPort(
+export interface CreateAppOptions {
+  name?: string;
+}
+
+export function createApp(
   projectId: string,
   userId: string,
-  slug: string,
-  port: number,
-  opts?: {
-    label?: string;
-    containerIp?: string;
-    startCommand?: string;
-    workingDir?: string;
-    envVars?: Record<string, string>;
-  },
-): ForwardedPortRow {
-  const id = generateId();
-  const sql = `INSERT INTO forwarded_ports (id, project_id, user_id, slug, label, port, container_ip, start_command, working_dir, env_vars)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`;
-  return db.prepare(sql).get(
-    id,
+  opts: CreateAppOptions = {},
+): AppRow {
+  const name = opts.name?.trim() || `app-${nanoid(6).toLowerCase()}`;
+
+  if (getAppByProjectAndName(projectId, name)) {
+    throw new Error(`An app named "${name}" already exists in this project`);
+  }
+
+  const base = slugify(name) || "app";
+  const slug = `${base}-${nanoid(4).toLowerCase()}`;
+  const port = allocatePort();
+
+  return insertStmt.get(
+    generateId(),
     projectId,
     userId,
     slug,
-    opts?.label ?? "",
+    name,
     port,
-    opts?.containerIp ?? null,
-    opts?.startCommand ?? null,
-    opts?.workingDir ?? "/workspace",
-    JSON.stringify(opts?.envVars ?? {}),
-  ) as ForwardedPortRow;
+  ) as AppRow;
 }
 
-export function getPortsByProject(projectId: string): ForwardedPortRow[] {
-  return byProjectStmt.all(projectId) as ForwardedPortRow[];
-}
-
-export function getPortById(id: string): ForwardedPortRow | null {
-  return (byIdStmt.get(id) as ForwardedPortRow | undefined) ?? null;
-}
-
-export function getPortBySlug(slug: string): ForwardedPortRow | null {
-  return (bySlugStmt.get(slug) as ForwardedPortRow | undefined) ?? null;
-}
-
-export function getPortByProjectAndPort(projectId: string, port: number): ForwardedPortRow | null {
-  return (byProjectAndPortStmt.get(projectId, port) as ForwardedPortRow | undefined) ?? null;
-}
-
-export function getPinnedPortsByProject(projectId: string): ForwardedPortRow[] {
-  return pinnedByProjectStmt.all(projectId) as ForwardedPortRow[];
-}
-
-export function getAllActivePorts(): ForwardedPortRow[] {
-  return allActiveStmt.all() as ForwardedPortRow[];
-}
-
-export function getActivePortsByProject(projectId: string): ForwardedPortRow[] {
-  return activeByProjectStmt.all(projectId) as ForwardedPortRow[];
-}
-
-export function updatePort(
-  id: string,
-  fields: Partial<Pick<ForwardedPortRow, "label" | "status" | "container_ip" | "pinned" | "start_command" | "working_dir" | "env_vars" | "error">>,
-): ForwardedPortRow {
-  const sets: string[] = [];
-  const values: (string | number | null)[] = [];
-
-  for (const [key, value] of Object.entries(fields)) {
-    if (value === undefined) continue;
-    if (value === null) {
-      sets.push(`${key} = NULL`);
-    } else {
-      sets.push(`${key} = ?`);
-      values.push(value);
-    }
-  }
-
-  if (sets.length === 0) return byIdStmt.get(id) as ForwardedPortRow;
-
-  sets.push("updated_at = datetime('now')");
-  values.push(id);
-
-  const sql = `UPDATE forwarded_ports SET ${sets.join(", ")} WHERE id = ? RETURNING *`;
-  return db.prepare(sql).get(...values) as ForwardedPortRow;
-}
-
-export function deletePort(id: string): void {
-  deleteStmt.run(id);
+export function deleteAppBySlug(slug: string): AppRow | null {
+  return (deleteBySlugStmt.get(slug) as AppRow | undefined) ?? null;
 }

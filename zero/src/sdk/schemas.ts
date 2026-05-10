@@ -116,13 +116,20 @@ export const CredsRemoveInput = z
   .strict()
   .refine((v) => !!(v.id || v.label), { message: "provide id or label" });
 
-// -- ports --
-export const PortsForwardInput = z
+// -- apps --
+export const AppsCreateInput = z
   .object({
-    port: z.number().int().min(1).max(65535),
-    label: z.string().min(1).max(100).optional(),
+    name: z.string().min(1).max(100).optional(),
   })
   .strict();
+
+export const AppsDeleteInput = z
+  .object({
+    slug: z.string().min(1).max(100),
+  })
+  .strict();
+
+export const AppsListInput = z.object({}).strict();
 
 // -- browser --
 export const BrowserOpenInput = z
@@ -222,9 +229,9 @@ export const SearchInput = z
   .object({
     query: NonEmpty(2000),
     collections: z
-      .array(z.enum(["file", "memory", "message"]))
+      .array(z.enum(["file", "message"]))
       .min(1)
-      .max(3)
+      .max(2)
       .optional(),
     topK: z.number().int().min(1).max(50).optional(),
   })
@@ -247,7 +254,9 @@ export type BrowserEvaluateInputT = z.infer<typeof BrowserEvaluateInput>;
 export type BrowserWaitInputT = z.infer<typeof BrowserWaitInput>;
 export type BrowserSnapshotInputT = z.infer<typeof BrowserSnapshotInput>;
 export type BrowserExtractInputT = z.infer<typeof BrowserExtractInput>;
-export type PortsForwardInputT = z.infer<typeof PortsForwardInput>;
+export type AppsCreateInputT = z.infer<typeof AppsCreateInput>;
+export type AppsDeleteInputT = z.infer<typeof AppsDeleteInput>;
+export type AppsListInputT = z.infer<typeof AppsListInput>;
 export type LlmGenerateInputT = z.infer<typeof LlmGenerateInput>;
 export type MessageSendInputT = z.infer<typeof MessageSendInput>;
 export type MessageResponseInputT = z.infer<typeof MessageResponseInput>;

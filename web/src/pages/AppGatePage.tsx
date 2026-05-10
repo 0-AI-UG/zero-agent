@@ -3,7 +3,7 @@ import { useParams, useNavigate, useSearchParams } from "react-router";
 import { apiFetch } from "@/api/client";
 import { Loader2Icon } from "lucide-react";
 
-type Status = "checking" | "starting" | "redirecting" | "error";
+type Status = "checking" | "redirecting" | "error";
 
 export function AppGatePage() {
   const { slug, "*": rest } = useParams();
@@ -18,8 +18,6 @@ export function AppGatePage() {
 
     async function go() {
       try {
-        setStatus("starting");
-
         const statusPath = shareToken
           ? `/apps/${slug}/status?share=${encodeURIComponent(shareToken)}`
           : `/apps/${slug}/status`;
@@ -45,11 +43,8 @@ export function AppGatePage() {
           return;
         }
 
-        if (appStatus === "failed" || appStatus === "stopped") {
-          setStatus("error");
-          setError(appError || "Service could not be started");
-          return;
-        }
+        setStatus("error");
+        setError(appError || "App is not running");
       } catch {
         if (!cancelled) {
           setStatus("error");
@@ -67,7 +62,7 @@ export function AppGatePage() {
     return (
       <div className="flex items-center justify-center min-h-screen bg-background">
         <div className="text-center space-y-2">
-          <p className="text-sm text-destructive font-medium">Failed to start</p>
+          <p className="text-sm text-destructive font-medium">App is not running</p>
           <p className="text-xs text-muted-foreground">{error}</p>
         </div>
       </div>
@@ -79,7 +74,7 @@ export function AppGatePage() {
       <div className="text-center space-y-3">
         <Loader2Icon className="size-6 text-muted-foreground mx-auto animate-spin" />
         <p className="text-sm text-muted-foreground">
-          {status === "redirecting" ? "Redirecting" : "Starting service"}
+          {status === "redirecting" ? "Redirecting" : "Checking app"}
         </p>
       </div>
     </div>

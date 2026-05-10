@@ -4,10 +4,20 @@ import { verifyToken, type TokenPayload } from "@/lib/auth/auth.ts";
 import { isProjectMember } from "@/db/queries/members.ts";
 import { getUserById } from "@/db/queries/users.ts";
 import { getProjectById } from "@/db/queries/projects.ts";
+import { getChatById } from "@/db/queries/chats.ts";
 import { log } from "@/lib/utils/logger.ts";
 import { isChatWsMessage, handleChatMessage } from "@/lib/http/ws-chat.ts";
 import { subscribeBrowser, unsubscribeBrowser } from "@/lib/http/ws-browser.ts";
 import type { PiEventEnvelope } from "@/lib/pi/run-turn.ts";
+import {
+  applyPiEvent,
+  beginStreaming,
+  createChatState,
+  endStreaming,
+  hydrateChatState,
+  serializeState,
+  type ChatState,
+} from "@/lib/http/chat-state.ts";
 
 const wsLog = log.child({ module: "ws" });
 
@@ -33,56 +43,56 @@ const connections = new Map<WebSocket, ConnectionMeta>();
 const projectRooms = new Map<string, Set<WebSocket>>();
 const chatViewers = new Map<string, Set<WebSocket>>();
 
-// ── Chat scenes ──
+// ── Chat state ──
 //
-// Per-chat streaming state. Pi owns the conversation transcript; the
-// scene here is a thin "is-this-chat-currently-streaming" flag plus a
-// rolling buffer of the most recent Pi events so a viewer joining
-// mid-turn can catch up without us needing to replay the whole JSONL.
-
-interface ChatScene {
-  chatId: string;
-  isStreaming: boolean;
-  runId?: string;
-  /** Recent Pi events for late-joining viewers. Trimmed to RECENT_EVENTS_MAX. */
-  recent: PiEventEnvelope[];
-  error?: string;
-  lastAccessAt: number;
-}
+// Per-chat in-memory state. Pi owns the canonical transcript on disk
+// (`<project>/.pi-sessions/<chatId>.jsonl`). The scene here is the
+// hydrated transcript plus live executions and streaming flag — the
+// single source of truth we serialize and broadcast as `chat.state`.
 
 const WS_BUFFER_HIGH_WATER = 1 * 1024 * 1024; // 1 MB
 const WS_FRAME_SIZE_CAP = 4 * 1024 * 1024; // 4 MB
-const RECENT_EVENTS_MAX = 200;
 
-const chatScenes = new Map<string, ChatScene>();
+const chatScenes = new Map<string, ChatState>();
 
 const CHAT_SCENE_MAX = 50;
 const CHAT_SCENE_IDLE_MS = 60 * 60 * 1000;
 
-function touchScene(s: ChatScene) {
+function touch(s: ChatState) {
   s.lastAccessAt = Date.now();
 }
 
-function getOrCreateScene(chatId: string): ChatScene {
+function resolveProjectId(chatId: string): string | null {
+  const chat = getChatById(chatId);
+  return chat?.project_id ?? null;
+}
+
+function getOrCreateScene(chatId: string): ChatState {
   let s = chatScenes.get(chatId);
   if (s) {
-    touchScene(s);
+    touch(s);
     return s;
   }
-  s = {
-    chatId,
-    isStreaming: false,
-    recent: [],
-    lastAccessAt: Date.now(),
-  };
+  s = createChatState(chatId, resolveProjectId(chatId));
   chatScenes.set(chatId, s);
   if (chatScenes.size > CHAT_SCENE_MAX) evictChatScenes();
   return s;
 }
 
+/** Hydrate from JSONL if not yet hydrated. No-op once loaded. */
+function ensureHydrated(s: ChatState): void {
+  if (s.hydrated) return;
+  const projectId = s.projectId ?? resolveProjectId(s.chatId);
+  if (!projectId) {
+    s.hydrated = true;
+    return;
+  }
+  hydrateChatState(s, projectId);
+}
+
 function evictChatScenes() {
   const now = Date.now();
-  const candidates: ChatScene[] = [];
+  const candidates: ChatState[] = [];
   for (const s of chatScenes.values()) {
     if (s.isStreaming) continue;
     if ((chatViewers.get(s.chatId)?.size ?? 0) > 0) continue;
@@ -101,42 +111,22 @@ function evictChatScenes() {
 
 let chatSceneSweeper: ReturnType<typeof setInterval> | null = null;
 
-/** Snapshot for a joining viewer: streaming flag + recent Pi events. */
-function buildSnapshot(chatId: string): WsBroadcastMessage {
-  const s = getOrCreateScene(chatId);
-  return {
-    type: "chat.piSnapshot",
-    chatId,
-    isStreaming: s.isStreaming,
-    runId: s.runId,
-    error: s.error,
-    events: s.recent,
-  };
+function broadcastChatState(s: ChatState): void {
+  broadcastToChat(s.chatId, serializeState(s));
 }
 
 export function beginChatStream(chatId: string, runId: string): void {
   const s = getOrCreateScene(chatId);
-  s.runId = runId;
-  s.isStreaming = true;
-  s.error = undefined;
-  s.recent = [];
-  broadcastToChat(chatId, { type: "chat.streamBegin", chatId, runId });
+  ensureHydrated(s);
+  beginStreaming(s, runId);
+  broadcastChatState(s);
 }
 
-/** Relay one Pi event to all chat viewers + buffer for late joins. */
+/** Apply one Pi event to chat state and broadcast the new state. */
 export function publishPiEvent(envelope: PiEventEnvelope): void {
   const s = getOrCreateScene(envelope.chatId);
-  s.recent.push(envelope);
-  if (s.recent.length > RECENT_EVENTS_MAX) {
-    s.recent.splice(0, s.recent.length - RECENT_EVENTS_MAX);
-  }
-  broadcastToChat(envelope.chatId, {
-    type: "chat.piEvent",
-    chatId: envelope.chatId,
-    projectId: envelope.projectId,
-    runId: envelope.runId,
-    event: envelope.event,
-  });
+  ensureHydrated(s);
+  if (applyPiEvent(s, envelope)) broadcastChatState(s);
 }
 
 export function endChatStream(
@@ -145,14 +135,11 @@ export function endChatStream(
   error?: string,
 ): void {
   const s = getOrCreateScene(chatId);
-  s.isStreaming = false;
-  s.error = reason === "error" ? error ?? "Stream ended with an error" : undefined;
-  broadcastToChat(chatId, {
-    type: "chat.streamEnd",
-    chatId,
-    reason,
-    error: s.error,
-  });
+  endStreaming(s, reason, error);
+  // Final reconcile from JSONL — Pi's canonical state is the truth.
+  const projectId = s.projectId ?? resolveProjectId(s.chatId);
+  if (projectId) hydrateChatState(s, projectId);
+  broadcastChatState(s);
 }
 
 export function isChatStreaming(chatId: string): boolean {
@@ -445,7 +432,9 @@ function handleViewChat(ws: WebSocket, meta: ConnectionMeta, chatId: string) {
   }
   chatViewers.get(chatId)!.add(ws);
 
-  send(ws, buildSnapshot(chatId));
+  const scene = getOrCreateScene(chatId);
+  ensureHydrated(scene);
+  send(ws, serializeState(scene));
   broadcastPresence(meta.projectId);
 }
 

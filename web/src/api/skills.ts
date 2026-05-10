@@ -14,7 +14,7 @@ export interface SkillMetadata {
 export interface Skill {
   name: string;
   description: string;
-  s3Key: string;
+  skillDir?: string;
   metadata: SkillMetadata | null;
 }
 

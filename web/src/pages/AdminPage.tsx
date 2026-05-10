@@ -59,10 +59,6 @@ import {
   StarIcon,
   ToggleLeftIcon,
   ToggleRightIcon,
-  RefreshCwIcon,
-  ServerIcon,
-  PowerIcon,
-  PowerOffIcon,
   GaugeIcon,
   ChevronLeftIcon,
 } from "lucide-react";
@@ -78,16 +74,7 @@ import {
   useUpdateUser,
   useAdminSettings,
   useUpdateSettings,
-  useToggleExecution,
-  useRunnerStatus,
-  useRunners,
-  useCreateRunner,
-  useUpdateRunner,
-  useDeleteRunner,
-  useTestRunner,
-  useReconnectRunner,
   type AdminUser,
-  type Runner,
 } from "@/api/admin";
 import {
   useAdminModels,
@@ -100,10 +87,6 @@ import {
   useUsageByModel,
   useUsageByUser,
 } from "@/api/usage";
-import {
-  useContainers,
-  useDestroyContainer,
-} from "@/api/containers";
 import type { ModelConfig } from "@/stores/model";
 import { Switch } from "@/components/ui/switch";
 import { Spinner } from "@/components/ui/spinner";
@@ -160,7 +143,6 @@ function formatRelativeDate(dateStr: string) {
 
 const ADMIN_NAV_ITEMS = [
   { id: "settings", label: "Settings" },
-  { id: "execution", label: "Execution" },
   { id: "models", label: "Models" },
   { id: "usage", label: "Usage" },
   { id: "users", label: "Users" },
@@ -243,10 +225,6 @@ export function AdminPage() {
           <section id="settings" className="space-y-8 scroll-mt-10">
             <InstanceSettingsSection />
             <SecuritySection />
-          </section>
-
-          <section id="execution" className="space-y-8 scroll-mt-10">
-            <ServerExecutionSection />
           </section>
 
           <section id="models" className="scroll-mt-10">
@@ -409,401 +387,6 @@ function InstanceSettingsSection() {
   );
 }
 
-function ServerExecutionSection() {
-  const { data: settings } = useAdminSettings();
-  const updateSettings = useUpdateSettings();
-  const toggleExecution = useToggleExecution();
-  const serverExecutionEnabled = settings?.SERVER_EXECUTION_ENABLED === "true";
-  const { data: runnerStatus } = useRunnerStatus();
-
-  const { data: runners } = useRunners();
-  const createRunner = useCreateRunner();
-  const updateRunnerMut = useUpdateRunner();
-  const deleteRunnerMut = useDeleteRunner();
-  const testRunner = useTestRunner();
-  const reconnectRunner = useReconnectRunner();
-
-  const [addOpen, setAddOpen] = useState(false);
-  const [editRunner, setEditRunner] = useState<Runner | null>(null);
-  const [testResults, setTestResults] = useState<Record<string, boolean | "loading">>({});
-
-  const { data: containers, isLoading: containersLoading } = useContainers();
-  const destroyContainer = useDestroyContainer();
-
-  function formatAge(lastUsedAt: number) {
-    const seconds = Math.round((Date.now() - lastUsedAt) / 1000);
-    if (seconds < 60) return `${seconds}s ago`;
-    const minutes = Math.round(seconds / 60);
-    if (minutes < 60) return `${minutes}m ago`;
-    return `${Math.round(minutes / 60)}h ago`;
-  }
-
-  async function handleTestRunner(id: string) {
-    setTestResults(prev => ({ ...prev, [id]: "loading" }));
-    try {
-      const result = await testRunner.mutateAsync(id);
-      setTestResults(prev => ({ ...prev, [id]: result.healthy }));
-    } catch {
-      setTestResults(prev => ({ ...prev, [id]: false }));
-    }
-  }
-
-  return (
-    <section className="space-y-4">
-      <div className="flex items-center gap-2">
-        <CpuIcon className="size-4 text-muted-foreground" />
-        <h3 className="text-sm font-semibold">Server Execution</h3>
-        {serverExecutionEnabled && runnerStatus?.connected ? (
-          <Badge variant="default" className="text-[10px]">On</Badge>
-        ) : (
-          <Badge variant="outline" className="text-[10px]">Off</Badge>
-        )}
-      </div>
-
-      {/* Execution Toggle */}
-      <div className="rounded-lg border p-4">
-        <div className="flex items-center justify-between gap-4">
-          <div className="space-y-1">
-            <p className="text-sm font-medium">Enabled</p>
-            <p className="text-xs text-muted-foreground">
-              Toggles code execution, browser sessions, and port forwarding/services.
-            </p>
-          </div>
-          <Switch
-            checked={serverExecutionEnabled}
-            onCheckedChange={(checked) => {
-              toggleExecution.mutate(checked);
-            }}
-            disabled={toggleExecution.isPending}
-            aria-label="Toggle server execution"
-          />
-        </div>
-      </div>
-
-      {serverExecutionEnabled && (<>
-      {/* Runners */}
-      <div className="rounded-lg border">
-        <div className="flex items-center justify-between p-4 pb-0">
-          <div className="flex items-center gap-2">
-            <ServerIcon className="size-4 text-muted-foreground" />
-            <p className="text-sm font-medium">Runners</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={reconnectRunner.isPending}
-              onClick={async () => {
-                try {
-                  const result = await reconnectRunner.mutateAsync();
-                  if (result.success) {
-                    toast.success("Execution reconnected");
-                  } else {
-                    toast.error(result.error ?? "No healthy runners");
-                  }
-                } catch {
-                  toast.error("Reconnect failed");
-                }
-              }}
-            >
-              {reconnectRunner.isPending ? (
-                <Spinner className="size-3 mr-1.5" />
-              ) : (
-                <RefreshCwIcon className="size-3 mr-1.5" />
-              )}
-              Refresh
-            </Button>
-          <Dialog open={addOpen} onOpenChange={setAddOpen}>
-            <DialogTrigger asChild>
-              <Button size="sm" variant="outline">
-                <PlusIcon className="size-3 mr-1.5" />
-                Add Runner
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-md">
-              <DialogHeader>
-                <DialogTitle className="font-display">Add Runner</DialogTitle>
-                <DialogDescription>Connect a new runner instance for code execution.</DialogDescription>
-              </DialogHeader>
-              <RunnerForm
-                onSubmit={async (data) => {
-                  await createRunner.mutateAsync(data);
-                  setAddOpen(false);
-                  toast.success("Runner added");
-                }}
-                submitting={createRunner.isPending}
-              />
-            </DialogContent>
-          </Dialog>
-          </div>
-        </div>
-
-        {!runners?.length ? (
-          <div className="p-4 text-xs text-muted-foreground">No runners configured. Add a runner to enable code execution.</div>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow className="hover:bg-transparent">
-                <TableHead className="text-xs">Name</TableHead>
-                <TableHead className="text-xs">URL</TableHead>
-                <TableHead className="text-xs">Status</TableHead>
-                <TableHead className="text-xs w-[80px]"></TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {runners.map((r) => (
-                <TableRow key={r.id} className="group">
-                  <TableCell className="text-xs font-medium">
-                    {r.name}
-                  </TableCell>
-                  <TableCell className="text-xs font-mono text-muted-foreground truncate max-w-[200px]">
-                    {r.url}
-                  </TableCell>
-                  <TableCell>
-                    {testResults[r.id] === "loading" ? (
-                      <Spinner className="size-3" />
-                    ) : !r.enabled ? (
-                      <Badge variant="outline" className="text-[10px]">Disabled</Badge>
-                    ) : r.connected ? (
-                      <Badge variant="default" className="text-[10px]">Connected</Badge>
-                    ) : (
-                      <Badge variant="destructive" className="text-[10px]">Disconnected</Badge>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon-sm" className="opacity-0 group-hover:opacity-100">
-                          <MoreHorizontalIcon className="size-3" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => handleTestRunner(r.id)}>
-                          <RefreshCwIcon className="size-3 mr-2" />
-                          Test Connection
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => setEditRunner(r)}>
-                          <PencilIcon className="size-3 mr-2" />
-                          Edit
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => {
-                            updateRunnerMut.mutate({ id: r.id, enabled: r.enabled ? 0 : 1 });
-                            toast.success(r.enabled ? "Runner disabled" : "Runner enabled");
-                          }}
-                        >
-                          {r.enabled ? (
-                            <><PowerOffIcon className="size-3 mr-2" />Disable</>
-                          ) : (
-                            <><PowerIcon className="size-3 mr-2" />Enable</>
-                          )}
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                          className="text-destructive focus:text-destructive"
-                          onClick={() => {
-                            deleteRunnerMut.mutate(r.id);
-                            toast.success("Runner removed");
-                          }}
-                        >
-                          <TrashIcon className="size-3 mr-2" />
-                          Remove
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
-      </div>
-
-      {/* Edit Runner Dialog */}
-      <Dialog open={!!editRunner} onOpenChange={(open) => { if (!open) setEditRunner(null); }}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="font-display">Edit Runner</DialogTitle>
-            <DialogDescription>Update runner connection settings.</DialogDescription>
-          </DialogHeader>
-          {editRunner && (
-            <RunnerForm
-              initial={editRunner}
-              onSubmit={async (data) => {
-                await updateRunnerMut.mutateAsync({ id: editRunner.id, name: data.name, url: data.url, api_key: data.apiKey });
-                setEditRunner(null);
-                toast.success("Runner updated");
-              }}
-              submitting={updateRunnerMut.isPending}
-            />
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Container Settings */}
-      <div className="rounded-lg border p-4 space-y-4">
-        <div className="flex items-center justify-between gap-4">
-          <div className="space-y-1">
-            <p className="text-sm font-medium">Max running containers</p>
-            <p className="text-xs text-muted-foreground">New containers are rejected when this limit is reached.</p>
-          </div>
-          <Input
-            type="number"
-            min={1}
-            max={20}
-            defaultValue={settings?.CONTAINER_MAX_RUNNING ?? "3"}
-            key={`max-running-${settings?.CONTAINER_MAX_RUNNING}`}
-            onBlur={(e) => {
-              const val = parseInt(e.target.value);
-              if (val >= 1 && val <= 20) updateSettings.mutate({ CONTAINER_MAX_RUNNING: String(val) });
-            }}
-            className="w-20 text-right"
-          />
-        </div>
-        <div className="flex items-center justify-between gap-4">
-          <div className="space-y-1">
-            <p className="text-sm font-medium">Idle destroy timeout (seconds)</p>
-            <p className="text-xs text-muted-foreground">Seconds before an idle container is destroyed. Default: 600.</p>
-          </div>
-          <Input
-            type="number"
-            min={60}
-            defaultValue={settings?.CONTAINER_DESTROY_TIMEOUT_SECS ?? "600"}
-            key={`destroy-timeout-${settings?.CONTAINER_DESTROY_TIMEOUT_SECS}`}
-            onBlur={(e) => {
-              const val = parseInt(e.target.value);
-              if (val >= 60) updateSettings.mutate({ CONTAINER_DESTROY_TIMEOUT_SECS: String(val) });
-            }}
-            className="w-20 text-right"
-          />
-        </div>
-      </div>
-
-      {/* Active Containers */}
-      <p className="text-xs text-muted-foreground mb-2">
-        Destroying a container may take a while.
-      </p>
-      <div className="rounded-lg border">
-        {containersLoading ? (
-          <div className="p-4 text-xs text-muted-foreground">Loading...</div>
-        ) : !containers?.length ? (
-          <div className="p-4 text-xs text-muted-foreground">No active containers</div>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="text-xs">Session</TableHead>
-                <TableHead className="text-xs">Runner</TableHead>
-                <TableHead className="text-xs">Status</TableHead>
-                <TableHead className="text-xs">Last used</TableHead>
-                <TableHead className="text-xs w-[100px]">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {containers.map((c) => (
-                <TableRow key={c.sessionId}>
-                  <TableCell className="text-xs font-mono truncate max-w-[200px]">
-                    {c.sessionId.replace("chat-", "")}
-                  </TableCell>
-                  <TableCell className="text-xs text-muted-foreground">
-                    {c.runnerName ?? "-"}
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={c.status === "running" ? "default" : "secondary"} className="text-[10px]">
-                      {c.status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-xs text-muted-foreground">
-                    {formatAge(c.lastUsedAt)}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-1">
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        onClick={() =>
-                          destroyContainer.mutate(c.sessionId, {
-                            onSuccess: () => toast.success("Container destroyed"),
-                            onError: (e) => toast.error(`Failed: ${(e as Error).message}`),
-                          })
-                        }
-                        disabled={destroyContainer.isPending && destroyContainer.variables === c.sessionId}
-                        aria-label="Destroy container"
-                        className="text-destructive hover:text-destructive"
-                      >
-                        {destroyContainer.isPending && destroyContainer.variables === c.sessionId ? (
-                          <Spinner className="size-3" />
-                        ) : (
-                          <TrashIcon className="size-3" />
-                        )}
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
-      </div>
-      </>)}
-    </section>
-  );
-}
-
-function RunnerForm({ initial, onSubmit, submitting }: {
-  initial?: Runner;
-  onSubmit: (data: { name: string; url: string; apiKey?: string }) => Promise<void>;
-  submitting: boolean;
-}) {
-  const [name, setName] = useState(initial?.name ?? "");
-  const [url, setUrl] = useState(initial?.url ?? "");
-  const [apiKey, setApiKey] = useState("");
-
-  return (
-    <form
-      onSubmit={async (e) => {
-        e.preventDefault();
-        await onSubmit({ name, url, apiKey: apiKey || undefined });
-      }}
-      className="space-y-4"
-    >
-      <div className="space-y-1">
-        <label className="text-xs font-medium text-muted-foreground">Name</label>
-        <Input
-          placeholder="e.g. Runner 1"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          required
-        />
-      </div>
-      <div className="space-y-1">
-        <label className="text-xs font-medium text-muted-foreground">URL</label>
-        <Input
-          type="text"
-          placeholder="http://runner:3100"
-          value={url}
-          onChange={(e) => setUrl(e.target.value)}
-          required
-        />
-      </div>
-      <div className="space-y-1">
-        <label className="text-xs font-medium text-muted-foreground">API Key</label>
-        <Input
-          type="password"
-          placeholder={initial ? "Leave blank to keep current" : "Enter API key (optional)"}
-          value={apiKey}
-          onChange={(e) => setApiKey(e.target.value)}
-        />
-      </div>
-      <DialogFooter>
-        <Button type="submit" disabled={submitting || !name || !url}>
-          {submitting ? <Spinner className="size-3 mr-1.5" /> : null}
-          {initial ? "Save" : "Add Runner"}
-        </Button>
-      </DialogFooter>
-    </form>
-  );
-}
 
 function SecuritySection() {
   const { data: settings } = useAdminSettings();
@@ -892,8 +475,6 @@ function ModelManagementSection() {
             <TableHeader>
               <TableRow className="hover:bg-transparent">
                 <TableHead className="text-xs font-medium text-muted-foreground">Model</TableHead>
-                <TableHead className="text-xs font-medium text-muted-foreground hidden sm:table-cell">Pricing</TableHead>
-                <TableHead className="text-xs font-medium text-muted-foreground hidden sm:table-cell">Context</TableHead>
                 <TableHead className="text-xs font-medium text-muted-foreground w-10">
                   <span className="sr-only">Actions</span>
                 </TableHead>
@@ -919,24 +500,7 @@ function ModelManagementSection() {
                         )}
                       </div>
                       <p className="text-[11px] text-muted-foreground truncate">{model.id}</p>
-                      <div className="flex items-center gap-1.5 sm:hidden mt-0.5">
-                        <span className="text-[10px] text-muted-foreground">
-                          ${model.pricing.input}/{model.pricing.output} per 1M
-                        </span>
-                      </div>
                     </div>
-                  </TableCell>
-                  <TableCell className="hidden sm:table-cell">
-                    <span className="text-xs text-muted-foreground tabular-nums">
-                      ${model.pricing.input}/{model.pricing.output}
-                    </span>
-                  </TableCell>
-                  <TableCell className="hidden sm:table-cell">
-                    <span className="text-xs text-muted-foreground tabular-nums">
-                      {model.contextWindow >= 1_000_000
-                        ? `${(model.contextWindow / 1_000_000).toFixed(0)}M`
-                        : `${(model.contextWindow / 1_000).toFixed(0)}K`}
-                    </span>
                   </TableCell>
                   <TableCell>
                     <DropdownMenu>
@@ -1024,17 +588,12 @@ function AddModelDialog({ open, onOpenChange, providers }: { open: boolean; onOp
   const [id, setId] = useState("");
   const [name, setName] = useState("");
   const [provider, setProvider] = useState(providers[0] ?? "");
-  const [description, setDescription] = useState("");
-  const [contextWindow, setContextWindow] = useState("128000");
-  const [pricingInput, setPricingInput] = useState("0");
-  const [pricingOutput, setPricingOutput] = useState("0");
   const [multimodal, setMultimodal] = useState(false);
 
   const canSubmit = id.trim() && name.trim() && provider.trim();
 
   function reset() {
-    setId(""); setName(""); setProvider(providers[0] ?? ""); setDescription("");
-    setContextWindow("128000"); setPricingInput("0"); setPricingOutput("0");
+    setId(""); setName(""); setProvider(providers[0] ?? "");
     setMultimodal(false);
   }
 
@@ -1044,9 +603,6 @@ function AddModelDialog({ open, onOpenChange, providers }: { open: boolean; onOp
         id: id.trim(),
         name: name.trim(),
         provider: provider.trim(),
-        description,
-        contextWindow: parseInt(contextWindow) || 128000,
-        pricing: { input: parseFloat(pricingInput) || 0, output: parseFloat(pricingOutput) || 0 },
         multimodal,
       },
       {
@@ -1092,27 +648,11 @@ function AddModelDialog({ open, onOpenChange, providers }: { open: boolean; onOp
                 </SelectContent>
               </Select>
             </div>
-            <div className="col-span-2 space-y-1">
-              <label className="text-xs font-medium">Description</label>
-              <Input placeholder="Short description..." value={description} onChange={(e) => setDescription(e.target.value)} className="h-8 text-xs" />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-medium">Context Window</label>
-              <Input type="number" value={contextWindow} onChange={(e) => setContextWindow(e.target.value)} className="h-8 text-xs" />
-            </div>
-            <div className="flex items-end gap-2">
+            <div className="col-span-2 flex items-end gap-2">
               <label className="flex items-center gap-2 text-xs font-medium cursor-pointer">
                 <input type="checkbox" checked={multimodal} onChange={(e) => setMultimodal(e.target.checked)} className="rounded" />
                 Multimodal (Vision)
               </label>
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-medium">Input price ($/1M)</label>
-              <Input type="number" step="0.01" value={pricingInput} onChange={(e) => setPricingInput(e.target.value)} className="h-8 text-xs" />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-medium">Output price ($/1M)</label>
-              <Input type="number" step="0.01" value={pricingOutput} onChange={(e) => setPricingOutput(e.target.value)} className="h-8 text-xs" />
             </div>
           </div>
           <DialogFooter>
@@ -1131,10 +671,6 @@ function EditModelDialog({ model, providers, open, onOpenChange }: { model: Admi
   const updateModelMutation = useUpdateModel();
   const [name, setName] = useState(model.name);
   const [provider, setProvider] = useState(model.provider);
-  const [description, setDescription] = useState(model.description);
-  const [contextWindow, setContextWindow] = useState(String(model.contextWindow));
-  const [pricingInput, setPricingInput] = useState(String(model.pricing.input));
-  const [pricingOutput, setPricingOutput] = useState(String(model.pricing.output));
   const [multimodal, setMultimodal] = useState(model.multimodal);
 
   function handleSave() {
@@ -1143,9 +679,6 @@ function EditModelDialog({ model, providers, open, onOpenChange }: { model: Admi
         id: model.id,
         name: name.trim(),
         provider: provider.trim(),
-        description,
-        contextWindow: parseInt(contextWindow) || 128000,
-        pricing: { input: parseFloat(pricingInput) || 0, output: parseFloat(pricingOutput) || 0 },
         multimodal,
       },
       {
@@ -1184,27 +717,11 @@ function EditModelDialog({ model, providers, open, onOpenChange }: { model: Admi
                 </SelectContent>
               </Select>
             </div>
-            <div className="col-span-2 space-y-1">
-              <label className="text-xs font-medium">Description</label>
-              <Input value={description} onChange={(e) => setDescription(e.target.value)} className="h-8 text-xs" />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-medium">Context Window</label>
-              <Input type="number" value={contextWindow} onChange={(e) => setContextWindow(e.target.value)} className="h-8 text-xs" />
-            </div>
-            <div className="flex items-end gap-2">
+            <div className="col-span-2 flex items-end gap-2">
               <label className="flex items-center gap-2 text-xs font-medium cursor-pointer">
                 <input type="checkbox" checked={multimodal} onChange={(e) => setMultimodal(e.target.checked)} className="rounded" />
                 Multimodal (Vision)
               </label>
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-medium">Input price ($/1M)</label>
-              <Input type="number" step="0.01" value={pricingInput} onChange={(e) => setPricingInput(e.target.value)} className="h-8 text-xs" />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-medium">Output price ($/1M)</label>
-              <Input type="number" step="0.01" value={pricingOutput} onChange={(e) => setPricingOutput(e.target.value)} className="h-8 text-xs" />
             </div>
           </div>
           <DialogFooter>

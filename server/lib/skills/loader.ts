@@ -1,110 +1,93 @@
+/**
+ * Filesystem-backed skills reader. Walks `<projectDir>/.pi/skills/` and
+ * parses each SKILL.md frontmatter for the install UI.
+ *
+ * Pi loads skills natively at startup via the `skills: ["./skills"]`
+ * entry in `.pi/settings.json` — there is no longer any runtime
+ * "inject skill into prompt" path on zero's side.
+ */
+import path from "node:path";
+import { promises as fs } from "node:fs";
 import which from "which";
-import { readFromS3 } from "@/lib/s3.ts";
-import { getSkillFiles, getSkillFileByName, getFilesByFolder } from "@/db/queries/files.ts";
+import { projectDirFor } from "@/lib/pi/run-turn.ts";
 import { parseSkillMd } from "./parser.ts";
-import type { SkillSummary, LoadedSkill, SkillMetadata } from "./types.ts";
+import type { LoadedSkill, SkillMetadata, SkillSummary } from "./types.ts";
 import { log } from "@/lib/utils/logger.ts";
 
 const skillLog = log.child({ module: "skills" });
 
-const CACHE_TTL_MS = 5_000;
-
-interface CacheEntry {
-  summaries: SkillSummary[];
-  expiresAt: number;
+function skillsRoot(projectId: string): string {
+  return path.join(projectDirFor(projectId), ".pi", "skills");
 }
 
-const summaryCache = new Map<string, CacheEntry>();
-
-export function invalidateSummaryCache(projectId: string): void {
-  summaryCache.delete(projectId);
+async function readDirSafe(dir: string): Promise<string[]> {
+  try {
+    return await fs.readdir(dir);
+  } catch (err: any) {
+    if (err?.code === "ENOENT") return [];
+    throw err;
+  }
 }
 
 export async function getSkillSummaries(projectId: string): Promise<SkillSummary[]> {
-  const cached = summaryCache.get(projectId);
-  if (cached && Date.now() < cached.expiresAt) return cached.summaries;
+  const root = skillsRoot(projectId);
+  const entries = await readDirSafe(root);
 
-  const rows = getSkillFiles(projectId);
-  if (rows.length === 0) {
-    const entry: CacheEntry = { summaries: [], expiresAt: Date.now() + CACHE_TTL_MS };
-    summaryCache.set(projectId, entry);
-    return [];
-  }
-
-  const summaries = await Promise.all(
-    rows.map(async (row): Promise<SkillSummary | null> => {
-      // Reconstruct S3 key from folder_path + filename.
-      // Skills installer uses: projects/${projectId}${folder_path}${filename}
-      const s3Key = `projects/${projectId}${row.folder_path}${row.filename}`;
-      try {
-        const content = await readFromS3(s3Key);
-        const { frontmatter } = parseSkillMd(content);
-        // Derive skill name from folder path: /skills/{name}/ -> name
-        const name = row.folder_path.split("/").filter(Boolean)[1]!;
-        const resolvedName = frontmatter.name || name;
-        return {
-          name: resolvedName,
-          description: frontmatter.description || "",
-          metadata: frontmatter.metadata,
-          s3Key,
-        };
-      } catch (err) {
-        skillLog.error("failed to parse skill", err, { s3Key });
-        return null;
+  const summaries: SkillSummary[] = [];
+  for (const name of entries) {
+    const skillMd = path.join(root, name, "SKILL.md");
+    try {
+      const stat = await fs.stat(path.join(root, name));
+      if (!stat.isDirectory()) continue;
+      const content = await fs.readFile(skillMd, "utf-8");
+      const { frontmatter } = parseSkillMd(content);
+      summaries.push({
+        name: frontmatter.name || name,
+        description: frontmatter.description || "",
+        metadata: frontmatter.metadata,
+      });
+    } catch (err: any) {
+      if (err?.code !== "ENOENT") {
+        skillLog.error("failed to read skill", err, { skillMd });
       }
-    }),
-  );
-
-  const valid = summaries.filter((s): s is SkillSummary => s !== null);
-  summaryCache.set(projectId, { summaries: valid, expiresAt: Date.now() + CACHE_TTL_MS });
-  return valid;
+    }
+  }
+  return summaries;
 }
 
-export async function loadFullSkill(projectId: string, name: string): Promise<LoadedSkill | null> {
-  const row = getSkillFileByName(projectId, name);
-  if (!row) return null;
+export async function loadFullSkill(
+  projectId: string,
+  name: string,
+): Promise<LoadedSkill | null> {
+  const dir = path.join(skillsRoot(projectId), name);
+  const skillMd = path.join(dir, "SKILL.md");
 
-  // Reconstruct S3 key from folder_path + filename.
-  const s3Key = `projects/${projectId}${row.folder_path}${row.filename}`;
-  skillLog.info("loading full skill", { projectId, name, s3Key });
-
+  let content: string;
   try {
-    const content = await readFromS3(s3Key);
-    const { frontmatter, body } = parseSkillMd(content);
-
-    // List helper files from files DB
-    const folderPath = `/skills/${name}/`;
-    const fileRows = getFilesByFolder(projectId, folderPath);
-    const files = fileRows
-      .filter((f) => f.filename !== "SKILL.md")
-      .map((f) => f.filename);
-
-    return {
-      ...frontmatter,
-      s3Key,
-      instructions: body,
-      files,
-    };
-  } catch (err) {
-    skillLog.error("failed to load skill", err, { projectId, name });
-    return null;
+    content = await fs.readFile(skillMd, "utf-8");
+  } catch (err: any) {
+    if (err?.code === "ENOENT") return null;
+    throw err;
   }
+
+  const { frontmatter, body } = parseSkillMd(content);
+  const allEntries = await readDirSafe(dir);
+  const files = allEntries.filter((f) => f !== "SKILL.md");
+
+  return {
+    ...frontmatter,
+    instructions: body,
+    files,
+  };
 }
 
 export function checkGating(metadata: SkillMetadata): { ok: boolean; missing: string[] } {
   const missing: string[] = [];
-
   for (const envVar of metadata.requires.env) {
-    if (!process.env[envVar]) {
-      missing.push(`env:${envVar}`);
-    }
+    if (!process.env[envVar]) missing.push(`env:${envVar}`);
   }
-
   for (const bin of metadata.requires.bins) {
-    if (!which.sync(bin, { nothrow: true })) {
-      missing.push(`bin:${bin}`);
-    }
+    if (!which.sync(bin, { nothrow: true })) missing.push(`bin:${bin}`);
   }
-
   return { ok: missing.length === 0, missing };
 }

@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { CornerDownLeftIcon, SquareIcon, XIcon } from "lucide-react";
-import type { Message, MessageUsage } from "@/lib/messages";
-import type { ChatStatus } from "@/hooks/use-ws-chat";
+import type { AgentMessage } from "@/lib/pi-events";
+import { contentText } from "@/lib/pi-events";
+import type { ChatStatus, SendMessageOptions } from "@/hooks/use-pi-chat";
 import { useModelStore, getModelsCache, getSelectedModel } from "@/stores/model";
+import { useModels } from "@/api/models";
 import { sendTyping } from "@/lib/ws";
-import { useChatContainerStatus } from "@/api/containers";
 import type { ServerCapabilities } from "@/api/capabilities";
-import type { SendMessageOptions } from "@/hooks/use-ws-chat";
 import type { TypingUser } from "@/stores/realtime";
 
 import { Button } from "@/components/ui/button";
@@ -14,19 +14,15 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { Context } from "@/components/chat-ui/Context";
 import { RichTextarea, type RichTextareaHandle } from "./RichTextarea";
 import { ModelSection } from "./ModelSection";
-import { LanguageToggle } from "./LanguageToggle";
 import { ImageUploadButton, type ImageAttachment } from "./ScreenshotButton";
-import { ToolSelector } from "./ToolSelector";
 import { FilePickerButton } from "./FilePickerButton";
-import { TodoProgress } from "./TodoProgress";
-import { BrowserPreview } from "./BrowserPreview";
-import { PlanModeToggle } from "./PlanModeToggle";
-import { cn } from "@/lib/utils";
+import { TurnDiffButton } from "./TurnDiffButton";
+import { BrowserPreviewButton } from "@/components/chat-ui/BrowserPreview";
 
 interface ComposerProps {
   projectId: string;
   chatId: string;
-  messages: Message[];
+  messages: AgentMessage[];
   isStreaming: boolean;
   status: ChatStatus;
   sendMessage: (opts: SendMessageOptions) => void;
@@ -63,64 +59,43 @@ function SubmitButton({
   );
 }
 
-function ReadyIndicator({
-  running,
-  serverDocker,
-}: {
-  running: boolean;
-  serverDocker: boolean;
-}) {
-  const tip = running
-    ? "Your environment is warm - actions will run instantly"
-    : serverDocker
-      ? "Your environment will spin up on the first action, then stay fast"
-      : "Code execution isn't available in this environment";
-  const label = running ? "Ready to run" : serverDocker ? "First run may be slow" : "Can't run code";
-  const dotClass = running
-    ? "bg-emerald-500"
-    : serverDocker
-      ? "bg-emerald-500/50"
-      : "bg-muted-foreground/40";
-
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <div className="flex items-center gap-1.5 px-2 py-1 text-xs text-muted-foreground">
-          <span className={cn("size-2 rounded-full", dotClass)} />
-          <span>{label}</span>
-        </div>
-      </TooltipTrigger>
-      <TooltipContent side="top">{tip}</TooltipContent>
-    </Tooltip>
-  );
+interface UsageTotals {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  cachedInputTokens: number;
 }
 
 /** Accumulate token usage across all assistant messages in this chat. */
-function totalUsage(messages: Message[]): MessageUsage {
-  let inputTokens = 0, outputTokens = 0, totalTokens = 0, reasoningTokens = 0, cachedInputTokens = 0;
+function totalUsage(messages: AgentMessage[]): UsageTotals {
+  let inputTokens = 0, outputTokens = 0, totalTokens = 0, cachedInputTokens = 0;
   for (const msg of messages) {
-    const u = msg.metadata?.usage;
+    if (msg.role !== "assistant") continue;
+    const u = msg.usage;
     if (!u) continue;
-    inputTokens += u.inputTokens ?? 0;
-    outputTokens += u.outputTokens ?? 0;
+    inputTokens += u.input ?? 0;
+    outputTokens += u.output ?? 0;
     totalTokens += u.totalTokens ?? 0;
-    reasoningTokens += u.reasoningTokens ?? 0;
-    cachedInputTokens += u.cachedInputTokens ?? 0;
+    cachedInputTokens += u.cacheRead ?? 0;
   }
-  return { inputTokens, outputTokens, totalTokens, reasoningTokens, cachedInputTokens };
+  return { inputTokens, outputTokens, totalTokens, cachedInputTokens };
 }
 
-/** Most recent server-reported contextTokens wins; fall back to char estimate. */
-function estimateContextTokens(messages: Message[]): number {
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const ctx = (messages[i]!.metadata as Record<string, unknown> | undefined)?.contextTokens;
-    if (typeof ctx === "number" && ctx > 0) return ctx;
-  }
+/** Char-based estimate of context tokens. Pi's exact context usage isn't
+ *  on the event stream today; refine when Session 6+ surfaces it. */
+function estimateContextTokens(messages: AgentMessage[]): number {
   let chars = 0;
   for (const msg of messages) {
-    for (const part of msg.parts) {
-      if (part.type === "text") chars += part.text.length;
-      else if (part.type === "dynamic-tool") chars += JSON.stringify(part).length;
+    if (msg.role === "user") {
+      chars += contentText(msg.content).length;
+    } else if (msg.role === "assistant") {
+      for (const part of msg.content) {
+        if (part.type === "text") chars += part.text.length;
+        else if (part.type === "thinking") chars += part.thinking.length;
+        else if (part.type === "toolCall") chars += JSON.stringify(part.arguments ?? {}).length;
+      }
+    } else {
+      chars += contentText(msg.content).length;
     }
   }
   return Math.ceil(chars / 3);
@@ -134,11 +109,10 @@ export function Composer({
   status,
   sendMessage,
   stop,
-  capabilities,
+  capabilities: _capabilities,
   typingUsers,
   presenceDots,
 }: ComposerProps) {
-  const { data: containerStatus } = useChatContainerStatus(projectId, chatId);
   const [input, setInput] = useState("");
   const [imageAttachment, setImageAttachment] = useState<ImageAttachment | null>(null);
   const lastTypingSentRef = useRef(0);
@@ -169,10 +143,17 @@ export function Composer({
   const handleSubmit = useCallback(() => {
     if (isStreaming) return;
     if (!input.trim() && !imageAttachment) return;
-    const files = imageAttachment
-      ? [{ type: "file" as const, mediaType: imageAttachment.mediaType, url: imageAttachment.dataUrl }]
+    const images = imageAttachment
+      ? (() => {
+          const m = imageAttachment.dataUrl.match(/^data:([^;]+);base64,(.*)$/);
+          if (!m) return undefined;
+          return [{ mimeType: m[1] ?? "image/png", data: m[2] ?? "" }];
+        })()
       : undefined;
-    sendMessage({ text: input || "Describe this image.", files });
+    sendMessage({
+      text: input || (imageAttachment ? "Describe this image." : ""),
+      ...(images ? { images } : {}),
+    });
     setInput("");
     setImageAttachment(null);
   }, [input, imageAttachment, isStreaming, sendMessage]);
@@ -187,12 +168,15 @@ export function Composer({
 
   const usage = useMemo(() => totalUsage(messages), [messages]);
   const contextTokens = useMemo(() => estimateContextTokens(messages), [messages]);
+  const { data: modelsList } = useModels();
+  const contextWindow = useMemo(
+    () => modelsList?.find((m) => m.id === selectedModelId)?.contextWindow,
+    [modelsList, selectedModelId],
+  );
   const canSubmit = input.trim() !== "" || imageAttachment !== null;
 
   return (
     <div className="px-3 pb-2 sm:pb-4 sm:px-6 md:px-10 space-y-2 max-w-4xl mx-auto w-full">
-      <TodoProgress messages={messages} />
-
       {imageAttachment && (
         <div className="flex items-center gap-2 pb-2">
           <div className="relative rounded border bg-muted overflow-hidden">
@@ -243,11 +227,10 @@ export function Composer({
                 richTextareaRef.current?.focus();
               }}
             />
+            <TurnDiffButton chatId={chatId} />
+            <BrowserPreviewButton projectId={projectId} />
             <span className="hidden md:contents">
-              <PlanModeToggle chatId={chatId} />
-              <ToolSelector />
               <ModelSection />
-              <LanguageToggle />
               {isMultimodal && (
                 <ImageUploadButton
                   attachment={imageAttachment}
@@ -255,21 +238,19 @@ export function Composer({
                   onRemove={() => setImageAttachment(null)}
                 />
               )}
-              {containerStatus?.status === "running" && (
-                <BrowserPreview projectId={projectId} chatId={chatId} />
-              )}
-              <ReadyIndicator
-                running={containerStatus?.status === "running"}
-                serverDocker={capabilities?.serverDocker === true}
-              />
-              {(usage.totalTokens ?? 0) > 0 && (
+              {usage.totalTokens > 0 && contextWindow ? (
                 <Context
-                  usedTokens={contextTokens || (usage.totalTokens ?? 0)}
-                  maxTokens={getSelectedModel().contextWindow}
-                  usage={usage}
+                  usedTokens={contextTokens || usage.totalTokens}
+                  maxTokens={contextWindow}
+                  usage={{
+                    inputTokens: usage.inputTokens,
+                    outputTokens: usage.outputTokens,
+                    totalTokens: usage.totalTokens,
+                    cachedInputTokens: usage.cachedInputTokens,
+                  }}
                   modelId={getSelectedModel().id}
                 />
-              )}
+              ) : null}
             </span>
           </div>
 

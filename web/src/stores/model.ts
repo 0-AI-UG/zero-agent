@@ -5,37 +5,26 @@ export interface ModelConfig {
   id: string;
   name: string;
   provider: string;
-  inferenceProvider?: string;
-  description: string;
-  contextWindow: number;
-  pricing: { input: number; output: number };
-  tags: string[];
   default?: boolean;
   multimodal: boolean;
+  contextWindow?: number;
 }
-
-export type Language = "en" | "zh";
 
 interface ModelState {
   selectedModelId: string;
   setSelectedModelId: (id: string) => void;
-  language: Language;
-  setLanguage: (lang: Language) => void;
 }
 
 export const useModelStore = create<ModelState>()(
   persist(
     (set) => ({
-      selectedModelId: "moonshotai/kimi-k2.5",
+      selectedModelId: "~moonshotai/kimi-latest",
       setSelectedModelId: (id) => set({ selectedModelId: id }),
-      language: "zh" as Language,
-      setLanguage: (language) => set({ language }),
     }),
     { name: "model-selection" },
   ),
 );
 
-// Global models cache - populated by useModels() hook, readable synchronously
 let _modelsCache: ModelConfig[] = [];
 
 export function setModelsCache(models: ModelConfig[]) {
@@ -51,14 +40,12 @@ export function getSelectedModel(): ModelConfig {
   const found = _modelsCache.find((m) => m.id === selectedModelId);
   if (found) return found;
   const defaultModel = _modelsCache.find((m) => m.default);
-  return defaultModel ?? _modelsCache[0] ?? {
-    id: selectedModelId,
-    name: selectedModelId,
-    provider: "unknown",
-    description: "",
-    contextWindow: 128000,
-    pricing: { input: 0, output: 0 },
-    tags: [],
-    multimodal: false,
-  };
+  return (
+    defaultModel ?? _modelsCache[0] ?? {
+      id: selectedModelId,
+      name: selectedModelId,
+      provider: "unknown",
+      multimodal: false,
+    }
+  );
 }

@@ -134,14 +134,3 @@ export function deleteFile(id: string): void {
   if (row?.project_id) bumpVersion(row.project_id);
 }
 
-export function getSkillFiles(projectId: string): FileRow[] {
-  return db.prepare(
-    "SELECT * FROM files WHERE project_id = ? AND filename = 'SKILL.md' AND folder_path LIKE '/skills/%/' ORDER BY folder_path",
-  ).all(projectId) as FileRow[];
-}
-
-export function getSkillFileByName(projectId: string, name: string): FileRow | null {
-  return (db.prepare(
-    "SELECT * FROM files WHERE project_id = ? AND filename = 'SKILL.md' AND folder_path = ?",
-  ).get(projectId, `/skills/${name}/`) as FileRow | undefined) ?? null;
-}

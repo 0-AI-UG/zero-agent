@@ -4,7 +4,6 @@
   "type": "module",
   "workspaces": [
     "web",
-    "runner",
     "zero"
   ],
   "scripts": {
@@ -13,7 +12,6 @@
     "compile": "tsx build.ts",
     "start": "NODE_ENV=production node --max-old-space-size=1024 --trace-gc --heapsnapshot-near-heap-limit=2 --import tsx/esm server/index.ts",
     "test": "vitest run",
-    "test:integration": "vitest run -c vitest.integration.config.ts",
     "typecheck": "tsc --noEmit"
   },
   "trustedDependencies": ["sharp", "bcrypt", "better-sqlite3", "esbuild"],
@@ -49,7 +47,11 @@
     "linkedom": "^0.18.12",
     "nanoid": "^5.1.6",
     "otpauth": "^9.5.0",
+    "playwright": "^1.59.1",
+    "playwright-extra": "^4.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
     "qrcode": "^1.5.4",
+    "rebrowser-playwright": "^1.52.0",
     "sharp": "^0.34.5",
     "tsx": "^4.21.0",
     "turndown": "^7.2.2",

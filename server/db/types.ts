@@ -58,16 +58,6 @@ export interface ChatRow {
   updated_at: string;
 }
 
-export interface MessageRow {
-  id: string;
-  project_id: string;
-  chat_id: string;
-  role: "user" | "assistant";
-  content: string;
-  user_id: string | null;
-  created_at: string;
-}
-
 export interface FileRow {
   id: string;
   project_id: string;
@@ -196,15 +186,8 @@ export interface ModelRow {
   id: string;
   name: string;
   provider: string;
-  inference_provider: string;
-  description: string;
-  context_window: number;
-  pricing_input: number;
-  pricing_output: number;
-  tags: string;
   is_default: number;
   multimodal: number;
-  provider_config: string | null;
   enabled: number;
   sort_order: number;
   created_at: string;
@@ -231,30 +214,13 @@ export interface CredentialRow {
   updated_at: string;
 }
 
-export interface RunnerRow {
-  id: string;
-  name: string;
-  url: string;
-  api_key: string;
-  enabled: number;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface ForwardedPortRow {
+export interface AppRow {
   id: string;
   project_id: string;
   user_id: string;
   slug: string;
-  label: string;
+  name: string;
   port: number;
-  container_ip: string | null;
-  status: "active" | "stopped";
-  pinned: number;
-  start_command: string | null;
-  working_dir: string;
-  env_vars: string;
-  error: string | null;
   created_at: string;
   updated_at: string;
 }

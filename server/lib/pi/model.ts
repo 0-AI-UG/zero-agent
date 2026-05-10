@@ -1,49 +1,35 @@
 /**
- * Resolve a Zero model id (or fall back to the active provider's default
- * chat model) into the (model, authStorage) pair `runTurn` needs.
- *
- * v1 only knows OpenRouter — Pi has its own ModelRegistry but for the
- * cutover we keep the same key-management story Zero already has and
- * just hand Pi the OpenRouter key per turn. Multi-provider per-tenant
- * auth is open question §9; revisit when Pi sessions go multi-tenant.
+ * Resolve the Pi model + provider for a turn, and build the env vars
+ * we forward to the Pi subprocess. Pi reads provider keys from env at
+ * startup; zero just hands them over.
  */
-import { AuthStorage } from "@mariozechner/pi-coding-agent";
-import { getModel, type Api, type Model } from "@mariozechner/pi-ai";
 import { getSetting } from "@/lib/settings.ts";
 import { getActiveProvider, resolveChatModelId } from "@/lib/providers/index.ts";
+import { getModelById } from "@/db/queries/models.ts";
 
-export interface ResolvedModel {
-  model: Model<Api>;
-  authStorage: AuthStorage;
+export interface ResolvedPiModel {
+  /** Pi-AI model id, e.g. "anthropic/claude-sonnet-4". */
+  modelId: string;
+  /** Pi provider id, e.g. "openrouter". */
+  provider: string;
+  /** Whether this model accepts image input — sourced from the models table. */
+  supportsImages: boolean;
 }
 
-let _cachedAuth: AuthStorage | null = null;
-let _cachedKey: string | null = null;
-
-function getOrBuildAuthStorage(): AuthStorage {
-  const key =
-    getSetting("OPENROUTER_API_KEY") ?? process.env.OPENROUTER_API_KEY ?? "";
-  if (_cachedAuth && key === _cachedKey) return _cachedAuth;
-  _cachedKey = key;
-  _cachedAuth = AuthStorage.inMemory();
-  if (key) _cachedAuth.setRuntimeApiKey("openrouter", key);
-  if (process.env.ANTHROPIC_API_KEY) {
-    _cachedAuth.setRuntimeApiKey("anthropic", process.env.ANTHROPIC_API_KEY);
-  }
-  return _cachedAuth;
-}
-
-/**
- * Resolve a Zero model id (or `undefined` to use the active provider's
- * default) into a Pi `(model, authStorage)` pair.
- */
-export function resolveModelForPi(modelId?: string): ResolvedModel {
+export function resolveModelForPi(modelId?: string): ResolvedPiModel {
   const id = modelId
     ? resolveChatModelId(modelId)
     : getActiveProvider().getDefaultChatModelId();
-  const model = getModel("openrouter", id as never) as Model<Api> | null;
-  if (!model) {
-    throw new Error(`unknown model: ${id}`);
-  }
-  return { model, authStorage: getOrBuildAuthStorage() };
+  const provider = getActiveProvider().id;
+  const row = getModelById(id);
+  const supportsImages = row?.multimodal === 1;
+  return { modelId: id, provider, supportsImages };
+}
+
+/** Build the env-var map handed to the Pi subprocess. */
+export function buildPiEnv(): Record<string, string> {
+  const env: Record<string, string> = {};
+  const key = getSetting("OPENROUTER_API_KEY");
+  if (key) env.OPENROUTER_API_KEY = key;
+  return env;
 }

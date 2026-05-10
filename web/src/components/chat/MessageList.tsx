@@ -1,94 +1,107 @@
 import { Link } from "react-router";
-import { AlertCircleIcon, RefreshCcwIcon } from "lucide-react";
-import { useCallback, useRef, type ReactNode } from "react";
-import type { Message } from "@/lib/messages";
-import { isToolUIPart } from "@/lib/messages";
-import { Button } from "@/components/ui/button";
+import { AlertCircleIcon } from "lucide-react";
+import { useMemo, type ReactNode } from "react";
+import type { AgentMessage, ToolExecution } from "@/lib/pi-events";
+import { contentText } from "@/lib/pi-events";
 import { ConversationEmptyState } from "@/components/chat-ui/Conversation";
 import { MessageShell } from "@/components/chat-ui/MessageShell";
-import { Shimmer } from "@/components/chat-ui/Shimmer";
+import { ZeroLoader } from "@/components/chat-ui/ZeroLoader";
 import { Suggestion } from "@/components/chat-ui/Suggestion";
-import { MessageRow } from "./MessageRow";
-import { isVisiblePart } from "./tool-cards";
-import { useTurnDiffsStore } from "@/stores/turn-diffs";
+import { MessageView } from "./pi-transcript";
 import logoSvg from "@/logo-mark.svg";
 
+/**
+ * Derive `executions` from the messages array — a tool call is "done"
+ * once a matching `toolResult` message appears later. The server no
+ * longer broadcasts a separate executions map; everything we need is
+ * already in the canonical message list.
+ */
+function deriveExecutions(messages: AgentMessage[]): Map<string, ToolExecution> {
+  const map = new Map<string, ToolExecution>();
+  for (const msg of messages) {
+    if (msg.role !== "toolResult") continue;
+    map.set(msg.toolCallId, {
+      toolCallId: msg.toolCallId,
+      toolName: msg.toolName,
+      args: undefined,
+      state: msg.isError ? "error" : "done",
+      result: { content: msg.content },
+      isError: msg.isError,
+    });
+  }
+  return map;
+}
+
 interface MessageListProps {
-  messages: Message[];
+  messages: AgentMessage[];
   projectId: string;
-  chatId: string;
   isStreaming: boolean;
   error: Error | undefined;
   memberMap: Map<string, string>;
   isMultiMember: boolean;
-  regenerate: (messageId?: string) => void;
   project: { assistantName?: string; assistantDescription?: string } | undefined;
   starterSuggestions: Array<{ text: string; icon: ReactNode; description: string }>;
   onSuggestion: (suggestion: string) => void;
 }
 
-/**
- * Shimmer shows while streaming AND nothing on screen is already shimmering.
- * A running tool card shimmers itself, so we suppress only in that case.
- * Text parts are static once rendered, completed tools are static, and
- * invisible parts render nothing — all of those need the indicator on top.
- */
-function shimmerLabel(messages: Message[], isStreaming: boolean): string | null {
-  if (!isStreaming) return null;
-  const last = messages.at(-1);
-  if (!last || last.role !== "assistant") return "Thinking";
-  if (last.metadata?.compacting) return "Compacting conversation";
-
-  let lastVisible = null;
-  for (let i = last.parts.length - 1; i >= 0; i -= 1) {
-    const p = last.parts[i];
-    if (p && isVisiblePart(p)) {
-      lastVisible = p;
-      break;
+/** Whether a Pi message has any visible content. Tool calls always do. */
+function isVisibleMessage(msg: AgentMessage, executions: Map<string, ToolExecution>): boolean {
+  if (msg.role === "user") return contentText(msg.content).length > 0;
+  if (msg.role === "toolResult") return false;
+  // assistant
+  for (const part of msg.content) {
+    if (part.type === "text" && part.text.length > 0) return true;
+    if (part.type === "thinking" && part.thinking.length > 0) return true;
+    if (part.type === "toolCall") {
+      // Tool calls are always rendered (header at minimum). The execution
+      // map is here only so future heuristics can suppress empty no-op
+      // calls without hunting down the lookup.
+      void executions;
+      return true;
     }
   }
-  if (!lastVisible) return "Thinking";
-  if (isToolUIPart(lastVisible)) {
-    const s = lastVisible.state;
-    if (s === "input-streaming" || s === "input-available") return null;
+  return !!msg.errorMessage;
+}
+
+function shouldShowLoader(
+  messages: AgentMessage[],
+  executions: Map<string, ToolExecution>,
+  isStreaming: boolean,
+): boolean {
+  if (!isStreaming) return false;
+  const last = messages.at(-1);
+  if (!last || last.role !== "assistant") return true;
+
+  // If the latest assistant message ends in a tool call still running,
+  // the ToolCallCard's spinner is enough.
+  for (let i = last.content.length - 1; i >= 0; i--) {
+    const part = last.content[i];
+    if (!part) continue;
+    if (part.type === "toolCall") {
+      const ex = executions.get(part.id);
+      if (!ex || ex.state === "running") return false;
+      break;
+    }
+    if (part.type === "text" && part.text.length > 0) break;
+    if (part.type === "thinking" && part.thinking.length > 0) break;
   }
-  return "Thinking";
+  return true;
 }
 
 export function MessageList({
   messages,
   projectId,
-  chatId,
   isStreaming,
   error,
   memberMap,
   isMultiMember,
-  regenerate,
   project,
   starterSuggestions,
   onSuggestion,
 }: MessageListProps) {
-  const handleCopy = useCallback((text: string) => {
-    navigator.clipboard.writeText(text);
-  }, []);
+  const executions = useMemo(() => deriveExecutions(messages), [messages]);
 
-  const regenerateRef = useRef(regenerate);
-  regenerateRef.current = regenerate;
-  const stableRegenerate = useCallback(
-    (messageId?: string) => regenerateRef.current(messageId),
-    [],
-  );
-
-  const label = shimmerLabel(messages, isStreaming);
-
-  const turnDiffs = useTurnDiffsStore((s) => s.byChatId[chatId]);
-  const latestTurnDiff = turnDiffs && turnDiffs.length > 0 ? turnDiffs[turnDiffs.length - 1] : null;
-  const lastAssistantIndex = (() => {
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i]?.role === "assistant") return i;
-    }
-    return -1;
-  })();
+  const showLoader = shouldShowLoader(messages, executions, isStreaming);
 
   return (
     <>
@@ -124,31 +137,25 @@ export function MessageList({
         </div>
       )}
 
-      {messages.map((message, index) => (
-        <MessageRow
-          key={message.id}
-          message={message}
-          projectId={projectId}
-          chatId={chatId}
-          isLastMessage={index === messages.length - 1}
-          isStreaming={isStreaming}
-          memberMap={memberMap}
-          isMultiMember={isMultiMember}
-          onCopy={handleCopy}
-          onRegenerate={stableRegenerate}
-          postSnapshotId={
-            index === lastAssistantIndex && !isStreaming
-              ? latestTurnDiff?.postSnapshotId
-              : undefined
-          }
-        />
-      ))}
+      {messages.map((message, index) => {
+        if (!isVisibleMessage(message, executions)) return null;
+        const senderUserId = (message as { userId?: string }).userId;
+        return (
+          <div key={`${message.timestamp}-${index}`}>
+            <MessageView
+              message={message}
+              executions={executions}
+              memberMap={memberMap}
+              isMultiMember={isMultiMember}
+              senderUserId={senderUserId}
+            />
+          </div>
+        );
+      })}
 
-      {label && (
+      {showLoader && (
         <MessageShell role="assistant">
-          <Shimmer className="text-sm" duration={1.5}>
-            {label}
-          </Shimmer>
+          <ZeroLoader />
         </MessageShell>
       )}
 
@@ -157,10 +164,6 @@ export function MessageList({
           <div className="flex items-center gap-3 text-destructive text-sm">
             <AlertCircleIcon className="size-4 shrink-0" />
             <span>Something went wrong.</span>
-            <Button variant="outline" size="sm" onClick={() => stableRegenerate()}>
-              <RefreshCcwIcon className="size-3.5" />
-              Retry
-            </Button>
           </div>
         </MessageShell>
       )}

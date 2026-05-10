@@ -1,8 +1,8 @@
 /**
  * WebSocket chat handlers — Pi-backed.
  *
- * Routes `chat.send` / `chat.stop` / `chat.regenerate` from `ws.ts` into
- * `runTurn(...)`. Pi owns conversation history (one JSONL per chat under
+ * Routes `chat.send` / `chat.stop` from `ws.ts` into `runTurn(...)`. Pi
+ * owns conversation history (one JSONL per chat under
  * `<project>/.pi-sessions/<chatId>.jsonl`) so this module no longer
  * persists messages, builds prompt history, or strips planning parts —
  * Pi's session manager handles all of that.
@@ -13,7 +13,7 @@ import type { WebSocket } from "ws";
 import { log } from "@/lib/utils/logger.ts";
 
 import { getProjectById } from "@/db/queries/projects.ts";
-import { getChatById } from "@/db/queries/chats.ts";
+import { getChatById, updateChat } from "@/db/queries/chats.ts";
 import { isProjectMember } from "@/db/queries/members.ts";
 import { getUserById } from "@/db/queries/users.ts";
 
@@ -30,6 +30,7 @@ import {
 } from "@/lib/http/ws.ts";
 import { runTurn } from "@/lib/pi/run-turn.ts";
 import { resolveModelForPi } from "@/lib/pi/model.ts";
+import { events } from "@/lib/scheduling/events.ts";
 
 const chatLog = log.child({ module: "ws-chat" });
 
@@ -51,11 +52,18 @@ type AuthorizedChatContext =
     }
   | { error: string };
 
+interface ChatImage {
+  /** Base64-encoded image bytes (no data: prefix). */
+  data: string;
+  mimeType: string;
+}
+
 interface ChatSendMessage {
   type: "chat.send";
   chatId: string;
   text?: string;
   model?: string;
+  images?: ChatImage[];
 }
 
 interface ChatStopMessage {
@@ -63,19 +71,7 @@ interface ChatStopMessage {
   chatId: string;
 }
 
-interface ChatRegenerateMessage {
-  type: "chat.regenerate";
-  chatId: string;
-  // Pi's session manager owns regenerate semantics. v1 just spawns a new
-  // turn with the supplied text; richer fork/regenerate is open question §8.
-  text?: string;
-  model?: string;
-}
-
-export type ChatWsMessage =
-  | ChatSendMessage
-  | ChatStopMessage
-  | ChatRegenerateMessage;
+export type ChatWsMessage = ChatSendMessage | ChatStopMessage;
 
 // ────────────────────────────────────────────────────────────────────────
 //  Dispatcher
@@ -92,7 +88,6 @@ export async function handleChatMessage(
 ): Promise<void> {
   switch (msg.type) {
     case "chat.send":
-    case "chat.regenerate":
       await handleChatSend(ws, meta, msg);
       return;
     case "chat.stop":
@@ -102,34 +97,37 @@ export async function handleChatMessage(
 }
 
 // ────────────────────────────────────────────────────────────────────────
-//  chat.send / chat.regenerate
+//  chat.send
 // ────────────────────────────────────────────────────────────────────────
 
 async function handleChatSend(
   ws: WebSocket,
   meta: ChatConnectionMeta,
-  msg: ChatSendMessage | ChatRegenerateMessage,
+  msg: ChatSendMessage,
 ): Promise<void> {
   if (!msg.chatId) {
-    sendError(ws, `${msg.type}: missing chatId`);
+    sendError(ws, "chat.send: missing chatId");
     return;
   }
 
   const context = getAuthorizedChatContext(meta.userId, msg.chatId);
   if ("error" in context) {
-    sendError(ws, context.error.replace("chat.send", msg.type));
+    sendError(ws, context.error);
     return;
   }
   const { chat, project } = context;
 
   if (chatIsStreaming(chat.id)) {
-    sendError(ws, `${msg.type}: chat is already streaming`);
+    sendError(ws, "chat.send: chat is already streaming");
     return;
   }
 
   const text = (msg.text ?? "").trim();
-  if (!text) {
-    sendError(ws, `${msg.type}: empty message`);
+  const images = (msg.images ?? []).filter(
+    (img) => typeof img?.data === "string" && typeof img?.mimeType === "string",
+  );
+  if (!text && images.length === 0) {
+    sendError(ws, "chat.send: empty message");
     return;
   }
 
@@ -139,24 +137,31 @@ async function handleChatSend(
   try {
     resolved = resolveModelForPi(msg.model);
   } catch (err) {
-    sendError(ws, `${msg.type}: ${err instanceof Error ? err.message : String(err)}`);
+    sendError(ws, `chat.send: ${err instanceof Error ? err.message : String(err)}`);
     clearAbortController(chat.id);
     return;
   }
+  const piModel = resolved;
 
   // Begin the WS scene before runTurn so viewer joins mid-run see the
   // streaming flag immediately. The runId comes back from runTurn but we
   // don't have it yet; emit a placeholder and let the first pi.event
   // carry the canonical runId.
+  if (chat.title === "New Chat" && text) {
+    const title = text.length > 60 ? `${text.slice(0, 60).trimEnd()}…` : text;
+    updateChat(chat.id, { title });
+    events.emit("chat.created", { chatId: chat.id, projectId: project.id, title });
+  }
+
   beginChatStream(chat.id, "");
 
   void runTurn({
     projectId: project.id,
     chatId: chat.id,
     userId: meta.userId,
-    userMessage: text,
-    model: resolved.model,
-    authStorage: resolved.authStorage,
+    userMessage: text || "Describe these image(s).",
+    images: images.length > 0 ? images : undefined,
+    model: piModel,
     abortSignal: abortController.signal,
     onEvent: (env) => publishPiEvent(env),
   })

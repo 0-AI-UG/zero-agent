@@ -13,7 +13,7 @@ import { useProject } from "@/api/projects";
 import { useServerCapabilities } from "@/api/capabilities";
 import { useMembers } from "@/api/members";
 import { useViewChat } from "@/hooks/use-realtime";
-import { useWsChat } from "@/hooks/use-ws-chat";
+import { usePiChat } from "@/hooks/use-pi-chat";
 
 interface ChatPanelProps {
   projectId: string;
@@ -45,8 +45,8 @@ export function ChatPanel({ projectId, chatId, isAutonomous, source }: ChatPanel
 
   useViewChat(chatId);
 
-  const { messages, sendMessage, stop, regenerate, status, error, isStreaming } =
-    useWsChat(chatId);
+  const { messages, sendMessage, stop, status, error, isStreaming } =
+    usePiChat(chatId);
 
   const typingUsers = useTypingUsers(chatId);
 
@@ -76,12 +76,10 @@ export function ChatPanel({ projectId, chatId, isAutonomous, source }: ChatPanel
           <MessageList
             messages={messages}
             projectId={projectId}
-            chatId={chatId}
             isStreaming={isStreaming}
             error={errorObj}
             memberMap={memberMap}
             isMultiMember={isMultiMember}
-            regenerate={regenerate}
             project={project}
             starterSuggestions={starterSuggestions}
             onSuggestion={handleSuggestion}

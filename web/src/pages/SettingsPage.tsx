@@ -179,7 +179,7 @@ export function SettingsPage() {
                   <div className="space-y-1">
                     <p className="text-sm font-medium">Reindex embeddings</p>
                     <p className="text-xs text-muted-foreground">
-                      Rebuild search index for all files, memories, and chat history.
+                      Rebuild search index for all files and chat history.
                     </p>
                   </div>
                   <ReindexButton reindex={reindex} />
@@ -273,8 +273,6 @@ function ReindexStatus({
   const labels: Record<string, string> = {
     queued: "Queued",
     files: "Files",
-    memories: "Memories",
-    messages: "Messages",
   };
   const percent = total > 0 ? Math.round((current / total) * 100) : 0;
 

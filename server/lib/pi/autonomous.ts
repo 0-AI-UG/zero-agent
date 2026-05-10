@@ -50,8 +50,7 @@ export async function runAutonomousTurn(
       chatId: chat.id,
       userId: options?.userId ?? "",
       userMessage: prompt,
-      model: resolved.model,
-      authStorage: resolved.authStorage,
+      model: resolved,
       onEvent: (env) => {
         publishPiEvent(env);
         if (env.event.type === "agent_end") {

@@ -131,34 +131,6 @@ export const updateCredentialSchema = z.discriminatedUnion("credType", [
   }),
 ]);
 
-// Soul
-export const updateSoulSchema = z.object({
-  content: z.string().min(1).max(10000),
-});
-
-// Chat - keep permissive; the AI SDK controls part shapes and may add new types.
-const messagePartSchema = z.object({ type: z.string() }).passthrough();
-
-const uiMessageSchema = z.object({
-  id: z.string(),
-  role: z.enum(["user", "assistant", "system"]),
-  parts: z.array(messagePartSchema),
-}).passthrough();
-
-export const chatRequestSchema = z.object({
-  messages: z.array(uiMessageSchema).min(1, "At least one message is required"),
-  model: z.string().optional(),
-  language: z.enum(["en", "zh"]).optional(),
-  disabledTools: z.array(z.string()).optional(),
-  planMode: z.boolean().optional(),
-  pinnedContext: z.array(z.object({
-    key: z.string(),
-    content: z.string(),
-    type: z.enum(["memory", "file"]),
-  })).optional(),
-  dismissedContext: z.array(z.string()).optional(),
-});
-
 // Validation helper
 export async function validateBody<T>(
   request: Request,

@@ -1,7 +1,7 @@
 /**
- * Search handler - hybrid vector search over project files, memory, and
- * messages. Gives container scripts the same semantic retrieval the agent
- * uses internally for RAG.
+ * Search handler - hybrid vector search over project files and messages.
+ * Gives container scripts the same semantic retrieval the agent uses
+ * internally for RAG.
  */
 import type { z } from "zod";
 import { isEmbeddingConfigured, embedValue, semanticSearch } from "@/lib/search/vectors.ts";
@@ -17,7 +17,7 @@ export async function handleSearch(
     return fail("not_configured", "Embedding model is not configured", 503);
   }
 
-  const collections = input.collections ?? ["file", "memory", "message"];
+  const collections = input.collections ?? ["file", "message"];
   const topK = input.topK ?? 10;
 
   // Pre-compute embedding once, share across collection searches

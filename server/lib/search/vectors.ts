@@ -401,10 +401,9 @@ export function putProjectVectors(
 // ── Vector pruning ──────────────────────────────────────────────────────
 
 const getProjectIds = db.prepare("SELECT id FROM projects");
-const messageExists = db.prepare("SELECT 1 FROM messages WHERE id = ? LIMIT 1");
 
 /**
- * Remove message vectors whose source messages no longer exist in the DB.
+ * Remove every `message:*` vector that survived the Pi-migration messages-table drop.
  * Runs per-project to avoid holding large key lists in memory.
  */
 export function pruneOrphanedMessageVectors(): { projectsPruned: number; vectorsDeleted: number } {
@@ -421,7 +420,9 @@ export function pruneOrphanedMessageVectors(): { projectsPruned: number; vectors
     const orphanKeys: string[] = [];
     let startAfter: string | undefined;
 
-    // Page through all message vectors
+    // Page through all message vectors. After the messages table was dropped
+    // there is no source-of-truth to compare against — every key under the
+    // `message:` prefix is now an orphan and gets deleted.
     while (true) {
       const { keys, isTruncated, nextStartAfter } = client.listVectors(indexName, {
         prefix: "message:",
@@ -430,12 +431,7 @@ export function pruneOrphanedMessageVectors(): { projectsPruned: number; vectors
       });
 
       for (const key of keys) {
-        // key format: "message:{msgId}:{chunkIndex}"
-        const parts = key.split(":");
-        const msgId = parts[1];
-        if (msgId && !messageExists.get(msgId)) {
-          orphanKeys.push(key);
-        }
+        orphanKeys.push(key);
       }
 
       if (!isTruncated) break;

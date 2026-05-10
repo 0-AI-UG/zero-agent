@@ -4,6 +4,8 @@
  * Revert action that restores just this path to its parent-snapshot state.
  */
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import {
   ChevronRightIcon,
   FilePlusIcon,
@@ -51,11 +53,33 @@ function StatusBadge({ status }: { status: TurnDiffFileEntry["status"] }) {
 export function TurnDiffFileRow({ snapshotId, entry }: Props) {
   const [expanded, setExpanded] = useState(false);
   const revert = useRevertTurnPaths(snapshotId);
+  const queryClient = useQueryClient();
 
   // For deleted files the post snapshot no longer has the content — skip the
   // fetch and show a placeholder instead.
   const canFetch = entry.status !== "deleted";
   const file = useTurnDiffFile(snapshotId, entry.path, expanded && canFetch);
+
+  const handleRevert = () => {
+    revert.mutate([entry.path], {
+      onSuccess: (res) => {
+        const data = res as { reverted?: string[]; failed?: { path: string; error: string }[] };
+        const failure = data.failed?.find((f) => f.path === entry.path);
+        if (failure) {
+          toast.error(`Revert failed: ${entry.path}`, { description: failure.error });
+          return;
+        }
+        queryClient.setQueryData<TurnDiffFileEntry[]>(
+          ["turn-diff", snapshotId],
+          (prev) => (prev ?? []).filter((e) => e.path !== entry.path),
+        );
+        toast.success(`Reverted ${entry.path}`);
+      },
+      onError: (err) => {
+        toast.error("Revert failed", { description: err.message });
+      },
+    });
+  };
 
   return (
     <div className="rounded-md border bg-background">
@@ -77,7 +101,7 @@ export function TurnDiffFileRow({ snapshotId, entry }: Props) {
         <button
           type="button"
           disabled={revert.isPending}
-          onClick={() => revert.mutate([entry.path])}
+          onClick={handleRevert}
           className="inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-50"
           title="Revert this file to its pre-turn state"
         >

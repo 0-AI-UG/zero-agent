@@ -10,7 +10,6 @@ import {
   type NotificationAction,
 } from "@/components/notifications/NotificationToast";
 import { createElement } from "react";
-import { usePlanModeStore } from "@/stores/plan-mode";
 import { turnDiffsStore } from "@/stores/turn-diffs";
 
 const toastIdForResponse = (responseId: string) => `pending-${responseId}`;
@@ -99,33 +98,6 @@ export function useRealtime(projectId: string | undefined) {
           break;
         }
 
-        case "plan.ready": {
-          const chatId = msg.chatId as string | undefined;
-          const responseId = msg.responseId as string | undefined;
-          const planFilePath = msg.planFilePath as string | undefined;
-          const planContent = msg.planContent as string | undefined;
-          const summary = msg.summary as string | undefined;
-          if (chatId && responseId) {
-            usePlanModeStore.getState().setPlanReview(chatId, {
-              responseId,
-              planFilePath: planFilePath ?? "",
-              planContent: planContent ?? "",
-              summary: summary ?? "",
-              status: "pending",
-            });
-          }
-          break;
-        }
-
-        case "plan.new_chat_created": {
-          const sourceChatId = msg.sourceChatId as string | undefined;
-          const newChatId = msg.newChatId as string | undefined;
-          if (sourceChatId && newChatId) {
-            usePlanModeStore.getState().setNewChatRedirect(sourceChatId, newChatId);
-          }
-          break;
-        }
-
         case "notification": {
           // Two shapes live on this channel:
           //   - Legacy: { level, message }               - simple toast
@@ -178,49 +150,6 @@ export function useRealtime(projectId: string | undefined) {
           break;
         }
 
-        case "background.completed": {
-          if (pid) {
-            queryClient.invalidateQueries({ queryKey: queryKeys.chats.byProject(pid) });
-          }
-          const taskName = (msg.taskName as string | undefined) ?? "Background task";
-          const summary = (msg.summary as string | undefined)?.slice(0, 240) ?? "";
-          const chatId = msg.chatId as string | undefined;
-          const url = chatId && pid ? `/projects/${pid}/c/${chatId}` : undefined;
-          toast.custom(
-            (t: string | number) =>
-              createElement(NotificationToast, {
-                toastId: t,
-                title: `Background task completed: ${taskName}`,
-                body: summary,
-                kind: "task_completed",
-                url,
-              }),
-            {
-              id: `bg-completed-${chatId ?? taskName}-${Date.now()}`,
-              duration: 8000,
-            },
-          );
-          break;
-        }
-
-        case "background.failed": {
-          const taskName = (msg.taskName as string | undefined) ?? "Background task";
-          const error = (msg.error as string | undefined)?.slice(0, 240) ?? "";
-          toast.custom(
-            (t: string | number) =>
-              createElement(NotificationToast, {
-                toastId: t,
-                title: `Background task failed: ${taskName}`,
-                body: error,
-                kind: "task_failed",
-              }),
-            {
-              id: `bg-failed-${taskName}-${Date.now()}`,
-              duration: 10000,
-            },
-          );
-          break;
-        }
       }
     });
   }, [setPresence, addTyping]);

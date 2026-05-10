@@ -2,85 +2,45 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "@/api/client";
 import { queryKeys } from "@/lib/query-keys";
 
-export interface ForwardedPort {
+export interface App {
   id: string;
   projectId: string;
   slug: string;
-  label: string;
+  name: string;
   port: number;
-  status: "active" | "stopped" | "unavailable";
   url: string;
-  pinned: boolean;
-  startCommand: string | null;
-  error: string | null;
   createdAt: string;
   updatedAt: string;
 }
 
-export function useServices(projectId: string) {
+export function useApps(projectId: string) {
   return useQuery({
-    queryKey: queryKeys.services.byProject(projectId),
+    queryKey: queryKeys.apps.byProject(projectId),
     queryFn: async () => {
-      const res = await apiFetch<{ services: ForwardedPort[] }>(
-        `/projects/${projectId}/services`,
-      );
-      return res.services;
+      const res = await apiFetch<{ apps: App[] }>(`/projects/${projectId}/apps`);
+      return res.apps;
     },
     enabled: !!projectId,
   });
 }
 
-export function useDeleteService(projectId: string) {
+export function useDeleteApp(projectId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (serviceId: string) =>
-      apiFetch(`/projects/${projectId}/services/${serviceId}`, {
-        method: "DELETE",
-      }),
+    mutationFn: (appId: string) =>
+      apiFetch(`/projects/${projectId}/apps/${appId}`, { method: "DELETE" }),
     onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.services.byProject(projectId),
-      });
-    },
-  });
-}
-
-export function usePinService(projectId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (serviceId: string) =>
-      apiFetch<ForwardedPort>(`/projects/${projectId}/services/${serviceId}/pin`, {
-        method: "POST",
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.services.byProject(projectId),
-      });
+      queryClient.invalidateQueries({ queryKey: queryKeys.apps.byProject(projectId) });
     },
   });
 }
 
 export function useCreateShareLink(projectId: string) {
   return useMutation({
-    mutationFn: ({ serviceId, duration }: { serviceId: string; duration: string }) =>
+    mutationFn: ({ appId, duration }: { appId: string; duration: string }) =>
       apiFetch<{ path: string; expiresAt: string; duration: string }>(
-        `/projects/${projectId}/services/${serviceId}/share`,
+        `/projects/${projectId}/apps/${appId}/share`,
         { method: "POST", body: JSON.stringify({ duration }) },
       ),
-  });
-}
-
-export function useUnpinService(projectId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (serviceId: string) =>
-      apiFetch<ForwardedPort>(`/projects/${projectId}/services/${serviceId}/unpin`, {
-        method: "POST",
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.services.byProject(projectId),
-      });
-    },
   });
 }

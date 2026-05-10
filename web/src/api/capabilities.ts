@@ -4,7 +4,6 @@ import { apiFetch } from "./client";
 export type UiTheme = "default" | "bw" | "sunset" | "compact" | "editorial";
 
 export interface ServerCapabilities {
-  serverDocker: boolean;
   theme?: UiTheme;
 }
 

@@ -1,131 +1,90 @@
-import { writeToS3, deleteFromS3 } from "@/lib/s3.ts";
-import { insertFile, getFilesByFolderPath, deleteFilesByFolderPath } from "@/db/queries/files.ts";
-import { createFolder, getFolderByPath, deleteFoldersByPathPrefix } from "@/db/queries/folders.ts";
-import { insertSkill, deleteSkill } from "@/db/queries/skills.ts";
-import { indexFileContent } from "@/db/queries/search.ts";
+/**
+ * Filesystem-canonical skill installer.
+ *
+ * Skills live at `<projectDir>/.pi/skills/<name>/`. Pi auto-discovers them
+ * via the `skills: ["./skills"]` entry in `.pi/settings.json`. Zero just
+ * writes the files and records minimal provenance in the `skills` table
+ * for the install UI.
+ */
+import path from "node:path";
+import { promises as fs } from "node:fs";
+import { projectDirFor } from "@/lib/pi/run-turn.ts";
 import { parseSkillMd } from "./parser.ts";
-import { invalidateSummaryCache } from "./loader.ts";
-import type { SkillFrontmatter } from "./types.ts";
+import { insertSkill, deleteSkill } from "@/db/queries/skills.ts";
 import { events } from "@/lib/scheduling/events.ts";
 import { log } from "@/lib/utils/logger.ts";
+import type { SkillFrontmatter } from "./types.ts";
 
 const installLog = log.child({ module: "skills:installer" });
 
 interface SkillFile {
-  path: string; // relative filename, e.g. "SKILL.md" or "prompts/search.md"
+  /** relative filename, e.g. "SKILL.md" or "prompts/search.md" */
+  path: string;
   content: string;
-}
-
-function ensureFolder(projectId: string, path: string, name: string): void {
-  const existing = getFolderByPath(projectId, path);
-  if (!existing) {
-    createFolder(projectId, path, name);
-  }
 }
 
 export interface InstallResult {
   name: string;
   description: string;
-  s3Key: string;
+  skillDir: string;
   metadata: SkillFrontmatter["metadata"];
+}
+
+function skillsRoot(projectId: string): string {
+  return path.join(projectDirFor(projectId), ".pi", "skills");
 }
 
 export async function installSkillFiles(
   projectId: string,
   skillName: string,
   files: SkillFile[],
+  source?: string,
 ): Promise<InstallResult> {
-  // Ensure /skills/ folder exists
-  ensureFolder(projectId, "/skills/", "skills");
+  const skillDir = path.join(skillsRoot(projectId), skillName);
+  await fs.mkdir(skillDir, { recursive: true });
 
-  // Ensure /skills/{name}/ folder exists
-  ensureFolder(projectId, `/skills/${skillName}/`, skillName);
-
-  // Write each file to S3 and create file DB entries
   for (const file of files) {
-    const s3Key = `projects/${projectId}/skills/${skillName}/${file.path}`;
-    const parts = file.path.split("/");
-    const folderPath = parts.length > 1
-      ? `/skills/${skillName}/${parts.slice(0, -1).join("/")}/`
-      : `/skills/${skillName}/`;
-    const mimeType = file.path.endsWith(".md") ? "text/markdown"
-      : file.path.endsWith(".html") ? "text/html"
-      : "text/plain";
-    const sizeBytes = Buffer.from(file.content, "utf-8").byteLength;
-
-    // Ensure all ancestor subfolders exist (e.g., /skills/{name}/a/, /skills/{name}/a/b/)
-    if (parts.length > 1) {
-      let currentPath = `/skills/${skillName}/`;
-      for (const segment of parts.slice(0, -1)) {
-        currentPath += segment + "/";
-        ensureFolder(projectId, currentPath, segment);
-      }
-    }
-
-    await writeToS3(s3Key, file.content);
-    const fileRow = insertFile(projectId, file.path, mimeType, sizeBytes, folderPath);
-    indexFileContent(fileRow.id, projectId, file.path, file.content);
+    const target = path.join(skillDir, file.path);
+    await fs.mkdir(path.dirname(target), { recursive: true });
+    await fs.writeFile(target, file.content, "utf-8");
   }
 
-  // Parse SKILL.md for metadata
   const skillMd = files.find((f) => f.path === "SKILL.md");
-  if (!skillMd) {
-    throw new Error("SKILL.md is required");
-  }
+  if (!skillMd) throw new Error("SKILL.md is required");
   const { frontmatter } = parseSkillMd(skillMd.content);
-
-  const s3Key = `projects/${projectId}/skills/${skillName}/SKILL.md`;
   const resolvedName = frontmatter.name || skillName;
 
-  // Upsert skills table
   try {
     insertSkill(projectId, {
       name: resolvedName,
       description: frontmatter.description,
-      s3Key,
+      s3Key: source ?? `local:${skillName}`,
       metadata: JSON.stringify(frontmatter.metadata),
     });
   } catch {
-    // UNIQUE constraint - skill already exists
+    // UNIQUE — already recorded; the disk copy was just refreshed.
   }
 
-  invalidateSummaryCache(projectId);
-  installLog.info("skill installed", { projectId, name: resolvedName });
-  events.emit("skill.installed", { projectId, skillName: resolvedName, source: s3Key });
+  installLog.info("skill installed", { projectId, name: resolvedName, skillDir });
+  events.emit("skill.installed", { projectId, skillName: resolvedName, source: skillDir });
 
   return {
     name: resolvedName,
     description: frontmatter.description,
-    s3Key,
+    skillDir,
     metadata: frontmatter.metadata,
   };
 }
 
 export async function uninstallSkill(projectId: string, skillName: string): Promise<void> {
-  const folderPath = `/skills/${skillName}/`;
-
-  // Delete files from S3 — reconstruct s3Key from folder_path + filename.
-  const files = getFilesByFolderPath(projectId, folderPath);
-  for (const file of files) {
-    const s3Key = `projects/${projectId}${file.folder_path}${file.filename}`;
-    try {
-      await deleteFromS3(s3Key);
-    } catch (err) {
-      installLog.error("failed to delete file from S3", err, { s3Key });
-    }
+  const skillDir = path.join(skillsRoot(projectId), skillName);
+  try {
+    await fs.rm(skillDir, { recursive: true, force: true });
+  } catch (err) {
+    installLog.error("failed to remove skill dir", err, { skillDir });
   }
 
-  // Delete file records
-  deleteFilesByFolderPath(projectId, folderPath);
-
-  // Delete folder entries
-  deleteFoldersByPathPrefix(projectId, folderPath);
-
-  // Delete skills table entry
   deleteSkill(projectId, skillName);
-
-  invalidateSummaryCache(projectId);
   installLog.info("skill uninstalled", { projectId, name: skillName });
   events.emit("skill.uninstalled", { projectId, skillName });
 }
-

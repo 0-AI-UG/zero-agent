@@ -32,8 +32,6 @@ import {
   handleGetProject,
   handleUpdateProject,
   handleDeleteProject,
-  handleGetSoul,
-  handleUpdateSoul,
 } from "@/routes/projects.ts";
 import {
   handleListChats,
@@ -127,21 +125,12 @@ import {
   handleRespondPendingResponse,
 } from "@/routes/pending-responses.ts";
 import {
-  handleListServices,
-  handleDeleteService,
-  handlePinService,
-  handleUnpinService,
+  handleListApps,
+  handleDeleteApp,
   handleAppStatus,
   handleCreateShareLink,
 } from "@/routes/apps.ts";
-import { presignHandler, s3 } from "@/lib/s3.ts";
-import {
-  enableExecution,
-  disableExecution,
-  teardownExecution,
-  reconcile,
-  getLocalBackend,
-} from "@/lib/execution/lifecycle.ts";
+import { startBrowserPool, stopBrowserPool } from "@/lib/browser/host-pool.ts";
 import { proxyAppRequest } from "@/lib/http/app-proxy.ts";
 import { getSetting } from "@/lib/settings.ts";
 
@@ -306,10 +295,6 @@ app.get("/api/projects/:id", h(handleGetProject));
 app.put("/api/projects/:id", h(handleUpdateProject));
 app.delete("/api/projects/:id", h(handleDeleteProject));
 
-// Soul (identity)
-app.get("/api/projects/:projectId/soul", h(handleGetSoul));
-app.put("/api/projects/:projectId/soul", h(handleUpdateSoul));
-
 // Chat CRUD
 app.get("/api/projects/:projectId/chats", h(handleListChats));
 app.post("/api/projects/:projectId/chats", h(handleCreateChat));
@@ -439,84 +424,11 @@ app.post("/api/projects/:projectId/credentials", h(handleCreateCredential));
 app.put("/api/projects/:projectId/credentials/:id", h(handleUpdateCredential));
 app.delete("/api/projects/:projectId/credentials/:id", h(handleDeleteCredential));
 
-// Services (forwarded ports)
-app.get("/api/projects/:projectId/services", h(handleListServices));
-app.delete("/api/projects/:projectId/services/:serviceId", h(handleDeleteService));
-app.post("/api/projects/:projectId/services/:serviceId/pin", h(handlePinService));
-app.post("/api/projects/:projectId/services/:serviceId/unpin", h(handleUnpinService));
-app.post("/api/projects/:projectId/services/:serviceId/share", h(handleCreateShareLink));
+// Apps (slug ↔ port reverse-proxy mappings)
+app.get("/api/projects/:projectId/apps", h(handleListApps));
+app.delete("/api/projects/:projectId/apps/:appId", h(handleDeleteApp));
+app.post("/api/projects/:projectId/apps/:appId/share", h(handleCreateShareLink));
 app.get("/api/apps/:slug/status", h(handleAppStatus));
-
-// Containers (admin)
-app.get("/api/admin/containers", h(async (req: Request) => {
-  await requireAdmin(req);
-  const backend = getLocalBackend();
-  const containers = backend ? await backend.listContainersAsync() : [];
-  return Response.json({ containers }, { headers: corsHeaders });
-}));
-app.delete("/api/admin/containers/:sessionId", h(async (req: Request) => {
-  await requireAdmin(req);
-  const sessionId = (req as any).params.sessionId;
-  await getLocalBackend()?.destroyContainer(sessionId);
-  return Response.json({ ok: true }, { headers: corsHeaders });
-}));
-
-// Flush status for a project (authenticated) — surfaces dirty duration, last flush time, and
-// last tarball size. Useful for observability / smoke-testing the ≤5-min RPO guarantee.
-app.get("/api/projects/:projectId/flush-status", h(async (req: Request) => {
-  const { userId } = await authenticateRequest(req);
-  const projectId = (req as any).params.projectId as string;
-  verifyProjectAccess(projectId, userId);
-  const { getFlushStatus } = await import("@/lib/execution/flush-scheduler.ts");
-  return Response.json(getFlushStatus(projectId), { headers: corsHeaders });
-}));
-
-// Container status for a project (authenticated)
-app.get("/api/projects/:projectId/chats/:chatId/container", h(async (req: Request) => {
-  const projectId = (req as any).params.projectId;
-  const backend = getLocalBackend();
-  const session = backend?.getSessionForProject(projectId);
-  if (session) {
-    return Response.json({ status: "running" }, { headers: corsHeaders });
-  }
-  const running = await backend?.hasContainer(projectId) ?? false;
-  return Response.json({ status: running ? "running" : "none" }, { headers: corsHeaders });
-}));
-
-// Latest browser screenshot for a project's session.
-// Returns a ref ({hash, contentType, title, url, timestamp}) instead of the
-// base64 blob. The bytes are written to the content-addressed blob store;
-// the frontend loads the image via `/api/blobs/:hash` so the base64 never
-// enters the server's long-lived heap and identical frames dedupe for free.
-app.get("/api/projects/:projectId/chats/:chatId/browser-screenshot", h(async (req: Request) => {
-  const { userId } = await authenticateRequest(req);
-  const projectId = (req as any).params.projectId;
-  verifyProjectAccess(projectId, userId);
-  const ifNoneMatch = (req.headers.get("if-none-match") ?? "").replace(/^"|"$/g, "");
-  const screenshot = await getLocalBackend()?.getLatestScreenshot(projectId) ?? null;
-  if (!screenshot) {
-    return Response.json({ screenshot: null }, { headers: corsHeaders });
-  }
-  const { putBlob } = await import("@/lib/media/blob-store.ts");
-  const bytes = Buffer.from(screenshot.base64, "base64");
-  const { hash, size, contentType } = await putBlob(bytes, "image/jpeg", projectId);
-  if (ifNoneMatch === hash) {
-    return new Response(null, { status: 304, headers: { ...corsHeaders, ETag: `"${hash}"` } });
-  }
-  return Response.json(
-    {
-      screenshot: {
-        hash,
-        contentType,
-        size,
-        title: screenshot.title,
-        url: screenshot.url,
-        timestamp: screenshot.timestamp,
-      },
-    },
-    { headers: { ...corsHeaders, ETag: `"${hash}"` } },
-  );
-}));
 
 // Content-addressed blob serving, scoped to a project the caller is a member of.
 // Scoping is enforced via an in-memory ownership index populated at `putBlob`
@@ -550,53 +462,9 @@ app.get("/api/projects/:projectId/blobs/:hash", h(async (req: Request) => {
   });
 }));
 
-// Execution lifecycle (admin)
-app.post("/api/admin/execution/enable", h(async (req: Request) => {
-  await requireAdmin(req);
-  const result = await enableExecution();
-  return Response.json(result, { status: result.success ? 200 : 500, headers: corsHeaders });
-}));
-app.post("/api/admin/execution/disable", h(async (req: Request) => {
-  await requireAdmin(req);
-  await disableExecution();
-  return Response.json({ success: true }, { headers: corsHeaders });
-}));
-app.post("/api/admin/execution/reconnect", h(async (req: Request) => {
-  await requireAdmin(req);
-  const r = await reconcile();
-  const success = r.healthy > 0;
-  if (!success) {
-    log.warn("reconnect failed", { healthy: r.healthy, total: r.total });
-  } else {
-    log.info("reconnect succeeded", { healthy: r.healthy, total: r.total });
-  }
-  return Response.json({
-    success,
-    error: success ? undefined : "No healthy runners available",
-  }, { status: success ? 200 : 500, headers: corsHeaders });
-}));
-app.get("/api/admin/runner/status", h(async (req: Request) => {
-  await requireAdmin(req);
-  const backend = getLocalBackend();
-  if (!backend) {
-    return Response.json({ connected: false, containers: 0, runners: [] }, { headers: corsHeaders });
-  }
-  try {
-    const containers = await backend.listContainersAsync();
-    return Response.json({ connected: true, containers: containers.length }, { headers: corsHeaders });
-  } catch {
-    return Response.json({ connected: false, containers: 0 }, { headers: corsHeaders });
-  }
-}));
-
 // Capabilities
-app.get("/api/capabilities", h((req: Request) => {
-  const backend = getLocalBackend();
-  const hasDocker = !!backend?.isReady();
+app.get("/api/capabilities", h((_req: Request) => {
   return Response.json({
-    serverDocker: hasDocker,
-    serverBrowser: hasDocker,
-    appDeployments: hasDocker,
     theme: getSetting("UI_THEME") ?? "default",
   }, { headers: corsHeaders });
 }));
@@ -626,14 +494,6 @@ app.post("/api/app-token", h(async (req: Request) => {
   return Response.json({ token: appToken }, { headers: corsHeaders });
 }));
 
-// S3 presigned file serving
-// Clone the response so @hono/node-server doesn't mutate the shared corsHeaders
-// object when it sets Content-Length (which would corrupt all subsequent responses).
-app.all("/api/s3/*", async (c) => {
-  const res = await presignHandler.handleRequest(c.req.raw);
-  return new Response(res.body, { status: res.status, headers: new Headers(res.headers) });
-});
-
 // Reverse proxy for forwarded ports
 app.all("/_apps/:slug/*", (c) => {
   const slug = c.req.param("slug");
@@ -641,9 +501,12 @@ app.all("/_apps/:slug/*", (c) => {
   return new Response("Not found", { status: 404 });
 });
 
-// Note: CLI handlers are no longer mounted on the public HTTP server.
-// They live on the per-turn unix socket spun up by `runTurn`; see
-// `server/lib/pi/cli-socket.ts` and `server/cli-handlers/index.ts`.
+// Mount the in-sandbox `zero` CLI handlers under `/v1/proxy/zero/*`.
+// Auth is the per-turn token registered by `runTurn` (see
+// `server/lib/pi/cli-server.ts`). Pi is pointed here via
+// `ZERO_PROXY_URL=http://127.0.0.1:<port>` in the spawned env.
+import { buildCliHandlerApp } from "@/cli-handlers/index.ts";
+app.route("/v1/proxy", buildCliHandlerApp());
 
 // API 404 catch-all
 app.all("/api/*", (c) => {
@@ -702,6 +565,10 @@ process.on("unhandledRejection", (reason) => {
 });
 
 startScheduler();
+
+// Host browser pool — Chromium launches lazily on first action. Starting
+// here just installs the idle-eviction sweep + frame event emitter wiring.
+startBrowserPool();
 
 import { startEventTriggers, stopAllEventTriggers } from "@/lib/scheduling/event-trigger.ts";
 startEventTriggers();
@@ -777,8 +644,7 @@ async function handleShutdown(signal: string) {
   stopGlobalPoller();
   await drainActiveRuns(IS_PROD ? 30_000 : 2_000);
   closeWebSocketServer();
-  await teardownExecution();
-  s3.close();
+  await stopBrowserPool().catch(() => {});
   db.close();
   log.info("shutdown complete");
   server.close();

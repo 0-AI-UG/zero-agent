@@ -7,6 +7,10 @@ services:
       - "3000:3000"
     volumes:
       - data:/app/data
+      # Pi runs as a child Node process inside this container; its
+      # workspaces and per-chat session JSONLs live under /var/zero,
+      # which we keep in a named volume so projects survive restarts.
+      - zero-projects:/var/zero
     environment:
       - NODE_ENV=production
       - JWT_SECRET=${JWT_SECRET:-}
@@ -18,65 +22,10 @@ services:
       - RP_NAME=${RP_NAME:-ZeroAgent}
       - CORS_ORIGIN=${CORS_ORIGIN:-*}
       - LOG_LEVEL=${LOG_LEVEL:-info}
-    depends_on:
-      - runner
     restart: unless-stopped
     mem_limit: 1200m
     memswap_limit: 1200m
 
-  # Build-only helper for the session image used by the runner to spawn
-  # agent containers. Lives under the `build` profile so it never starts
-  # as a runtime service; invoke with `docker compose build session-image`.
-  session-image:
-    image: ${SESSION_IMAGE:-ghcr.io/0-ai-ug/zero-session:latest}
-    build:
-      context: ./zero
-      dockerfile: ../runner/docker/session/Dockerfile
-    profiles: ["build"]
-
-  runner:
-    build: runner
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      # Per-container Unix sockets the `zero` CLI/SDK connects to. This
-      # is a Docker **named volume**, not a host bind-mount: its backing
-      # storage lives inside the Linux VM on Docker Desktop/macOS/OrbStack,
-      # which is the only way AF_UNIX sockets survive being shared between
-      # the runner container and sibling session containers on macOS.
-      #
-      # The runner resolves this volume's host Mountpoint at startup
-      # (docker volume inspect) and hands `<mountpoint>/<session-name>`
-      # to dockerd as a plain bind source for each session container.
-      # This works on every Docker version; auto-detected from the
-      # runner's own mounts, so ZERO_RUNNER_SOCKET_VOLUME is optional.
-      - zero-runner-sockets:/var/run/zero-runner
-    environment:
-      - RUNNER_API_KEY=${RUNNER_API_KEY:-}
-      - DEFAULT_IMAGE=${SESSION_IMAGE:-ghcr.io/0-ai-ug/zero-session:latest}
-      # Where the runner calls back into the server. Defaults to
-      # host.docker.internal (dev: server runs on the host as `bun dev`).
-      # Override via .env when the server runs inside compose
-      # (SERVER_URL=http://server:3000) or is reachable over the public
-      # network (SERVER_URL=https://your.app).
-      - SERVER_URL=${SERVER_URL:-http://host.docker.internal:3000}
-      - IDLE_TIMEOUT_SECS=600
-      - ZERO_RUNNER_SOCKET_DIR=/var/run/zero-runner
-      - ZERO_RUNNER_SOCKET_VOLUME=zero-runner-sockets
-    # Make host.docker.internal resolve to the host's gateway IP on
-    # Linux (Docker Desktop / OrbStack already provide this hostname,
-    # but plain linux dockerd needs the host-gateway mapping). Harmless
-    # where it's already defined.
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    ports:
-      - "3100:3100"
-    restart: unless-stopped
-    mem_limit: 1500m
-    memswap_limit: 1500m
-
 volumes:
   data:
-  zero-runner-sockets:
-    # Pin the unqualified name so it matches ZERO_RUNNER_SOCKET_VOLUME
-    # (compose otherwise prefixes it with the project name).
-    name: zero-runner-sockets
+  zero-projects:

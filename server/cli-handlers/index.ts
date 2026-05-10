@@ -37,7 +37,7 @@ import {
   handleCredsSet,
   handleCredsRemove,
 } from "./creds.ts";
-import { handlePortsForward } from "./ports.ts";
+import { handleAppsCreate, handleAppsDelete, handleAppsList } from "./apps.ts";
 import {
   handleBrowserOpen,
   handleBrowserClick,
@@ -74,7 +74,9 @@ import {
   BrowserWaitInput,
   BrowserSnapshotInput,
   BrowserExtractInput,
-  PortsForwardInput,
+  AppsCreateInput,
+  AppsDeleteInput,
+  AppsListInput,
   LlmGenerateInput,
   MessageSendInput,
   MessageResponseInput,
@@ -167,7 +169,9 @@ export function buildCliHandlerApp(): Hono {
   app.post("/zero/browser/snapshot", bind(BrowserSnapshotInput, handleBrowserSnapshot));
   app.post("/zero/browser/extract", bind(BrowserExtractInput, handleBrowserExtract));
 
-  app.post("/zero/ports/forward", bind(PortsForwardInput, handlePortsForward));
+  app.post("/zero/apps/create", bind(AppsCreateInput, handleAppsCreate));
+  app.post("/zero/apps/delete", bind(AppsDeleteInput, handleAppsDelete));
+  app.post("/zero/apps/list", bind(AppsListInput, handleAppsList));
 
   app.post("/zero/llm/generate", bind(LlmGenerateInput, handleLlmGenerate));
 

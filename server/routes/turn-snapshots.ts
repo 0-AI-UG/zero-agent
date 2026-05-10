@@ -1,10 +1,10 @@
 /**
- * Routes for per-turn git snapshots (diff, file read, revert).
+ * Routes for per-turn host-fs git snapshots (diff, file read, revert).
  *
  * Auth: `authenticateRequest` + `verifyProjectAccess` against the project
- * referenced by the snapshot row. This matches the pattern used in
- * `server/routes/files.ts` and does not assume the client already knows
- * the project id (the snapshot id alone is sufficient to locate it).
+ * referenced by the snapshot row. The snapshot id alone is enough to look
+ * up the project — clients pass it back from the WS `turn.diff.ready`
+ * envelope.
  */
 import { corsHeaders } from "@/lib/http/cors.ts";
 import { authenticateRequest } from "@/lib/auth/auth.ts";
@@ -12,7 +12,12 @@ import { getParams } from "@/lib/http/request.ts";
 import { handleError, verifyProjectAccess } from "@/routes/utils.ts";
 import { ValidationError, NotFoundError } from "@/lib/utils/errors.ts";
 import { getTurnSnapshotById } from "@/db/queries/turn-snapshots.ts";
-import { getLocalBackend } from "@/lib/execution/lifecycle.ts";
+import {
+  getSnapshotDiff,
+  readSnapshotFile,
+  revertSnapshotPaths,
+} from "@/lib/snapshots/snapshot-service.ts";
+import { syncProjectPath } from "@/lib/projects/watcher.ts";
 
 function loadSnapshotForUser(request: Request, userId: string) {
   const { snapshotId } = getParams<{ snapshotId: string }>(request);
@@ -33,16 +38,10 @@ export async function handleGetTurnSnapshotDiff(request: Request): Promise<Respo
 
     const parent = getTurnSnapshotById(snapshot.parent_snapshot_id);
     if (!parent) {
-      // Parent row missing (should not happen — FK-less table). Treat as empty diff.
       return Response.json([], { headers: corsHeaders });
     }
 
-    const backend = getLocalBackend();
-    if (!backend || typeof backend.getSnapshotDiff !== "function") {
-      throw new ValidationError("Execution backend is unavailable");
-    }
-
-    const diff = await backend.getSnapshotDiff(
+    const diff = await getSnapshotDiff(
       snapshot.project_id,
       snapshot.commit_sha,
       parent.commit_sha,
@@ -64,17 +63,11 @@ export async function handleGetTurnSnapshotFile(request: Request): Promise<Respo
       throw new ValidationError("Query parameter 'path' is required");
     }
 
-    const backend = getLocalBackend();
-    if (!backend || typeof backend.readSnapshotFile !== "function") {
-      throw new ValidationError("Execution backend is unavailable");
-    }
-
-    const buf = await backend.readSnapshotFile(
+    const buf = await readSnapshotFile(
       snapshot.project_id,
       snapshot.commit_sha,
       path,
     );
-    // Buffer is a Uint8Array subclass; pass as BodyInit.
     return new Response(new Uint8Array(buf), {
       status: 200,
       headers: {
@@ -116,16 +109,22 @@ export async function handleRevertTurnSnapshot(request: Request): Promise<Respon
       );
     }
 
-    const backend = getLocalBackend();
-    if (!backend || typeof backend.revertSnapshotPaths !== "function") {
-      throw new ValidationError("Execution backend is unavailable");
-    }
-
-    const result = await backend.revertSnapshotPaths(
+    const result = await revertSnapshotPaths(
       snapshot.project_id,
       parent.commit_sha,
       paths as string[],
     );
+
+    // Sync the DB for every path we attempted — `fs.watch` is best-effort
+    // (events can be coalesced or dropped, and the watcher may not even be
+    // attached). Do it eagerly so the file list reflects the revert
+    // immediately, regardless of watcher state.
+    await Promise.all(
+      (paths as string[]).map((p) =>
+        syncProjectPath(snapshot.project_id, p).catch(() => undefined),
+      ),
+    );
+
     return Response.json(result, { headers: corsHeaders });
   } catch (error) {
     return handleError(error);

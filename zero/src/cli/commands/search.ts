@@ -1,14 +1,14 @@
-/** `zero search` - vector search over project files and memory. */
+/** `zero search` - vector search over project files and messages. */
 import { search } from "../../sdk/search.ts";
 import { hasFlag, getOption, printJson } from "../format.ts";
 
-const HELP = `zero search - vector search over project files, memory, and messages
+const HELP = `zero search - vector search over project files and messages
 
 Usage:
-  zero search <query> [--collection file|memory|message] [--top-k 10] [--json]
+  zero search <query> [--collection file|message] [--top-k 10] [--json]
 
   --collection can be repeated to search multiple collections.
-  When omitted, all three collections are searched.
+  When omitted, both collections are searched.
 `;
 
 /** Collect all values for a repeatable flag like --collection. */
@@ -54,7 +54,7 @@ export async function searchCommand(args: string[]): Promise<number> {
   const data = await search.query(query, {
     collections:
       collections.length > 0
-        ? (collections as ("file" | "memory" | "message")[])
+        ? (collections as ("file" | "message")[])
         : undefined,
     topK,
   });

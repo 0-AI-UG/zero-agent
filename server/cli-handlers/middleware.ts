@@ -12,7 +12,7 @@
  * runner service to forward calls anymore.
  */
 import { AuthError } from "@/lib/utils/errors.ts";
-import { resolvePiTurnToken } from "@/lib/pi/cli-socket.ts";
+import { resolvePiTurnToken } from "@/lib/pi/cli-server.ts";
 import type { CliContext } from "./context.ts";
 
 export async function requirePi(req: Request): Promise<CliContext> {

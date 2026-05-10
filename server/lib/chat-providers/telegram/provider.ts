@@ -413,32 +413,39 @@ async function runAgentTurn(
     // capability check below and the actual run share one source of truth.
     const chatModelId = getActiveProvider().getDefaultChatModelId();
 
-    // Pi has no native image parts in v1 of the Zero bridge; if the
-    // active model is non-multimodal we caption with the vision model
-    // and inline the result. Multimodal-direct image passthrough is
-    // open question §8 alongside chat import semantics.
+    const resolved = resolveModelForPi(chatModelId);
+    const modelSupportsImages = resolved.supportsImages;
+
+    // Native passthrough when the chat model is multimodal; vision-caption
+    // fallback otherwise so a non-multimodal default still gets *something*
+    // useful out of the photo.
     let imageCaption: string | null = null;
+    let runTurnImages: Array<{ data: string; mimeType: string }> | undefined;
     if (imageData) {
-      try {
-        const visionModel = getVisionModelId();
-        const dataUrl = `data:${imageData.mediaType};base64,${imageData.base64}`;
-        const { text: caption } = await generateText({
-          model: visionModel,
-          messages:
-            "Describe this image in detail. Include all visible text, layout, colors, and key elements.\n\n" +
-            dataUrl,
-        });
-        imageCaption = caption;
-        imageData = null;
-        tgLog.info("captioned telegram image", { chatModelId, captionLength: caption.length });
-      } catch (err) {
-        tgLog.warn("image captioning failed; dropping image", {
-          chatModelId,
-          error: err instanceof Error ? err.message : String(err),
-        });
-        imageData = null;
-        imageCaption = "[Image attached, but could not be processed]";
+      if (modelSupportsImages) {
+        runTurnImages = [{ data: imageData.base64, mimeType: imageData.mediaType }];
+        tgLog.info("forwarding telegram image natively", { chatModelId });
+      } else {
+        try {
+          const visionModel = getVisionModelId();
+          const dataUrl = `data:${imageData.mediaType};base64,${imageData.base64}`;
+          const { text: caption } = await generateText({
+            model: visionModel,
+            messages:
+              "Describe this image in detail. Include all visible text, layout, colors, and key elements.\n\n" +
+              dataUrl,
+          });
+          imageCaption = caption;
+          tgLog.info("captioned telegram image", { chatModelId, captionLength: caption.length });
+        } catch (err) {
+          tgLog.warn("image captioning failed; dropping image", {
+            chatModelId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+          imageCaption = "[Image attached, but could not be processed]";
+        }
       }
+      imageData = null;
     }
 
     const userText = (() => {
@@ -447,6 +454,7 @@ async function runAgentTurn(
         return text ? `${prefix}\n\n${text}` : prefix;
       }
       if (text) return text;
+      if (runTurnImages) return "Describe this image.";
       return "";
     })();
 
@@ -455,17 +463,16 @@ async function runAgentTurn(
       projectId,
       chatId,
       telegramChatId,
+      hasImages: !!runTurnImages,
     });
-
-    const resolved = resolveModelForPi(chatModelId);
     const collected: string[] = [];
     const result = await runTurn({
       projectId,
       chatId,
       userId: link.user_id,
       userMessage: userText,
-      model: resolved.model,
-      authStorage: resolved.authStorage,
+      images: runTurnImages,
+      model: resolved,
       onEvent: (env) => {
         // The agent_end event carries the full final assistant message
         // list. Pull text content out for telegram delivery; intermediate

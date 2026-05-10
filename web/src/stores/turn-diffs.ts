@@ -18,7 +18,9 @@ export interface TurnDiffEntry {
 
 interface TurnDiffsState {
   byChatId: Record<string, TurnDiffEntry[]>;
+  dismissed: Record<string, true>;
   addTurnDiff: (chatId: string, entry: TurnDiffEntry) => void;
+  dismiss: (postSnapshotId: string) => void;
   getLatestForChat: (chatId: string) => TurnDiffEntry | null;
   clearForChat: (chatId: string) => void;
   getByPostSnapshotId: (postSnapshotId: string) => TurnDiffEntry | null;
@@ -26,6 +28,7 @@ interface TurnDiffsState {
 
 export const useTurnDiffsStore = create<TurnDiffsState>((set, get) => ({
   byChatId: {},
+  dismissed: {},
   addTurnDiff: (chatId, entry) =>
     set((s) => {
       const existing = s.byChatId[chatId] ?? [];
@@ -35,6 +38,8 @@ export const useTurnDiffsStore = create<TurnDiffsState>((set, get) => ({
         byChatId: { ...s.byChatId, [chatId]: [...filtered, entry] },
       };
     }),
+  dismiss: (postSnapshotId) =>
+    set((s) => ({ dismissed: { ...s.dismissed, [postSnapshotId]: true } })),
   getLatestForChat: (chatId) => {
     const list = get().byChatId[chatId];
     if (!list || list.length === 0) return null;

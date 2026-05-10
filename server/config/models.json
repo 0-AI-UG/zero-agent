@@ -7,7 +7,7 @@
       "description": "Top Chinese-language model with strong function calling.",
       "contextWindow": 196608,
       "pricing": {
-        "input": 0.295,
+        "input": 0.299,
         "output": 1.2
       },
       "tags": [
@@ -24,19 +24,20 @@
       }
     },
     {
-      "id": "deepseek/deepseek-v3.2",
-      "name": "DeepSeek V3.2",
+      "id": "deepseek/deepseek-v4-pro",
+      "name": "DeepSeek V4 Pro",
       "provider": "deepseek",
       "description": "Excellent value with strong Chinese and coding capabilities.",
-      "contextWindow": 163840,
+      "contextWindow": 1048576,
       "pricing": {
-        "input": 0.25,
-        "output": 0.4
+        "input": 0.435,
+        "output": 0.87
       },
       "tags": [
         "chinese",
         "value",
-        "coding"
+        "coding",
+        "long-context"
       ],
       "multimodal": false,
       "providerConfig": {
@@ -47,14 +48,14 @@
       }
     },
     {
-      "id": "qwen/qwen3.5-plus-02-15",
-      "name": "Qwen 3.5 Plus",
+      "id": "qwen/qwen3.6-plus",
+      "name": "Qwen 3.6 Plus",
       "provider": "alibaba",
       "description": "Alibaba's flagship model with 1M context. Strong Chinese reasoning.",
       "contextWindow": 1000000,
       "pricing": {
-        "input": 0.26,
-        "output": 1.56
+        "input": 0.325,
+        "output": 1.95
       },
       "tags": [
         "chinese",
@@ -70,14 +71,14 @@
       }
     },
     {
-      "id": "qwen/qwen3.5-flash-02-23",
-      "name": "Qwen 3.5 Flash",
+      "id": "qwen/qwen3.6-flash",
+      "name": "Qwen 3.6 Flash",
       "provider": "alibaba",
       "description": "Ultra-cheap with 1M context. Great for high-volume Chinese content.",
       "contextWindow": 1000000,
       "pricing": {
-        "input": 0.1,
-        "output": 0.4
+        "input": 0.25,
+        "output": 1.5
       },
       "tags": [
         "chinese",
@@ -94,14 +95,14 @@
       }
     },
     {
-      "id": "z-ai/glm-5",
-      "name": "GLM-5",
+      "id": "z-ai/glm-5.1",
+      "name": "GLM-5.1",
       "provider": "zhipuai",
       "description": "Zhipu AI's latest frontier model. Strong Chinese language understanding.",
       "contextWindow": 202752,
       "pricing": {
-        "input": 0.8,
-        "output": 2.56
+        "input": 1.05,
+        "output": 3.5
       },
       "tags": [
         "chinese",
@@ -116,14 +117,14 @@
       }
     },
     {
-      "id": "moonshotai/kimi-k2.5",
-      "name": "Kimi K2.5",
+      "id": "~moonshotai/kimi-latest",
+      "name": "Kimi (latest)",
       "provider": "moonshotai",
       "description": "Moonshot's flagship with 256K context. Strong at agentic tasks.",
       "contextWindow": 262144,
       "pricing": {
-        "input": 0.45,
-        "output": 2.2
+        "input": 0.75,
+        "output": 3.5
       },
       "tags": [
         "chinese",
@@ -140,8 +141,8 @@
       }
     },
     {
-      "id": "anthropic/claude-sonnet-4.6",
-      "name": "Claude Sonnet 4.6",
+      "id": "~anthropic/claude-sonnet-latest",
+      "name": "Claude Sonnet (latest)",
       "provider": "anthropic",
       "description": "High-quality reasoning and writing. Great at nuanced content creation.",
       "contextWindow": 1000000,
@@ -163,14 +164,37 @@
       }
     },
     {
-      "id": "google/gemini-3-flash-preview-20251217",
-      "name": "Gemini 3 Flash",
+      "id": "~anthropic/claude-opus-latest",
+      "name": "Claude Opus (latest)",
+      "provider": "anthropic",
+      "description": "Anthropic's most capable model. Top-tier reasoning and coding.",
+      "contextWindow": 1000000,
+      "pricing": {
+        "input": 5.0,
+        "output": 25.0
+      },
+      "tags": [
+        "premium",
+        "reasoning",
+        "coding"
+      ],
+      "multimodal": true,
+      "providerConfig": {
+        "order": [
+          "anthropic"
+        ],
+        "allow_fallbacks": true
+      }
+    },
+    {
+      "id": "~google/gemini-flash-latest",
+      "name": "Gemini Flash (latest)",
       "provider": "google",
       "description": "Fast and affordable with 1M context window. Good for high-volume tasks.",
       "contextWindow": 1048576,
       "pricing": {
-        "input": 0.5,
-        "output": 3.0
+        "input": 0.25,
+        "output": 1.5
       },
       "tags": [
         "value",
@@ -187,14 +211,14 @@
       }
     },
     {
-      "id": "openai/gpt-5.4",
-      "name": "GPT-5.4",
+      "id": "~openai/gpt-latest",
+      "name": "GPT (latest)",
       "provider": "openai",
       "description": "OpenAI's unified frontier model with 1M+ context. Strong reasoning and coding.",
       "contextWindow": 1050000,
       "pricing": {
-        "input": 2.5,
-        "output": 15.0
+        "input": 5.0,
+        "output": 30.0
       },
       "tags": [
         "premium",

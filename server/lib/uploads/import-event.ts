@@ -1,38 +1,36 @@
 /**
- * Import a file buffer directly into a project's container workspace.
+ * Import a file buffer directly into a project's host directory.
  *
- * Phase 4: collapsed from a presigned-S3-URL round-trip to a direct
- * `backend.writeFile` call. The caller supplies the in-memory buffer.
- *
- * Errors propagate — the caller (upload-route handler) decides whether to fail
- * the HTTP request or degrade gracefully.
+ * Pi migration (Session 6): collapsed to a plain host-fs write. The watcher
+ * (`server/lib/projects/watcher.ts`) picks up the new bytes and updates the
+ * `files` row, FTS index, embeddings, and emits `file.updated`.
  */
-import { createHash } from "node:crypto";
-import { getLocalBackend } from "@/lib/execution/lifecycle.ts";
+import { mkdir, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { projectDirFor } from "@/lib/pi/run-turn.ts";
 import { log } from "@/lib/utils/logger.ts";
+import { sha256Hex } from "@/lib/utils/hash.ts";
 
 const importLog = log.child({ module: "upload-import" });
 
-/** sha256 hex helper for callers that still need a hash. */
 export function computeSha256Hex(buffer: Buffer | Uint8Array): string {
-  return createHash("sha256").update(buffer).digest("hex");
+  return sha256Hex(buffer);
 }
 
 export async function importUploadedFile(params: {
   projectId: string;
+  /** Workspace-relative path, e.g. "src/foo.ts". */
   path: string;
   buffer: Buffer | Uint8Array;
 }): Promise<void> {
   const { projectId, path, buffer } = params;
-
-  const backend = getLocalBackend();
-  if (!backend) {
-    throw new Error("importUploadedFile: no execution backend available");
-  }
-
-  await backend.writeFile(projectId, path, Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer));
-
-  importLog.info("file written to container", {
+  const absPath = join(projectDirFor(projectId), path);
+  await mkdir(dirname(absPath), { recursive: true });
+  await writeFile(
+    absPath,
+    Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer),
+  );
+  importLog.info("file written to project dir", {
     projectId,
     path,
     bytes: buffer.byteLength,

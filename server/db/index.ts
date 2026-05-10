@@ -61,17 +61,9 @@ db.exec(`
   )
 `);
 
-db.exec(`
-  CREATE TABLE IF NOT EXISTS messages (
-    id         TEXT PRIMARY KEY,
-    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    chat_id    TEXT REFERENCES chats(id) ON DELETE CASCADE,
-    role       TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
-    content    TEXT NOT NULL,
-    user_id    TEXT REFERENCES users(id) ON DELETE SET NULL,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )
-`);
+// Pi JSONL is the canonical conversation history; the legacy messages
+// table is dropped wholesale. zero-agent has no production data to preserve.
+db.exec(`DROP TABLE IF EXISTS messages`);
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS files (
@@ -278,24 +270,35 @@ db.exec(`
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS models (
-    id                 TEXT PRIMARY KEY,
-    name               TEXT NOT NULL,
-    provider           TEXT NOT NULL,
-    inference_provider TEXT NOT NULL DEFAULT 'openrouter',
-    description        TEXT DEFAULT '',
-    context_window     INTEGER NOT NULL DEFAULT 128000,
-    pricing_input      REAL NOT NULL DEFAULT 0,
-    pricing_output     REAL NOT NULL DEFAULT 0,
-    tags               TEXT NOT NULL DEFAULT '[]',
-    is_default         INTEGER NOT NULL DEFAULT 0,
-    multimodal         INTEGER NOT NULL DEFAULT 0,
-    provider_config    TEXT,
-    enabled            INTEGER NOT NULL DEFAULT 1,
-    sort_order         INTEGER NOT NULL DEFAULT 0,
-    created_at         TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at         TEXT NOT NULL DEFAULT (datetime('now'))
+    id          TEXT PRIMARY KEY,
+    name        TEXT NOT NULL,
+    provider    TEXT NOT NULL,
+    is_default  INTEGER NOT NULL DEFAULT 0,
+    multimodal  INTEGER NOT NULL DEFAULT 0,
+    enabled     INTEGER NOT NULL DEFAULT 1,
+    sort_order  INTEGER NOT NULL DEFAULT 0,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
   )
 `);
+
+// Drop legacy columns if upgrading from a pre-cutover DB. SQLite supports
+// ALTER TABLE DROP COLUMN since 3.35; older runtimes will no-op via the try.
+for (const col of [
+  "inference_provider",
+  "description",
+  "context_window",
+  "pricing_input",
+  "pricing_output",
+  "tags",
+  "provider_config",
+]) {
+  try {
+    db.exec(`ALTER TABLE models DROP COLUMN ${col}`);
+  } catch {
+    // column already absent on freshly created tables
+  }
+}
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS credentials (
@@ -337,20 +340,8 @@ db.exec(`
   )
 `);
 
-// ── Durability: agent checkpoints ──
-
-db.exec(`
-  CREATE TABLE IF NOT EXISTS agent_checkpoints (
-    run_id      TEXT PRIMARY KEY,
-    chat_id     TEXT,
-    project_id  TEXT NOT NULL,
-    step_number INTEGER NOT NULL,
-    messages    TEXT NOT NULL,
-    metadata    TEXT,
-    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
-  )
-`);
+// Pi owns turn resume; the durability checkpoint table is gone.
+db.exec(`DROP TABLE IF EXISTS agent_checkpoints`);
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS totp_backup_codes (
@@ -380,40 +371,29 @@ db.exec(`
 db.exec(`CREATE INDEX IF NOT EXISTS idx_user_passkeys_user ON user_passkeys(user_id)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_user_passkeys_cred ON user_passkeys(credential_id)`);
 
-// ── Runners ──
+// Runner backend deleted with the Pi cutover; drop the table.
+db.exec(`DROP TABLE IF EXISTS runners`);
+
+// ── Apps ──
+//
+// Each row is a permanent reverse-proxy mapping for a project: slug ↔ port.
+// The platform allocates the port (so two projects never collide on loopback);
+// the user's process binds to it. Nothing here tracks the process — if no one
+// is listening on the port, the proxy returns 502.
+
+db.exec(`DROP TABLE IF EXISTS forwarded_ports`);
 
 db.exec(`
-  CREATE TABLE IF NOT EXISTS runners (
-    id         TEXT PRIMARY KEY,
-    name       TEXT NOT NULL,
-    url        TEXT NOT NULL,
-    api_key    TEXT NOT NULL DEFAULT '',
-    enabled    INTEGER NOT NULL DEFAULT 1,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )
-`);
-
-// ── Forwarded Ports ──
-
-db.exec(`
-  CREATE TABLE IF NOT EXISTS forwarded_ports (
-    id            TEXT PRIMARY KEY,
-    project_id    TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    user_id       TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    slug          TEXT UNIQUE NOT NULL,
-    label         TEXT NOT NULL DEFAULT '',
-    port          INTEGER NOT NULL,
-    container_ip  TEXT,
-    status        TEXT NOT NULL DEFAULT 'active'
-      CHECK (status IN ('active', 'stopped')),
-    pinned        INTEGER NOT NULL DEFAULT 0,
-    start_command TEXT,
-    working_dir   TEXT DEFAULT '/workspace', -- existing rows with '/project' are untouched; callers fall back to '/workspace' when reading
-    env_vars      TEXT DEFAULT '{}',
-    error         TEXT,
-    created_at    TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+  CREATE TABLE IF NOT EXISTS apps (
+    id          TEXT PRIMARY KEY,
+    project_id  TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    slug        TEXT UNIQUE NOT NULL,
+    name        TEXT NOT NULL,
+    port        INTEGER UNIQUE NOT NULL,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (project_id, name)
   )
 `);
 
@@ -546,8 +526,6 @@ db.exec(`
 
 db.exec(`CREATE INDEX IF NOT EXISTS idx_projects_user_id ON projects(user_id)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_chats_project ON chats(project_id, updated_at)`);
-db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_project_created ON messages(project_id, created_at)`);
-db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_chat_created ON messages(chat_id, created_at)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_files_project_folder ON files(project_id, folder_path)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_folders_project ON folders(project_id)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_next ON scheduled_tasks(next_run_at, enabled)`);
@@ -573,8 +551,8 @@ db.exec(`CREATE INDEX IF NOT EXISTS idx_usage_logs_project ON usage_logs(project
 db.exec(`CREATE INDEX IF NOT EXISTS idx_usage_logs_created ON usage_logs(created_at)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_credentials_project ON credentials(project_id)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_credentials_domain ON credentials(project_id, domain)`);
-db.exec(`CREATE INDEX IF NOT EXISTS idx_forwarded_ports_project ON forwarded_ports(project_id)`);
-db.exec(`CREATE INDEX IF NOT EXISTS idx_forwarded_ports_slug ON forwarded_ports(slug)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_apps_project ON apps(project_id)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_apps_slug ON apps(slug)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_user_tg_links_tg_user ON user_telegram_links(telegram_user_id)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_user_tg_link_codes_expires ON user_telegram_link_codes(expires_at)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_user_notif_subs_user ON user_notification_subscriptions(user_id)`);
@@ -583,31 +561,37 @@ db.exec(`CREATE INDEX IF NOT EXISTS idx_pending_responses_expires ON pending_res
 db.exec(`CREATE INDEX IF NOT EXISTS idx_pending_responses_group ON pending_responses(group_id, status)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_tg_notif_msgs_pending ON telegram_notification_messages(pending_response_id)`);
 
-// ── Seed models from JSON if table is empty ──
+// ── Sync models from JSON on startup (idempotent) ──
 
-const modelCount = db.prepare("SELECT count(*) as count FROM models").get() as { count: number };
-if (modelCount.count === 0) {
+{
   const { default: modelsJson } = await import("@/config/models.json", { with: { type: "json" } });
-  const seedModels = (modelsJson as any).models;
-  const insertModel = db.prepare(
-    `INSERT INTO models (id, name, provider, inference_provider, description, context_window, pricing_input, pricing_output, tags, is_default, multimodal, provider_config, sort_order)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  const seedModels = (modelsJson as any).models as Array<{
+    id: string; name: string; provider: string;
+    default?: boolean; multimodal?: boolean;
+  }>;
+  const upsertModel = db.prepare(
+    `INSERT INTO models (id, name, provider, is_default, multimodal, sort_order)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET
+       name = excluded.name,
+       provider = excluded.provider,
+       is_default = excluded.is_default,
+       multimodal = excluded.multimodal,
+       sort_order = excluded.sort_order,
+       updated_at = datetime('now')`
   );
   for (let i = 0; i < seedModels.length; i++) {
     const m = seedModels[i];
-    insertModel.run(
+    upsertModel.run(
       m.id, m.name, m.provider,
-      m.inferenceProvider ?? "openrouter",
-      m.description ?? "",
-      m.contextWindow ?? 128000,
-      m.pricing?.input ?? 0, m.pricing?.output ?? 0,
-      JSON.stringify(m.tags ?? []),
       m.default ? 1 : 0,
       m.multimodal ? 1 : 0,
-      m.providerConfig ? JSON.stringify(m.providerConfig) : null,
       i,
     );
   }
+  const seedIds = seedModels.map((m) => m.id);
+  const placeholders = seedIds.map(() => "?").join(",");
+  db.prepare(`DELETE FROM models WHERE id NOT IN (${placeholders})`).run(...seedIds);
 }
 
 // ── Exports ──

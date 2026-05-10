@@ -15,7 +15,7 @@ import { scheduleCommand } from "./commands/schedule.ts";
 import { imageCommand } from "./commands/image.ts";
 import { credsCommand } from "./commands/creds.ts";
 import { browserCommand } from "./commands/browser.ts";
-import { portsCommand } from "./commands/ports.ts";
+import { appsCommand } from "./commands/apps.ts";
 import { llmCommand } from "./commands/llm.ts";
 import { messageCommand } from "./commands/message.ts";
 import { embedCommand } from "./commands/embed.ts";
@@ -35,7 +35,7 @@ Groups (added by migration steps):
   schedule         add, ls, update, rm
   creds            ls, get, set, rm
   browser          open, click, fill, screenshot, evaluate, wait, status
-  ports            forward
+  apps             create, delete, list
   llm              generate
   message          send a message to the user (Telegram + push)
   embed            generate vector embeddings
@@ -74,8 +74,8 @@ async function main(argv: string[]): Promise<number> {
         return await credsCommand(rest);
       case "browser":
         return await browserCommand(rest);
-      case "ports":
-        return await portsCommand(rest);
+      case "apps":
+        return await appsCommand(rest);
       case "llm":
         return await llmCommand(rest);
       case "message":

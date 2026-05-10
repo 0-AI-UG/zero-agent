@@ -11,7 +11,13 @@ import {
   updateFileSize,
   updateFileHash,
 } from "@/db/queries/files.ts";
-import { getLocalBackend } from "@/lib/execution/lifecycle.ts";
+import {
+  deleteProjectPath,
+  moveProjectPath,
+  streamProjectFile,
+  workspacePathFor,
+  writeProjectFile,
+} from "@/lib/projects/fs-ops.ts";
 import { indexFileContent } from "@/db/queries/search.ts";
 import {
   createFolder,
@@ -26,7 +32,8 @@ import { generateId } from "@/db/index.ts";
 import { searchFileContent } from "@/db/queries/search.ts";
 import { events } from "@/lib/scheduling/events.ts";
 import { embedAndStore, semanticSearch } from "@/lib/search/vectors.ts";
-import { sha256Hex } from "@/lib/execution/manifest-cache.ts";
+import { reconcileFolder } from "@/lib/projects/watcher.ts";
+import { sha256Hex } from "@/lib/utils/hash.ts";
 import { importUploadedFile } from "@/lib/uploads/import-event.ts";
 import { log } from "@/lib/utils/logger.ts";
 
@@ -69,10 +76,14 @@ export async function handleListFiles(request: Request): Promise<Response> {
       }
     }
 
-    const files = getFilesByFolder(projectId, folderPath).filter(
-      (f) => f.filename !== ".gitignore",
-    );
     const currentPath = folderPath ?? "/";
+
+    // Self-heal: bring the `files` table in line with disk for this folder
+    // before listing. Cheap (one readdir + a few inserts/deletes) and covers
+    // gaps where `fs.watch` events were missed.
+    await reconcileFolder(projectId, currentPath);
+
+    const files = getFilesByFolder(projectId, folderPath);
     const folders = getFoldersByParent(projectId, currentPath);
 
     return Response.json(
@@ -130,18 +141,11 @@ export async function handleGetFileUrl(request: Request): Promise<Response> {
       );
     }
 
-    // Stream the file content
-    const backend = getLocalBackend();
-    if (!backend) {
-      throw new Error("Execution backend unavailable");
-    }
+    const workspacePath = workspacePathFor(file.folder_path, file.filename);
 
-    const trimmedFolder = file.folder_path.replace(/^\/+/, "").replace(/\/+$/, "");
-    const workspacePath = trimmedFolder ? `${trimmedFolder}/${file.filename}` : file.filename;
-
-    const result = await backend.readFileStream(projectId, workspacePath);
+    const result = await streamProjectFile(projectId, workspacePath);
     if (!result) {
-      throw new NotFoundError("File not found in container");
+      throw new NotFoundError("File not found on disk");
     }
 
     const headers: Record<string, string> = {
@@ -190,16 +194,10 @@ export async function handleUploadRequest(request: Request): Promise<Response> {
     const arrayBuf = await request.arrayBuffer();
     const buffer = Buffer.from(arrayBuf);
 
-    const backend = getLocalBackend();
-    if (!backend) {
-      throw new Error("Execution backend unavailable");
-    }
+    const workspacePath = workspacePathFor(folderPath, filename);
 
-    const trimmedFolder = folderPath.replace(/^\/+/, "").replace(/\/+$/, "");
-    const workspacePath = trimmedFolder ? `${trimmedFolder}/${filename}` : filename;
-
-    // Write to container
-    await backend.writeFile(projectId, workspacePath, buffer);
+    // Write to project dir
+    await writeProjectFile(projectId, workspacePath, buffer);
 
     // Insert/upsert files row
     const hash = sha256Hex(buffer);
@@ -231,20 +229,14 @@ export async function handleUpdateFileBinary(request: Request): Promise<Response
     const contentType = request.headers.get("Content-Type") ?? "";
     const isJson = contentType.includes("application/json");
 
-    const backend = getLocalBackend();
-    if (!backend) {
-      throw new Error("Execution backend unavailable");
-    }
-
     if (!isJson) {
-      // Binary body — write to container
+      // Binary body — write to project dir
       const arrayBuf = await request.arrayBuffer();
       const buffer = Buffer.from(arrayBuf);
 
-      const trimmedFolder = file.folder_path.replace(/^\/+/, "").replace(/\/+$/, "");
-      const workspacePath = trimmedFolder ? `${trimmedFolder}/${file.filename}` : file.filename;
+      const workspacePath = workspacePathFor(file.folder_path, file.filename);
 
-      await backend.writeFile(projectId, workspacePath, buffer);
+      await writeProjectFile(projectId, workspacePath, buffer);
 
       const hash = sha256Hex(buffer);
       updateFileSize(id, buffer.byteLength);
@@ -284,18 +276,11 @@ export async function handleDeleteFile(request: Request): Promise<Response> {
       throw new NotFoundError("File not found");
     }
 
-    // Convert folder_path ("/" or "/foo/") + filename to workspace-relative path.
-    const trimmedFolder = file.folder_path.replace(/^\/+/, "").replace(/\/+$/, "");
-    const workspacePath = trimmedFolder ? `${trimmedFolder}/${file.filename}` : file.filename;
+    const workspacePath = workspacePathFor(file.folder_path, file.filename);
+    await deleteProjectPath(projectId, workspacePath);
 
-    const backend = getLocalBackend();
-    if (!backend) {
-      throw new Error("Execution backend unavailable");
-    }
-    await backend.deletePath!(projectId, workspacePath);
-
-    // DB row, S3 object, FTS index, and vectors are cleaned up by the
-    // mirror-receiver once the watcher emits a delete event.
+    // DB row, FTS index, and vectors are cleaned up by the project watcher
+    // once the fs delete event fires.
     events.emit("file.deleted", { projectId, path: file.folder_path, filename: file.filename });
 
     return Response.json({ success: true }, { headers: corsHeaders });
@@ -425,19 +410,10 @@ export async function handleMoveFile(request: Request): Promise<Response> {
     }
 
     const oldFolderPath = file.folder_path;
-    // Convert folder_path ("/" or "/foo/") + filename to workspace-relative path.
-    const toRel = (folderPath: string, filename: string) => {
-      const trimmed = folderPath.replace(/^\/+/, "").replace(/\/+$/, "");
-      return trimmed ? `${trimmed}/${filename}` : filename;
-    };
-    const oldPath = toRel(oldFolderPath, file.filename);
-    const newPath = toRel(body.destinationPath, file.filename);
+    const oldPath = workspacePathFor(oldFolderPath, file.filename);
+    const newPath = workspacePathFor(body.destinationPath, file.filename);
 
-    const backend = getLocalBackend();
-    if (!backend) {
-      throw new Error("Execution backend unavailable");
-    }
-    await backend.movePath!(projectId, oldPath, newPath);
+    await moveProjectPath(projectId, oldPath, newPath);
 
     events.emit("file.moved", { projectId, fromPath: oldFolderPath, toPath: body.destinationPath, filename: file.filename });
     return Response.json({ ok: true }, { headers: corsHeaders });
@@ -485,16 +461,12 @@ export async function handleMoveFolder(request: Request): Promise<Response> {
     const oldRel = toRelFolder(oldPath);
     const newRel = toRelFolder(newPath);
 
-    const backend = getLocalBackend();
-    if (!backend) {
-      throw new Error("Execution backend unavailable");
-    }
-    await backend.movePath!(projectId, oldRel, newRel);
+    await moveProjectPath(projectId, oldRel, newRel);
 
-    // Keep the folders table consistent. mirror-receiver handles files, but
-    // does not create/update folder rows, so we update those here. The call
-    // to updateFolderChildPaths also touches file rows under the old prefix;
-    // that is harmless because the watcher's delete+upsert will converge to
+    // Keep the folders table consistent. The watcher converges file rows;
+    // it does not create/update folder rows, so we update those here. The
+    // call to updateFolderChildPaths also touches file rows under the old
+    // prefix; harmless because the watcher's delete+upsert converges to
     // the same final state.
     const updated = updateFolderPath(id, newPath, folder.name);
     updateFolderChildPaths(projectId, oldPath, newPath);
@@ -522,15 +494,11 @@ export async function handleDeleteFolder(request: Request): Promise<Response> {
       throw new ValidationError("Cannot delete root folder");
     }
 
-    const backend = getLocalBackend();
-    if (!backend) {
-      throw new Error("Execution backend unavailable");
-    }
-    // `rm -rf` cascades to all children in the container; the watcher will
-    // emit per-file delete events and the mirror-receiver handles DB+S3+vector
-    // cleanup for files. The mirror-receiver does NOT touch the `folders`
-    // table, so we still delete folder rows (including child folders) here.
-    await backend.deletePath!(projectId, workspacePath);
+    // `rm -rf` cascades to all children on disk; the project watcher emits
+    // per-file delete events and handles DB / FTS / vector cleanup for
+    // files. The watcher does NOT touch the `folders` table, so we still
+    // delete folder rows (including child folders) here.
+    await deleteProjectPath(projectId, workspacePath);
     deleteFoldersByPathPrefix(projectId, folder.path);
 
     events.emit("folder.deleted", { projectId, path: folder.path });
