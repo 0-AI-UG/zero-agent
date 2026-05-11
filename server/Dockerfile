@@ -32,8 +32,11 @@ RUN node node_modules/playwright/cli.js install-deps chromium && \
 # Copy config files needed for build & runtime
 COPY tsconfig.json ./tsconfig.json
 
-# Copy zero SDK source (server imports zero/schemas at runtime)
+# Copy zero SDK source (server imports zero/schemas at runtime) and build
+# its dist/ artifacts — `zero` resolves via its package.json `main` to
+# dist/sdk.js, and the spawned Pi CLI uses dist/cli.js.
 COPY zero/ ./zero/
+RUN bun --filter zero build
 
 # Copy server source
 COPY server/ ./server/
