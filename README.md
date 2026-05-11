@@ -97,7 +97,7 @@ Web Push (VAPID) and Telegram bot integration. Get notified when tasks complete 
 
 ### 12. Security
 
-Passkey (WebAuthn) and TOTP 2FA authentication. JWT sessions with per-user token limits. Admin panel for user management, model configuration, and usage tracking.
+Passkey (WebAuthn) second factor with user verification required, HttpOnly cookie sessions with server-side revocation, CSRF double-submit protection, and an admin panel for user management, model configuration, and usage tracking.
 
 ## Configuration
 
@@ -107,6 +107,11 @@ Copy `.env.example` to `.env`:
 |---|---|---|
 | `OPENROUTER_API_KEY` | Yes | [OpenRouter](https://openrouter.ai) key — single credential routes to multiple providers |
 | `BRAVE_SEARCH_API_KEY` | No | [Brave Search](https://brave.com/search/api/) key for web search |
+| `JWT_SECRET` | Yes | Session-signing key (≥32 chars) |
+| `CREDENTIALS_KEY` | Yes | AES-GCM key for credentials at rest (≥32 chars) |
+| `CORS_ORIGIN` | Prod | Exact allowed origin (e.g. `https://app.example.com`) |
+| `SETUP_TOKEN` | Prod | One-time token required to complete first-run setup |
+| `TRUST_PROXY` | Prod | Set to `1` if behind a reverse proxy that sets `X-Forwarded-For` |
 
 Models, image providers, and credentials are configured at runtime through the admin panel.
 
@@ -151,7 +156,7 @@ Models, image providers, and credentials are configured at runtime through the a
 | Database | SQLite (WAL mode) |
 | Vectors | SQLite + HNSW via [`@0-ai/s3lite`](https://github.com/0-AI-UG/s3lite) |
 | Browser | Host Chromium pool via Chrome DevTools Protocol |
-| Auth | Passkeys (WebAuthn) + TOTP 2FA |
+| Auth | Passkeys (WebAuthn) + cookie sessions with server-side revocation |
 | Notifications | Web Push + Telegram |
 
 ## Project Structure
