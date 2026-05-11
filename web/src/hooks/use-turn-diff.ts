@@ -58,6 +58,7 @@ export function useTurnDiffFile(
       const res = await fetch(
         `/api/turns/${postSnapshotId}/file?path=${encodeURIComponent(path ?? "")}`,
         {
+          credentials: "include",
           headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         },
       );

@@ -6,27 +6,57 @@ interface User {
 }
 
 interface AuthState {
-  token: string | null;
   user: User | null;
+  // Bearer token kept ONLY for WebSocket auth and raw fetch flows that can't
+  // rely on cookies (file uploads with multipart, etc.). Most API calls go
+  // through cookies + CSRF — see api/client.ts.
+  token: string | null;
   isAuthenticated: boolean;
-  login: (token: string, user: User) => void;
-  logout: () => void;
+  ready: boolean;
+  setSession: (user: User, token: string | null) => void;
+  clearSession: () => void;
+  setReady: () => void;
 }
 
+const TOKEN_KEY = "zeroAgentToken";
+
 export const useAuthStore = create<AuthState>((set) => ({
-  token: localStorage.getItem("token"),
-  user: JSON.parse(localStorage.getItem("user") ?? "null"),
-  isAuthenticated: localStorage.getItem("token") !== null,
+  user: null,
+  token: typeof localStorage !== "undefined" ? localStorage.getItem(TOKEN_KEY) : null,
+  isAuthenticated: false,
+  ready: false,
 
-  login: (token, user) => {
-    localStorage.setItem("token", token);
-    localStorage.setItem("user", JSON.stringify(user));
-    set({ token, user, isAuthenticated: true });
+  setSession: (user, token) => {
+    if (token) {
+      localStorage.setItem(TOKEN_KEY, token);
+    }
+    set({ user, token, isAuthenticated: true, ready: true });
   },
-
-  logout: () => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
-    set({ token: null, user: null, isAuthenticated: false });
+  clearSession: () => {
+    localStorage.removeItem(TOKEN_KEY);
+    set({ user: null, token: null, isAuthenticated: false, ready: true });
   },
+  setReady: () => set({ ready: true }),
 }));
+
+export async function logoutApi(): Promise<void> {
+  const csrf = readCsrfCookie();
+  await fetch("/api/auth/logout", {
+    method: "POST",
+    credentials: "include",
+    headers: csrf ? { "X-CSRF-Token": csrf } : {},
+  }).catch(() => {});
+  useAuthStore.getState().clearSession();
+}
+
+export function readCsrfCookie(): string | null {
+  if (typeof document === "undefined") return null;
+  const parts = document.cookie.split(";");
+  for (const part of parts) {
+    const idx = part.indexOf("=");
+    if (idx < 0) continue;
+    const k = part.slice(0, idx).trim();
+    if (k === "csrf") return part.slice(idx + 1).trim();
+  }
+  return null;
+}

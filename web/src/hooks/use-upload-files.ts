@@ -78,16 +78,19 @@ async function uploadOne(
     folderPath,
   });
 
-  const { useAuthStore } = await import("@/stores/auth");
+  const { useAuthStore, readCsrfCookie } = await import("@/stores/auth");
   const token = useAuthStore.getState().token;
+  const csrf = readCsrfCookie();
   const headers: Record<string, string> = {
     "Content-Type": mimeType,
     "Content-Length": String(file.size),
   };
   if (token) headers["Authorization"] = `Bearer ${token}`;
+  if (csrf) headers["X-CSRF-Token"] = csrf;
 
   const res = await fetch(`/api/projects/${projectId}/files/upload?${qs.toString()}`, {
     method: "POST",
+    credentials: "include",
     headers,
     body: file,
   });

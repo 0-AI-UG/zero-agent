@@ -75,6 +75,7 @@ export function useReindexProject(projectId: string) {
       try {
         const token = useAuthStore.getState().token;
         const res = await fetch(`/api/projects/${projectId}/reindex/status`, {
+          credentials: "include",
           headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         });
         if (!res.ok || cancelled) return;
@@ -90,6 +91,7 @@ export function useReindexProject(projectId: string) {
         abortRef.current = controller;
 
         const streamRes = await fetch(`/api/projects/${projectId}/reindex/stream`, {
+          credentials: "include",
           headers: token ? { Authorization: `Bearer ${token}` } : undefined,
           signal: controller.signal,
         });
@@ -134,11 +136,16 @@ export function useReindexProject(projectId: string) {
 
     try {
       const token = useAuthStore.getState().token;
-      const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {};
+      const { readCsrfCookie } = await import("@/stores/auth");
+      const csrf = readCsrfCookie();
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      if (csrf) headers["X-CSRF-Token"] = csrf;
 
       // Kick off the reindex
       const res = await fetch(`/api/projects/${projectId}/reindex`, {
         method: "POST",
+        credentials: "include",
         headers,
         signal: controller.signal,
       });
@@ -154,6 +161,7 @@ export function useReindexProject(projectId: string) {
 
       // Connect to the SSE stream for progress
       const streamRes = await fetch(`/api/projects/${projectId}/reindex/stream`, {
+        credentials: "include",
         headers,
         signal: controller.signal,
       });

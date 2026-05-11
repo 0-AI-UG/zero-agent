@@ -29,5 +29,13 @@ export function updateUserCompanionSharing(userId: string, enabled: boolean): vo
 }
 
 export function updateUserPassword(userId: string, passwordHash: string): void {
-  db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(passwordHash, userId);
+  db.prepare(
+    "UPDATE users SET password_hash = ?, token_version = token_version + 1 WHERE id = ?",
+  ).run(passwordHash, userId);
+}
+
+export function bumpTokenVersion(userId: string): void {
+  db.prepare(
+    "UPDATE users SET token_version = token_version + 1 WHERE id = ?",
+  ).run(userId);
 }

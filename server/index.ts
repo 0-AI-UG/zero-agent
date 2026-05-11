@@ -7,25 +7,18 @@ import type { Context } from "hono";
 import { corsHeaders } from "@/lib/http/cors.ts";
 import { log } from "@/lib/utils/logger.ts";
 import { handleHealth } from "@/routes/health.ts";
-import { handleLogin, handleMe, handleUpdateMe, handlePasswordResetInit, handlePasswordResetConfirm, handlePasswordResetPasskeyOptions, handlePasswordResetPasskeyConfirm } from "@/routes/auth.ts";
-import {
-  handleTotpSetup,
-  handleTotpConfirm,
-  handleTotpLogin,
-  handleTotpDisable,
-  handleTotpStatus,
-  handleTotpSetupFromLogin,
-  handleTotpConfirmFromLogin,
-  handleTotpRecover,
-} from "@/routes/totp.ts";
+import { handleLogin, handleLogout, handleMe, handleUpdateMe, handlePasswordResetInit, handlePasswordResetPasskeyOptions, handlePasswordResetPasskeyConfirm } from "@/routes/auth.ts";
 import {
   handlePasskeyRegisterOptions,
   handlePasskeyRegisterVerify,
   handlePasskeyLoginOptions,
   handlePasskeyLoginVerify,
+  handlePasskeyEnrollOptions,
+  handlePasskeyEnrollVerify,
   handlePasskeyList,
   handlePasskeyDelete,
 } from "@/routes/passkeys.ts";
+import { checkCsrf } from "@/lib/http/csrf.ts";
 import {
   handleListProjects,
   handleCreateProject,
@@ -230,10 +223,18 @@ function h(handler: (req: any) => Response | Promise<Response>) {
   return async (c: Context) => {
     const req = c.req.raw;
     (req as any).params = c.req.param();
+    // Surface the trusted socket IP for rate-limit/IP lookups when not
+    // behind a reverse proxy.
+    const node = (c.env as any)?.incoming;
+    if (node?.socket?.remoteAddress) {
+      (req as any).socketIp = node.socket.remoteAddress;
+    }
     const start = Date.now();
     const method = req.method;
     const urlPath = c.req.path;
     try {
+      const csrfBlock = checkCsrf(req, urlPath);
+      if (csrfBlock) return csrfBlock;
       const res = await handler(req);
       const durationMs = Date.now() - start;
       if (res.status >= 500) {
@@ -263,28 +264,20 @@ app.get("/api/health", h(handleHealth));
 
 // Auth
 app.post("/api/auth/login", h(handleLogin));
+app.post("/api/auth/logout", h(handleLogout));
 app.post("/api/auth/password-reset/init", h(handlePasswordResetInit));
-app.post("/api/auth/password-reset/confirm", h(handlePasswordResetConfirm));
 app.post("/api/auth/password-reset/passkey-options", h(handlePasswordResetPasskeyOptions));
 app.post("/api/auth/password-reset/passkey-confirm", h(handlePasswordResetPasskeyConfirm));
 app.get("/api/me", h(handleMe));
 app.put("/api/me", h(handleUpdateMe));
-
-// TOTP
-app.post("/api/auth/totp/setup", h(handleTotpSetup));
-app.post("/api/auth/totp/confirm", h(handleTotpConfirm));
-app.post("/api/auth/totp/login", h(handleTotpLogin));
-app.post("/api/auth/totp/recover", h(handleTotpRecover));
-app.post("/api/auth/totp/disable", h(handleTotpDisable));
-app.get("/api/auth/totp/status", h(handleTotpStatus));
-app.post("/api/auth/totp/setup-from-login", h(handleTotpSetupFromLogin));
-app.post("/api/auth/totp/confirm-from-login", h(handleTotpConfirmFromLogin));
 
 // Passkeys
 app.post("/api/auth/passkey/register-options", h(handlePasskeyRegisterOptions));
 app.post("/api/auth/passkey/register-verify", h(handlePasskeyRegisterVerify));
 app.post("/api/auth/passkey/login-options", h(handlePasskeyLoginOptions));
 app.post("/api/auth/passkey/login-verify", h(handlePasskeyLoginVerify));
+app.post("/api/auth/passkey/enroll-options", h(handlePasskeyEnrollOptions));
+app.post("/api/auth/passkey/enroll-verify", h(handlePasskeyEnrollVerify));
 app.get("/api/auth/passkey/list", h(handlePasskeyList));
 app.delete("/api/auth/passkey/:id", h(handlePasskeyDelete));
 

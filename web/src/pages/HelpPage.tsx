@@ -43,7 +43,7 @@ const FAQ_ITEMS: { q: string; a: string }[] = [
   },
   {
     q: "How do I set up two-factor authentication?",
-    a: "Go to Settings > Security. You can enable an authenticator app (Google Authenticator, 1Password) or add passkeys (Face ID, Touch ID, hardware keys) for additional security.",
+    a: "Go to Settings → Security and add a passkey (Face ID, Touch ID, Windows Hello, or a hardware security key). Passkeys are the only second factor.",
   },
   {
     q: "Is Zero Agent open source?",

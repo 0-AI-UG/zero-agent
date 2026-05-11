@@ -169,7 +169,16 @@ export function attachWebSocketServer(server: HttpServer) {
       return;
     }
 
-    const token = url.searchParams.get("token");
+    // Prefer the auth cookie (browsers send it on the upgrade request),
+    // fall back to a query-string token for clients that can't set cookies.
+    let token = url.searchParams.get("token");
+    if (!token) {
+      const cookie = req.headers.cookie ?? "";
+      for (const part of cookie.split(";")) {
+        const [k, ...rest] = part.trim().split("=");
+        if (k === "auth") { token = rest.join("="); break; }
+      }
+    }
     if (!token) {
       socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
       socket.destroy();

@@ -2,13 +2,19 @@ import bcrypt from "bcrypt";
 import { createHash, randomBytes } from "node:crypto";
 import { z } from "zod";
 import { corsHeaders } from "@/lib/http/cors.ts";
-import { requireAdmin, createToken, createTempToken, isTotpRequired } from "@/lib/auth/auth.ts";
+import { requireAdmin, createToken, createTempToken } from "@/lib/auth/auth.ts";
 import { handleError } from "@/routes/utils.ts";
 import { validateBody, passwordSchema, usernameSchema } from "@/lib/auth/validation.ts";
 import { ValidationError, AuthError } from "@/lib/utils/errors.ts";
-import { authRateLimiter, recordAuthFailure } from "@/lib/http/rate-limit.ts";
+import { authRateLimiter, recordAuthFailure, getClientIP } from "@/lib/http/rate-limit.ts";
 import { getUserByUsername, getUserById, insertUser } from "@/db/queries/users.ts";
 import { db } from "@/db/index.ts";
+import {
+  setAuthCookieHeader,
+  setCsrfCookieHeader,
+  generateCsrfToken,
+} from "@/lib/http/cookies.ts";
+import { getSetting } from "@/lib/settings.ts";
 import {
   createInvitation,
   getInvitationByTokenHash,
@@ -27,6 +33,11 @@ function hashToken(token: string): string {
 
 function nowSeconds(): number {
   return Math.floor(Date.now() / 1000);
+}
+
+function passkeyRequired(user: { is_admin?: number }): boolean {
+  if (user.is_admin === 1) return true;
+  return getSetting("REQUIRE_2FA") === "1";
 }
 
 function serializeInvitation(row: UserInvitationRow) {
@@ -53,10 +64,7 @@ const createSchema = z.object({
 });
 
 function checkRateLimit(request: Request): Response | null {
-  const ip =
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
-    request.headers.get("x-real-ip") ??
-    "unknown";
+  const ip = getClientIP(request);
   const { allowed, retryAfterSeconds } = authRateLimiter.check(ip);
   if (!allowed) {
     return Response.json(
@@ -176,12 +184,11 @@ export async function handleAcceptUserInvitation(request: Request): Promise<Resp
       throw new AuthError("A user with that username already exists");
     }
 
-    const passwordHash = await bcrypt.hash(body.password, 10);
+    const passwordHash = await bcrypt.hash(body.password, 12);
     const newUser = insertUser(row.username, passwordHash);
 
-    // Apply invite-time settings
     db.prepare(
-      "UPDATE users SET can_create_projects = ?, token_limit = ? WHERE id = ?"
+      "UPDATE users SET can_create_projects = ?, token_limit = ? WHERE id = ?",
     ).run(row.can_create_projects, row.token_limit, newUser.id);
 
     markInvitationAccepted(row.id, newUser.id);
@@ -189,8 +196,8 @@ export async function handleAcceptUserInvitation(request: Request): Promise<Resp
 
     const fullUser = getUserById(newUser.id)!;
     const isDev = process.env.NODE_ENV !== "production";
-    if (!isDev && isTotpRequired(fullUser)) {
-      const tempToken = await createTempToken(newUser.id);
+    if (!isDev && passkeyRequired(fullUser)) {
+      const tempToken = await createTempToken(newUser.id, "passkey-enroll");
       return Response.json(
         { requires2FASetup: true, tempToken, user: { id: newUser.id, username: newUser.username } },
         { status: 201, headers: corsHeaders },
@@ -198,9 +205,18 @@ export async function handleAcceptUserInvitation(request: Request): Promise<Resp
     }
 
     const authToken = await createToken({ userId: newUser.id, username: newUser.username });
-    return Response.json(
-      { token: authToken, user: { id: newUser.id, username: newUser.username } },
-      { status: 201, headers: corsHeaders },
+    const csrf = generateCsrfToken();
+    const headers = new Headers(corsHeaders);
+    headers.append("Set-Cookie", setAuthCookieHeader(authToken));
+    headers.append("Set-Cookie", setCsrfCookieHeader(csrf));
+    headers.set("Content-Type", "application/json");
+    return new Response(
+      JSON.stringify({
+        token: authToken,
+        csrfToken: csrf,
+        user: { id: newUser.id, username: newUser.username },
+      }),
+      { status: 201, headers },
     );
   } catch (error) {
     return handleError(error);

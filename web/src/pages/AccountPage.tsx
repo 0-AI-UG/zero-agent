@@ -3,8 +3,7 @@ import { useNavigate } from "react-router";
 import { useCurrentUser } from "@/api/admin";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { ShieldCheckIcon, CheckIcon, CopyIcon, ClipboardCheckIcon, FingerprintIcon, Trash2Icon, MoonIcon, SunIcon, MonitorIcon, PaletteIcon, UploadIcon, XIcon, ChevronLeftIcon, PencilIcon } from "lucide-react";
-import { totpSetup, totpConfirm, totpDisable, totpStatus } from "@/api/totp";
+import { FingerprintIcon, Trash2Icon, MoonIcon, SunIcon, MonitorIcon, PaletteIcon, UploadIcon, XIcon, ChevronLeftIcon, PencilIcon } from "lucide-react";
 import { passkeyRegisterOptions, passkeyRegisterVerify, passkeyList, passkeyDelete } from "@/api/passkeys";
 import { startRegistration } from "@simplewebauthn/browser";
 import { NotificationsCenter } from "@/components/settings/NotificationsCenter";
@@ -108,12 +107,9 @@ export function AccountPage() {
           <div id="section-security">
             <h3 className="text-sm font-semibold mb-4">Security</h3>
             <p className="text-sm text-muted-foreground mb-6">
-              Add a second layer of verification when signing in. You can enable one or both methods.
+              Passkeys are required to sign in when two-factor authentication is enabled on your account.
             </p>
-            <div className="space-y-6">
-              <TwoFactorSection />
-              <PasskeySection />
-            </div>
+            <PasskeySection />
           </div>
 
           {/* Notifications */}
@@ -401,237 +397,6 @@ function AppearanceSection() {
   );
 }
 
-function TwoFactorSection() {
-  const [step, setStep] = useState<"idle" | "setup" | "confirm" | "backup" | "disable">("idle");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [qrCode, setQrCode] = useState("");
-  const [secret, setSecret] = useState("");
-  const [code, setCode] = useState("");
-  const [backupCodes, setBackupCodes] = useState<string[]>([]);
-  const [copied, setCopied] = useState(false);
-  const [status, setStatus] = useState<{ enabled: boolean; required: boolean; backupCodesRemaining: number; passkeyCount?: number } | null>(null);
-  const [statusLoading, setStatusLoading] = useState(true);
-
-  useEffect(() => {
-    totpStatus()
-      .then(setStatus)
-      .catch(() => {})
-      .finally(() => setStatusLoading(false));
-  }, []);
-
-  const handleSetup = async () => {
-    setError("");
-    setLoading(true);
-    try {
-      const data = await totpSetup();
-      setQrCode(data.qrCode);
-      setSecret(data.secret);
-      setStep("setup");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Setup failed");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleConfirm = async () => {
-    setError("");
-    setLoading(true);
-    try {
-      const data = await totpConfirm(code);
-      setBackupCodes(data.backupCodes);
-      setStep("backup");
-      setStatus({ enabled: true, required: status?.required ?? false, backupCodesRemaining: data.backupCodes.length });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Confirmation failed");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleDisable = async () => {
-    setError("");
-    setLoading(true);
-    try {
-      await totpDisable(code);
-      setStatus({ enabled: false, required: status?.required ?? false, backupCodesRemaining: 0 });
-      setStep("idle");
-      setCode("");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to disable");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const copyBackupCodes = () => {
-    navigator.clipboard.writeText(backupCodes.join("\n"));
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  if (statusLoading) return null;
-
-  return (
-    <section className="space-y-3">
-      <div className="flex items-center gap-2">
-        <ShieldCheckIcon className="size-4 text-muted-foreground" />
-        <h4 className="text-sm font-medium">Authenticator App</h4>
-      </div>
-
-      <div className="rounded-lg border p-4 space-y-4">
-        {error && <p className="text-xs text-destructive">{error}</p>}
-
-        {step === "idle" && !status?.enabled && (
-          <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">
-              Use an authenticator app (e.g. Google Authenticator, 1Password) to generate time-based codes when signing in.
-            </p>
-            <Button onClick={handleSetup} disabled={loading} size="sm">
-              {loading ? "Setting up..." : "Set Up"}
-            </Button>
-          </div>
-        )}
-
-        {step === "idle" && status?.enabled && (
-          <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <div className="size-2 rounded-full bg-emerald-500" />
-              <p className="text-sm font-medium">Two-factor authentication is enabled</p>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {status.backupCodesRemaining} backup code{status.backupCodesRemaining !== 1 ? "s" : ""} remaining
-            </p>
-            {status.required && (status.passkeyCount ?? 0) === 0 ? (
-              <p className="text-xs text-muted-foreground">
-                Two-factor authentication is required for your account and cannot be disabled without an alternative method (e.g. passkey).
-              </p>
-            ) : (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => { setStep("disable"); setCode(""); setError(""); }}
-              >
-                Disable
-              </Button>
-            )}
-          </div>
-        )}
-
-        {step === "setup" && (
-          <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              Scan this QR code with your authenticator app, then enter the 6-digit code below.
-            </p>
-            <div className="flex justify-center">
-              <img src={qrCode} alt="TOTP QR Code" className="size-48 rounded-lg" />
-            </div>
-            <div className="space-y-1">
-              <p className="text-xs text-muted-foreground">Or enter this key manually:</p>
-              <code className="block text-xs bg-muted px-3 py-2 rounded select-all break-all">{secret}</code>
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium">Verification code</label>
-              <Input
-                type="text"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                maxLength={6}
-                value={code}
-                onChange={(e) => { setCode(e.target.value); setError(""); }}
-                placeholder="000000"
-                autoFocus
-              />
-            </div>
-            <div className="flex gap-2">
-              <Button onClick={handleConfirm} disabled={loading || code.length !== 6} size="sm">
-                {loading ? "Verifying..." : "Verify & Enable"}
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => { setStep("idle"); setCode(""); setError(""); }}
-              >
-                Cancel
-              </Button>
-            </div>
-          </div>
-        )}
-
-        {step === "backup" && (
-          <div className="space-y-4">
-            <div className="flex items-center gap-2">
-              <CheckIcon className="size-4 text-muted-foreground" />
-              <p className="text-sm font-medium">Two-factor authentication enabled</p>
-            </div>
-            <p className="text-sm text-muted-foreground">
-              Save these backup codes in a safe place. Each code can only be used once.
-            </p>
-            <div className="grid grid-cols-2 gap-2">
-              {backupCodes.map((c) => (
-                <code key={c} className="text-xs bg-muted px-3 py-1.5 rounded text-center font-mono">
-                  {c}
-                </code>
-              ))}
-            </div>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={copyBackupCodes}>
-                {copied ? (
-                  <><ClipboardCheckIcon className="size-3.5 mr-1.5" />Copied</>
-                ) : (
-                  <><CopyIcon className="size-3.5 mr-1.5" />Copy all</>
-                )}
-              </Button>
-              <Button size="sm" onClick={() => { setStep("idle"); setCode(""); }}>
-                Done
-              </Button>
-            </div>
-          </div>
-        )}
-
-        {step === "disable" && (
-          <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              Enter your current authenticator code to disable two-factor authentication.
-            </p>
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium">Authentication code</label>
-              <Input
-                type="text"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                maxLength={6}
-                value={code}
-                onChange={(e) => { setCode(e.target.value); setError(""); }}
-                placeholder="000000"
-                autoFocus
-              />
-            </div>
-            <div className="flex gap-2">
-              <Button
-                variant="destructive"
-                onClick={handleDisable}
-                disabled={loading || code.length !== 6}
-                size="sm"
-              >
-                {loading ? "Disabling..." : "Disable"}
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => { setStep("idle"); setCode(""); setError(""); }}
-              >
-                Cancel
-              </Button>
-            </div>
-          </div>
-        )}
-      </div>
-    </section>
-  );
-}
-
 function PasskeySection() {
   const [passkeys, setPasskeys] = useState<{ id: string; deviceName: string; createdAt: string }[]>([]);
   const [loading, setLoading] = useState(true);
@@ -656,9 +421,9 @@ function PasskeySection() {
     setError("");
     setAdding(true);
     try {
-      const options = await passkeyRegisterOptions();
-      const registration = await startRegistration({ optionsJSON: options });
-      await passkeyRegisterVerify(registration, deviceName || "Passkey");
+      const { ceremonyId, ...options } = await passkeyRegisterOptions();
+      const registration = await startRegistration({ optionsJSON: options as any });
+      await passkeyRegisterVerify(ceremonyId, registration, deviceName || "Passkey");
       setDeviceName("");
       setShowNameInput(false);
       await fetchPasskeys();
@@ -689,7 +454,7 @@ function PasskeySection() {
     <section className="space-y-3">
       <div className="flex items-center gap-2">
         <FingerprintIcon className="size-4 text-muted-foreground" />
-        <h4 className="text-sm font-medium">Passkeys</h4>
+        <h4 className="text-sm font-medium">Two-factor authentication</h4>
       </div>
 
       <div className="rounded-lg border p-4 space-y-4">

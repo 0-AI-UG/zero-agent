@@ -70,11 +70,22 @@ export class RateLimiter {
 /** 10 failed attempts per 15 minutes for auth endpoints */
 export const authRateLimiter = new RateLimiter(10, 15 * 60 * 1000);
 
+const TRUST_PROXY = process.env.TRUST_PROXY === "1";
+
+/** Extract the client IP. Only trust X-Forwarded-For when TRUST_PROXY=1. */
+export function getClientIP(request: Request): string {
+  if (TRUST_PROXY) {
+    const xff = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
+    if (xff) return xff;
+    const xri = request.headers.get("x-real-ip");
+    if (xri) return xri;
+  }
+  // Without a trusted proxy, use the per-connection address surfaced by the
+  // server adapter (see hono node-server integration in server/index.ts).
+  return (request as any).socketIp ?? "unknown";
+}
+
 /** Record a failed auth attempt for the request's client IP. */
 export function recordAuthFailure(request: Request): void {
-  const ip =
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
-    request.headers.get("x-real-ip") ??
-    "unknown";
-  authRateLimiter.record(ip);
+  authRateLimiter.record(getClientIP(request));
 }
