@@ -242,7 +242,7 @@ export async function handlePasskeyLoginOptions(request: Request): Promise<Respo
       );
     }
 
-    const userId = await verifyTempToken(body.tempToken, "password-reset");
+    const userId = await verifyTempToken(body.tempToken, "password-reset", false);
 
     const passkeys = getPasskeysByUserId(userId);
     if (passkeys.length === 0) {
@@ -377,7 +377,7 @@ export async function handlePasskeyEnrollOptions(request: Request): Promise<Resp
       );
     }
 
-    const userId = await verifyTempToken(body.tempToken, "passkey-enroll" as TempTokenPurpose);
+    const userId = await verifyTempToken(body.tempToken, "passkey-enroll" as TempTokenPurpose, false);
     const user = getUserById(userId);
     if (!user) throw new AuthError("Unauthorized");
 

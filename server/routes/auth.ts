@@ -227,7 +227,7 @@ export async function handlePasswordResetPasskeyOptions(request: Request): Promi
       );
     }
 
-    const userId = await verifyTempToken(body.tempToken, "password-reset");
+    const userId = await verifyTempToken(body.tempToken, "password-reset", false);
     const passkeys = getPasskeysByUserId(userId);
     if (passkeys.length === 0) {
       return Response.json(

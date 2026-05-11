@@ -100,6 +100,7 @@ export async function createTempToken(
 export async function verifyTempToken(
   token: string,
   expectedPurpose: TempTokenPurpose = "password-reset",
+  consume: boolean = true,
 ): Promise<string> {
   try {
     const { payload } = await jwtVerify(token, JWT_SECRET);
@@ -108,8 +109,10 @@ export async function verifyTempToken(
     if (!jti) throw new AuthError("Invalid token");
     cleanupJtis();
     if (usedJtis.has(jti)) throw new AuthError("Invalid or expired token");
-    const exp = ((payload as any).exp as number) * 1000;
-    usedJtis.set(jti, exp);
+    if (consume) {
+      const exp = ((payload as any).exp as number) * 1000;
+      usedJtis.set(jti, exp);
+    }
     return (payload as any).userId;
   } catch (err) {
     if (err instanceof AuthError) throw err;
