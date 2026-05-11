@@ -47,17 +47,29 @@ export function ensureZeroOnPath(): string {
   mkdirSync(binDir, { recursive: true });
 
   const link = path.join(binDir, "zero");
-  let needsLink = true;
-  if (existsSync(link)) {
-    try {
-      if (readlinkSync(link) === cliPath) needsLink = false;
-      else unlinkSync(link);
-    } catch {
-      // Not a symlink (regular file?). Replace it.
+  try {
+    // lstat-based check via readlinkSync: returns target if symlink, throws otherwise.
+    if (readlinkSync(link) !== cliPath) {
       unlinkSync(link);
+      symlinkSync(cliPath, link);
+    }
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === "ENOENT") {
+      try {
+        symlinkSync(cliPath, link);
+      } catch (e) {
+        // Lost a race with another concurrent caller — the symlink now exists.
+        if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
+      }
+    } else if (code === "EINVAL") {
+      // Exists but not a symlink (regular file?). Replace it.
+      unlinkSync(link);
+      symlinkSync(cliPath, link);
+    } else {
+      throw err;
     }
   }
-  if (needsLink) symlinkSync(cliPath, link);
 
   cachedBinDir = binDir;
   return binDir;
