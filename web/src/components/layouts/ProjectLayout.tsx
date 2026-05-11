@@ -248,8 +248,8 @@ function ProjectSidebar({
 }) {
   const navigate = useNavigate();
   const { toggleSidebar, isMobile, setOpenMobile } = useSidebar();
-  const logout = useAuthStore((s) => s.logout);
   const user = useAuthStore((s) => s.user);
+  const logout = () => { void import("@/stores/auth").then((m) => m.logoutApi()); };
   const { data: currentUser } = useCurrentUser();
   const isAdmin = currentUser?.isAdmin;
   const { chatId: activeChatId } = useParams<{ chatId: string }>();

@@ -152,8 +152,8 @@ function SidebarContent({
 }
 
 export function DashboardLayout() {
-  const logout = useAuthStore((s) => s.logout);
   const user = useAuthStore((s) => s.user);
+  const logout = () => { void import("@/stores/auth").then((m) => m.logoutApi()); };
   const { data: currentUser } = useCurrentUser();
   const isAdmin = currentUser?.isAdmin;
   const location = useLocation();

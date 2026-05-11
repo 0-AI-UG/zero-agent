@@ -22,6 +22,7 @@ export function useBlobUrl(
     let objectUrl: string | null = null;
     const token = useAuthStore.getState().token;
     fetch(`/api/projects/${projectId}/blobs/${hash}`, {
+      credentials: "include",
       headers: token ? { Authorization: `Bearer ${token}` } : undefined,
     })
       .then((r) => (r.ok ? r.blob() : null))

@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "@/api/client";
 import { queryKeys } from "@/lib/query-keys";
-import { useAuthStore } from "@/stores/auth";
+import { useAuthStore, readCsrfCookie } from "@/stores/auth";
 import type { FileItem } from "@/hooks/use-files";
 
 interface CreateFileParams {
@@ -25,9 +25,12 @@ export function useCreateFile(projectId: string) {
         "Content-Length": String(blob.size),
       };
       if (token) headers["Authorization"] = `Bearer ${token}`;
+      const csrf = readCsrfCookie();
+      if (csrf) headers["X-CSRF-Token"] = csrf;
 
       const res = await fetch(`/api/projects/${projectId}/files/upload?${qs.toString()}`, {
         method: "POST",
+        credentials: "include",
         headers,
         body: blob,
       });

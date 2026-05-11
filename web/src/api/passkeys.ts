@@ -6,21 +6,22 @@ import type {
   AuthenticationResponseJSON,
 } from "@simplewebauthn/browser";
 
-const API_BASE = "/api";
-
 // ── Authenticated endpoints ──
 
-export async function passkeyRegisterOptions(): Promise<PublicKeyCredentialCreationOptionsJSON> {
+export async function passkeyRegisterOptions(): Promise<
+  PublicKeyCredentialCreationOptionsJSON & { ceremonyId: string }
+> {
   return apiFetch("/auth/passkey/register-options", { method: "POST" });
 }
 
 export async function passkeyRegisterVerify(
+  ceremonyId: string,
   response: RegistrationResponseJSON,
   deviceName?: string,
 ): Promise<{ success: true }> {
   return apiFetch("/auth/passkey/register-verify", {
     method: "POST",
-    body: JSON.stringify({ response, deviceName }),
+    body: JSON.stringify({ ceremonyId, response, deviceName }),
   });
 }
 
@@ -38,31 +39,43 @@ export async function passkeyDelete(id: string): Promise<{ deleted: true }> {
 
 export async function passkeyLoginOptions(
   tempToken: string,
-): Promise<PublicKeyCredentialRequestOptionsJSON> {
-  const res = await fetch(`${API_BASE}/auth/passkey/login-options`, {
+): Promise<PublicKeyCredentialRequestOptionsJSON & { ceremonyId: string }> {
+  return apiFetch("/auth/passkey/login-options", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ tempToken }),
   });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.error ?? `Request failed: ${res.status}`);
-  }
-  return res.json();
 }
 
 export async function passkeyLoginVerify(
   tempToken: string,
+  ceremonyId: string,
   response: AuthenticationResponseJSON,
-): Promise<{ token: string; user: { id: string; username: string } }> {
-  const res = await fetch(`${API_BASE}/auth/passkey/login-verify`, {
+): Promise<{ user: { id: string; username: string } }> {
+  return apiFetch("/auth/passkey/login-verify", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ tempToken, response }),
+    body: JSON.stringify({ tempToken, ceremonyId, response }),
   });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.error ?? `Request failed: ${res.status}`);
-  }
-  return res.json();
+}
+
+// ── Passkey enrollment during login (when account requires 2FA but has none) ──
+
+export async function passkeyEnrollOptions(
+  tempToken: string,
+): Promise<PublicKeyCredentialCreationOptionsJSON & { ceremonyId: string }> {
+  return apiFetch("/auth/passkey/enroll-options", {
+    method: "POST",
+    body: JSON.stringify({ tempToken }),
+  });
+}
+
+export async function passkeyEnrollVerify(
+  tempToken: string,
+  ceremonyId: string,
+  response: RegistrationResponseJSON,
+  deviceName?: string,
+): Promise<{ user: { id: string; username: string } }> {
+  return apiFetch("/auth/passkey/enroll-verify", {
+    method: "POST",
+    body: JSON.stringify({ tempToken, ceremonyId, response, deviceName }),
+  });
 }

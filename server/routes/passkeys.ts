@@ -10,7 +10,12 @@ import type {
   AuthenticatorTransportFuture,
 } from "@simplewebauthn/server";
 import { corsHeaders } from "@/lib/http/cors.ts";
-import { authenticateRequest, createToken, verifyTempToken } from "@/lib/auth/auth.ts";
+import {
+  authenticateRequest,
+  createToken,
+  verifyTempToken,
+  type TempTokenPurpose,
+} from "@/lib/auth/auth.ts";
 import { AuthError } from "@/lib/utils/errors.ts";
 import { getUserById } from "@/db/queries/users.ts";
 import {
@@ -22,24 +27,63 @@ import {
   deletePasskey,
 } from "@/db/queries/passkeys.ts";
 import { handleError } from "@/routes/utils.ts";
-import { authRateLimiter, recordAuthFailure } from "@/lib/http/rate-limit.ts";
+import { authRateLimiter, recordAuthFailure, getClientIP } from "@/lib/http/rate-limit.ts";
+import {
+  setAuthCookieHeader,
+  setCsrfCookieHeader,
+  generateCsrfToken,
+} from "@/lib/http/cookies.ts";
 import { log } from "@/lib/utils/logger.ts";
-import { isTotpRequired } from "@/lib/auth/auth.ts";
 
 const passkeyLog = log.child({ module: "passkey" });
 
-// ── Challenge store (in-memory, 60s TTL) ──
+// ── Challenge store (in-memory, 60s TTL, keyed by ceremony id) ──
 
-const challenges = new Map<string, { challenge: string; expires: number }>();
-
-function storeChallenge(userId: string, challenge: string): void {
-  challenges.set(userId, { challenge, expires: Date.now() + 60_000 });
+interface ChallengeEntry {
+  userId: string;
+  challenge: string;
+  purpose: "register" | "login";
+  expires: number;
 }
 
-function getAndDeleteChallenge(userId: string): string | null {
-  const entry = challenges.get(userId);
-  challenges.delete(userId);
-  if (!entry || entry.expires < Date.now()) return null;
+const challenges = new Map<string, ChallengeEntry>();
+
+function cleanupChallenges() {
+  const now = Date.now();
+  for (const [id, e] of challenges) {
+    if (e.expires < now) challenges.delete(id);
+  }
+}
+
+function newCeremonyId(): string {
+  return crypto.randomUUID();
+}
+
+function storeChallenge(
+  ceremonyId: string,
+  userId: string,
+  challenge: string,
+  purpose: "register" | "login",
+): void {
+  cleanupChallenges();
+  challenges.set(ceremonyId, {
+    userId,
+    challenge,
+    purpose,
+    expires: Date.now() + 60_000,
+  });
+}
+
+function takeChallenge(
+  ceremonyId: string,
+  userId: string,
+  purpose: "register" | "login",
+): string | null {
+  const entry = challenges.get(ceremonyId);
+  challenges.delete(ceremonyId);
+  if (!entry) return null;
+  if (entry.userId !== userId || entry.purpose !== purpose) return null;
+  if (entry.expires < Date.now()) return null;
   return entry.challenge;
 }
 
@@ -62,14 +106,6 @@ function getOrigin(request: Request): string {
 
 // ── Rate limiting ──
 
-function getClientIP(request: Request): string {
-  return (
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
-    request.headers.get("x-real-ip") ??
-    "unknown"
-  );
-}
-
 function checkRateLimit(request: Request): Response | null {
   const ip = getClientIP(request);
   const { allowed, retryAfterSeconds } = authRateLimiter.check(ip);
@@ -87,7 +123,7 @@ function checkRateLimit(request: Request): Response | null {
 
 // ── Handlers ──
 
-/** POST /api/auth/passkey/register-options - generate registration options (authenticated) */
+/** POST /api/auth/passkey/register-options — authenticated session */
 export async function handlePasskeyRegisterOptions(request: Request): Promise<Response> {
   try {
     const { userId } = await authenticateRequest(request);
@@ -108,20 +144,21 @@ export async function handlePasskeyRegisterOptions(request: Request): Promise<Re
       })),
       authenticatorSelection: {
         residentKey: "preferred",
-        userVerification: "preferred",
+        userVerification: "required",
       },
     });
 
-    storeChallenge(userId, options.challenge);
+    const ceremonyId = newCeremonyId();
+    storeChallenge(ceremonyId, userId, options.challenge, "register");
 
     passkeyLog.info("passkey registration options generated", { userId });
-    return Response.json(options, { headers: corsHeaders });
+    return Response.json({ ...options, ceremonyId }, { headers: corsHeaders });
   } catch (error) {
     return handleError(error);
   }
 }
 
-/** POST /api/auth/passkey/register-verify - verify registration response (authenticated) */
+/** POST /api/auth/passkey/register-verify — authenticated session */
 export async function handlePasskeyRegisterVerify(request: Request): Promise<Response> {
   try {
     const { userId } = await authenticateRequest(request);
@@ -129,17 +166,18 @@ export async function handlePasskeyRegisterVerify(request: Request): Promise<Res
     if (!user) throw new AuthError("Unauthorized");
 
     const body = await request.json() as {
+      ceremonyId?: string;
       response?: RegistrationResponseJSON;
       deviceName?: string;
     };
-    if (!body.response) {
+    if (!body.ceremonyId || !body.response) {
       return Response.json(
-        { error: "Registration response is required" },
+        { error: "ceremonyId and response are required" },
         { status: 400, headers: corsHeaders },
       );
     }
 
-    const expectedChallenge = getAndDeleteChallenge(userId);
+    const expectedChallenge = takeChallenge(body.ceremonyId, userId, "register");
     if (!expectedChallenge) {
       return Response.json(
         { error: "Challenge expired or not found. Please try again." },
@@ -152,6 +190,7 @@ export async function handlePasskeyRegisterVerify(request: Request): Promise<Res
       expectedChallenge,
       expectedOrigin: getOrigin(request),
       expectedRPID: getRpId(),
+      requireUserVerification: true,
     });
 
     if (!verification.verified || !verification.registrationInfo) {
@@ -185,7 +224,11 @@ export async function handlePasskeyRegisterVerify(request: Request): Promise<Res
   }
 }
 
-/** POST /api/auth/passkey/login-options - generate authentication options (unauthenticated, uses tempToken) */
+/**
+ * POST /api/auth/passkey/login-options — unauthenticated, uses tempToken
+ * (either "password-reset" purpose during 2FA, or "passkey-enroll" — but
+ * enrollment uses register-from-login, so login-options is for 2FA only).
+ */
 export async function handlePasskeyLoginOptions(request: Request): Promise<Response> {
   const rateLimitResponse = checkRateLimit(request);
   if (rateLimitResponse) return rateLimitResponse;
@@ -199,7 +242,7 @@ export async function handlePasskeyLoginOptions(request: Request): Promise<Respo
       );
     }
 
-    const userId = await verifyTempToken(body.tempToken);
+    const userId = await verifyTempToken(body.tempToken, "password-reset");
 
     const passkeys = getPasskeysByUserId(userId);
     if (passkeys.length === 0) {
@@ -217,19 +260,20 @@ export async function handlePasskeyLoginOptions(request: Request): Promise<Respo
           ? (JSON.parse(p.transports) as AuthenticatorTransportFuture[])
           : undefined,
       })),
-      userVerification: "preferred",
+      userVerification: "required",
     });
 
-    storeChallenge(userId, options.challenge);
+    const ceremonyId = newCeremonyId();
+    storeChallenge(ceremonyId, userId, options.challenge, "login");
 
     passkeyLog.info("passkey login options generated", { userId });
-    return Response.json(options, { headers: corsHeaders });
+    return Response.json({ ...options, ceremonyId }, { headers: corsHeaders });
   } catch (error) {
     return handleError(error);
   }
 }
 
-/** POST /api/auth/passkey/login-verify - verify authentication response (unauthenticated, uses tempToken) */
+/** POST /api/auth/passkey/login-verify — issues a session cookie */
 export async function handlePasskeyLoginVerify(request: Request): Promise<Response> {
   const rateLimitResponse = checkRateLimit(request);
   if (rateLimitResponse) return rateLimitResponse;
@@ -237,20 +281,21 @@ export async function handlePasskeyLoginVerify(request: Request): Promise<Respon
   try {
     const body = await request.json() as {
       tempToken?: string;
+      ceremonyId?: string;
       response?: AuthenticationResponseJSON;
     };
-    if (!body.tempToken || !body.response) {
+    if (!body.tempToken || !body.ceremonyId || !body.response) {
       return Response.json(
-        { error: "tempToken and response are required" },
+        { error: "tempToken, ceremonyId, and response are required" },
         { status: 400, headers: corsHeaders },
       );
     }
 
-    const userId = await verifyTempToken(body.tempToken);
+    const userId = await verifyTempToken(body.tempToken, "password-reset");
     const user = getUserById(userId);
     if (!user) throw new AuthError("Unauthorized");
 
-    const expectedChallenge = getAndDeleteChallenge(userId);
+    const expectedChallenge = takeChallenge(body.ceremonyId, userId, "login");
     if (!expectedChallenge) {
       return Response.json(
         { error: "Challenge expired or not found. Please try again." },
@@ -271,6 +316,7 @@ export async function handlePasskeyLoginVerify(request: Request): Promise<Respon
       expectedChallenge,
       expectedOrigin: getOrigin(request),
       expectedRPID: getRpId(),
+      requireUserVerification: true,
       credential: {
         id: passkey.credential_id,
         publicKey: Buffer.from(passkey.public_key, "base64url"),
@@ -293,17 +339,151 @@ export async function handlePasskeyLoginVerify(request: Request): Promise<Respon
     updatePasskeyCounter(passkey.credential_id, verification.authenticationInfo.newCounter);
 
     const token = await createToken({ userId: user.id, username: user.username });
+    const csrf = generateCsrfToken();
+    const headers = new Headers(corsHeaders);
+    headers.append("Set-Cookie", setAuthCookieHeader(token));
+    headers.append("Set-Cookie", setCsrfCookieHeader(csrf));
+    headers.set("Content-Type", "application/json");
     passkeyLog.info("passkey login success", { userId });
-    return Response.json(
-      { token, user: { id: user.id, username: user.username } },
-      { headers: corsHeaders },
+    return new Response(
+      JSON.stringify({
+        user: { id: user.id, username: user.username },
+        csrfToken: csrf,
+        token,
+      }),
+      { headers },
     );
   } catch (error) {
     return handleError(error);
   }
 }
 
-/** GET /api/auth/passkey/list - list user's passkeys (authenticated) */
+/**
+ * POST /api/auth/passkey/enroll-options — unauthenticated; uses a
+ * "passkey-enroll" tempToken issued by login when the user has no passkey
+ * yet but one is required. Lets the browser register a passkey before
+ * the real session is granted.
+ */
+export async function handlePasskeyEnrollOptions(request: Request): Promise<Response> {
+  const rateLimitResponse = checkRateLimit(request);
+  if (rateLimitResponse) return rateLimitResponse;
+
+  try {
+    const body = await request.json() as { tempToken?: string };
+    if (!body.tempToken) {
+      return Response.json(
+        { error: "tempToken is required" },
+        { status: 400, headers: corsHeaders },
+      );
+    }
+
+    const userId = await verifyTempToken(body.tempToken, "passkey-enroll" as TempTokenPurpose);
+    const user = getUserById(userId);
+    if (!user) throw new AuthError("Unauthorized");
+
+    const existingPasskeys = getPasskeysByUserId(userId);
+    const options = await generateRegistrationOptions({
+      rpName: getRpName(),
+      rpID: getRpId(),
+      userName: user.username,
+      userDisplayName: user.username,
+      attestationType: "none",
+      excludeCredentials: existingPasskeys.map((p) => ({
+        id: p.credential_id,
+        transports: p.transports ? JSON.parse(p.transports) : undefined,
+      })),
+      authenticatorSelection: {
+        residentKey: "preferred",
+        userVerification: "required",
+      },
+    });
+
+    const ceremonyId = newCeremonyId();
+    storeChallenge(ceremonyId, userId, options.challenge, "register");
+    return Response.json({ ...options, ceremonyId }, { headers: corsHeaders });
+  } catch (error) {
+    return handleError(error);
+  }
+}
+
+/** POST /api/auth/passkey/enroll-verify — finishes login by registering a passkey */
+export async function handlePasskeyEnrollVerify(request: Request): Promise<Response> {
+  const rateLimitResponse = checkRateLimit(request);
+  if (rateLimitResponse) return rateLimitResponse;
+
+  try {
+    const body = await request.json() as {
+      tempToken?: string;
+      ceremonyId?: string;
+      response?: RegistrationResponseJSON;
+      deviceName?: string;
+    };
+    if (!body.tempToken || !body.ceremonyId || !body.response) {
+      return Response.json(
+        { error: "tempToken, ceremonyId, and response are required" },
+        { status: 400, headers: corsHeaders },
+      );
+    }
+
+    const userId = await verifyTempToken(body.tempToken, "passkey-enroll" as TempTokenPurpose);
+    const user = getUserById(userId);
+    if (!user) throw new AuthError("Unauthorized");
+
+    const expectedChallenge = takeChallenge(body.ceremonyId, userId, "register");
+    if (!expectedChallenge) {
+      return Response.json(
+        { error: "Challenge expired or not found. Please try again." },
+        { status: 400, headers: corsHeaders },
+      );
+    }
+
+    const verification = await verifyRegistrationResponse({
+      response: body.response,
+      expectedChallenge,
+      expectedOrigin: getOrigin(request),
+      expectedRPID: getRpId(),
+      requireUserVerification: true,
+    });
+
+    if (!verification.verified || !verification.registrationInfo) {
+      return Response.json(
+        { error: "Registration verification failed" },
+        { status: 400, headers: corsHeaders },
+      );
+    }
+
+    const { credential } = verification.registrationInfo;
+    insertPasskey(
+      userId,
+      credential.id,
+      Buffer.from(credential.publicKey).toString("base64url"),
+      credential.counter,
+      credential.transports ? JSON.stringify(credential.transports) : null,
+      body.deviceName || "Passkey",
+    );
+
+    // Issue the real session.
+    const token = await createToken({ userId: user.id, username: user.username });
+    const csrf = generateCsrfToken();
+    const headers = new Headers(corsHeaders);
+    headers.append("Set-Cookie", setAuthCookieHeader(token));
+    headers.append("Set-Cookie", setCsrfCookieHeader(csrf));
+    headers.set("Content-Type", "application/json");
+    passkeyLog.info("passkey enroll-from-login success", { userId });
+    return new Response(
+      JSON.stringify({
+        user: { id: user.id, username: user.username },
+        csrfToken: csrf,
+        token,
+      }),
+      { headers },
+    );
+  } catch (error) {
+    return handleError(error);
+  }
+}
+
+/** GET /api/auth/passkey/list */
 export async function handlePasskeyList(request: Request): Promise<Response> {
   try {
     const { userId } = await authenticateRequest(request);
@@ -320,7 +500,7 @@ export async function handlePasskeyList(request: Request): Promise<Response> {
   }
 }
 
-/** DELETE /api/auth/passkey/:id - delete a passkey (authenticated) */
+/** DELETE /api/auth/passkey/:id */
 export async function handlePasskeyDelete(request: Request): Promise<Response> {
   try {
     const { userId } = await authenticateRequest(request);
@@ -335,15 +515,15 @@ export async function handlePasskeyDelete(request: Request): Promise<Response> {
       );
     }
 
-    const required = isTotpRequired(user);
-    if (required) {
-      const count = getPasskeyCount(userId);
-      if (count <= 1 && !user.totp_enabled) {
-        return Response.json(
-          { error: "Cannot delete your only passkey while two-factor authentication is required and no authenticator app is configured" },
-          { status: 403, headers: corsHeaders },
-        );
-      }
+    // Passkey is the only 2FA. Block deletion of the last passkey when
+    // 2FA is required for the account.
+    const requiresPasskey = user.is_admin === 1; // simple rule; setting can extend.
+    const count = getPasskeyCount(userId);
+    if (requiresPasskey && count <= 1) {
+      return Response.json(
+        { error: "Cannot delete your only passkey while two-factor authentication is required" },
+        { status: 403, headers: corsHeaders },
+      );
     }
 
     deletePasskey(id, userId);

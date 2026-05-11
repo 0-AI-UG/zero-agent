@@ -22,12 +22,26 @@ db.exec(`
     is_admin            INTEGER NOT NULL DEFAULT 0,
     can_create_projects INTEGER NOT NULL DEFAULT 1,
     companion_sharing   INTEGER NOT NULL DEFAULT 0,
-    totp_secret         TEXT,
-    totp_enabled        INTEGER NOT NULL DEFAULT 0,
     token_limit         INTEGER,
+    token_version       INTEGER NOT NULL DEFAULT 0,
     created_at          TEXT NOT NULL DEFAULT (datetime('now'))
   )
 `);
+
+// Migration: drop legacy TOTP columns and add token_version on existing DBs.
+{
+  const cols = db.prepare("PRAGMA table_info(users)").all() as { name: string }[];
+  if (cols.some((c) => c.name === "totp_secret")) {
+    db.exec("ALTER TABLE users DROP COLUMN totp_secret");
+  }
+  if (cols.some((c) => c.name === "totp_enabled")) {
+    db.exec("ALTER TABLE users DROP COLUMN totp_enabled");
+  }
+  if (!cols.some((c) => c.name === "token_version")) {
+    db.exec("ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0");
+  }
+}
+db.exec(`DROP TABLE IF EXISTS totp_backup_codes`);
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS projects (
@@ -342,17 +356,6 @@ db.exec(`
 
 // Pi owns turn resume; the durability checkpoint table is gone.
 db.exec(`DROP TABLE IF EXISTS agent_checkpoints`);
-
-db.exec(`
-  CREATE TABLE IF NOT EXISTS totp_backup_codes (
-    id         TEXT PRIMARY KEY,
-    user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    code_hash  TEXT NOT NULL,
-    used       INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )
-`);
-db.exec(`CREATE INDEX IF NOT EXISTS idx_totp_backup_user ON totp_backup_codes(user_id, used)`);
 
 // ── User Passkeys (WebAuthn 2FA) ──
 

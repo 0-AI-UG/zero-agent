@@ -1,12 +1,12 @@
 import { Outlet, useNavigate, useParams } from "react-router";
-import { useAuthStore } from "@/stores/auth";
+import { logoutApi } from "@/stores/auth";
 import { useUIStore } from "@/stores/ui";
 import { useProject } from "@/api/projects";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, FolderOpen, LogOut } from "lucide-react";
 
 export function AppLayout() {
-  const logout = useAuthStore((s) => s.logout);
+  const logout = () => { void logoutApi(); };
   const toggleDrawer = useUIStore((s) => s.toggleDrawer);
   const activeDrawer = useUIStore((s) => s.activeDrawer);
 

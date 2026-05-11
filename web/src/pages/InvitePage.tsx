@@ -6,7 +6,8 @@ import {
   acceptInvitation,
   type InvitationLookup,
 } from "@/api/user-invitations";
-import { totpSetupFromLogin, totpConfirmFromLogin } from "@/api/totp";
+import { passkeyEnrollOptions, passkeyEnrollVerify } from "@/api/passkeys";
+import { startRegistration } from "@simplewebauthn/browser";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,12 +18,11 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { CopyIcon, ClipboardCheckIcon } from "lucide-react";
 
 export function InvitePage() {
   const { token } = useParams<{ token: string }>();
   const navigate = useNavigate();
-  const login = useAuthStore((s) => s.login);
+  const setSession = useAuthStore((s) => s.setSession);
 
   const [lookup, setLookup] = useState<InvitationLookup | null>(null);
   const [lookupError, setLookupError] = useState<string | null>(null);
@@ -32,13 +32,7 @@ export function InvitePage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // 2FA setup state (when admin requires 2FA)
-  const [tempToken, setTempToken] = useState<string | null>(null);
-  const [qrCode, setQrCode] = useState("");
-  const [secret, setSecret] = useState("");
-  const [setupCode, setSetupCode] = useState("");
-  const [backupCodes, setBackupCodes] = useState<string[] | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [enrollToken, setEnrollToken] = useState<string | null>(null);
 
   useEffect(() => {
     if (!token) return;
@@ -47,8 +41,8 @@ export function InvitePage() {
       .catch((err) => setLookupError(err instanceof Error ? err.message : "Failed to load"));
   }, [token]);
 
-  const completeLogin = (authToken: string, user: { id: string; username: string }) => {
-    login(authToken, user);
+  const goHome = (user: { id: string; username: string }, sessionToken: string | null) => {
+    setSession(user, sessionToken);
     navigate("/", { replace: true });
   };
 
@@ -64,12 +58,9 @@ export function InvitePage() {
     try {
       const result = await acceptInvitation(token, password);
       if ("requires2FASetup" in result) {
-        setTempToken(result.tempToken);
-        const data = await totpSetupFromLogin(result.tempToken);
-        setQrCode(data.qrCode);
-        setSecret(data.secret);
+        setEnrollToken(result.tempToken);
       } else {
-        completeLogin(result.token, result.user);
+        goHome(result.user, (result as any).token ?? null);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to accept invitation");
@@ -78,35 +69,23 @@ export function InvitePage() {
     }
   };
 
-  const handleSetupConfirm = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!tempToken || setupCode.length !== 6) return;
+  const handleEnroll = async () => {
+    if (!enrollToken) return;
     setError(null);
     setLoading(true);
     try {
-      const result = await totpConfirmFromLogin(tempToken, setupCode);
-      setBackupCodes(result.backupCodes);
-      (window as any).__pendingLogin = { token: result.token, user: result.user };
+      const { ceremonyId, ...options } = await passkeyEnrollOptions(enrollToken);
+      const registration = await startRegistration({ optionsJSON: options as any });
+      const result = await passkeyEnrollVerify(enrollToken, ceremonyId, registration);
+      goHome(result.user, (result as any).token ?? null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Verification failed");
+      if (err instanceof Error && err.name === "NotAllowedError") {
+        setError("Passkey registration cancelled");
+      } else {
+        setError(err instanceof Error ? err.message : "Could not register passkey");
+      }
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleBackupCodesDone = () => {
-    const pending = (window as any).__pendingLogin;
-    if (pending) {
-      delete (window as any).__pendingLogin;
-      completeLogin(pending.token, pending.user);
-    }
-  };
-
-  const copyBackupCodes = () => {
-    if (backupCodes) {
-      navigator.clipboard.writeText(backupCodes.join("\n"));
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
     }
   };
 
@@ -151,88 +130,29 @@ export function InvitePage() {
     );
   }
 
-  // Backup codes screen
-  if (backupCodes) {
+  if (enrollToken) {
     return (
       <Card className="w-full max-w-sm">
         <CardHeader>
-          <CardTitle className="font-display">Save Your Backup Codes</CardTitle>
+          <CardTitle className="font-display">Add a passkey</CardTitle>
           <CardDescription>
-            Two-factor authentication is now enabled. Save these backup codes - each can only be used once.
+            Your account requires a passkey. Use Face ID, Touch ID, Windows Hello, or a security key.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-2 gap-2">
-            {backupCodes.map((c) => (
-              <code key={c} className="text-xs bg-muted px-3 py-1.5 rounded text-center font-mono">
-                {c}
-              </code>
-            ))}
-          </div>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={copyBackupCodes}>
-              {copied ? (
-                <><ClipboardCheckIcon className="size-3.5 mr-1.5" />Copied</>
-              ) : (
-                <><CopyIcon className="size-3.5 mr-1.5" />Copy all</>
-              )}
-            </Button>
-            <Button size="sm" onClick={handleBackupCodesDone}>Continue</Button>
-          </div>
+          {error && <div className="text-sm text-destructive">{error}</div>}
+          <Button className="w-full" onClick={handleEnroll} disabled={loading}>
+            {loading ? "Waiting…" : "Create passkey"}
+          </Button>
         </CardContent>
       </Card>
     );
   }
 
-  // 2FA setup screen
-  if (tempToken && qrCode) {
-    return (
-      <Card className="w-full max-w-sm">
-        <CardHeader>
-          <CardTitle className="font-display">Set Up Two-Factor Authentication</CardTitle>
-          <CardDescription>
-            Your account requires two-factor authentication. Scan this QR code with your authenticator app, then enter the 6-digit code.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSetupConfirm} className="space-y-4">
-            {error && <div className="text-sm text-destructive">{error}</div>}
-            <div className="flex justify-center">
-              <img src={qrCode} alt="TOTP QR Code" className="size-48 rounded-lg" />
-            </div>
-            <div className="space-y-1">
-              <p className="text-xs text-muted-foreground">Or enter this key manually:</p>
-              <code className="block text-xs bg-muted px-3 py-2 rounded select-all break-all">{secret}</code>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="setup-code">Verification Code</Label>
-              <Input
-                id="setup-code"
-                type="text"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                maxLength={6}
-                value={setupCode}
-                onChange={(e) => { setSetupCode(e.target.value); setError(null); }}
-                placeholder="000000"
-                autoFocus
-                autoComplete="one-time-code"
-              />
-            </div>
-            <Button type="submit" className="w-full" disabled={loading || setupCode.length !== 6}>
-              {loading ? "Verifying..." : "Verify & Enable"}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  // Password setup screen
   return (
     <Card className="w-full max-w-sm">
       <CardHeader>
-        <CardTitle className="font-display">Accept Invitation</CardTitle>
+        <CardTitle className="font-display">Accept invitation</CardTitle>
         <CardDescription>
           Create a password for <span className="font-medium text-foreground">{lookup.username}</span>.
         </CardDescription>
@@ -267,7 +187,7 @@ export function InvitePage() {
             />
           </div>
           <Button type="submit" className="w-full" disabled={loading || !password || !confirm}>
-            {loading ? "Creating account..." : "Create account"}
+            {loading ? "Creating account…" : "Create account"}
           </Button>
         </form>
       </CardContent>

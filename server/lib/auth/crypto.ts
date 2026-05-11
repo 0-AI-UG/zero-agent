@@ -1,13 +1,18 @@
 // AES-256-GCM encryption for credential secrets at rest.
 
-const rawSecret = new TextEncoder().encode(
-  process.env.CREDENTIALS_KEY ??
-    process.env.JWT_SECRET ??
-    `zero-agent-${process.env.DB_PATH ?? "./data/app.db"}`,
-);
+function loadRawSecret(): string {
+  const raw = process.env.CREDENTIALS_KEY;
+  if (!raw || raw.length < 32) {
+    throw new Error(
+      "CREDENTIALS_KEY must be set to a string of at least 32 characters. Refusing to boot.",
+    );
+  }
+  return raw;
+}
 
+const _buf = new TextEncoder().encode(loadRawSecret());
 const keyMaterial = new Uint8Array(
-  await crypto.subtle.digest("SHA-256", rawSecret),
+  await crypto.subtle.digest("SHA-256", _buf.buffer.slice(_buf.byteOffset, _buf.byteOffset + _buf.byteLength) as ArrayBuffer),
 );
 
 const aesKey = await crypto.subtle.importKey(

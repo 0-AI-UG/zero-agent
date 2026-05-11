@@ -14,15 +14,18 @@ let _connected = false;
 /** Tracks how many useRealtime hooks are mounted (for StrictMode resilience) */
 let mountCount = 0;
 
-function getWsUrl(token: string): string {
+function getWsUrl(token: string | null): string {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
+  // With cookie auth the browser sends the `auth` cookie on the upgrade —
+  // the token query param is only used for bearer-token clients.
+  if (!token) return `${proto}//${location.host}/ws`;
   return `${proto}//${location.host}/ws?token=${encodeURIComponent(token)}`;
 }
 
 export function connectWs() {
   mountCount++;
-  const { token } = useAuthStore.getState();
-  if (!token) return;
+  const { token, isAuthenticated } = useAuthStore.getState();
+  if (!isAuthenticated && !token) return;
   // Already have a socket (connecting or open) - don't create another
   if (socket && (socket.readyState === WebSocket.CONNECTING || socket.readyState === WebSocket.OPEN)) return;
   // Clean up any dead socket

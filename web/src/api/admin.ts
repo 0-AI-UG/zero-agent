@@ -102,8 +102,7 @@ export interface CurrentUser {
   username: string;
   isAdmin: boolean;
   canCreateProjects: boolean;
-  totpEnabled: boolean;
-  totpRequired: boolean;
+  passkeyRequired: boolean;
 }
 
 export function useCurrentUser() {

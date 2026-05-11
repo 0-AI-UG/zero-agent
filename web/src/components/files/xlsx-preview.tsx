@@ -113,16 +113,19 @@ export function XlsxPreview({ file, url, projectId }: XlsxPreviewProps) {
       });
 
       // Upload binary directly to the server
-      const { useAuthStore } = await import("@/stores/auth");
+      const { useAuthStore, readCsrfCookie } = await import("@/stores/auth");
       const token = useAuthStore.getState().token;
+      const csrf = readCsrfCookie();
       const uploadHeaders: Record<string, string> = {
         "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         "Content-Length": String(blob.size),
       };
       if (token) uploadHeaders["Authorization"] = `Bearer ${token}`;
+      if (csrf) uploadHeaders["X-CSRF-Token"] = csrf;
 
       const uploadRes = await fetch(`/api/projects/${projectId}/files/${file.id}/binary`, {
         method: "POST",
+        credentials: "include",
         headers: uploadHeaders,
         body: blob,
       });

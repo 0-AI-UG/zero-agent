@@ -89,6 +89,7 @@ export async function acceptInvitation(
 ): Promise<AcceptInvitationResponse> {
   const res = await fetch(`/api/user-invitations/${encodeURIComponent(token)}/accept`, {
     method: "POST",
+    credentials: "include",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ password }),
   });

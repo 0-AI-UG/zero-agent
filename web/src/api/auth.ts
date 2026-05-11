@@ -1,17 +1,12 @@
 import { apiFetch } from "./client";
 
 interface AuthSuccess {
-  token: string;
   user: { id: string; username: string };
 }
 
 interface Auth2FARequired {
   requires2FA: true;
   tempToken: string;
-  methods?: {
-    totp: boolean;
-    passkey: boolean;
-  };
 }
 
 interface Auth2FASetupRequired {
@@ -32,23 +27,12 @@ export async function loginApi(
 }
 
 export async function passwordResetInit(username: string): Promise<{
-  tempToken: string;
-  methods: { totp: boolean; passkey: boolean };
+  ok: true;
+  tempToken?: string;
 }> {
   return apiFetch("/auth/password-reset/init", {
     method: "POST",
     body: JSON.stringify({ username }),
-  });
-}
-
-export async function passwordResetConfirm(
-  tempToken: string,
-  code: string,
-  newPassword: string,
-): Promise<{ success: true }> {
-  return apiFetch("/auth/password-reset/confirm", {
-    method: "POST",
-    body: JSON.stringify({ tempToken, code, newPassword }),
   });
 }
 
@@ -63,22 +47,12 @@ export async function passwordResetPasskeyOptions(
 
 export async function passwordResetPasskeyConfirm(
   tempToken: string,
+  ceremonyId: string,
   response: any,
   newPassword: string,
 ): Promise<{ success: true }> {
   return apiFetch("/auth/password-reset/passkey-confirm", {
     method: "POST",
-    body: JSON.stringify({ tempToken, response, newPassword }),
-  });
-}
-
-export async function registerApi(
-  username: string,
-  password: string,
-  inviteToken: string,
-): Promise<AuthSuccess> {
-  return apiFetch<AuthSuccess>("/auth/register", {
-    method: "POST",
-    body: JSON.stringify({ username, password, inviteToken }),
+    body: JSON.stringify({ tempToken, ceremonyId, response, newPassword }),
   });
 }

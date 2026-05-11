@@ -1,46 +1,38 @@
-import { useAuthStore } from "@/stores/auth";
+import { useAuthStore, readCsrfCookie } from "@/stores/auth";
 
 const API_BASE = "/api";
 
-function isTokenExpired(token: string): boolean {
-  try {
-    const parts = token.split(".");
-    if (parts.length !== 3) return false; // Non-JWT token (e.g. desktop mode)
-    const payload = JSON.parse(atob(parts[1]!));
-    // Expire 30s early to avoid race conditions
-    return typeof payload.exp === "number" && payload.exp * 1000 < Date.now() + 30_000;
-  } catch {
-    return false;
-  }
-}
+const MUTATING = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 export async function apiFetch<T>(
   path: string,
   options: RequestInit = {},
 ): Promise<T> {
-  const { token, logout } = useAuthStore.getState();
+  const method = (options.method ?? "GET").toUpperCase();
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...((options.headers as Record<string, string>) ?? {}),
+  };
 
-  if (token && isTokenExpired(token)) {
-    logout();
-    window.location.href = "/login";
-    throw new Error("Session expired");
+  if (MUTATING.has(method)) {
+    const csrf = readCsrfCookie();
+    if (csrf) headers["X-CSRF-Token"] = csrf;
   }
 
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...options.headers,
-    },
+    credentials: "include",
+    headers,
   });
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
 
-    if (res.status === 401 && token) {
-      logout();
-      window.location.href = "/login";
+    if (res.status === 401) {
+      useAuthStore.getState().clearSession();
+      if (typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) {
+        window.location.href = "/login";
+      }
     }
 
     throw new Error(body.error ?? `Request failed: ${res.status}`);

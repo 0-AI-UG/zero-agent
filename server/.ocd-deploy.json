@@ -10,10 +10,15 @@
     "container_port": 3000
   },
   "volume": {
-    "size": 10,
+    "size": 20,
     "path": "/app/data"
   },
   "env": [
+    {
+      "key": "PI_PROJECTS_ROOT",
+      "description": "Where Pi stores per-project workspaces and chat session JSONLs. Kept inside /app/data so the persistent volume covers both SQLite and project files.",
+      "default": "/app/data/projects"
+    },
     {
       "key": "JWT_SECRET",
       "description": "Secret key for signing JWT tokens. Must be set in production.",
@@ -62,7 +67,6 @@
   ],
   "webhook": {
     "enabled": true,
-    "branch": "main",
-    "paths": ["server/", "web/", "skills/"]
+    "branch": "main"
   }
 }

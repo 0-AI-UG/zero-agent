@@ -38,10 +38,6 @@ COPY zero/ ./zero/
 # Copy server source
 COPY server/ ./server/
 
-# Copy skills
-COPY skills/ ./skills/
-COPY skills-lock.json ./skills-lock.json
-
 # Build frontend (build.ts uses `bun x vite build`)
 COPY web/ ./web/
 COPY build.ts ./build.ts

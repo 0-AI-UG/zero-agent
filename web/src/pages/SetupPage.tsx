@@ -3,7 +3,8 @@ import { useNavigate, Navigate } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@/stores/auth";
 import { completeSetup, getSetupStatus } from "@/api/setup";
-import { totpSetupFromLogin, totpConfirmFromLogin } from "@/api/totp";
+import { passkeyEnrollOptions, passkeyEnrollVerify } from "@/api/passkeys";
+import { startRegistration } from "@simplewebauthn/browser";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,12 +15,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { UsersIcon, BotIcon, ClockIcon, CopyIcon, ClipboardCheckIcon } from "lucide-react";
+import { UsersIcon, BotIcon, ClockIcon } from "lucide-react";
 import logoSvg from "@/logo.svg";
 
 export function SetupPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const setSession = useAuthStore((s) => s.setSession);
   const [step, setStep] = useState(1);
   const { data: setupStatus, isLoading: statusLoading } = useQuery({
     queryKey: ["setup", "status"],
@@ -29,23 +31,19 @@ export function SetupPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // Step 1 fields
+  // Step 1
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [setupToken, setSetupToken] = useState("");
 
-  // Step 2 fields
+  // Step 2
   const [openrouterApiKey, setOpenrouterApiKey] = useState("");
   const [openrouterModel, setOpenrouterModel] = useState("");
   const [braveSearchApiKey, setBraveSearchApiKey] = useState("");
 
-  // Step 3 fields (2FA)
+  // Step 3 (passkey)
   const [tempToken, setTempToken] = useState("");
-  const [qrCode, setQrCode] = useState("");
-  const [totpSecret, setTotpSecret] = useState("");
-  const [setupCode, setSetupCode] = useState("");
-  const [backupCodes, setBackupCodes] = useState<string[] | null>(null);
-  const [copied, setCopied] = useState(false);
 
   if (statusLoading) return null;
   if (setupStatus?.setupComplete) return <Navigate to="/login" replace />;
@@ -56,34 +54,17 @@ export function SetupPage() {
       setError("All fields are required.");
       return;
     }
-    // Username validation (matches server-side usernameSchema)
-    if (username.length < 3) {
-      setError("Username must be at least 3 characters.");
+    if (username.length < 3 || username.length > 32 || !/^[a-zA-Z0-9_-]+$/.test(username)) {
+      setError("Username must be 3-32 chars (letters, numbers, _ or -).");
       return;
     }
-    if (username.length > 32) {
-      setError("Username must be at most 32 characters.");
-      return;
-    }
-    if (!/^[a-zA-Z0-9_-]+$/.test(username)) {
-      setError("Username may only contain letters, numbers, underscores and hyphens.");
-      return;
-    }
-    // Password validation (matches server-side passwordSchema)
-    if (password.length < 8) {
-      setError("Password must be at least 8 characters.");
-      return;
-    }
-    if (!/[a-z]/.test(password)) {
-      setError("Password must contain a lowercase letter.");
-      return;
-    }
-    if (!/[A-Z]/.test(password)) {
-      setError("Password must contain an uppercase letter.");
-      return;
-    }
-    if (!/[0-9]/.test(password)) {
-      setError("Password must contain a number.");
+    if (
+      password.length < 8 ||
+      !/[a-z]/.test(password) ||
+      !/[A-Z]/.test(password) ||
+      !/[0-9]/.test(password)
+    ) {
+      setError("Password must be 8+ characters with upper, lower, and a number.");
       return;
     }
     if (password !== confirmPassword) {
@@ -96,36 +77,30 @@ export function SetupPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-
     if (!openrouterApiKey) {
       setError("OpenRouter API key is required.");
       return;
     }
-
     setLoading(true);
     try {
-      const result = await completeSetup({
-        username,
-        password,
-        openrouterApiKey,
-        openrouterModel: openrouterModel || undefined,
-        braveSearchApiKey: braveSearchApiKey || undefined,
-      });
-      // Dev mode: server returns a full JWT, skip 2FA
-      if ("token" in result) {
-        useAuthStore.getState().login(result.token, result.user);
+      const result = await completeSetup(
+        {
+          username,
+          password,
+          openrouterApiKey,
+          openrouterModel: openrouterModel || undefined,
+          braveSearchApiKey: braveSearchApiKey || undefined,
+        },
+        setupToken || undefined,
+      );
+      if ("token" in result && !("requires2FASetup" in result)) {
+        setSession(result.user, (result as any).token ?? null);
         queryClient.setQueryData(["setup", "status"], { setupComplete: true });
         navigate("/", { replace: true });
         return;
       }
-
       if (!("tempToken" in result)) throw new Error("Unexpected response");
       setTempToken(result.tempToken);
-
-      // Initiate 2FA setup using temp token (no full JWT yet)
-      const data = await totpSetupFromLogin(result.tempToken);
-      setQrCode(data.qrCode);
-      setTotpSecret(data.secret);
       setStep(3);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Setup failed");
@@ -134,50 +109,41 @@ export function SetupPage() {
     }
   };
 
-  const handleTotpConfirm = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (setupCode.length !== 6) return;
+  const handleEnrollPasskey = async () => {
     setError(null);
     setLoading(true);
-
     try {
-      const result = await totpConfirmFromLogin(tempToken, setupCode);
-      useAuthStore.getState().login(result.token, result.user);
-      setBackupCodes(result.backupCodes);
+      const { ceremonyId, ...options } = await passkeyEnrollOptions(tempToken);
+      const registration = await startRegistration({ optionsJSON: options as any });
+      const result = await passkeyEnrollVerify(tempToken, ceremonyId, registration);
+      setSession(result.user, (result as any).token ?? null);
+      queryClient.setQueryData(["setup", "status"], { setupComplete: true });
+      navigate("/", { replace: true });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Verification failed");
+      if (err instanceof Error && err.name === "NotAllowedError") {
+        setError("Passkey registration cancelled");
+      } else {
+        setError(err instanceof Error ? err.message : "Could not register passkey");
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  const copyBackupCodes = () => {
-    if (backupCodes) {
-      navigator.clipboard.writeText(backupCodes.join("\n"));
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
-  };
-
-  const handleSetupDone = () => {
-    queryClient.setQueryData(["setup", "status"], { setupComplete: true });
-    navigate("/", { replace: true });
-  };
+  const isProd = !!(import.meta as any).env?.PROD;
 
   return (
     <div className="relative flex min-h-screen items-center justify-center p-4">
-      {/* Background mesh gradients */}
       <div className="pointer-events-none fixed inset-0 overflow-hidden">
         <div className="absolute -top-1/4 -right-1/4 h-[600px] w-[600px] rounded-full bg-primary/10 blur-3xl" />
         <div className="absolute -bottom-1/4 -left-1/4 h-[500px] w-[500px] rounded-full bg-primary/5 blur-3xl" />
       </div>
 
       <div className="relative z-10 flex flex-col items-center gap-8 w-full max-w-sm">
-        {/* Branding */}
         <div className="text-center space-y-2 flex flex-col items-center">
           <img src={logoSvg} alt="Zero Agent" className="size-12" />
           <h1 className="text-xl font-bold font-display tracking-tight">Zero Agent</h1>
-          <p className="text-sm text-muted-foreground">Initial Setup</p>
+          <p className="text-sm text-muted-foreground">Initial setup</p>
         </div>
 
         <Card className="w-full max-w-sm">
@@ -188,26 +154,20 @@ export function SetupPage() {
               </span>
             </div>
             <CardTitle className="font-display">
-              {step === 1
-                ? "Create Admin Account"
-                : step === 2
-                  ? "Configure LLM"
-                  : "Set Up Two-Factor Authentication"}
+              {step === 1 ? "Create admin account" : step === 2 ? "Configure LLM" : "Add a passkey"}
             </CardTitle>
             <CardDescription>
               {step === 1
                 ? "Set up the first admin account for your instance."
                 : step === 2
                   ? "Connect an LLM provider to power the agent."
-                  : "Admin accounts require 2FA. Scan the QR code with your authenticator app."}
+                  : "Admin accounts require a passkey. Use Face ID, Touch ID, Windows Hello, or a security key."}
             </CardDescription>
           </CardHeader>
           <CardContent>
             {step === 1 ? (
               <div className="space-y-4">
-                {error && (
-                  <div className="text-sm text-destructive">{error}</div>
-                )}
+                {error && <div className="text-sm text-destructive">{error}</div>}
                 <div className="space-y-2">
                   <Label htmlFor="setup-username">Username</Label>
                   <Input
@@ -231,7 +191,7 @@ export function SetupPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="setup-confirm-password">Confirm Password</Label>
+                  <Label htmlFor="setup-confirm-password">Confirm password</Label>
                   <Input
                     id="setup-confirm-password"
                     type="password"
@@ -241,17 +201,30 @@ export function SetupPage() {
                     autoComplete="new-password"
                   />
                 </div>
+                {isProd && (
+                  <div className="space-y-2">
+                    <Label htmlFor="setup-token">Setup token</Label>
+                    <Input
+                      id="setup-token"
+                      type="password"
+                      value={setupToken}
+                      onChange={(e) => setSetupToken(e.target.value)}
+                      placeholder="Required in production"
+                    />
+                    <p className="text-[11px] text-muted-foreground">
+                      Find this value in <code>SETUP_TOKEN</code> on the server.
+                    </p>
+                  </div>
+                )}
                 <Button type="button" className="w-full" onClick={handleNext}>
                   Next
                 </Button>
               </div>
             ) : step === 2 ? (
               <form onSubmit={handleSubmit} className="space-y-4">
-                {error && (
-                  <div className="text-sm text-destructive">{error}</div>
-                )}
+                {error && <div className="text-sm text-destructive">{error}</div>}
                 <div className="space-y-2">
-                  <Label htmlFor="setup-api-key">OpenRouter API Key</Label>
+                  <Label htmlFor="setup-api-key">OpenRouter API key</Label>
                   <Input
                     id="setup-api-key"
                     type="password"
@@ -268,11 +241,11 @@ export function SetupPage() {
                     type="text"
                     value={openrouterModel}
                     onChange={(e) => setOpenrouterModel(e.target.value)}
-                    placeholder="minimax/minimax-m2.7"
+                    placeholder="anthropic/claude-opus-4-7"
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="setup-brave-key">Brave Search API Key (optional)</Label>
+                  <Label htmlFor="setup-brave-key">Brave Search API key (optional)</Label>
                   <Input
                     id="setup-brave-key"
                     type="password"
@@ -286,79 +259,26 @@ export function SetupPage() {
                     type="button"
                     variant="outline"
                     className="flex-1"
-                    onClick={() => {
-                      setError(null);
-                      setStep(1);
-                    }}
+                    onClick={() => { setError(null); setStep(1); }}
                   >
                     Back
                   </Button>
                   <Button type="submit" className="flex-1" disabled={loading}>
-                    {loading ? "Setting up..." : "Next"}
+                    {loading ? "Setting up…" : "Next"}
                   </Button>
                 </div>
               </form>
-            ) : backupCodes ? (
-              <div className="space-y-4">
-                <p className="text-sm text-muted-foreground">
-                  Save these backup codes in a safe place. Each code can only be used once.
-                </p>
-                <div className="grid grid-cols-2 gap-2">
-                  {backupCodes.map((c) => (
-                    <code key={c} className="text-xs bg-muted px-3 py-1.5 rounded text-center font-mono">
-                      {c}
-                    </code>
-                  ))}
-                </div>
-                <div className="flex gap-2">
-                  <Button variant="outline" size="sm" onClick={copyBackupCodes}>
-                    {copied ? (
-                      <><ClipboardCheckIcon className="size-3.5 mr-1.5" />Copied</>
-                    ) : (
-                      <><CopyIcon className="size-3.5 mr-1.5" />Copy all</>
-                    )}
-                  </Button>
-                  <Button size="sm" onClick={handleSetupDone}>
-                    Complete Setup
-                  </Button>
-                </div>
-              </div>
             ) : (
-              <form onSubmit={handleTotpConfirm} className="space-y-4">
-                {error && (
-                  <div className="text-sm text-destructive">{error}</div>
-                )}
-                <div className="flex justify-center">
-                  <img src={qrCode} alt="TOTP QR Code" className="size-48 rounded-lg" />
-                </div>
-                <div className="space-y-1">
-                  <p className="text-xs text-muted-foreground">Or enter this key manually:</p>
-                  <code className="block text-xs bg-muted px-3 py-2 rounded select-all break-all">{totpSecret}</code>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="setup-totp-code">Verification Code</Label>
-                  <Input
-                    id="setup-totp-code"
-                    type="text"
-                    inputMode="numeric"
-                    pattern="[0-9]*"
-                    maxLength={6}
-                    value={setupCode}
-                    onChange={(e) => { setSetupCode(e.target.value); setError(null); }}
-                    placeholder="000000"
-                    autoFocus
-                    autoComplete="one-time-code"
-                  />
-                </div>
-                <Button type="submit" className="w-full" disabled={loading || setupCode.length !== 6}>
-                  {loading ? "Verifying..." : "Verify & Enable"}
+              <div className="space-y-4">
+                {error && <div className="text-sm text-destructive">{error}</div>}
+                <Button className="w-full" onClick={handleEnrollPasskey} disabled={loading}>
+                  {loading ? "Waiting…" : "Create passkey"}
                 </Button>
-              </form>
+              </div>
             )}
           </CardContent>
         </Card>
 
-        {/* Feature highlights */}
         <div className="flex items-center justify-center gap-6 text-muted-foreground">
           <div className="flex flex-col items-center gap-1">
             <BotIcon className="size-4" />
