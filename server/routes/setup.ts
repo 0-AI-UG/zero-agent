@@ -32,26 +32,6 @@ export async function handleSetupStatus(_request: Request): Promise<Response> {
 
 export async function handleSetupComplete(request: Request): Promise<Response> {
   try {
-    // In production, require a SETUP_TOKEN to prevent setup-race takeover.
-    // In dev, skip the gate for convenience.
-    if (IS_PROD) {
-      const expected = process.env.SETUP_TOKEN;
-      if (!expected || expected.length < 16) {
-        return Response.json(
-          { error: "Setup not available: SETUP_TOKEN is not configured." },
-          { status: 503, headers: corsHeaders },
-        );
-      }
-      const provided = request.headers.get("x-setup-token");
-      if (!provided || provided !== expected) {
-        setupLog.warn("setup attempt with missing/invalid token");
-        return Response.json(
-          { error: "Invalid setup token" },
-          { status: 401, headers: corsHeaders },
-        );
-      }
-    }
-
     const body = await request.json() as Record<string, string>;
     const { openrouterApiKey, openrouterModel, braveSearchApiKey } = body;
 

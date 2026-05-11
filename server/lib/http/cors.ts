@@ -26,7 +26,7 @@ const CORS_ORIGIN = resolveOrigin();
 export const corsHeaders: Record<string, string> = {
   "Access-Control-Allow-Origin": CORS_ORIGIN,
   "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-CSRF-Token, X-Setup-Token",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-CSRF-Token",
   // Credentials are required for cookie-based auth. `*` + credentials is
   // ignored by browsers, so this is a no-op in dev with `*`.
   ...(CORS_ORIGIN === "*" ? {} : { "Access-Control-Allow-Credentials": "true" }),

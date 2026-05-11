@@ -35,7 +35,6 @@ export function SetupPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [setupToken, setSetupToken] = useState("");
 
   // Step 2
   const [openrouterApiKey, setOpenrouterApiKey] = useState("");
@@ -83,16 +82,13 @@ export function SetupPage() {
     }
     setLoading(true);
     try {
-      const result = await completeSetup(
-        {
-          username,
-          password,
-          openrouterApiKey,
-          openrouterModel: openrouterModel || undefined,
-          braveSearchApiKey: braveSearchApiKey || undefined,
-        },
-        setupToken || undefined,
-      );
+      const result = await completeSetup({
+        username,
+        password,
+        openrouterApiKey,
+        openrouterModel: openrouterModel || undefined,
+        braveSearchApiKey: braveSearchApiKey || undefined,
+      });
       if ("token" in result && !("requires2FASetup" in result)) {
         setSession(result.user, (result as any).token ?? null);
         queryClient.setQueryData(["setup", "status"], { setupComplete: true });
@@ -129,8 +125,6 @@ export function SetupPage() {
       setLoading(false);
     }
   };
-
-  const isProd = !!(import.meta as any).env?.PROD;
 
   return (
     <div className="relative flex min-h-screen items-center justify-center p-4">
@@ -201,21 +195,6 @@ export function SetupPage() {
                     autoComplete="new-password"
                   />
                 </div>
-                {isProd && (
-                  <div className="space-y-2">
-                    <Label htmlFor="setup-token">Setup token</Label>
-                    <Input
-                      id="setup-token"
-                      type="password"
-                      value={setupToken}
-                      onChange={(e) => setSetupToken(e.target.value)}
-                      placeholder="Required in production"
-                    />
-                    <p className="text-[11px] text-muted-foreground">
-                      Find this value in <code>SETUP_TOKEN</code> on the server.
-                    </p>
-                  </div>
-                )}
                 <Button type="button" className="w-full" onClick={handleNext}>
                   Next
                 </Button>

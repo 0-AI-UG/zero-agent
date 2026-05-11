@@ -21,12 +21,10 @@ export type SetupCompleteResponse =
   | { tempToken: string; requires2FASetup: true; user: { id: string; username: string } }
   | { token: string; user: { id: string; username: string } };
 
-export async function completeSetup(data: SetupCompleteRequest, setupToken?: string): Promise<SetupCompleteResponse> {
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (setupToken) headers["X-Setup-Token"] = setupToken;
+export async function completeSetup(data: SetupCompleteRequest): Promise<SetupCompleteResponse> {
   const res = await fetch(`${API_BASE}/setup/complete`, {
     method: "POST",
-    headers,
+    headers: { "Content-Type": "application/json" },
     credentials: "include",
     body: JSON.stringify(data),
   });

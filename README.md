@@ -110,7 +110,6 @@ Copy `.env.example` to `.env`:
 | `JWT_SECRET` | Yes | Session-signing key (≥32 chars) |
 | `CREDENTIALS_KEY` | Yes | AES-GCM key for credentials at rest (≥32 chars) |
 | `CORS_ORIGIN` | Prod | Exact allowed origin (e.g. `https://app.example.com`) |
-| `SETUP_TOKEN` | Prod | One-time token required to complete first-run setup |
 | `TRUST_PROXY` | Prod | Set to `1` if behind a reverse proxy that sets `X-Forwarded-For` |
 
 Models, image providers, and credentials are configured at runtime through the admin panel.
