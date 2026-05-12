@@ -1,7 +1,7 @@
 import { Link } from "react-router";
 import { AlertCircleIcon } from "lucide-react";
 import { useMemo, type ReactNode } from "react";
-import type { AgentMessage, ToolExecution } from "@/lib/pi-events";
+import type { AgentMessage, PendingTool, ToolExecution, ToolResultContentPart } from "@/lib/pi-events";
 import { contentText } from "@/lib/pi-events";
 import { ConversationEmptyState } from "@/components/chat-ui/Conversation";
 import { MessageShell } from "@/components/chat-ui/MessageShell";
@@ -11,12 +11,20 @@ import { MessageView } from "./pi-transcript";
 import logoSvg from "@/logo-mark.svg";
 
 /**
- * Derive `executions` from the messages array — a tool call is "done"
- * once a matching `toolResult` message appears later. The server no
- * longer broadcasts a separate executions map; everything we need is
- * already in the canonical message list.
+ * Derive `executions` by combining:
+ *  - completed `toolResult` messages (state "done"/"error", with full
+ *    `content` + tool-specific `details`)
+ *  - the server's `pendingTools` snapshot for in-flight calls (state
+ *    "running", with the latest `partialResult`)
+ *
+ * The server emits the canonical `toolResult` message via `message_end`
+ * once a call finishes — at that point it also drops the pending entry,
+ * so a tool only appears in one bucket at a time.
  */
-function deriveExecutions(messages: AgentMessage[]): Map<string, ToolExecution> {
+function deriveExecutions(
+  messages: AgentMessage[],
+  pendingTools: PendingTool[],
+): Map<string, ToolExecution> {
   const map = new Map<string, ToolExecution>();
   for (const msg of messages) {
     if (msg.role !== "toolResult") continue;
@@ -25,8 +33,23 @@ function deriveExecutions(messages: AgentMessage[]): Map<string, ToolExecution> 
       toolName: msg.toolName,
       args: undefined,
       state: msg.isError ? "error" : "done",
-      result: { content: msg.content },
+      result: { content: msg.content, details: msg.details },
       isError: msg.isError,
+    });
+  }
+  for (const p of pendingTools) {
+    if (map.has(p.toolCallId)) continue;
+    const partial = p.partialResult as
+      | { content?: ToolResultContentPart[]; details?: unknown }
+      | undefined;
+    map.set(p.toolCallId, {
+      toolCallId: p.toolCallId,
+      toolName: p.toolName,
+      args: p.args,
+      state: "running",
+      partial: partial
+        ? { content: partial.content, details: partial.details }
+        : undefined,
     });
   }
   return map;
@@ -34,6 +57,7 @@ function deriveExecutions(messages: AgentMessage[]): Map<string, ToolExecution> 
 
 interface MessageListProps {
   messages: AgentMessage[];
+  pendingTools: PendingTool[];
   projectId: string;
   isStreaming: boolean;
   error: Error | undefined;
@@ -90,6 +114,7 @@ function shouldShowLoader(
 
 export function MessageList({
   messages,
+  pendingTools,
   projectId,
   isStreaming,
   error,
@@ -99,7 +124,10 @@ export function MessageList({
   starterSuggestions,
   onSuggestion,
 }: MessageListProps) {
-  const executions = useMemo(() => deriveExecutions(messages), [messages]);
+  const executions = useMemo(
+    () => deriveExecutions(messages, pendingTools),
+    [messages, pendingTools],
+  );
 
   const showLoader = shouldShowLoader(messages, executions, isStreaming);
 
