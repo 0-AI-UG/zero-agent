@@ -28,7 +28,7 @@ import { spawn } from "node:child_process";
 import { existsSync, realpathSync } from "node:fs";
 import path from "node:path";
 import { SandboxManager } from "@anthropic-ai/sandbox-runtime";
-import { resolveZeroSdkPath } from "@/lib/pi/zero-cli.ts";
+import { resolveZeroSdkPath } from "../../zero-cli.ts";
 import {
   type BashOperations,
   createBashTool,
