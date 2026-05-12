@@ -1,8 +1,7 @@
 /**
  * Public surface of the Pi orchestration module. Chat handlers and tests
- * import from here. With the subprocess cutover, zero no longer ships its
- * own sandbox extension or path policy — Pi's vanilla extensions handle
- * that, configured via .pi/sandbox.json.
+ * import from here. Sandboxing of bash + project-fs tools is handled by
+ * the project-sandbox extension under server/lib/pi/extensions/.
  */
 export type { PiCliContext } from "./cli-context.ts";
 export type { PiEventEnvelope, RunTurnOptions, TurnResult } from "./run-turn.ts";

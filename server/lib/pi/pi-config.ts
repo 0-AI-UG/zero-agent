@@ -1,8 +1,12 @@
 /**
- * Materialize <project>/.pi/settings.json and <project>/.pi/sandbox.json
- * before each Pi turn. Zero owns these files; manual user edits will be
- * overwritten on the next turn (file is regenerated when content hash
- * changes).
+ * Materialize <project>/.pi/settings.json before each Pi turn. Zero owns
+ * this file; manual user edits will be overwritten on the next turn (file
+ * is regenerated when content hash changes).
+ *
+ * Sandbox config used to live in <project>/.pi/sandbox.json for the
+ * upstream sandbox extension. We've replaced that extension with our own
+ * project-sandbox extension which derives its config from `process.cwd()`
+ * directly, so sandbox.json is no longer written.
  *
  * Also resolves the `pi` binary so spawn() can launch it from the
  * project working directory regardless of how this server is invoked
@@ -33,8 +37,6 @@ export interface PiConfigInputs {
   extraExtensions?: string[];
 }
 
-const SANDBOX_DENY_WRITE_RELATIVE = [".pi", ".pi-sessions", ".git-snapshots"];
-
 const SYSTEM_PROMPT = `You are Zero, a general-purpose assistant running inside the Zero web app. The cwd is a shared project workspace; treat it as scratch space.
 
 For anything beyond your built-in tools (read/write/edit/bash/grep/find/ls), use the \`zero\` CLI: web search/fetch, browser control, image generation, scheduling, credentials, apps (\`zero apps create\` allocates a port + URL for a server you run), sending messages to the user, LLM calls, and embeddings/search. Run \`zero <group> --help\` for the authoritative interface.
@@ -42,41 +44,19 @@ For anything beyond your built-in tools (read/write/edit/bash/grep/find/ls), use
 For programmatic / multi-step composition, run a bun script that imports the same surface: \`import { web, browser, image, ... } from "./.pi/zero-sdk.mjs"\`. Use this when you need to chain calls, pass structured data between them, or loop — otherwise prefer the CLI.
 `;
 
-// Upstream defaults from examples/extensions/sandbox/index.ts. The extension
-// merges by shallow-replace per field, so our project-local override needs
-// to spell these out or we lose the protection.
-const UPSTREAM_DENY_READ = ["~/.ssh", "~/.aws", "~/.gnupg"];
-const UPSTREAM_DENY_WRITE_GLOBS = [".env", ".env.*", "*.pem", "*.key"];
-
-function vanillaSandboxExtensionPath(): string {
-  // The package's "exports" field only declares the ESM `import` condition,
-  // so CJS `require.resolve` (used by createRequire) fails for both the main
-  // entry and `./package.json`. Use ESM `import.meta.resolve` instead — it
-  // honors the import condition — and walk up to the package root.
-  const entryUrl = import.meta.resolve("@mariozechner/pi-coding-agent");
-  const entry = fileURLToPath(entryUrl);
-  const root = path.dirname(path.dirname(entry));
-  const sandbox = path.join(root, "examples", "extensions", "sandbox");
-  if (!existsSync(sandbox)) {
-    throw new Error(`pi sandbox extension not found at ${sandbox}`);
-  }
-  return sandbox;
-}
-
-function projectFsExtensionPath(): string {
-  // Co-located with this file: server/lib/pi/extensions/project-fs/
+function projectSandboxExtensionPath(): string {
+  // Co-located with this file: server/lib/pi/extensions/project-sandbox/
   const here = path.dirname(fileURLToPath(import.meta.url));
-  const ext = path.join(here, "extensions", "project-fs");
+  const ext = path.join(here, "extensions", "project-sandbox");
   if (!existsSync(ext)) {
-    throw new Error(`project-fs extension not found at ${ext}`);
+    throw new Error(`project-sandbox extension not found at ${ext}`);
   }
   return ext;
 }
 
 function buildSettings(opts: PiConfigInputs) {
   const extensions = [
-    vanillaSandboxExtensionPath(),
-    projectFsExtensionPath(),
+    projectSandboxExtensionPath(),
     ...(opts.extraExtensions ?? []),
   ];
   return {
@@ -88,35 +68,6 @@ function buildSettings(opts: PiConfigInputs) {
     quietStartup: true,
     compaction: { enabled: true, reserveTokens: 16384, keepRecentTokens: 20000 },
     retry: { enabled: true, maxRetries: 3 },
-  };
-}
-
-function buildSandboxConfig(projectDir: string) {
-  // The bash sandbox is disabled. Two reasons:
-  //  1. On Linux it would `bwrap --unshare-net` the bash subprocess, putting
-  //     it in a separate netns. The in-process CLI server is reached via
-  //     `ZERO_PROXY_URL=http://127.0.0.1:<port>` and Bun/Node's fetch
-  //     bypasses HTTP_PROXY for loopback — so the call can't reach the
-  //     namespace-local 127.0.0.1, and the agent's `zero` CLI breaks.
-  //  2. We already isolate Pi's read/write/edit/grep/find/ls via the
-  //     project-fs extension. Bash itself is contained by the Docker
-  //     boundary in production; in dev the sandbox extension was already
-  //     failing to initialize anyway (its schema rejects `allowedDomains:
-  //     ["*"]`).
-  //
-  // The fields below are kept for documentation / future re-enable —
-  // ignored while `enabled: false`.
-  return {
-    enabled: false,
-    network: { allowedDomains: ["*"], deniedDomains: [] },
-    filesystem: {
-      denyRead: [...UPSTREAM_DENY_READ],
-      allowWrite: [projectDir, "/tmp"],
-      denyWrite: [
-        ...SANDBOX_DENY_WRITE_RELATIVE.map((p) => path.join(projectDir, p)),
-        ...UPSTREAM_DENY_WRITE_GLOBS,
-      ],
-    },
   };
 }
 
@@ -143,7 +94,7 @@ function writeIfChanged(file: string, content: string): void {
 }
 
 /**
- * Idempotently writes <project>/.pi/settings.json and .pi/sandbox.json.
+ * Idempotently writes <project>/.pi/settings.json and .pi/SYSTEM.md.
  * Returns the directory paths Pi will read from.
  */
 export function ensurePiConfig(opts: PiConfigInputs): {
@@ -158,12 +109,6 @@ export function ensurePiConfig(opts: PiConfigInputs): {
   writeIfChanged(
     path.join(configDir, "settings.json"),
     JSON.stringify(settings, null, 2) + "\n",
-  );
-
-  const sandbox = buildSandboxConfig(opts.projectDir);
-  writeIfChanged(
-    path.join(configDir, "sandbox.json"),
-    JSON.stringify(sandbox, null, 2) + "\n",
   );
 
   writeIfChanged(path.join(configDir, "SYSTEM.md"), SYSTEM_PROMPT);
@@ -195,7 +140,7 @@ export function getPiInvocation(args: string[]): {
 }
 
 /** Test-only: peek at the resolved sandbox extension path. */
-export function _vanillaSandboxExtensionPath(): string {
-  return vanillaSandboxExtensionPath();
+export function _projectSandboxExtensionPath(): string {
+  return projectSandboxExtensionPath();
 }
 
