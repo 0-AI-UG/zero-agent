@@ -46,12 +46,13 @@ export const ScheduleAddInput = z
   .object({
     name: NonEmpty(200),
     prompt: NonEmpty(8000),
-    triggerType: z.enum(["schedule", "event"]).optional(),
+    triggerType: z.enum(["schedule", "event", "script"]).optional(),
     schedule: z.string().min(1).max(200).optional(),
     triggerEvent: z.string().min(1).max(200).optional(),
     triggerFilter: TriggerFilter,
     cooldownSeconds: z.number().int().min(0).max(86_400 * 30).optional(),
     maxSteps: z.number().int().min(1).max(5000).optional(),
+    scriptPath: z.string().min(1).max(512).optional(),
   })
   .strict();
 
@@ -67,6 +68,7 @@ export const ScheduleUpdateInput = z
     triggerFilter: TriggerFilter,
     cooldownSeconds: z.number().int().min(0).max(86_400 * 30).optional(),
     maxSteps: z.number().int().min(1).max(5000).nullable().optional(),
+    scriptPath: z.string().min(1).max(512).nullable().optional(),
     enabled: z.boolean().optional(),
   })
   .strict();
@@ -235,6 +237,50 @@ export const SearchInput = z
       .optional(),
     topK: z.number().int().min(1).max(50).optional(),
   })
+  .strict();
+
+// -- trigger (script-trigger control plane) --
+// `taskId` and `runId` are stamped into each request body by the SDK from
+// ZERO_TRIGGER_TASK_ID / ZERO_TRIGGER_RUN_ID env vars set on the script
+// process. The handler verifies the task belongs to the caller's project.
+const TriggerIdent = {
+  taskId: NonEmpty(64),
+  runId: NonEmpty(64),
+};
+
+export const TriggerFireInput = z
+  .object({
+    ...TriggerIdent,
+    prompt: z.string().min(1).max(8000).optional(),
+    payload: z.record(z.string(), z.unknown()).optional(),
+  })
+  .strict();
+
+export const TriggerStateGetInput = z
+  .object({
+    ...TriggerIdent,
+    key: NonEmpty(200),
+  })
+  .strict();
+
+export const TriggerStateSetInput = z
+  .object({
+    ...TriggerIdent,
+    key: NonEmpty(200),
+    // unknown JSON value (objects, arrays, primitives, null)
+    value: z.unknown(),
+  })
+  .strict();
+
+export const TriggerStateDeleteInput = z
+  .object({
+    ...TriggerIdent,
+    key: NonEmpty(200),
+  })
+  .strict();
+
+export const TriggerStateAllInput = z
+  .object({ ...TriggerIdent })
   .strict();
 
 // Convenience re-exports for SDK type inference.

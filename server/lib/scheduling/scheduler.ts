@@ -7,6 +7,7 @@ import { formatDateForSQLite } from "@/lib/scheduling/schedule-parser.ts";
 import { events } from "@/lib/scheduling/events.ts";
 import { isShuttingDown } from "@/lib/durability/shutdown.ts";
 import { log } from "@/lib/utils/logger.ts";
+import { runScriptTask, isScriptRunning } from "@/lib/scheduling/script-runner.ts";
 
 const schedLog = log.child({ module: "scheduler" });
 
@@ -14,7 +15,7 @@ const TICK_INTERVAL_MS = 60 * 1000; // 60 seconds
 let isRunning = false;
 let intervalId: ReturnType<typeof setInterval> | null = null;
 
-async function tick() {
+export async function tick() {
   if (isRunning) {
     schedLog.debug("tick skipped, previous run still active");
     return;
@@ -30,6 +31,15 @@ async function tick() {
     schedLog.info("processing due tasks", { count: dueTasks.length });
 
     for (const task of dueTasks) {
+      // Script-triggered tasks dispatch to the script-runner. The runner
+      // handles project lookup, automation gating, run-row lifecycle, and
+      // next_run_at advancement itself.
+      if (task.trigger_type === "script") {
+        if (isScriptRunning(task.id)) continue;
+        await runScriptTask(task);
+        continue;
+      }
+
       const project = getProjectById(task.project_id);
       if (!project) {
         schedLog.warn("task references missing project", { taskId: task.id, projectId: task.project_id });

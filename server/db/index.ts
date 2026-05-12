@@ -435,7 +435,22 @@ db.exec(`
   if (!cols.some((c: any) => c.name === "max_steps")) {
     db.exec("ALTER TABLE scheduled_tasks ADD COLUMN max_steps INTEGER");
   }
+  if (!cols.some((c: any) => c.name === "script_path")) {
+    db.exec("ALTER TABLE scheduled_tasks ADD COLUMN script_path TEXT");
+  }
 }
+
+// ── Trigger state (per-task persistent JSON key/value for script triggers) ──
+db.exec(`
+  CREATE TABLE IF NOT EXISTS trigger_state (
+    task_id    TEXT NOT NULL REFERENCES scheduled_tasks(id) ON DELETE CASCADE,
+    key        TEXT NOT NULL,
+    value_json TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (task_id, key)
+  )
+`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_trigger_state_task ON trigger_state(task_id)`);
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS user_telegram_link_codes (

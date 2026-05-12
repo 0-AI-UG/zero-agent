@@ -6,22 +6,52 @@
  * to the runner backend.
  */
 import { createReadStream } from "node:fs";
-import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
-import { dirname, join, normalize, resolve } from "node:path";
+import { mkdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
+import { basename, dirname, join, normalize, resolve } from "node:path";
 import { projectDirFor } from "@/lib/pi/run-turn.ts";
+import { ValidationError } from "@/lib/utils/errors.ts";
 
-function ensureUnderProject(projectId: string, relPath: string): string {
-  const projectDir = resolve(projectDirFor(projectId));
+// Realpath the project dir itself: on macOS the test/temp tree is reached via
+// /var → /private/var, and any future move of PI_PROJECTS_ROOT under a
+// symlinked mountpoint would otherwise make every legitimate path look like
+// an escape.
+async function realProjectDir(projectId: string): Promise<string> {
+  const dir = resolve(projectDirFor(projectId));
+  try {
+    return await realpath(dir);
+  } catch {
+    return dir;
+  }
+}
+
+// Walk up from `abs` to the deepest existing ancestor, realpath that, then
+// re-join the remaining components. Lets us validate write targets whose leaf
+// (or leaf's parents) haven't been created yet without giving symlinks a free
+// pass on the path we will actually open.
+async function deepestRealpath(abs: string): Promise<string> {
+  try {
+    return await realpath(abs);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+    const parent = dirname(abs);
+    if (parent === abs) throw err;
+    const realParent = await deepestRealpath(parent);
+    return join(realParent, basename(abs));
+  }
+}
+
+async function ensureUnderProject(projectId: string, relPath: string): Promise<string> {
+  const projectDir = await realProjectDir(projectId);
   const cleaned = normalize(relPath).replace(/^\/+/, "");
   const abs = resolve(projectDir, cleaned);
   if (abs !== projectDir && !abs.startsWith(projectDir + "/")) {
-    throw new Error(`path escapes project dir: ${relPath}`);
+    throw new ValidationError(`path escapes project dir: ${relPath}`);
+  }
+  const real = await deepestRealpath(abs);
+  if (real !== projectDir && !real.startsWith(projectDir + "/")) {
+    throw new ValidationError(`path escapes project dir via symlink: ${relPath}`);
   }
   return abs;
-}
-
-export function projectPath(projectId: string, relPath: string): string {
-  return ensureUnderProject(projectId, relPath);
 }
 
 export async function writeProjectFile(
@@ -29,7 +59,7 @@ export async function writeProjectFile(
   relPath: string,
   buffer: Buffer | Uint8Array,
 ): Promise<void> {
-  const abs = ensureUnderProject(projectId, relPath);
+  const abs = await ensureUnderProject(projectId, relPath);
   await mkdir(dirname(abs), { recursive: true });
   await writeFile(abs, Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer));
 }
@@ -38,7 +68,7 @@ export async function readProjectFile(
   projectId: string,
   relPath: string,
 ): Promise<Buffer | null> {
-  const abs = ensureUnderProject(projectId, relPath);
+  const abs = await ensureUnderProject(projectId, relPath);
   try {
     return await readFile(abs);
   } catch (err) {
@@ -51,7 +81,7 @@ export async function deleteProjectPath(
   projectId: string,
   relPath: string,
 ): Promise<void> {
-  const abs = ensureUnderProject(projectId, relPath);
+  const abs = await ensureUnderProject(projectId, relPath);
   await rm(abs, { recursive: true, force: true });
 }
 
@@ -60,8 +90,8 @@ export async function moveProjectPath(
   fromRelPath: string,
   toRelPath: string,
 ): Promise<void> {
-  const from = ensureUnderProject(projectId, fromRelPath);
-  const to = ensureUnderProject(projectId, toRelPath);
+  const from = await ensureUnderProject(projectId, fromRelPath);
+  const to = await ensureUnderProject(projectId, toRelPath);
   await mkdir(dirname(to), { recursive: true });
   await rename(from, to);
 }
@@ -75,7 +105,7 @@ export async function streamProjectFile(
   projectId: string,
   relPath: string,
 ): Promise<ProjectFileStream | null> {
-  const abs = ensureUnderProject(projectId, relPath);
+  const abs = await ensureUnderProject(projectId, relPath);
   let st: Awaited<ReturnType<typeof stat>>;
   try {
     st = await stat(abs);

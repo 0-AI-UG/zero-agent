@@ -28,6 +28,7 @@ import { spawn } from "node:child_process";
 import { existsSync, realpathSync } from "node:fs";
 import path from "node:path";
 import { SandboxManager } from "@anthropic-ai/sandbox-runtime";
+import { resolveZeroSdkPath } from "@/lib/pi/zero-cli.ts";
 import {
   type BashOperations,
   createBashTool,
@@ -75,6 +76,31 @@ function ensureInProject(
       `${toolName}: path "${inputPath}" escapes project dir (${projectDir})`,
     );
   }
+}
+
+/**
+ * Read-only variant: allows the project dir OR any path under one of the
+ * additional read-only roots (e.g. the bundled `zero` package, so the agent
+ * can read USAGE.md and SDK source via the in-process read/grep/find/ls
+ * tools). Writes and edits remain strictly project-confined.
+ */
+function ensureReadable(
+  projectDir: string,
+  extraRoots: string[],
+  inputPath: string,
+  toolName: string,
+): void {
+  const abs = path.isAbsolute(inputPath)
+    ? inputPath
+    : path.resolve(projectDir, inputPath);
+  const resolved = realpathOrParent(abs);
+  const roots = [projectDir, ...extraRoots];
+  for (const root of roots) {
+    if (resolved === root || resolved.startsWith(root + path.sep)) return;
+  }
+  throw new Error(
+    `${toolName}: path "${inputPath}" is not under the project dir or an allowed read-only root`,
+  );
 }
 
 function createSandboxedBashOps(): BashOperations {
@@ -148,6 +174,20 @@ export default function (pi: ExtensionAPI) {
   // via filesystem.allowRead.
   const projectsRoot = path.dirname(projectDir);
 
+  // Read-only roots that the in-process FS tools may also touch. The zero
+  // package ships USAGE.md (the agent's CLI/SDK reference) and the SDK
+  // source — useful for the agent to inspect when figuring out shapes.
+  const readOnlyRoots: string[] = [];
+  try {
+    const zeroPackageRoot = realpathSync(
+      path.dirname(path.dirname(resolveZeroSdkPath())),
+    );
+    readOnlyRoots.push(zeroPackageRoot);
+  } catch {
+    // zero CLI not built yet — agent can still read project files; just no
+    // SDK/USAGE access via the read tool. Bash is unaffected.
+  }
+
   // ---- FS tools ----------------------------------------------------------
   const read = createReadTool(projectDir);
   const write = createWriteTool(projectDir);
@@ -160,7 +200,7 @@ export default function (pi: ExtensionAPI) {
     ...read,
     label: "read (project-scoped)",
     async execute(id, params, signal, onUpdate, _ctx) {
-      ensureInProject(projectDir, params.path, "read");
+      ensureReadable(projectDir, readOnlyRoots, params.path, "read");
       return read.execute(id, params, signal, onUpdate);
     },
   });
@@ -184,7 +224,7 @@ export default function (pi: ExtensionAPI) {
     ...grep,
     label: "grep (project-scoped)",
     async execute(id, params, signal, onUpdate, _ctx) {
-      if (params.path) ensureInProject(projectDir, params.path, "grep");
+      if (params.path) ensureReadable(projectDir, readOnlyRoots, params.path, "grep");
       return grep.execute(id, params, signal, onUpdate);
     },
   });
@@ -192,7 +232,7 @@ export default function (pi: ExtensionAPI) {
     ...find,
     label: "find (project-scoped)",
     async execute(id, params, signal, onUpdate, _ctx) {
-      if (params.path) ensureInProject(projectDir, params.path, "find");
+      if (params.path) ensureReadable(projectDir, readOnlyRoots, params.path, "find");
       return find.execute(id, params, signal, onUpdate);
     },
   });
@@ -200,7 +240,7 @@ export default function (pi: ExtensionAPI) {
     ...ls,
     label: "ls (project-scoped)",
     async execute(id, params, signal, onUpdate, _ctx) {
-      if (params.path) ensureInProject(projectDir, params.path, "ls");
+      if (params.path) ensureReadable(projectDir, readOnlyRoots, params.path, "ls");
       return ls.execute(id, params, signal, onUpdate);
     },
   });

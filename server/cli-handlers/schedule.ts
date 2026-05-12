@@ -14,6 +14,7 @@ import {
 } from "@/db/queries/scheduled-tasks.ts";
 import { parseSchedule } from "@/lib/scheduling/schedule-parser.ts";
 import { registerEventTask, unregisterEventTask, refreshEventTask } from "@/lib/scheduling/event-trigger.ts";
+import { validateScriptPath } from "@/lib/scheduling/script-runner.ts";
 import type { CliContext } from "./context.ts";
 import { ok, fail } from "./response.ts";
 import type {
@@ -30,13 +31,14 @@ function summarize(t: any) {
     name: t.name,
     prompt: t.prompt,
     triggerType: t.trigger_type,
-    schedule: t.trigger_type === "schedule" ? t.schedule : undefined,
+    schedule: t.trigger_type === "event" ? undefined : t.schedule,
     triggerEvent: t.trigger_event,
     triggerFilter: t.trigger_filter ? JSON.parse(t.trigger_filter) : undefined,
     cooldownSeconds: t.cooldown_seconds || undefined,
     maxSteps: t.max_steps || undefined,
+    scriptPath: t.script_path ?? undefined,
     enabled: t.enabled === 1,
-    nextRunAt: t.trigger_type === "schedule" ? t.next_run_at : undefined,
+    nextRunAt: t.trigger_type === "event" ? undefined : t.next_run_at,
     lastRunAt: t.last_run_at,
     runCount: t.run_count,
   };
@@ -46,7 +48,7 @@ export async function handleScheduleAdd(
   ctx: CliContext,
   input: z.infer<typeof ScheduleAddInput>,
 ): Promise<Response> {
-  const triggerType = input.triggerType ?? "schedule";
+  const triggerType = input.triggerType ?? (input.scriptPath ? "script" : "schedule");
 
   if (triggerType === "event") {
     if (!input.triggerEvent) return fail("invalid", "triggerEvent is required for event tasks");
@@ -56,6 +58,23 @@ export async function handleScheduleAdd(
       "event", input.triggerEvent, input.triggerFilter, input.cooldownSeconds ?? 0, input.maxSteps,
     );
     registerEventTask(task);
+    return ok(summarize(task));
+  }
+
+  if (triggerType === "script") {
+    if (!input.schedule) return fail("invalid", "schedule is required for script tasks");
+    const validation = parseSchedule(input.schedule);
+    if (!validation.valid) return fail("invalid", validation.error ?? "invalid schedule");
+    let scriptPath: string | undefined = input.scriptPath;
+    if (scriptPath !== undefined) {
+      const v = validateScriptPath(scriptPath);
+      if (!v.valid) return fail("invalid", v.error ?? "invalid scriptPath");
+    }
+    const task = insertTask(
+      ctx.projectId, AGENT_USER_ID, input.name, input.prompt, input.schedule,
+      true, undefined, undefined, "script", undefined, undefined, 0, input.maxSteps,
+      scriptPath ?? null,
+    );
     return ok(summarize(task));
   }
 
@@ -86,6 +105,11 @@ export async function handleScheduleUpdate(
     if (!validation.valid) return fail("invalid", validation.error ?? "invalid schedule");
   }
 
+  if (input.scriptPath !== undefined && input.scriptPath !== null) {
+    const v = validateScriptPath(input.scriptPath);
+    if (!v.valid) return fail("invalid", v.error ?? "invalid scriptPath");
+  }
+
   const task = updateTask(input.taskId, {
     name: input.name,
     prompt: input.prompt,
@@ -95,6 +119,7 @@ export async function handleScheduleUpdate(
     trigger_filter: input.triggerFilter ? JSON.stringify(input.triggerFilter) : undefined,
     cooldown_seconds: input.cooldownSeconds,
     max_steps: input.maxSteps,
+    script_path: input.scriptPath,
   });
 
   if (input.triggerEvent !== undefined || input.enabled !== undefined) {
