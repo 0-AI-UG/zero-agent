@@ -27,12 +27,28 @@ const stateLog = log.child({ module: "chat-state" });
 /** Pi messages — pi-ai's `Message` union plus pi-coding-agent's `CustomMessage`. JSON pass-through. */
 type AgentMessage = Record<string, unknown>;
 
+/**
+ * In-flight tool execution surfaced to clients so subagent runs (and other
+ * tools that emit `tool_execution_update`) can render live progress before
+ * the final `toolResult` message lands. Cleared per-call on
+ * `tool_execution_end`; the eventual `message_end` carries the canonical
+ * result with full `details`.
+ */
+export interface PendingTool {
+  toolCallId: string;
+  toolName: string;
+  args: unknown;
+  partialResult?: unknown;
+}
+
 export interface ChatState {
   chatId: string;
   projectId: string | null;
   messages: AgentMessage[];
   /** Index of the in-flight message (last `message_start` without `message_end`), or -1. */
   currentIndex: number;
+  /** Tool calls currently running. Keyed by toolCallId. */
+  pendingTools: Map<string, PendingTool>;
   isStreaming: boolean;
   runId?: string;
   error?: string;
@@ -44,6 +60,7 @@ export interface ChatStateBroadcast {
   type: "chat.state";
   chatId: string;
   messages: AgentMessage[];
+  pendingTools: PendingTool[];
   isStreaming: boolean;
   runId?: string;
   error?: string;
@@ -56,6 +73,7 @@ export function createChatState(chatId: string, projectId: string | null): ChatS
     projectId,
     messages: [],
     currentIndex: -1,
+    pendingTools: new Map(),
     isStreaming: false,
     hydrated: false,
     lastAccessAt: Date.now(),
@@ -87,8 +105,8 @@ export function hydrateChatState(state: ChatState, projectId: string): void {
 
 /**
  * Apply one Pi event. Drives token-level streaming via
- * message_start/update/end. Tool execution events are ignored — tool
- * results show up as `toolResult` messages on their own message_end.
+ * message_start/update/end, and tracks in-flight tool calls so the UI can
+ * show live subagent progress before the final toolResult message.
  * Returns true if the state changed.
  */
 export function applyPiEvent(state: ChatState, env: PiEventEnvelope): boolean {
@@ -116,11 +134,36 @@ export function applyPiEvent(state: ChatState, env: PiEventEnvelope): boolean {
       state.currentIndex = -1;
       return true;
     }
+    case "tool_execution_start": {
+      const id = event.toolCallId as string;
+      state.pendingTools.set(id, {
+        toolCallId: id,
+        toolName: event.toolName as string,
+        args: event.args,
+      });
+      return true;
+    }
+    case "tool_execution_update": {
+      const id = event.toolCallId as string;
+      const existing = state.pendingTools.get(id);
+      state.pendingTools.set(id, {
+        toolCallId: id,
+        toolName: event.toolName as string,
+        args: existing?.args ?? event.args,
+        partialResult: event.partialResult,
+      });
+      return true;
+    }
+    case "tool_execution_end": {
+      const id = event.toolCallId as string;
+      return state.pendingTools.delete(id);
+    }
     case "agent_end": {
       // `agent_end.messages` is only the *new* turn messages, not full
       // history — message_start/end already pushed them. Just clear the
       // streaming pointer; endChatStream re-hydrates from JSONL after.
       state.currentIndex = -1;
+      state.pendingTools.clear();
       return true;
     }
     default:
@@ -133,6 +176,7 @@ export function beginStreaming(state: ChatState, runId: string): void {
   state.runId = runId || state.runId;
   state.error = undefined;
   state.currentIndex = -1;
+  state.pendingTools.clear();
 }
 
 export function endStreaming(
@@ -143,6 +187,7 @@ export function endStreaming(
   state.isStreaming = false;
   state.error = reason === "error" ? error ?? "Stream ended with an error" : undefined;
   state.currentIndex = -1;
+  state.pendingTools.clear();
 }
 
 export function serializeState(state: ChatState): ChatStateBroadcast {
@@ -150,6 +195,7 @@ export function serializeState(state: ChatState): ChatStateBroadcast {
     type: "chat.state",
     chatId: state.chatId,
     messages: state.messages,
+    pendingTools: Array.from(state.pendingTools.values()),
     isStreaming: state.isStreaming,
     runId: state.runId,
     error: state.error,

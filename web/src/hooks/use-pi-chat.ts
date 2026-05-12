@@ -8,7 +8,7 @@
  */
 import { useCallback, useSyncExternalStore } from "react";
 import { send, subscribe } from "@/lib/ws";
-import type { AgentMessage } from "@/lib/pi-events";
+import type { AgentMessage, PendingTool } from "@/lib/pi-events";
 import { useModelStore } from "@/stores/model";
 
 export type ChatStatus = "ready" | "streaming" | "error";
@@ -26,6 +26,7 @@ export interface SendMessageOptions {
 
 export interface UsePiChatResult {
   messages: AgentMessage[];
+  pendingTools: PendingTool[];
   status: ChatStatus;
   error?: string;
   isStreaming: boolean;
@@ -36,6 +37,7 @@ export interface UsePiChatResult {
 
 interface Scene {
   messages: AgentMessage[];
+  pendingTools: PendingTool[];
   isStreaming: boolean;
   runId?: string;
   error?: string;
@@ -43,6 +45,7 @@ interface Scene {
 
 const EMPTY_SCENE: Scene = {
   messages: [],
+  pendingTools: [],
   isStreaming: false,
 };
 
@@ -70,6 +73,7 @@ function ensureWired() {
 
     scenes.set(chatId, {
       messages: Array.isArray(msg.messages) ? (msg.messages as AgentMessage[]) : [],
+      pendingTools: Array.isArray(msg.pendingTools) ? (msg.pendingTools as PendingTool[]) : [],
       isStreaming: !!msg.isStreaming,
       runId: typeof msg.runId === "string" ? msg.runId : undefined,
       error: typeof msg.error === "string" ? msg.error : undefined,
@@ -128,6 +132,7 @@ export function usePiChat(chatId: string): UsePiChatResult {
 
   return {
     messages: scene.messages,
+    pendingTools: scene.pendingTools,
     status,
     error: scene.error,
     isStreaming: scene.isStreaming,

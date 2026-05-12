@@ -45,7 +45,7 @@ export function ChatPanel({ projectId, chatId, isAutonomous, source }: ChatPanel
 
   useViewChat(chatId);
 
-  const { messages, sendMessage, stop, status, error, isStreaming } =
+  const { messages, pendingTools, sendMessage, stop, status, error, isStreaming } =
     usePiChat(chatId);
 
   const typingUsers = useTypingUsers(chatId);
@@ -75,6 +75,7 @@ export function ChatPanel({ projectId, chatId, isAutonomous, source }: ChatPanel
         <ConversationContent className="px-6 md:px-10 pb-48 max-w-4xl mx-auto w-full">
           <MessageList
             messages={messages}
+            pendingTools={pendingTools}
             projectId={projectId}
             isStreaming={isStreaming}
             error={errorObj}

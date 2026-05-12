@@ -11,6 +11,7 @@ import { contentText } from "@/lib/pi-events";
 import { MessageShell } from "@/components/chat-ui/MessageShell";
 import { Markdown } from "@/components/chat-ui/Markdown";
 import { ToolCallCard } from "./ToolCallCard";
+import { SubagentCallCard } from "./SubagentCallCard";
 import { renderWithFileChips } from "@/lib/file-chips";
 
 interface MessageViewProps {
@@ -115,6 +116,15 @@ function AssistantMessageView({
           return <ReasoningBlock key={key} text={part.thinking} />;
         }
         if (part.type === "toolCall") {
+          if (part.name === "subagent") {
+            return (
+              <SubagentCallCard
+                key={key}
+                execution={executions.get(part.id)}
+                fallbackArgs={part.arguments}
+              />
+            );
+          }
           return (
             <ToolCallCard
               key={key}
