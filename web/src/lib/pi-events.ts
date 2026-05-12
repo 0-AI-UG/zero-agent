@@ -72,19 +72,34 @@ export interface ToolResultMessage {
   toolCallId: string;
   toolName: string;
   content: ToolResultContentPart[];
+  /**
+   * Tool-specific structured payload from `AgentToolResult.details`.
+   * Shape varies per tool; the subagent tool emits `SubagentDetails`
+   * (see SubagentCallCard.tsx).
+   */
+  details?: unknown;
   isError: boolean;
   timestamp: number;
 }
 
 export type AgentMessage = UserMessage | AssistantMessage | ToolResultMessage;
 
+/** Live tool execution surfaced by the server while a call is in flight. */
+export interface PendingTool {
+  toolCallId: string;
+  toolName: string;
+  args: unknown;
+  /** Same shape as `AgentToolResult` — `{ content?, details? }`. */
+  partialResult?: { content?: ToolResultContentPart[]; details?: unknown };
+}
+
 export interface ToolExecution {
   toolCallId: string;
   toolName: string;
   args: unknown;
   state: "running" | "done" | "error";
-  partial?: { content?: ToolResultContentPart[] };
-  result?: { content?: ToolResultContentPart[] };
+  partial?: { content?: ToolResultContentPart[]; details?: unknown };
+  result?: { content?: ToolResultContentPart[]; details?: unknown };
   isError?: boolean;
 }
 
