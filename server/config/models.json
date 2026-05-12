@@ -24,6 +24,30 @@
       }
     },
     {
+      "id": "deepseek/deepseek-v4",
+      "name": "DeepSeek V4",
+      "provider": "deepseek",
+      "description": "Strong general-purpose model with Chinese and coding capabilities.",
+      "contextWindow": 1048576,
+      "pricing": {
+        "input": 0.27,
+        "output": 0.55
+      },
+      "tags": [
+        "chinese",
+        "value",
+        "coding",
+        "long-context"
+      ],
+      "multimodal": false,
+      "providerConfig": {
+        "order": [
+          "deepseek"
+        ],
+        "allow_fallbacks": true
+      }
+    },
+    {
       "id": "deepseek/deepseek-v4-pro",
       "name": "DeepSeek V4 Pro",
       "provider": "deepseek",
