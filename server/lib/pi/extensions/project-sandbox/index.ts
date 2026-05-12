@@ -28,7 +28,34 @@ import { spawn } from "node:child_process";
 import { existsSync, realpathSync } from "node:fs";
 import path from "node:path";
 import { SandboxManager } from "@anthropic-ai/sandbox-runtime";
+// Deep import: sandbox-runtime hardcodes a list of "dangerous" files/dirs
+// that are unconditionally denied for writes (e.g. `.vscode`, `.idea`,
+// `.mcp.json`, `.gitmodules`). These break legitimate operations like
+// cloning a repo that ships IDE config. We mutate these arrays in place
+// below to drop the entries we don't want — ESM bindings are live, and
+// the module reads them on each `initialize()` call.
+import {
+  DANGEROUS_FILES,
+  DANGEROUS_DIRECTORIES,
+} from "@anthropic-ai/sandbox-runtime/dist/sandbox/sandbox-utils.js";
 import { resolveZeroSdkPath } from "../../zero-cli.ts";
+
+// Entries we want sandbox-runtime to stop treating as mandatory write denies.
+// Keep blocks on shell rc files (.bashrc/.zshrc/etc.) and .gitconfig —
+// those are real privilege-escalation vectors. Drop the ones that just
+// get in the way of normal repo operations.
+const UNBLOCK_FILES = new Set([".mcp.json", ".gitmodules"]);
+const UNBLOCK_DIRS = new Set([".vscode", ".idea"]);
+// Types are declared `readonly`, but at runtime these are plain arrays and
+// the module re-reads them on each `initialize()`. Cast through to mutate.
+const dangerousFiles = DANGEROUS_FILES as unknown as string[];
+const dangerousDirs = DANGEROUS_DIRECTORIES as unknown as string[];
+for (let i = dangerousFiles.length - 1; i >= 0; i--) {
+  if (UNBLOCK_FILES.has(dangerousFiles[i]!)) dangerousFiles.splice(i, 1);
+}
+for (let i = dangerousDirs.length - 1; i >= 0; i--) {
+  if (UNBLOCK_DIRS.has(dangerousDirs[i]!)) dangerousDirs.splice(i, 1);
+}
 import {
   type BashOperations,
   createBashTool,
@@ -112,10 +139,19 @@ function createSandboxedBashOps(): BashOperations {
 
       const wrappedCommand = await SandboxManager.wrapWithSandbox(command);
 
+      // sandbox-runtime unconditionally denies writes under **/.git/hooks/**.
+      // Default `git clone`/`git init` copy hook templates into that path
+      // and fail. Pointing GIT_TEMPLATE_DIR at an empty dir skips templating
+      // entirely, sidestepping the deny without weakening the sandbox.
+      const envWithGitTemplate = {
+        ...env,
+        GIT_TEMPLATE_DIR: env?.GIT_TEMPLATE_DIR ?? "/var/empty",
+      };
+
       return new Promise((resolve, reject) => {
         const child = spawn("bash", ["-c", wrappedCommand], {
           cwd,
-          env,
+          env: envWithGitTemplate,
           detached: true,
           stdio: ["ignore", "pipe", "pipe"],
         });
@@ -297,12 +333,22 @@ export default function (pi: ExtensionAPI) {
         network: {} as InitArgs["network"],
         filesystem: {
           denyRead: [...DENY_READ, projectsRoot],
-          allowRead: [projectDir],
+          // Bash gets the same read scope as the in-process FS tools so the
+          // agent can `cat`/`grep` the bundled zero CLI source and USAGE.md
+          // (resolved into readOnlyRoots above) — not just read it via the
+          // wrapped read tool.
+          allowRead: [projectDir, ...readOnlyRoots],
           allowWrite: [projectDir, "/tmp"],
           denyWrite: [
             ...DENY_WRITE_RELATIVE.map((p) => path.join(projectDir, p)),
             ...DENY_WRITE_GLOBS,
           ],
+          // sandbox-runtime adds a mandatory deny for **/.git/config unless
+          // this is set. Without it, `git clone` and `git init` fail to
+          // write the new repo's config. Hooks (**/.git/hooks/**) remain
+          // mandatorily denied — we neutralize that by forcing
+          // GIT_TEMPLATE_DIR=/var/empty below so git skips hook templating.
+          allowGitConfig: true,
         },
       });
       sandboxReady = true;
