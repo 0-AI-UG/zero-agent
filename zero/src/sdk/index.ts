@@ -31,3 +31,4 @@ export { embed } from "./embed.ts";
 export type { EmbedResponse } from "./embed.ts";
 export { search } from "./search.ts";
 export type { SearchResult, SearchResponse } from "./search.ts";
+export { trigger } from "./trigger.ts";

@@ -22,6 +22,12 @@ import {
   getFilesByFolder,
   insertFile,
 } from "@/db/queries/files.ts";
+import {
+  createFolder,
+  deleteFoldersByPathPrefix,
+  getFolderByPath,
+  getFoldersByParent,
+} from "@/db/queries/folders.ts";
 import { getProjectById } from "@/db/queries/projects.ts";
 import {
   indexFileContent,
@@ -122,11 +128,13 @@ export async function syncProjectPath(projectId: string, relPath: string): Promi
 }
 
 /**
- * Reconcile the `files` table for a single folder against disk. Adds rows
- * for files present on disk but missing from the DB, and removes rows that
- * point to paths no longer present. Used as a self-healing fallback for
- * cases where `fs.watch` events were missed (watcher detached, OS event
- * coalescing, external edits).
+ * Reconcile the `files` and `folders` tables for a single folder against
+ * disk. Adds rows for entries present on disk but missing from the DB, and
+ * removes rows that point to paths no longer present. Used as a
+ * self-healing fallback for cases where `fs.watch` events were missed
+ * (watcher detached, OS event coalescing, external edits, or paths created
+ * by tools that bypass the API entirely — e.g. scripts running in the
+ * project sandbox).
  */
 export async function reconcileFolder(
   projectId: string,
@@ -138,22 +146,28 @@ export async function reconcileFolder(
   if (folderRel && isExcluded(folderRel)) return;
   const absFolder = folderRel ? join(projectDir, folderRel) : projectDir;
 
-  let entries: { name: string; isFile: boolean }[] = [];
+  let entries: { name: string; isFile: boolean; isDir: boolean }[] = [];
   try {
     const list = await readdir(absFolder, { withFileTypes: true });
-    entries = list.map((e) => ({ name: e.name, isFile: e.isFile() }));
+    entries = list.map((e) => ({
+      name: e.name,
+      isFile: e.isFile(),
+      isDir: e.isDirectory(),
+    }));
   } catch {
     // Folder doesn't exist on disk — drop all DB rows for it.
     entries = [];
   }
 
-  const onDisk = new Set(entries.filter((e) => e.isFile).map((e) => e.name));
+  const filesOnDisk = new Set(entries.filter((e) => e.isFile).map((e) => e.name));
+  const dirsOnDisk = entries.filter((e) => e.isDir).map((e) => e.name)
+    .filter((name) => !isExcluded(folderRel ? `${folderRel}/${name}` : name));
   const dbRows = getFilesByFolder(projectId, folderPath);
 
   // Drop DB rows whose file no longer exists on disk.
   await Promise.all(
     dbRows
-      .filter((row) => !onDisk.has(row.filename))
+      .filter((row) => !filesOnDisk.has(row.filename))
       .map((row) => {
         const rel = folderRel ? `${folderRel}/${row.filename}` : row.filename;
         return processChange(projectId, rel);
@@ -163,13 +177,44 @@ export async function reconcileFolder(
   // Add DB rows for files on disk that aren't tracked.
   const dbNames = new Set(dbRows.map((r) => r.filename));
   await Promise.all(
-    [...onDisk]
+    [...filesOnDisk]
       .filter((name) => !dbNames.has(name))
       .map((name) => {
         const rel = folderRel ? `${folderRel}/${name}` : name;
         return processChange(projectId, rel);
       }),
   );
+
+  // Reconcile direct child folders. `fs.watch` does not give us reliable
+  // directory create/delete events, and tools like the project sandbox may
+  // mkdir paths without going through the API — so the `folders` table
+  // can drift out of sync with disk. Insert rows for directories present
+  // on disk but missing from the DB, and drop rows whose directory no
+  // longer exists.
+  const dirsOnDiskSet = new Set(dirsOnDisk);
+  const dbFolders = getFoldersByParent(projectId, folderPath);
+  const dbFolderNames = new Set(dbFolders.map((f) => f.name));
+
+  for (const folder of dbFolders) {
+    if (!dirsOnDiskSet.has(folder.name)) {
+      deleteFoldersByPathPrefix(projectId, folder.path);
+    }
+  }
+
+  for (const name of dirsOnDisk) {
+    if (dbFolderNames.has(name)) continue;
+    const childPath = folderPath === "/" ? `/${name}/` : `${folderPath}${name}/`;
+    if (getFolderByPath(projectId, childPath)) continue;
+    try {
+      createFolder(projectId, childPath, name);
+    } catch (err) {
+      watcherLog.debug("reconcile: createFolder failed", {
+        projectId,
+        path: childPath,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
 }
 
 async function processChange(projectId: string, relPath: string): Promise<void> {

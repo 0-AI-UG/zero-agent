@@ -21,7 +21,11 @@ import { messageCommand } from "./commands/message.ts";
 import { embedCommand } from "./commands/embed.ts";
 import { searchCommand } from "./commands/search.ts";
 
-const ZERO_ROOT = path.dirname(path.dirname(import.meta.dirname));
+// Source layout: zero/src/cli/index.ts → two levels up = zero/.
+// Bundled layout: zero/dist/cli.js → one level up = zero/.
+const ZERO_ROOT = path.basename(import.meta.dirname) === "dist"
+  ? path.dirname(import.meta.dirname)
+  : path.dirname(path.dirname(import.meta.dirname));
 
 const HELP = `zero - agent toolkit CLI
 
@@ -32,7 +36,7 @@ Groups (added by migration steps):
   health           Check that the runner→server proxy is reachable
   web              search, fetch
   image            generate
-  schedule         add, ls, update, rm
+  schedule         add (with --schedule, --event, or --script), ls, update, rm
   creds            ls, get, set, rm
   browser          open, click, fill, screenshot, evaluate, wait, status
   apps             create, delete, list

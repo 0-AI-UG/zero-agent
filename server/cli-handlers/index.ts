@@ -52,6 +52,13 @@ import { handleLlmGenerate } from "./llm.ts";
 import { handleMessageSend, handleMessageResponse } from "./message.ts";
 import { handleEmbed } from "./embed.ts";
 import { handleSearch } from "./search.ts";
+import {
+  handleTriggerFire,
+  handleTriggerStateGet,
+  handleTriggerStateSet,
+  handleTriggerStateDelete,
+  handleTriggerStateAll,
+} from "./trigger.ts";
 
 import {
   HealthInput,
@@ -82,6 +89,11 @@ import {
   MessageResponseInput,
   EmbedInput,
   SearchInput,
+  TriggerFireInput,
+  TriggerStateGetInput,
+  TriggerStateSetInput,
+  TriggerStateDeleteInput,
+  TriggerStateAllInput,
 } from "zero/schemas";
 
 export type CliHandler<S extends ZodTypeAny> = (
@@ -181,6 +193,12 @@ export function buildCliHandlerApp(): Hono {
   app.post("/zero/embed", bind(EmbedInput, handleEmbed));
 
   app.post("/zero/search", bind(SearchInput, handleSearch));
+
+  app.post("/zero/trigger/fire", bind(TriggerFireInput, handleTriggerFire));
+  app.post("/zero/trigger/state/get", bind(TriggerStateGetInput, handleTriggerStateGet));
+  app.post("/zero/trigger/state/set", bind(TriggerStateSetInput, handleTriggerStateSet));
+  app.post("/zero/trigger/state/delete", bind(TriggerStateDeleteInput, handleTriggerStateDelete));
+  app.post("/zero/trigger/state/all", bind(TriggerStateAllInput, handleTriggerStateAll));
 
   return app;
 }

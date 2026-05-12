@@ -16,6 +16,7 @@ import { markTaskRun } from "@/db/queries/scheduled-tasks.ts";
 import { parseSchedule } from "@/lib/scheduling/schedule-parser.ts";
 import { formatDateForSQLite } from "@/lib/scheduling/schedule-parser.ts";
 import { registerEventTask, unregisterEventTask, refreshEventTask } from "@/lib/scheduling/event-trigger.ts";
+import { validateScriptPath } from "@/lib/scheduling/script-runner.ts";
 import type { ScheduledTaskRow, TaskRunRow } from "@/db/types.ts";
 import type { EventName } from "@/lib/scheduling/events.ts";
 
@@ -47,6 +48,7 @@ function formatTask(row: ScheduledTaskRow) {
     triggerFilter: row.trigger_filter ? JSON.parse(row.trigger_filter) : null,
     cooldownSeconds: row.cooldown_seconds,
     maxSteps: row.max_steps,
+    scriptPath: row.script_path,
     createdAt: toUTC(row.created_at),
     updatedAt: toUTC(row.updated_at),
   };
@@ -102,14 +104,15 @@ export async function handleCreateTask(request: Request): Promise<Response> {
       schedule?: string;
       requiredTools?: string[] | null;
       requiredSkills?: string[] | null;
-      triggerType?: "schedule" | "event";
+      triggerType?: "schedule" | "event" | "script";
       triggerEvent?: string;
       triggerFilter?: Record<string, string>;
       cooldownSeconds?: number;
       maxSteps?: number;
+      scriptPath?: string;
     };
 
-    const triggerType = body.triggerType || "schedule";
+    const triggerType = body.triggerType || (body.scriptPath ? "script" : "schedule");
 
     if (!body.name || !body.prompt) {
       throw new ValidationError("name and prompt are required");
@@ -121,6 +124,18 @@ export async function handleCreateTask(request: Request): Promise<Response> {
       }
       if (!VALID_TRIGGER_EVENTS.includes(body.triggerEvent as EventName)) {
         throw new ValidationError(`Invalid trigger event. Valid events: ${VALID_TRIGGER_EVENTS.join(", ")}`);
+      }
+    } else if (triggerType === "script") {
+      if (!body.schedule) {
+        throw new ValidationError("schedule is required for script-triggered tasks");
+      }
+      const validation = parseSchedule(body.schedule);
+      if (!validation.valid) {
+        throw new ValidationError(validation.error!);
+      }
+      if (body.scriptPath !== undefined) {
+        const v = validateScriptPath(body.scriptPath);
+        if (!v.valid) throw new ValidationError(v.error!);
       }
     } else {
       if (!body.schedule) {
@@ -147,6 +162,7 @@ export async function handleCreateTask(request: Request): Promise<Response> {
       requiredTools, requiredSkills,
       triggerType, body.triggerEvent, body.triggerFilter, body.cooldownSeconds ?? 0,
       body.maxSteps,
+      triggerType === "script" ? (body.scriptPath ?? null) : null,
     );
 
     if (triggerType === "event") {
@@ -176,12 +192,18 @@ export async function handleUpdateTask(request: Request): Promise<Response> {
       enabled?: boolean;
       requiredTools?: string[] | null;
       requiredSkills?: string[] | null;
-      triggerType?: "schedule" | "event";
+      triggerType?: "schedule" | "event" | "script";
       triggerEvent?: string;
       triggerFilter?: Record<string, string> | null;
       cooldownSeconds?: number;
       maxSteps?: number | null;
+      scriptPath?: string | null;
     };
+
+    if (body.scriptPath !== undefined && body.scriptPath !== null) {
+      const v = validateScriptPath(body.scriptPath);
+      if (!v.valid) throw new ValidationError(v.error!);
+    }
 
     if (body.schedule !== undefined) {
       const validation = parseSchedule(body.schedule);
@@ -218,6 +240,7 @@ export async function handleUpdateTask(request: Request): Promise<Response> {
         : undefined,
       cooldown_seconds: body.cooldownSeconds,
       max_steps: body.maxSteps,
+      script_path: body.scriptPath,
     });
 
     // Re-register event listener if trigger config changed

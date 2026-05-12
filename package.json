@@ -70,6 +70,7 @@
     "@types/sharp": "^0.32.0",
     "@types/turndown": "^5.0.6",
     "@types/which": "^3.0.4",
+    "@vitest/coverage-v8": "^4.1.6",
     "cheerio": "^1.2.0",
     "date-fns": "^4.1.0",
     "lucide-react": "^1.7.0",

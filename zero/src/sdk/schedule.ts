@@ -12,11 +12,12 @@ export interface ScheduledTask {
   id: string;
   name: string;
   prompt: string;
-  triggerType: "schedule" | "event";
+  triggerType: "schedule" | "event" | "script";
   schedule?: string;
   triggerEvent?: string;
   triggerFilter?: Record<string, string>;
   cooldownSeconds?: number;
+  scriptPath?: string | null;
   enabled: boolean;
   nextRunAt?: string;
   lastRunAt?: string;

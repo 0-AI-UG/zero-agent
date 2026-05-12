@@ -92,11 +92,12 @@ export interface ScheduledTaskRow {
   run_count: number;
   required_tools: string | null;
   required_skills: string | null;
-  trigger_type: "schedule" | "event";
+  trigger_type: "schedule" | "event" | "script";
   trigger_event: string | null;
   trigger_filter: string | null;
   cooldown_seconds: number;
   max_steps: number | null;
+  script_path: string | null;
   created_at: string;
   updated_at: string;
 }

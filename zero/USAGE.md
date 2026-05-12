@@ -35,12 +35,41 @@ Writes to workspace (`generated/` by default); `--path` overrides destination.
 
 ## schedule
 ```
-zero schedule add --name <n> --prompt <p> [--schedule <cron>|--event <e>] [--filter key=value ...] [--cooldown <seconds>]
+zero schedule add --name <n> --prompt <p> [--schedule <cron>|--event <e>|--script <path>] [--filter key=value ...] [--cooldown <seconds>]
 zero schedule ls
-zero schedule update --id <id> [--name ...] [--prompt ...] [--enabled true|false] ...
+zero schedule update --id <id> [--name ...] [--prompt ...] [--script <path>] [--enabled true|false] ...
 zero schedule rm --id <id>
 ```
-Pass `--schedule` (cron) or `--event`, not both. `ls` before adding to avoid duplicates. Cooldown (seconds) prevents event storms.
+Three trigger types — pick exactly one:
+- `--schedule <cron>` — fires on a cron interval (e.g. `every 10m`, `0 9 * * *`).
+- `--event <name>` — fires on an in-app event (e.g. `file.created`, `message.received`). Optional `--filter key=value` narrows matches.
+- `--script <path>` — runs a TypeScript trigger you authored. The script decides when to wake the agent. Combine with `--schedule` to set how often it runs.
+
+`ls` before adding to avoid duplicates. `--cooldown` (seconds) prevents event storms.
+
+### Script triggers
+A script trigger is a `.ts` file at `.zero/triggers/<task-id>.ts` (or any path you pass to `--script`). The scheduler runs it under Bun every `--schedule` interval. The script imports the `zero` SDK, checks whatever condition it wants, and calls `trigger.fire(...)` to wake the agent with the task's prompt. If it exits without firing, nothing happens — useful as a quiet condition check.
+
+```ts
+// .zero/triggers/btc-watch.ts
+import { trigger, web } from "zero";
+
+const res = await web.fetch("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd");
+const price = JSON.parse(res.body).bitcoin.usd as number;
+const last = (await trigger.state.get<number>("lastPrice")) ?? price;
+await trigger.state.set("lastPrice", price);
+
+if (price < 50_000 && last >= 50_000) {
+  await trigger.fire({ payload: { price, last } });
+}
+```
+
+The `trigger` SDK surface:
+- `trigger.fire({ prompt?, payload? })` — wakes the agent. Multiple calls in one run are batched into one turn. `prompt` overrides the task prompt for this run; `payload` is included as context.
+- `trigger.skip()` — explicit "no fire" (same as exiting without firing).
+- `trigger.state.get(key)` / `.set(key, value)` / `.delete(key)` / `.all()` — per-task persistent JSON state for remembering things between runs (last seen URL, last price, dedup keys, etc.).
+
+Scripts have a 30s wall-clock timeout. Write the file with the normal file tools before creating the task; the server does not auto-create it.
 
 ## message
 ```

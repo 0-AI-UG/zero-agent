@@ -3,7 +3,7 @@ import type { ScheduledTaskRow } from "@/db/types.ts";
 import { computeNextRun, formatDateForSQLite } from "@/lib/scheduling/schedule-parser.ts";
 
 const insertStmt = db.prepare(
-  "INSERT INTO scheduled_tasks (id, project_id, user_id, name, prompt, schedule, next_run_at, enabled, required_tools, required_skills, trigger_type, trigger_event, trigger_filter, cooldown_seconds, max_steps) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *",
+  "INSERT INTO scheduled_tasks (id, project_id, user_id, name, prompt, schedule, next_run_at, enabled, required_tools, required_skills, trigger_type, trigger_event, trigger_filter, cooldown_seconds, max_steps, script_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *",
 );
 
 const byProjectStmt = db.prepare(
@@ -19,7 +19,7 @@ const deleteStmt = db.prepare(
 );
 
 const dueStmt = db.prepare(
-  "SELECT * FROM scheduled_tasks WHERE enabled = 1 AND trigger_type = 'schedule' AND next_run_at <= datetime('now') ORDER BY next_run_at ASC",
+  "SELECT * FROM scheduled_tasks WHERE enabled = 1 AND trigger_type IN ('schedule', 'script') AND next_run_at <= datetime('now') ORDER BY next_run_at ASC",
 );
 
 const eventTasksStmt = db.prepare(
@@ -47,11 +47,12 @@ export function insertTask(
   enabled: boolean = true,
   requiredTools?: string[],
   requiredSkills?: string[],
-  triggerType: "schedule" | "event" = "schedule",
+  triggerType: "schedule" | "event" | "script" = "schedule",
   triggerEvent?: string,
   triggerFilter?: Record<string, string>,
   cooldownSeconds: number = 0,
   maxSteps?: number,
+  scriptPath?: string | null,
 ): ScheduledTaskRow {
   const id = generateId();
   const nextRunAt = triggerType === "event"
@@ -66,6 +67,7 @@ export function insertTask(
     triggerFilter ? JSON.stringify(triggerFilter) : null,
     cooldownSeconds,
     maxSteps ?? null,
+    scriptPath ?? null,
   ) as ScheduledTaskRow;
 }
 
@@ -79,7 +81,7 @@ export function getTaskById(id: string): ScheduledTaskRow | null {
 
 export function updateTask(
   id: string,
-  fields: Partial<Pick<ScheduledTaskRow, "name" | "prompt" | "schedule" | "enabled" | "required_tools" | "required_skills" | "trigger_type" | "trigger_event" | "trigger_filter" | "cooldown_seconds" | "max_steps">>,
+  fields: Partial<Pick<ScheduledTaskRow, "name" | "prompt" | "schedule" | "enabled" | "required_tools" | "required_skills" | "trigger_type" | "trigger_event" | "trigger_filter" | "cooldown_seconds" | "max_steps" | "script_path">>,
 ): ScheduledTaskRow {
   const task = byIdStmt.get(id) as ScheduledTaskRow | undefined;
   if (!task) throw new Error("Task not found");
@@ -152,6 +154,14 @@ export function updateTask(
     } else {
       sets.push("max_steps = ?");
       values.push(fields.max_steps);
+    }
+  }
+  if (fields.script_path !== undefined) {
+    if (fields.script_path === null) {
+      sets.push("script_path = NULL");
+    } else {
+      sets.push("script_path = ?");
+      values.push(fields.script_path);
     }
   }
 
