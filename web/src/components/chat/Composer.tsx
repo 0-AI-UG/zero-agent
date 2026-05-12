@@ -1,23 +1,24 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useCallback, useMemo, useRef, useState, type DragEvent, type FormEvent, type ReactNode } from "react";
 import { CornerDownLeftIcon, SquareIcon, XIcon } from "lucide-react";
 import type { AgentMessage } from "@/lib/pi-events";
 import { contentText } from "@/lib/pi-events";
 import type { ChatStatus, SendMessageOptions } from "@/hooks/use-pi-chat";
-import { useModelStore, getModelsCache, getSelectedModel } from "@/stores/model";
+import { useModelStore, getSelectedModel } from "@/stores/model";
 import { useModels } from "@/api/models";
 import { sendTyping } from "@/lib/ws";
 import type { ServerCapabilities } from "@/api/capabilities";
 import type { TypingUser } from "@/stores/realtime";
+import { useUploadFiles } from "@/hooks/use-upload-files";
 
-import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Context } from "@/components/chat-ui/Context";
 import { RichTextarea, type RichTextareaHandle } from "./RichTextarea";
 import { ModelSection } from "./ModelSection";
-import { ImageUploadButton, type ImageAttachment } from "./ScreenshotButton";
 import { FilePickerButton } from "./FilePickerButton";
 import { TurnDiffButton } from "./TurnDiffButton";
 import { BrowserPreviewButton } from "@/components/chat-ui/BrowserPreview";
+import { Button } from "@/components/ui/button";
 
 interface ComposerProps {
   projectId: string;
@@ -114,19 +115,13 @@ export function Composer({
   presenceDots,
 }: ComposerProps) {
   const [input, setInput] = useState("");
-  const [imageAttachment, setImageAttachment] = useState<ImageAttachment | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragDepth = useRef(0);
   const lastTypingSentRef = useRef(0);
   const richTextareaRef = useRef<RichTextareaHandle>(null);
+  const { upload, isUploading } = useUploadFiles(projectId);
 
   const selectedModelId = useModelStore((s) => s.selectedModelId);
-  const isMultimodal = useMemo(
-    () => getModelsCache().find((m) => m.id === selectedModelId)?.multimodal ?? false,
-    [selectedModelId],
-  );
-
-  useEffect(() => {
-    if (!isMultimodal) setImageAttachment(null);
-  }, [isMultimodal]);
 
   const handleInputChange = useCallback(
     (value: string) => {
@@ -142,21 +137,57 @@ export function Composer({
 
   const handleSubmit = useCallback(() => {
     if (isStreaming) return;
-    if (!input.trim() && !imageAttachment) return;
-    const images = imageAttachment
-      ? (() => {
-          const m = imageAttachment.dataUrl.match(/^data:([^;]+);base64,(.*)$/);
-          if (!m) return undefined;
-          return [{ mimeType: m[1] ?? "image/png", data: m[2] ?? "" }];
-        })()
-      : undefined;
-    sendMessage({
-      text: input || (imageAttachment ? "Describe this image." : ""),
-      ...(images ? { images } : {}),
-    });
+    if (!input.trim()) return;
+    sendMessage({ text: input });
     setInput("");
-    setImageAttachment(null);
-  }, [input, imageAttachment, isStreaming, sendMessage]);
+  }, [input, isStreaming, sendMessage]);
+
+  const handleFiles = useCallback(
+    async (files: File[]) => {
+      if (files.length === 0) return;
+      const uploaded = await upload(files, "/");
+      for (const file of uploaded) {
+        const fullPath = file.folderPath === "/" ? file.filename : `${file.folderPath}/${file.filename}`;
+        richTextareaRef.current?.insertFileChip(file.id, fullPath, file.filename);
+      }
+      richTextareaRef.current?.focus();
+    },
+    [upload],
+  );
+
+  const handleDragEnter = useCallback((e: DragEvent<HTMLFormElement>) => {
+    if (!e.dataTransfer.types.includes("Files")) return;
+    e.preventDefault();
+    dragDepth.current += 1;
+    setIsDragging(true);
+  }, []);
+
+  const handleDragOver = useCallback((e: DragEvent<HTMLFormElement>) => {
+    if (!e.dataTransfer.types.includes("Files")) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+  }, []);
+
+  const handleDragLeave = useCallback((e: DragEvent<HTMLFormElement>) => {
+    if (!e.dataTransfer.types.includes("Files")) return;
+    dragDepth.current -= 1;
+    if (dragDepth.current <= 0) {
+      dragDepth.current = 0;
+      setIsDragging(false);
+    }
+  }, []);
+
+  const handleDrop = useCallback(
+    (e: DragEvent<HTMLFormElement>) => {
+      if (!e.dataTransfer.types.includes("Files")) return;
+      e.preventDefault();
+      dragDepth.current = 0;
+      setIsDragging(false);
+      const files = Array.from(e.dataTransfer.files);
+      void handleFiles(files);
+    },
+    [handleFiles],
+  );
 
   const onFormSubmit = useCallback(
     (e: FormEvent<HTMLFormElement>) => {
@@ -173,29 +204,26 @@ export function Composer({
     () => modelsList?.find((m) => m.id === selectedModelId)?.contextWindow,
     [modelsList, selectedModelId],
   );
-  const canSubmit = input.trim() !== "" || imageAttachment !== null;
+  const canSubmit = input.trim() !== "";
 
   return (
     <div className="px-3 pb-2 sm:pb-4 sm:px-6 md:px-10 space-y-2 max-w-4xl mx-auto w-full">
-      {imageAttachment && (
-        <div className="flex items-center gap-2 pb-2">
-          <div className="relative rounded border bg-muted overflow-hidden">
-            <img
-              src={imageAttachment.dataUrl}
-              alt="Attached"
-              className="h-16 w-auto object-contain"
-            />
-          </div>
-          <span className="text-xs text-muted-foreground truncate max-w-[200px]">
-            {imageAttachment.file.name}
-          </span>
-        </div>
-      )}
-
       <form
         onSubmit={onFormSubmit}
-        className="rounded-3xl border bg-card shadow-sm px-2 py-2 flex flex-col gap-2"
+        onDragEnter={handleDragEnter}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        className={cn(
+          "relative rounded-3xl border bg-card shadow-sm px-2 py-2 flex flex-col gap-2",
+          isDragging && "border-primary ring-2 ring-primary/30",
+        )}
       >
+        {isDragging && (
+          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-3xl bg-primary/5 text-sm font-medium text-primary">
+            Drop files to attach
+          </div>
+        )}
         <div className="px-2 pt-1">
           <RichTextarea
             ref={richTextareaRef}
@@ -231,12 +259,8 @@ export function Composer({
             <BrowserPreviewButton projectId={projectId} />
             <span className="hidden md:contents">
               <ModelSection />
-              {isMultimodal && (
-                <ImageUploadButton
-                  attachment={imageAttachment}
-                  onAttach={setImageAttachment}
-                  onRemove={() => setImageAttachment(null)}
-                />
+              {isUploading && (
+                <span className="text-[11px] text-muted-foreground px-1">Uploading…</span>
               )}
               {usage.totalTokens > 0 && contextWindow ? (
                 <Context

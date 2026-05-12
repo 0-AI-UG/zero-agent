@@ -110,8 +110,8 @@ export function useUploadFiles(projectId: string) {
   const activeRef = useRef(0);
 
   const upload = useCallback(
-    async (files: File[], basePath: string) => {
-      if (files.length === 0) return;
+    async (files: File[], basePath: string): Promise<FileItem[]> => {
+      if (files.length === 0) return [];
 
       const tooLarge = files.filter((f) => f.size > MAX_FILE_SIZE);
       const valid = files.filter((f) => f.size <= MAX_FILE_SIZE);
@@ -123,12 +123,13 @@ export function useUploadFiles(projectId: string) {
             : `${tooLarge.length} files exceed 50 MB and were skipped.`,
         );
       }
-      if (valid.length === 0) return;
+      if (valid.length === 0) return [];
 
       activeRef.current += valid.length;
       setPending(activeRef.current);
 
       const folderCache = new Set<string>();
+      const uploaded: FileItem[] = [];
       let succeeded = 0;
       let failed = 0;
 
@@ -143,7 +144,8 @@ export function useUploadFiles(projectId: string) {
             segments,
             folderCache,
           );
-          await uploadOne(projectId, file, targetPath);
+          const item = await uploadOne(projectId, file, targetPath);
+          uploaded.push(item);
           succeeded++;
         } catch {
           failed++;
@@ -180,6 +182,8 @@ export function useUploadFiles(projectId: string) {
       } else {
         toast.error(`Uploaded ${succeeded}, failed ${failed}.`);
       }
+
+      return uploaded;
     },
     [projectId, queryClient],
   );
