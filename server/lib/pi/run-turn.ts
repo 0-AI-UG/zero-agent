@@ -172,6 +172,10 @@ export async function runTurn(opts: RunTurnOptions): Promise<TurnResult> {
     ZERO_PROXY_URL: `http://127.0.0.1:${cliPort}/v1/proxy`,
     ZERO_PROXY_TOKEN: token,
     ZERO_RUN_ID: runId,
+    // Forwarded to subagent subprocesses so they inherit the parent's model
+    // when the agent definition doesn't pin one. See subagent extension.
+    ZERO_PI_PROVIDER: opts.model.provider,
+    ZERO_PI_MODEL_ID: opts.model.modelId,
   };
 
   const invocation = getPiInvocation(args);

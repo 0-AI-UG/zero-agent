@@ -15,6 +15,7 @@
 import {
   existsSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   readlinkSync,
   symlinkSync,
@@ -42,6 +43,13 @@ const SYSTEM_PROMPT = `You are Zero, a general-purpose assistant running inside 
 For anything beyond your built-in tools (read/write/edit/bash/grep/find/ls), use the \`zero\` CLI: web search/fetch, browser control, image generation, scheduling, credentials, apps (\`zero apps create\` allocates a port + URL for a server you run), sending messages to the user, LLM calls, and embeddings/search. Run \`zero <group> --help\` for the authoritative interface.
 
 For programmatic / multi-step composition, run a bun script that imports the same surface: \`import { web, browser, image, ... } from "./.pi/zero-sdk.mjs"\`. Use this when you need to chain calls, pass structured data between them, or loop — otherwise prefer the CLI.
+
+You can delegate work to subagents via the \`subagent\` tool. Each subagent runs in its own isolated context window — use them to keep this conversation focused. Available agents:
+- \`explore\` — read-only codebase recon; returns compressed findings with file paths and excerpts.
+- \`plan\` — read-only planning; turns context + a requirement into a concrete implementation plan.
+- \`agent\` — general-purpose, full tool access; for self-contained tasks that would otherwise eat this context.
+
+Modes: \`{ agent, task }\` (single), \`{ tasks: [...] }\` (parallel, up to 8), \`{ chain: [...] }\` (sequential, use \`{previous}\` to pass output forward). Prefer subagents when a task involves a lot of reading/exploration whose details you don't need to keep around.
 `;
 
 function projectSandboxExtensionPath(): string {
@@ -54,9 +62,24 @@ function projectSandboxExtensionPath(): string {
   return ext;
 }
 
+function subagentExtensionPath(): string {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const ext = path.join(here, "extensions", "subagent");
+  if (!existsSync(ext)) {
+    throw new Error(`subagent extension not found at ${ext}`);
+  }
+  return ext;
+}
+
+/** Where the bundled agent definitions live. */
+function defaultAgentsDir(): string {
+  return path.join(subagentExtensionPath(), "default-agents");
+}
+
 function buildSettings(opts: PiConfigInputs) {
   const extensions = [
     projectSandboxExtensionPath(),
+    subagentExtensionPath(),
     ...(opts.extraExtensions ?? []),
   ];
   return {
@@ -114,6 +137,17 @@ export function ensurePiConfig(opts: PiConfigInputs): {
   writeIfChanged(path.join(configDir, "SYSTEM.md"), SYSTEM_PROMPT);
 
   ensureSymlink(path.join(configDir, "zero-sdk.mjs"), resolveZeroSdkPath());
+
+  // Materialize bundled subagent definitions into <project>/.pi/agents/*.md
+  // so the subagent extension's project-scope discovery picks them up.
+  // User-added .md files in this directory coexist with the symlinks.
+  const agentsDir = path.join(configDir, "agents");
+  mkdirSync(agentsDir, { recursive: true });
+  const srcAgents = defaultAgentsDir();
+  for (const name of readdirSync(srcAgents)) {
+    if (!name.endsWith(".md")) continue;
+    ensureSymlink(path.join(agentsDir, name), path.join(srcAgents, name));
+  }
 
   return { configDir, skillsDir };
 }
