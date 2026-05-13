@@ -71,11 +71,27 @@ The `trigger` SDK surface:
 
 Scripts have a 30s wall-clock timeout. Write the file with the normal file tools before creating the task; the server does not auto-create it.
 
-## message
+## notification
 ```
-zero message send <text>
+zero notification send <text>
 ```
 Delivers to all configured channels (Telegram, push, in-app).
+
+## email
+```
+zero email list   [--unread] [--from <addr>] [--since <iso>] [--thread <key>] [--limit <n>]
+zero email read   <id>
+zero email send   --to <addr,addr> --subject <s> --body <text> [--context <text>]
+zero email reply  <id> --body <text>
+zero email search <query> [--limit <n>]
+```
+External SMTP/IMAP correspondence over the project's own mailbox (Project → Settings → Email). Distinct from `message`, which pings project members on their personal channels.
+
+Inbound mail lands in an email-sourced chat and a turn runs automatically; your assistant text is sent verbatim as the reply — no preamble, no clarifying questions, empty reply = nothing is sent. Threading is preserved across `In-Reply-To`/`References`, including iOS Mail replies that re-root the chain.
+
+`send` covers cold outreach (no prior thread) too. `--context <text>` lets the calling agent leave a note for the agent that will respond when the recipient replies: what this email is about, prior conversation, who the recipient is. The context is shown to the responder on the first reply alongside a recap of what was sent.
+
+`reply <id>` threads off the inbound row at `<id>`; the server derives `to` and subject from the parent.
 
 ## creds
 ```

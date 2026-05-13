@@ -1,5 +1,5 @@
 /**
- * Message handler - send a message to the user.
+ * Notification handler — notify project members.
  *
  * All channels (WS, push, Telegram) are routed through the notification
  * dispatcher, which honours per-user opt-out subscriptions. Telegram
@@ -7,8 +7,8 @@
  *
  * When the caller sets `respond: true`, the dispatch creates a pending-
  * responses group (one row per project member) and the handler returns
- * the `groupId` immediately. The CLI then polls `zero message response`
- * / `/api/runner-proxy/zero/message/response` until the group resolves,
+ * the `groupId` immediately. The CLI then polls `zero notification response`
+ * / `/api/runner-proxy/zero/notification/response` until the group resolves,
  * expires, or is cancelled. Polling is an explicit CLI call (not a held
  * request) so we don't hog unix-socket slots or collide with the proxy's
  * request timeout.
@@ -21,20 +21,20 @@ import type { DispatchChannel } from "@/lib/notifications/subscriptions.ts";
 import { getPendingResponsesByGroup } from "@/db/queries/pending-responses.ts";
 import type { CliContext } from "./context.ts";
 import { ok, fail } from "./response.ts";
-import type { MessageSendInput, MessageResponseInput } from "zero/schemas";
+import type { NotificationSendInput, NotificationResponseInput } from "zero/schemas";
 
 const DEFAULT_RESPOND_TIMEOUT_MS = 5 * 60_000;
 
-export async function handleMessageSend(
+export async function handleNotificationSend(
   ctx: CliContext,
-  input: z.infer<typeof MessageSendInput>,
+  input: z.infer<typeof NotificationSendInput>,
 ): Promise<Response> {
   const deliveredSet = new Set<DispatchChannel>();
 
   // Target list = project members ∪ {CLI invoker}. The invoker is included
   // explicitly because admins can run a session in a project they're not
   // enrolled in (verifyProjectAccess bypasses project_members for admins),
-  // so they would otherwise miss their own `zero message send` outputs.
+  // so they would otherwise miss their own `zero notification send` outputs.
   const members = getProjectMembers(ctx.projectId);
   const memberIds = Array.from(
     new Set([ctx.userId, ...members.map((m) => m.user_id)]),
@@ -115,9 +115,9 @@ export async function handleMessageSend(
  *
  * If the groupId doesn't exist (or has no rows), returns `not_found`.
  */
-export async function handleMessageResponse(
+export async function handleNotificationResponse(
   ctx: CliContext,
-  input: z.infer<typeof MessageResponseInput>,
+  input: z.infer<typeof NotificationResponseInput>,
 ): Promise<Response> {
   const rows = getPendingResponsesByGroup(input.groupId);
   if (rows.length === 0) return fail("not_found", "pending response not found", 404);

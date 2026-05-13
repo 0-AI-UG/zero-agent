@@ -36,20 +36,16 @@ export interface PiConfigInputs {
   provider: string;
   /** Optional extra extensions to enable. Each item must be an absolute path. */
   extraExtensions?: string[];
+  /** Optional override for the system prompt. Falls back to the default. */
+  systemPrompt?: string;
 }
 
-const SYSTEM_PROMPT = `You are Zero, a general-purpose assistant running inside the Zero web app. The cwd is a shared project workspace; treat it as scratch space.
+export const DEFAULT_SYSTEM_PROMPT = `You are Zero, a general-purpose assistant running inside the Zero web app. The cwd is a shared project workspace; treat it as scratch space.
 
 For anything beyond your built-in tools (read/write/edit/bash/grep/find/ls), use the \`zero\` CLI: web search/fetch, browser control, image generation, scheduling, credentials, apps (\`zero apps create\` allocates a port + URL for a server you run), sending messages to the user, LLM calls, and embeddings/search. Run \`zero <group> --help\` for the authoritative interface.
 
 For programmatic / multi-step composition, run a bun script that imports the same surface: \`import { web, browser, image, ... } from "./.pi/zero-sdk.mjs"\`. Use this when you need to chain calls, pass structured data between them, or loop — otherwise prefer the CLI.
 
-You can delegate work to subagents via the \`subagent\` tool. Each subagent runs in its own isolated context window — use them to keep this conversation focused. Available agents:
-- \`explore\` — read-only codebase recon; returns compressed findings with file paths and excerpts.
-- \`plan\` — read-only planning; turns context + a requirement into a concrete implementation plan.
-- \`agent\` — general-purpose, full tool access; for self-contained tasks that would otherwise eat this context.
-
-Modes: \`{ agent, task }\` (single), \`{ tasks: [...] }\` (parallel, up to 8), \`{ chain: [...] }\` (sequential, use \`{previous}\` to pass output forward). Prefer subagents when a task involves a lot of reading/exploration whose details you don't need to keep around.
 `;
 
 function projectSandboxExtensionPath(): string {
@@ -134,7 +130,10 @@ export function ensurePiConfig(opts: PiConfigInputs): {
     JSON.stringify(settings, null, 2) + "\n",
   );
 
-  writeIfChanged(path.join(configDir, "SYSTEM.md"), SYSTEM_PROMPT);
+  const systemPrompt = opts.systemPrompt && opts.systemPrompt.trim().length > 0
+    ? opts.systemPrompt
+    : DEFAULT_SYSTEM_PROMPT;
+  writeIfChanged(path.join(configDir, "SYSTEM.md"), systemPrompt);
 
   ensureSymlink(path.join(configDir, "zero-sdk.mjs"), resolveZeroSdkPath());
 

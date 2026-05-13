@@ -28,6 +28,10 @@ export type AgentEvents = {
   "skill.loaded": { projectId: string; skillName: string; chatId: string };
   "skill.installed": { projectId: string; skillName: string; source: string };
   "skill.uninstalled": { projectId: string; skillName: string };
+
+  // Email
+  "email.received": { projectId: string; chatId: string; threadKey: string; from: string; subject: string; hasAttachments: boolean; messageId: string };
+  "email.sent": { projectId: string; chatId: string; threadKey: string; to: string; subject: string };
 };
 
 export type EventName = keyof AgentEvents;

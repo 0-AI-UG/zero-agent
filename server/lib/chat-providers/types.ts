@@ -7,7 +7,7 @@
  * path and does not implement this interface; providers here are non-web
  * surfaces that want agent parity with the chat UI.
  */
-export type ChatProviderName = "telegram" | "discord" | "slack";
+export type ChatProviderName = "telegram" | "discord" | "slack" | "email";
 
 export interface ProviderIncomingMessage {
   /** Provider-specific update / payload object. */
@@ -31,6 +31,8 @@ export interface NotificationPayload {
   body: string;
   url?: string;
   actions?: { id: string; label: string }[];
+  /** Project this notification is for. Required for email delivery (per-project mailbox). */
+  projectId?: string | null;
 }
 
 export interface LinkCodeResult {

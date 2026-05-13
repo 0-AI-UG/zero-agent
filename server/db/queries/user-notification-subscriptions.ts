@@ -1,7 +1,7 @@
 import { db, generateId } from "@/db/index.ts";
 import type { UserNotificationSubscriptionRow } from "@/db/types.ts";
 
-export type NotificationChannel = "ws" | "push" | "telegram";
+export type NotificationChannel = "ws" | "push" | "telegram" | "email";
 
 const listStmt = db.prepare(
   "SELECT * FROM user_notification_subscriptions WHERE user_id = ?"

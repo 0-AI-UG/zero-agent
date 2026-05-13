@@ -99,10 +99,12 @@ type TelegramNotifier = (
     body: string;
     url?: string;
     actions?: DispatchAction[];
+    projectId?: string | null;
   }
 ) => Promise<boolean>;
 
 let telegramNotifier: TelegramNotifier | null = null;
+let emailNotifier: TelegramNotifier | null = null;
 
 /**
  * Register the Telegram notifier (called from Stage 5 when the global
@@ -110,6 +112,11 @@ let telegramNotifier: TelegramNotifier | null = null;
  */
 export function registerTelegramNotifier(fn: TelegramNotifier): void {
   telegramNotifier = fn;
+}
+
+/** Register the email notifier — called when EmailProvider is wired at boot. */
+export function registerEmailNotifier(fn: TelegramNotifier): void {
+  emailNotifier = fn;
 }
 
 export async function dispatch(input: DispatchInput): Promise<DispatchResult> {
@@ -260,6 +267,19 @@ async function deliverChannel(
           body: input.body,
           url: input.url,
           actions: input.actions,
+          projectId: input.projectId ?? null,
+        });
+      }
+      case "email": {
+        if (!emailNotifier) return false;
+        if (!input.projectId) return false;
+        return await emailNotifier(userId, {
+          pendingResponseId: ctx.pendingResponseId,
+          title: input.title,
+          body: input.body,
+          url: input.url,
+          actions: input.actions,
+          projectId: input.projectId,
         });
       }
     }

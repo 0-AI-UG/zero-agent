@@ -31,10 +31,41 @@ export interface ProjectRow {
   assistant_name: string;
   assistant_description: string;
   assistant_icon: string;
+  system_prompt: string;
   is_starred: number;
   is_archived: number;
+  email_enabled: number;
+  email_address: string | null;
+  email_password_enc: string | null;
+  email_from_name: string | null;
+  email_imap_host: string | null;
+  email_imap_port: number | null;
+  email_imap_secure: string | null;
+  email_smtp_host: string | null;
+  email_smtp_port: number | null;
+  email_smtp_secure: string | null;
+  email_autoconfig_status: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface EmailMessageRow {
+  id: string;
+  project_id: string;
+  chat_id: string | null;
+  direction: "in" | "out";
+  message_id_hdr: string;
+  in_reply_to: string | null;
+  references_hdr: string | null;
+  thread_key: string;
+  from_addr: string;
+  to_addrs: string;
+  subject: string;
+  body_text: string | null;
+  body_html: string | null;
+  attachments: string | null;
+  context: string | null;
+  received_at: string;
 }
 
 export interface ChatRow {
@@ -254,7 +285,7 @@ export interface UserNotificationSubscriptionRow {
   id: string;
   user_id: string;
   kind: string;
-  channel: "ws" | "push" | "telegram";
+  channel: "ws" | "push" | "telegram" | "email";
   enabled: number;
   created_at: string;
 }

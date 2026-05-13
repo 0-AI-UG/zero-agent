@@ -1,13 +1,22 @@
 FROM node:22-slim
 
 # Install Bun (used for install + build only — server runtime is Node)
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    bash \
+    ca-certificates \
     curl \
+    wget \
     unzip \
+    git \
+    openssh-client \
     python3 \
     make \
     g++ \
-    git \
+    ripgrep \
+    jq \
+    less \
+    tree \
+    tini \
     && rm -rf /var/lib/apt/lists/*
 RUN curl -fsSL https://bun.sh/install | bash
 ENV PATH="/root/.bun/bin:${PATH}"
@@ -64,4 +73,5 @@ ENV DISPLAY=:99
 EXPOSE 3000
 
 ENV NODE_ENV=production
+ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["sh", "-c", "if [ \"$BROWSER_HEADLESS\" = \"false\" ]; then Xvfb :99 -screen 0 1280x800x24 & fi; exec npm start"]

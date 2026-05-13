@@ -9,7 +9,7 @@
  *      flows like CLI requests.
  *
  *   2. **Free-text reply** (`requiresReply` and no actions) - renders an
- *      inline input. Used by `zero message send --respond`.
+ *      inline input. Used by `zero notification send --respond`.
  *
  *   3. **Plain notification** (no reply requested) - title + body, with an
  *      optional "Open" link if a URL was provided. Auto-dismisses on the

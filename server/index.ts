@@ -97,6 +97,8 @@ import {
 } from "@/routes/me-telegram.ts";
 import { registerTelegramProvider } from "@/lib/chat-providers/telegram/provider.ts";
 import { handleGlobalUpdate } from "@/lib/chat-providers/telegram/router.ts";
+import { registerEmailProvider } from "@/lib/chat-providers/email/provider.ts";
+import { startAllMailboxes } from "@/lib/email-global/mailbox.ts";
 import {
   startGlobalPoller,
   stopGlobalPoller,
@@ -148,6 +150,13 @@ import {
 } from "@/routes/user-invitations.ts";
 import { handleSetupStatus, handleSetupComplete } from "@/routes/setup.ts";
 import { handleGetSettings, handleUpdateSettings, handleListImageModels } from "@/routes/settings.ts";
+import { handleEmailFeatureStatus, handleEmailFeatureToggle } from "@/routes/admin-email.ts";
+import {
+  handleGetProjectEmail,
+  handleUpdateProjectEmail,
+  handleVerifyProjectEmail,
+  handleRestartProjectEmail,
+} from "@/routes/project-email.ts";
 import {
   handleListEnabledModels,
   handleListAllModels,
@@ -409,6 +418,12 @@ app.get("/api/admin/usage/by-user", h(handleUsageByUser));
 // Settings
 app.get("/api/settings", h(handleGetSettings));
 app.put("/api/settings/:key", h(handleUpdateSettings));
+app.get("/api/admin/email", h(handleEmailFeatureStatus));
+app.put("/api/admin/email", h(handleEmailFeatureToggle));
+app.get("/api/projects/:id/email", h(handleGetProjectEmail));
+app.put("/api/projects/:id/email", h(handleUpdateProjectEmail));
+app.post("/api/projects/:id/email/verify", h(handleVerifyProjectEmail));
+app.post("/api/projects/:id/email/restart", h(handleRestartProjectEmail));
 app.get("/api/image-models", h(handleListImageModels));
 
 // Credentials (saved logins)
@@ -568,6 +583,11 @@ registerGlobalPollerHandler(handleGlobalUpdate);
     await startGlobalPoller();
   }
 })();
+
+// Register the email provider and start per-project IMAP IDLE loops for
+// every enabled, fully-configured project mailbox.
+registerEmailProvider();
+void startAllMailboxes().catch((err) => log.error("email mailboxes start failed", err));
 
 // Sweep pending-responses that expired while the server was down.
 startupExpirySweep();

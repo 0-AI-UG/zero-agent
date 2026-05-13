@@ -1,11 +1,11 @@
-/** `zero message send <text>` - send a message to the user across all channels. */
-import { message } from "../../sdk/message.ts";
+/** `zero notification send <text>` - send a notification to the user across all channels. */
+import { notification } from "../../sdk/notification.ts";
 import { hasFlag, printJson } from "../format.ts";
 
-const HELP = `zero message - send a message to the user
+const HELP = `zero notification - send a notification to the user
 
 Usage:
-  zero message send <text> [--respond] [--timeout <duration>] [--json]
+  zero notification send <text> [--respond] [--timeout <duration>] [--json]
 
 Options:
   --respond              Wait for a reply from the user.
@@ -43,14 +43,14 @@ function extractFlagValue(args: string[], flag: string): string | null {
   return val;
 }
 
-export async function messageCommand(args: string[]): Promise<number> {
+export async function notificationCommand(args: string[]): Promise<number> {
   const [action, ...rest] = args;
   if (!action || action === "--help" || action === "-h") {
     process.stdout.write(HELP);
     return 0;
   }
   if (action !== "send") {
-    process.stderr.write(`zero message: unknown action "${action}"\n${HELP}`);
+    process.stderr.write(`zero notification: unknown action "${action}"\n${HELP}`);
     return 2;
   }
 
@@ -73,7 +73,7 @@ export async function messageCommand(args: string[]): Promise<number> {
   }
   const text = textParts.join(" ");
   if (!text) {
-    process.stderr.write("zero message send: missing text\n");
+    process.stderr.write("zero notification send: missing text\n");
     return 2;
   }
 
@@ -81,17 +81,17 @@ export async function messageCommand(args: string[]): Promise<number> {
   if (timeoutRaw) {
     const parsed = parseDuration(timeoutRaw);
     if (parsed == null) {
-      process.stderr.write(`zero message send: invalid --timeout "${timeoutRaw}"\n`);
+      process.stderr.write(`zero notification send: invalid --timeout "${timeoutRaw}"\n`);
       return 2;
     }
     if (parsed < 5_000 || parsed > 30 * 60_000) {
-      process.stderr.write(`zero message send: --timeout must be between 5s and 30m\n`);
+      process.stderr.write(`zero notification send: --timeout must be between 5s and 30m\n`);
       return 2;
     }
     timeoutMs = parsed;
   }
 
-  const sendResult = await message.send(text, { respond, timeoutMs });
+  const sendResult = await notification.send(text, { respond, timeoutMs });
 
   if (!respond) {
     if (asJson) printJson(sendResult);
@@ -100,7 +100,7 @@ export async function messageCommand(args: string[]): Promise<number> {
     } else {
       process.stdout.write("delivered to: no channels\n");
       if (sendResult.diagnostics?.length) {
-        // Aggregate per-channel reasons across users so the message stays
+        // Aggregate per-channel reasons across users so the notification stays
         // short for single-user projects but still surfaces per-user
         // detail when the project has multiple members.
         const lines: string[] = [];
@@ -146,7 +146,7 @@ export async function messageCommand(args: string[]): Promise<number> {
     return 0;
   }
 
-  const response = await message.awaitResponse(sendResult.groupId);
+  const response = await notification.awaitResponse(sendResult.groupId);
   if (asJson) {
     printJson({
       delivered: sendResult.delivered,

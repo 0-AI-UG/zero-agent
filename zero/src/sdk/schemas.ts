@@ -199,12 +199,12 @@ export const LlmGenerateInput = z
   })
   .strict();
 
-// -- message --
+// -- notification --
 // `respond` turns the send into a two-way request: the server dispatches a
 // notification to project members and waits for a reply. `timeoutMs` caps the
 // wait (min 5s, max 30min). The server returns `{delivered, groupId, respond:true}`
-// immediately; the SDK then polls `GET /zero/message/response` until resolved.
-export const MessageSendInput = z
+// immediately; the SDK then polls `GET /zero/notification/response` until resolved.
+export const NotificationSendInput = z
   .object({
     text: NonEmpty(8000),
     respond: z.boolean().optional(),
@@ -212,7 +212,7 @@ export const MessageSendInput = z
   })
   .strict();
 
-export const MessageResponseInput = z
+export const NotificationResponseInput = z
   .object({
     groupId: NonEmpty(64),
   })
@@ -282,6 +282,43 @@ export const TriggerStateAllInput = z
   .object({ ...TriggerIdent })
   .strict();
 
+// -- email --
+// Inbound listing/reading is project-scoped (handler derives projectId from
+// CliContext). `send` and `reply` go through the SMTP backend; `inReplyToId`
+// continues an existing thread, otherwise it's cold outreach.
+export const EmailListInput = z
+  .object({
+    unread: z.boolean().optional(),
+    threadKey: z.string().max(500).optional(),
+    from: z.string().max(500).optional(),
+    since: z.string().max(64).optional(),
+    limit: z.number().int().min(1).max(200).optional(),
+  })
+  .strict();
+
+export const EmailReadInput = z
+  .object({
+    id: NonEmpty(64),
+  })
+  .strict();
+
+export const EmailSendInput = z
+  .object({
+    to: z.array(NonEmpty(320)).min(1).max(20),
+    subject: NonEmpty(500),
+    body: NonEmpty(50_000),
+    inReplyToId: z.string().max(64).optional(),
+    context: z.string().max(10_000).optional(),
+  })
+  .strict();
+
+export const EmailSearchInput = z
+  .object({
+    query: NonEmpty(500),
+    limit: z.number().int().min(1).max(200).optional(),
+  })
+  .strict();
+
 // Convenience re-exports for SDK type inference.
 export type WebSearchInputT = z.infer<typeof WebSearchInput>;
 export type WebFetchInputT = z.infer<typeof WebFetchInput>;
@@ -303,7 +340,7 @@ export type AppsCreateInputT = z.infer<typeof AppsCreateInput>;
 export type AppsDeleteInputT = z.infer<typeof AppsDeleteInput>;
 export type AppsListInputT = z.infer<typeof AppsListInput>;
 export type LlmGenerateInputT = z.infer<typeof LlmGenerateInput>;
-export type MessageSendInputT = z.infer<typeof MessageSendInput>;
-export type MessageResponseInputT = z.infer<typeof MessageResponseInput>;
+export type NotificationSendInputT = z.infer<typeof NotificationSendInput>;
+export type NotificationResponseInputT = z.infer<typeof NotificationResponseInput>;
 export type EmbedInputT = z.infer<typeof EmbedInput>;
 export type SearchInputT = z.infer<typeof SearchInput>;

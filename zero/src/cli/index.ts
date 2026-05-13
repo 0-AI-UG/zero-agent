@@ -17,9 +17,10 @@ import { credsCommand } from "./commands/creds.ts";
 import { browserCommand } from "./commands/browser.ts";
 import { appsCommand } from "./commands/apps.ts";
 import { llmCommand } from "./commands/llm.ts";
-import { messageCommand } from "./commands/message.ts";
+import { notificationCommand } from "./commands/notification.ts";
 import { embedCommand } from "./commands/embed.ts";
 import { searchCommand } from "./commands/search.ts";
+import { emailCommand } from "./commands/email.ts";
 
 // Source layout: zero/src/cli/index.ts → two levels up = zero/.
 // Bundled layout: zero/dist/cli.js → one level up = zero/.
@@ -41,7 +42,8 @@ Groups (added by migration steps):
   browser          open, click, fill, screenshot, evaluate, wait, status
   apps             create, delete, list
   llm              generate
-  message          send a message to the user (Telegram + push)
+  notification     notify the user (Telegram + push + in-app)
+  email            list, read, send, reply, search the project's mailbox
   embed            generate vector embeddings
   search           vector search over project files, memory, and messages
 
@@ -82,8 +84,10 @@ async function main(argv: string[]): Promise<number> {
         return await appsCommand(rest);
       case "llm":
         return await llmCommand(rest);
-      case "message":
-        return await messageCommand(rest);
+      case "notification":
+        return await notificationCommand(rest);
+      case "email":
+        return await emailCommand(rest);
       case "embed":
         return await embedCommand(rest);
       case "search":

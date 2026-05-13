@@ -76,6 +76,8 @@ import {
   useAdminSettings,
   useUpdateSettings,
   useImageModels,
+  useEmailFeatureStatus,
+  useToggleEmailFeature,
   type AdminUser,
   type ImageModelOption,
 } from "@/api/admin";
@@ -240,6 +242,7 @@ export function AdminPage() {
 
           <section id="settings" className="space-y-8 scroll-mt-10">
             <InstanceSettingsSection />
+            <EmailSettingsSection />
             <SecuritySection />
           </section>
 
@@ -508,6 +511,42 @@ function InstanceSettingsSection() {
   );
 }
 
+
+function EmailSettingsSection() {
+  const { data: status } = useEmailFeatureStatus();
+  const toggle = useToggleEmailFeature();
+
+  return (
+    <section className="space-y-4">
+      <div className="flex items-center gap-2">
+        <KeyIcon className="size-4 text-muted-foreground" />
+        <h3 className="text-sm font-semibold">Email</h3>
+      </div>
+      <div className="rounded-lg border p-4">
+        <div className="flex items-center justify-between gap-4">
+          <div className="space-y-1">
+            <p className="text-sm font-medium">Allow email integration</p>
+            <p className="text-xs text-muted-foreground">
+              When on, project owners can connect a mailbox under Project → Settings → Email.
+              Each project has its own IMAP/SMTP account.
+            </p>
+          </div>
+          <Switch
+            checked={!!status?.enabled}
+            onCheckedChange={(checked) =>
+              toggle.mutate(checked, {
+                onSuccess: () => toast.success(checked ? "Email integration enabled" : "Email integration disabled"),
+                onError: (err) => toast.error(err.message),
+              })
+            }
+            disabled={toggle.isPending}
+            aria-label="Allow email integration"
+          />
+        </div>
+      </div>
+    </section>
+  );
+}
 
 function SecuritySection() {
   const { data: settings } = useAdminSettings();

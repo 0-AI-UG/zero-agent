@@ -49,7 +49,8 @@ import {
   handleBrowserExtract,
 } from "./browser.ts";
 import { handleLlmGenerate } from "./llm.ts";
-import { handleMessageSend, handleMessageResponse } from "./message.ts";
+import { handleNotificationSend, handleNotificationResponse } from "./notification.ts";
+import { handleEmailList, handleEmailRead, handleEmailSend, handleEmailSearch } from "./email.ts";
 import { handleEmbed } from "./embed.ts";
 import { handleSearch } from "./search.ts";
 import {
@@ -85,8 +86,12 @@ import {
   AppsDeleteInput,
   AppsListInput,
   LlmGenerateInput,
-  MessageSendInput,
-  MessageResponseInput,
+  NotificationSendInput,
+  NotificationResponseInput,
+  EmailListInput,
+  EmailReadInput,
+  EmailSendInput,
+  EmailSearchInput,
   EmbedInput,
   SearchInput,
   TriggerFireInput,
@@ -187,8 +192,13 @@ export function buildCliHandlerApp(): Hono {
 
   app.post("/zero/llm/generate", bind(LlmGenerateInput, handleLlmGenerate));
 
-  app.post("/zero/message/send", bind(MessageSendInput, handleMessageSend));
-  app.post("/zero/message/response", bind(MessageResponseInput, handleMessageResponse));
+  app.post("/zero/notification/send", bind(NotificationSendInput, handleNotificationSend));
+  app.post("/zero/notification/response", bind(NotificationResponseInput, handleNotificationResponse));
+
+  app.post("/zero/email/list", bind(EmailListInput, handleEmailList));
+  app.post("/zero/email/read", bind(EmailReadInput, handleEmailRead));
+  app.post("/zero/email/send", bind(EmailSendInput, handleEmailSend));
+  app.post("/zero/email/search", bind(EmailSearchInput, handleEmailSearch));
 
   app.post("/zero/embed", bind(EmbedInput, handleEmbed));
 

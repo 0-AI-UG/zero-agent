@@ -13,13 +13,22 @@ import { isKindChannelEnabled } from "@/db/queries/user-notification-subscriptio
 import { isUserConnected } from "@/lib/http/ws.ts";
 import { getSubscriptionsByUserId } from "@/db/queries/push-subscriptions.ts";
 import { getLinkByUserId } from "@/db/queries/user-telegram-links.ts";
+import { db } from "@/db/index.ts";
+import { isFeatureEnabled } from "@/lib/email-global/mailbox.ts";
 
-export type DispatchChannel = "ws" | "push" | "telegram";
+export type DispatchChannel = "ws" | "push" | "telegram" | "email";
 
 export interface ChannelAvailability {
   ws: boolean;
   push: boolean;
   telegram: boolean;
+  email: boolean;
+}
+
+function userHasEmailAddress(userId: string): boolean {
+  if (!isFeatureEnabled()) return false;
+  const user = db.prepare("SELECT username FROM users WHERE id = ?").get(userId) as { username: string } | undefined;
+  return !!user?.username && /@/.test(user.username);
 }
 
 export function getChannelAvailability(userId: string): ChannelAvailability {
@@ -27,6 +36,7 @@ export function getChannelAvailability(userId: string): ChannelAvailability {
     ws: isUserConnected(userId),
     push: getSubscriptionsByUserId(userId).length > 0,
     telegram: !!getLinkByUserId(userId),
+    email: userHasEmailAddress(userId),
   };
 }
 
@@ -56,7 +66,7 @@ export interface ResolvedChannels {
  * Same as `resolveDispatchChannels` but also returns the per-channel skip
  * reasons and the raw availability snapshot - used by the dispatcher to
  * surface "why was nothing delivered?" diagnostics back to callers (CLI
- * `zero message send` prints these so users can see when a channel was
+ * `zero notification send` prints these so users can see when a channel was
  * silenced because it isn't configured / connected).
  */
 export function resolveDispatchChannelsDetailed(
@@ -67,7 +77,7 @@ export function resolveDispatchChannelsDetailed(
   const accepted: DispatchChannel[] = [];
   const skipped: Array<{ channel: DispatchChannel; reason: SkipReason }> = [];
 
-  for (const channel of ["ws", "push", "telegram"] as const) {
+  for (const channel of ["ws", "push", "telegram", "email"] as const) {
     if (!avail[channel]) {
       skipped.push({ channel, reason: "unavailable" });
       continue;

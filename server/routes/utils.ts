@@ -10,6 +10,7 @@ import { getUserById } from "@/db/queries/users.ts";
 import type {
   ProjectRow,
 } from "@/db/types.ts";
+import { DEFAULT_SYSTEM_PROMPT } from "@/lib/pi/pi-config.ts";
 import { log } from "@/lib/utils/logger.ts";
 
 const routeLog = log.child({ module: "routes" });
@@ -70,8 +71,11 @@ export function formatProject(row: ProjectRow, opts?: { role?: string; memberCou
     assistantName: row.assistant_name,
     assistantDescription: row.assistant_description,
     assistantIcon: row.assistant_icon,
+    systemPrompt: row.system_prompt,
+    defaultSystemPrompt: DEFAULT_SYSTEM_PROMPT,
     isStarred: row.is_starred === 1,
     isArchived: row.is_archived === 1,
+    emailEnabled: row.email_enabled === 1,
     role: opts?.role ?? "owner",
     memberCount: opts?.memberCount ?? 1,
     createdAt: toUTC(row.created_at),

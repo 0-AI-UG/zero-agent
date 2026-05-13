@@ -50,7 +50,7 @@ export function getProjectById(id: string): ProjectRow | null {
 
 export function updateProject(
   id: string,
-  fields: { name?: string; description?: string; automationEnabled?: boolean; showSkillsInFiles?: boolean; assistantName?: string; assistantDescription?: string; assistantIcon?: string; isStarred?: boolean; isArchived?: boolean },
+  fields: { name?: string; description?: string; automationEnabled?: boolean; showSkillsInFiles?: boolean; assistantName?: string; assistantDescription?: string; assistantIcon?: string; systemPrompt?: string; isStarred?: boolean; isArchived?: boolean; emailEnabled?: boolean },
 ): ProjectRow {
   const sets: string[] = [];
   const values: (string | number)[] = [];
@@ -83,6 +83,10 @@ export function updateProject(
     sets.push("assistant_icon = ?");
     values.push(fields.assistantIcon);
   }
+  if (fields.systemPrompt !== undefined) {
+    sets.push("system_prompt = ?");
+    values.push(fields.systemPrompt);
+  }
   if (fields.isStarred !== undefined) {
     sets.push("is_starred = ?");
     values.push(fields.isStarred ? 1 : 0);
@@ -90,6 +94,10 @@ export function updateProject(
   if (fields.isArchived !== undefined) {
     sets.push("is_archived = ?");
     values.push(fields.isArchived ? 1 : 0);
+  }
+  if (fields.emailEnabled !== undefined) {
+    sets.push("email_enabled = ?");
+    values.push(fields.emailEnabled ? 1 : 0);
   }
 
   sets.push("updated_at = datetime('now')");
@@ -104,4 +112,53 @@ export function updateProject(
 
 export function deleteProject(id: string): void {
   db.prepare("DELETE FROM projects WHERE id = ?").run(id);
+}
+
+export function getProjectByEmailAddress(address: string): ProjectRow | null {
+  return (db.prepare(
+    "SELECT * FROM projects WHERE email_address = ?",
+  ).get(address.toLowerCase()) as ProjectRow | undefined) ?? null;
+}
+
+export function listEmailEnabledProjects(): ProjectRow[] {
+  return db.prepare(
+    "SELECT * FROM projects WHERE email_enabled = 1 AND email_address IS NOT NULL AND email_password_enc IS NOT NULL AND email_imap_host IS NOT NULL AND email_smtp_host IS NOT NULL",
+  ).all() as ProjectRow[];
+}
+
+export interface ProjectEmailConfig {
+  address: string;
+  passwordEnc: string;
+  fromName: string | null;
+  imapHost: string;
+  imapPort: number;
+  imapSecure: "tls" | "starttls";
+  smtpHost: string;
+  smtpPort: number;
+  smtpSecure: "tls" | "starttls";
+  autoconfigStatus: string | null;
+}
+
+export function setProjectEmailConfig(id: string, cfg: ProjectEmailConfig): void {
+  db.prepare(
+    `UPDATE projects SET
+       email_address = ?, email_password_enc = ?, email_from_name = ?,
+       email_imap_host = ?, email_imap_port = ?, email_imap_secure = ?,
+       email_smtp_host = ?, email_smtp_port = ?, email_smtp_secure = ?,
+       email_autoconfig_status = ?,
+       updated_at = datetime('now')
+     WHERE id = ?`,
+  ).run(
+    cfg.address.toLowerCase(),
+    cfg.passwordEnc,
+    cfg.fromName,
+    cfg.imapHost,
+    cfg.imapPort,
+    cfg.imapSecure,
+    cfg.smtpHost,
+    cfg.smtpPort,
+    cfg.smtpSecure,
+    cfg.autoconfigStatus,
+    id,
+  );
 }

@@ -1,5 +1,11 @@
 import { useParams, useOutletContext, useNavigate } from "react-router";
-import { useUpdateProject } from "@/api/projects";
+import {
+  useUpdateProject,
+  useProjectEmail,
+  useUpdateProjectEmail,
+  useVerifyProjectEmail,
+  useRestartProjectEmail,
+} from "@/api/projects";
 import type { Project } from "@/api/projects";
 import { useReindexProject } from "@/api/files";
 import {
@@ -13,8 +19,10 @@ import { ICON_MAP, getQuickActionIcon } from "@/components/chat/QuickActionsMana
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
 import { useState, useEffect, useRef, useCallback } from "react";
+import { toast } from "sonner";
 import {
   CheckIcon,
   LoaderIcon,
@@ -24,6 +32,8 @@ import {
   PencilIcon,
   XIcon,
   ChevronLeftIcon,
+  EyeIcon,
+  EyeOffIcon,
 } from "lucide-react";
 import { MembersManager } from "@/components/settings/MembersManager";
 import { CredentialsManager } from "@/components/settings/CredentialsManager";
@@ -31,6 +41,7 @@ import { CredentialsManager } from "@/components/settings/CredentialsManager";
 const NAV_ITEMS = [
   { id: "general", label: "General" },
   { id: "members", label: "Members" },
+  { id: "email", label: "Email" },
   { id: "credentials", label: "Credentials" },
   { id: "assistant", label: "Assistant" },
 ] as const;
@@ -178,6 +189,11 @@ export function SettingsPage() {
             <MembersManager projectId={projectId!} project={project} />
           </section>
 
+          {/* Email */}
+          <section id="email" className="scroll-mt-10">
+            <ProjectEmailSection projectId={projectId!} canEdit={project.role === "owner" || project.role === "admin"} />
+          </section>
+
           {/* Credentials */}
           <section id="credentials" className="scroll-mt-10">
             <CredentialsManager projectId={projectId!} />
@@ -188,6 +204,191 @@ export function SettingsPage() {
             <CustomizeAssistantSection projectId={projectId!} project={project} />
           </section>
 
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ProjectEmailSection({ projectId, canEdit }: { projectId: string; canEdit: boolean }) {
+  const { data, isLoading } = useProjectEmail(projectId);
+  const toggle = useUpdateProjectEmail(projectId);
+  const verify = useVerifyProjectEmail(projectId);
+  const restart = useRestartProjectEmail(projectId);
+
+  const [address, setAddress] = useState("");
+  const [password, setPassword] = useState("");
+  const [fromName, setFromName] = useState("");
+  const [showPwd, setShowPwd] = useState(false);
+  const [advanced, setAdvanced] = useState(false);
+
+  const [imapHost, setImapHost] = useState("");
+  const [imapPort, setImapPort] = useState("993");
+  const [imapSecure, setImapSecure] = useState<"tls" | "starttls">("tls");
+  const [smtpHost, setSmtpHost] = useState("");
+  const [smtpPort, setSmtpPort] = useState("465");
+  const [smtpSecure, setSmtpSecure] = useState<"tls" | "starttls">("tls");
+
+  useEffect(() => {
+    if (!data) return;
+    if (data.address && !address) setAddress(data.address);
+    if (data.fromName && !fromName) setFromName(data.fromName);
+    if (data.imapHost && !imapHost) setImapHost(data.imapHost);
+    if (data.imapPort) setImapPort(String(data.imapPort));
+    if (data.imapSecure === "starttls" || data.imapSecure === "tls") setImapSecure(data.imapSecure);
+    if (data.smtpHost && !smtpHost) setSmtpHost(data.smtpHost);
+    if (data.smtpPort) setSmtpPort(String(data.smtpPort));
+    if (data.smtpSecure === "starttls" || data.smtpSecure === "tls") setSmtpSecure(data.smtpSecure);
+  }, [data, address, fromName, imapHost, smtpHost]);
+
+  function onVerify() {
+    const input: Parameters<typeof verify.mutate>[0] = { address, fromName };
+    if (password) input.password = password;
+    if (advanced) {
+      input.manual = { imapHost, imapPort: Number(imapPort), imapSecure, smtpHost, smtpPort: Number(smtpPort), smtpSecure };
+    }
+    verify.mutate(input, {
+      onSuccess: (res) => {
+        if (res.ok) {
+          toast.success("Mailbox verified");
+          setPassword("");
+        } else {
+          toast.error(res.error || "Verification failed");
+        }
+      },
+      onError: (err) => toast.error(err.message),
+    });
+  }
+
+  if (isLoading || !data) return null;
+
+  if (!data.featureEnabled) {
+    return (
+      <div>
+        <h3 className="text-sm font-semibold mb-4">Email</h3>
+        <div className="rounded-md border bg-muted/40 p-4 text-xs text-muted-foreground">
+          Email integration is disabled. Ask an admin to enable it under Admin → Email.
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <h3 className="text-sm font-semibold mb-4">Email</h3>
+      <div className="rounded-lg border p-4 space-y-4">
+        <div className="space-y-2">
+          <label className="text-sm font-medium">Address</label>
+          <Input
+            type="email"
+            placeholder="agent@yourdomain.com"
+            value={address}
+            onChange={(e) => setAddress(e.target.value)}
+            disabled={!canEdit}
+            className="h-8 text-xs"
+          />
+        </div>
+
+        <div className="space-y-2">
+          <label className="text-sm font-medium">Password</label>
+          <p className="text-xs text-muted-foreground">
+            {data.configured ? "Stored encrypted. Leave blank to keep." : "Required on first setup."}
+          </p>
+          <div className="relative">
+            <Input
+              type={showPwd ? "text" : "password"}
+              placeholder={data.configured ? "•••••••• (unchanged)" : "Mailbox password"}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              disabled={!canEdit}
+              className="h-8 text-xs pr-8"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPwd(!showPwd)}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            >
+              {showPwd ? <EyeOffIcon className="size-3.5" /> : <EyeIcon className="size-3.5" />}
+            </button>
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <label className="text-sm font-medium">From name</label>
+          <Input
+            placeholder="Project name"
+            value={fromName}
+            onChange={(e) => setFromName(e.target.value)}
+            disabled={!canEdit}
+            className="h-8 text-xs"
+          />
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setAdvanced(!advanced)}
+          className="text-xs text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
+        >
+          {advanced ? "Hide advanced (autoconfig)" : "Advanced (manual hosts)"}
+        </button>
+
+        {advanced && (
+          <div className="rounded-md border bg-muted/30 p-3 space-y-3">
+            <div className="grid grid-cols-3 gap-2">
+              <Input placeholder="imap.host" value={imapHost} onChange={(e) => setImapHost(e.target.value)} disabled={!canEdit} className="h-8 text-xs col-span-1" />
+              <Input placeholder="993" value={imapPort} onChange={(e) => setImapPort(e.target.value)} disabled={!canEdit} className="h-8 text-xs" />
+              <select value={imapSecure} onChange={(e) => setImapSecure(e.target.value as "tls" | "starttls")} disabled={!canEdit} className="h-8 text-xs rounded-md border bg-background px-2">
+                <option value="tls">TLS</option>
+                <option value="starttls">STARTTLS</option>
+              </select>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <Input placeholder="smtp.host" value={smtpHost} onChange={(e) => setSmtpHost(e.target.value)} disabled={!canEdit} className="h-8 text-xs col-span-1" />
+              <Input placeholder="465" value={smtpPort} onChange={(e) => setSmtpPort(e.target.value)} disabled={!canEdit} className="h-8 text-xs" />
+              <select value={smtpSecure} onChange={(e) => setSmtpSecure(e.target.value as "tls" | "starttls")} disabled={!canEdit} className="h-8 text-xs rounded-md border bg-background px-2">
+                <option value="tls">TLS</option>
+                <option value="starttls">STARTTLS</option>
+              </select>
+            </div>
+          </div>
+        )}
+
+        <div className="flex flex-wrap gap-2 pt-2">
+          <Button size="sm" disabled={!canEdit || !address || verify.isPending} onClick={onVerify}>
+            {verify.isPending ? "Verifying…" : "Verify & save"}
+          </Button>
+          {data.configured && (
+            <Button size="sm" variant="outline" disabled={!canEdit || restart.isPending} onClick={() => restart.mutate(undefined, {
+              onSuccess: () => toast.success("Mailbox restarted"),
+              onError: (err) => toast.error(err.message),
+            })}>
+              Restart
+            </Button>
+          )}
+        </div>
+
+        {data.autoconfigStatus && (
+          <p className="text-xs text-muted-foreground">
+            Status: <code>{data.autoconfigStatus}</code>
+            {data.ready && " · listening"}
+          </p>
+        )}
+
+        <div className="border-t pt-4 flex items-center justify-between gap-4">
+          <div className="space-y-1">
+            <p className="text-sm font-medium">Enable email for this project</p>
+            <p className="text-xs text-muted-foreground">
+              Anyone can send mail to {data.address ?? "this address"}. Inbound becomes a chat in this project.
+            </p>
+          </div>
+          <Switch
+            checked={data.enabled}
+            onCheckedChange={(checked) => toggle.mutate({ enabled: checked }, {
+              onError: (err) => toast.error(err.message),
+            })}
+            disabled={!canEdit || !data.configured || toggle.isPending}
+            aria-label="Enable email for this project"
+          />
         </div>
       </div>
     </div>
@@ -280,6 +481,7 @@ function CustomizeAssistantSection({ projectId, project }: { projectId: string; 
   const deleteMutation = useDeleteQuickAction(projectId);
 
   const [assistantForm, setAssistantForm] = useState({ name: "", description: "", icon: "message" });
+  const [systemPrompt, setSystemPrompt] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({ text: "", icon: "", description: "" });
   const [newForm, setNewForm] = useState({ text: "", icon: "sparkles", description: "" });
@@ -292,8 +494,23 @@ function CustomizeAssistantSection({ projectId, project }: { projectId: string; 
         description: project.assistantDescription,
         icon: project.assistantIcon,
       });
+      setSystemPrompt(project.systemPrompt || project.defaultSystemPrompt);
     }
   }, [project]);
+
+  const saveSystemPrompt = () => {
+    const next = systemPrompt === project.defaultSystemPrompt ? "" : systemPrompt;
+    if (next === (project.systemPrompt ?? "")) return;
+    updateProjectMutation.mutate({ systemPrompt: next });
+  };
+
+  const resetSystemPrompt = () => {
+    setSystemPrompt(project.defaultSystemPrompt);
+    updateProjectMutation.mutate({ systemPrompt: "" });
+  };
+
+  const isCustomPrompt =
+    !!project.systemPrompt && project.systemPrompt !== project.defaultSystemPrompt;
 
   const saveAssistant = () => {
     updateProjectMutation.mutate({
@@ -371,6 +588,28 @@ function CustomizeAssistantSection({ projectId, project }: { projectId: string; 
             ))}
           </div>
         </div>
+      </div>
+
+      {/* System Prompt */}
+      <div className="rounded-lg border p-4 space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <h4 className="text-sm font-medium">System Prompt</h4>
+          {isCustomPrompt && (
+            <Button size="sm" variant="ghost" onClick={resetSystemPrompt}>
+              Reset to default
+            </Button>
+          )}
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Sent to the agent at the start of every turn. Edit to customize the assistant's behavior.
+        </p>
+        <Textarea
+          value={systemPrompt}
+          onChange={(e) => setSystemPrompt(e.target.value)}
+          onBlur={saveSystemPrompt}
+          rows={14}
+          className="font-mono text-xs"
+        />
       </div>
 
       {/* Quick Actions */}

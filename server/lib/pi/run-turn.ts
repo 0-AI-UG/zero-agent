@@ -31,6 +31,7 @@ import {
   snapshotBeforeTurn,
 } from "@/lib/snapshots/snapshot-service.ts";
 import { attachProjectWatcher } from "@/lib/projects/watcher.ts";
+import { getProjectById } from "@/db/queries/projects.ts";
 import { insertUsageLog } from "@/db/queries/usage-logs.ts";
 import { log } from "@/lib/utils/logger.ts";
 
@@ -121,10 +122,12 @@ export async function runTurn(opts: RunTurnOptions): Promise<TurnResult> {
   mkdirSync(projectDir, { recursive: true });
   mkdirSync(sessionsDir, { recursive: true });
 
+  const projectRow = getProjectById(opts.projectId);
   ensurePiConfig({
     projectDir,
     modelId: opts.model.modelId,
     provider: opts.model.provider,
+    systemPrompt: projectRow?.system_prompt || undefined,
   });
 
   const detachWatcher = attachProjectWatcher(opts.projectId);

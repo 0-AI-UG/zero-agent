@@ -150,6 +150,30 @@ export function useUpdateMe() {
   });
 }
 
+export interface EmailFeatureStatus {
+  enabled: boolean;
+}
+
+export function useEmailFeatureStatus() {
+  return useQuery({
+    queryKey: ["admin", "email", "feature"],
+    queryFn: () => apiFetch<EmailFeatureStatus>("/admin/email"),
+    staleTime: 30_000,
+  });
+}
+
+export function useToggleEmailFeature() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (enabled: boolean) =>
+      apiFetch<EmailFeatureStatus>("/admin/email", {
+        method: "PUT",
+        body: JSON.stringify({ enabled }),
+      }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["admin", "email", "feature"] }),
+  });
+}
+
 export function useIsAdmin() {
   return useQuery({
     queryKey: ["admin", "check"],
