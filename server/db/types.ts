@@ -33,28 +33,8 @@ export interface ProjectRow {
   assistant_icon: string;
   is_starred: number;
   is_archived: number;
-  email_token: string | null;
-  email_enabled: number;
   created_at: string;
   updated_at: string;
-}
-
-export interface EmailMessageRow {
-  id: string;
-  project_id: string;
-  chat_id: string | null;
-  direction: "in" | "out";
-  message_id_hdr: string;
-  in_reply_to: string | null;
-  references_hdr: string | null;
-  thread_key: string;
-  from_addr: string;
-  to_addrs: string;
-  subject: string;
-  body_text: string | null;
-  body_html: string | null;
-  attachments: string | null;
-  received_at: string;
 }
 
 export interface ChatRow {

@@ -7,7 +7,7 @@
  * path and does not implement this interface; providers here are non-web
  * surfaces that want agent parity with the chat UI.
  */
-export type ChatProviderName = "telegram" | "discord" | "slack" | "email";
+export type ChatProviderName = "telegram" | "discord" | "slack";
 
 export interface ProviderIncomingMessage {
   /** Provider-specific update / payload object. */

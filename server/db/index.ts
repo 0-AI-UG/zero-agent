@@ -526,7 +526,7 @@ db.exec(`
   )
 `);
 
-// Idempotently add is_starred / is_archived / email_* for installs that pre-date the columns.
+// Idempotently add is_starred / is_archived for installs that pre-date the columns.
 {
   const cols = db
     .prepare("PRAGMA table_info(projects)")
@@ -537,39 +537,10 @@ db.exec(`
   if (!cols.some((c) => c.name === "is_archived")) {
     db.exec("ALTER TABLE projects ADD COLUMN is_archived INTEGER NOT NULL DEFAULT 0");
   }
-  if (!cols.some((c) => c.name === "email_token")) {
-    db.exec("ALTER TABLE projects ADD COLUMN email_token TEXT");
-  }
-  if (!cols.some((c) => c.name === "email_enabled")) {
-    db.exec("ALTER TABLE projects ADD COLUMN email_enabled INTEGER NOT NULL DEFAULT 0");
-  }
   if (cols.some((c) => c.name === "sync_gating_enabled")) {
     db.exec("ALTER TABLE projects DROP COLUMN sync_gating_enabled");
   }
 }
-
-// ── Email messages (inbound + outbound history) ──
-
-db.exec(`
-  CREATE TABLE IF NOT EXISTS email_messages (
-    id              TEXT PRIMARY KEY,
-    project_id      TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    chat_id         TEXT REFERENCES chats(id) ON DELETE SET NULL,
-    direction       TEXT NOT NULL CHECK (direction IN ('in','out')),
-    message_id_hdr  TEXT NOT NULL,
-    in_reply_to     TEXT,
-    references_hdr  TEXT,
-    thread_key      TEXT NOT NULL,
-    from_addr       TEXT NOT NULL,
-    to_addrs        TEXT NOT NULL,
-    subject         TEXT NOT NULL,
-    body_text       TEXT,
-    body_html       TEXT,
-    attachments     TEXT,
-    received_at     TEXT NOT NULL DEFAULT (datetime('now')),
-    UNIQUE (message_id_hdr)
-  )
-`);
 
 // ── Indexes ──
 
@@ -609,10 +580,6 @@ db.exec(`CREATE INDEX IF NOT EXISTS idx_pending_responses_target ON pending_resp
 db.exec(`CREATE INDEX IF NOT EXISTS idx_pending_responses_expires ON pending_responses(status, expires_at)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_pending_responses_group ON pending_responses(group_id, status)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_tg_notif_msgs_pending ON telegram_notification_messages(pending_response_id)`);
-db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_email_token ON projects(email_token) WHERE email_token IS NOT NULL`);
-db.exec(`CREATE INDEX IF NOT EXISTS idx_email_messages_project ON email_messages(project_id, received_at DESC)`);
-db.exec(`CREATE INDEX IF NOT EXISTS idx_email_messages_thread ON email_messages(thread_key)`);
-db.exec(`CREATE INDEX IF NOT EXISTS idx_email_messages_chat ON email_messages(chat_id)`);
 
 // ── Sync models from JSON on startup (idempotent) ──
 
