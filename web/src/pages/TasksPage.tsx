@@ -602,10 +602,10 @@ function TaskDialog({
 function RunStatusBadge({ status }: { status: TaskRun["status"] }) {
   if (status === "completed") {
     return (
-      <Badge variant="outline" className="text-emerald-600 border-emerald-200 bg-emerald-50 dark:bg-emerald-950 dark:text-emerald-400 dark:border-emerald-800 gap-1">
-        <CheckCircle2Icon className="size-3" />
+      <span className="inline-flex items-center gap-1 text-xs text-muted-foreground leading-none">
+        <CheckIcon className="size-3.5" strokeWidth={2.5} />
         Completed
-      </Badge>
+      </span>
     );
   }
   if (status === "failed") {
@@ -657,29 +657,29 @@ function TaskRunHistory({
       {runs.slice(0, 10).map((run) => (
         <div
           key={run.id}
-          className="flex items-start gap-2 text-xs py-1.5"
+          className="flex items-center gap-2 text-xs py-1.5"
         >
           <RunStatusBadge status={run.status} />
           <div className="min-w-0 flex-1">
             {run.summary && (
-              <p className="text-muted-foreground truncate max-w-[300px]">
+              <p className="text-muted-foreground truncate max-w-[300px] leading-none">
                 {run.summary}
               </p>
             )}
             {run.error && (
-              <p className="text-destructive truncate max-w-[300px]">
+              <p className="text-destructive truncate max-w-[300px] leading-none">
                 {run.error}
               </p>
             )}
           </div>
-          <span className="text-muted-foreground shrink-0">
+          <span className="text-muted-foreground shrink-0 leading-none">
             {formatDistanceToNow(new Date(run.startedAt), { addSuffix: true })}
           </span>
           {run.chatId && (
             <Button
               variant="ghost"
               size="sm"
-              className="h-5 px-1.5 text-[10px]"
+              className="h-auto py-0 px-1.5 text-xs leading-none"
               onClick={() => navigate(`/projects/${projectId}/c/${run.chatId}`)}
             >
               View
@@ -740,13 +740,13 @@ function TaskCard({
             <div className="flex items-center gap-2">
               <h3 className="text-sm font-medium truncate">{task.name}</h3>
               {task.triggerType === "event" ? (
-                <Badge variant="outline" className="text-[10px] shrink-0 gap-0.5 text-amber-600 border-amber-200 bg-amber-50 dark:bg-amber-950 dark:text-amber-400 dark:border-amber-800">
+                <Badge variant="outline" className="text-[10px] shrink-0 gap-0.5">
                   <ZapIcon className="size-2.5" />
                   {task.triggerEvent}
                 </Badge>
               ) : task.triggerType === "script" ? (
                 <>
-                  <Badge variant="outline" className="text-[10px] shrink-0 gap-0.5 text-violet-600 border-violet-200 bg-violet-50 dark:bg-violet-950 dark:text-violet-400 dark:border-violet-800">
+                  <Badge variant="outline" className="text-[10px] shrink-0 gap-0.5">
                     <FileCodeIcon className="size-2.5" />
                     Script
                   </Badge>
