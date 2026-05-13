@@ -85,6 +85,11 @@ export async function deleteProjectPath(
   await rm(abs, { recursive: true, force: true });
 }
 
+export async function deleteProjectRoot(projectId: string): Promise<void> {
+  const dir = resolve(projectDirFor(projectId));
+  await rm(dir, { recursive: true, force: true });
+}
+
 export async function moveProjectPath(
   projectId: string,
   fromRelPath: string,

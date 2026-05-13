@@ -16,7 +16,7 @@ import { getUserById } from "@/db/queries/users.ts";
 import { ForbiddenError } from "@/lib/utils/errors.ts";
 import { insertFile } from "@/db/queries/files.ts";
 import { indexFileContent } from "@/db/queries/search.ts";
-import { writeProjectFile } from "@/lib/projects/fs-ops.ts";
+import { writeProjectFile, deleteProjectRoot } from "@/lib/projects/fs-ops.ts";
 import { handleError, formatProject, verifyProjectOwnership, verifyProjectAccess } from "@/routes/utils.ts";
 import { insertProjectMember, getMemberRole, getMemberCount } from "@/db/queries/members.ts";
 import { createHeartbeatTask } from "@/lib/scheduling/heartbeat.ts";
@@ -127,6 +127,10 @@ export async function handleDeleteProject(request: Request): Promise<Response> {
     try {
       const { deleteProjectIndex } = await import("@/lib/search/vectors.ts");
       deleteProjectIndex(id);
+    } catch {}
+    // Remove on-disk project directory (fire-and-forget, non-critical)
+    try {
+      await deleteProjectRoot(id);
     } catch {}
 
     return Response.json(
