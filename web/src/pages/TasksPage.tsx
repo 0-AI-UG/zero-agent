@@ -75,6 +75,9 @@ export const EVENT_PRESETS = [
   { label: "Message received", value: "message.received" },
   { label: "Chat created", value: "chat.created" },
   { label: "Skill installed", value: "skill.installed" },
+  { label: "Task started", value: "task.started" },
+  { label: "Task completed", value: "task.completed" },
+  { label: "Task failed", value: "task.failed" },
 ];
 
 export const COOLDOWN_PRESETS = [
@@ -113,8 +116,7 @@ const EVENT_FILTER_FIELDS: Record<string, { key: string; label: string; placehol
     { key: "path", label: "Path", placeholder: "e.g. tmp/*" },
   ],
   "message.received": [
-    { key: "content", label: "Content contains", placeholder: "e.g. /deploy*" },
-    { key: "userId", label: "User ID", placeholder: "Specific user ID" },
+    { key: "content", label: "Content", placeholder: "e.g. *deploy*" },
   ],
   "chat.created": [
     { key: "title", label: "Title", placeholder: "e.g. Bug report*" },
@@ -122,6 +124,18 @@ const EVENT_FILTER_FIELDS: Record<string, { key: string; label: string; placehol
   "skill.installed": [
     { key: "skillName", label: "Skill name", placeholder: "e.g. presentation" },
     { key: "source", label: "Source", placeholder: "e.g. builtin" },
+  ],
+  "task.started": [
+    { key: "taskName", label: "Task name", placeholder: "e.g. Daily report" },
+    { key: "prompt", label: "Prompt", placeholder: "e.g. *report*" },
+  ],
+  "task.completed": [
+    { key: "taskName", label: "Task name", placeholder: "e.g. Daily report" },
+    { key: "response", label: "Response", placeholder: "e.g. *deployed*" },
+  ],
+  "task.failed": [
+    { key: "taskName", label: "Task name", placeholder: "e.g. Daily report" },
+    { key: "error", label: "Error", placeholder: "e.g. *timeout*" },
   ],
 };
 
@@ -545,7 +559,7 @@ function TaskDialog({
                     <SelectTrigger>
                       <SelectValue placeholder="Select an event" />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent position="popper" className="max-h-[280px]">
                       {EVENT_PRESETS.map((e) => (
                         <SelectItem key={e.value} value={e.value}>
                           {e.label}

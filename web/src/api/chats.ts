@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "@/api/client";
 import { queryKeys } from "@/lib/query-keys";
+import { clearDraft } from "@/lib/chat-drafts";
 
 export interface ChatSearchResult {
   chatId: string;
@@ -109,6 +110,7 @@ export function useDeleteChat(projectId: string) {
       queryClient.removeQueries({
         queryKey: queryKeys.messages.byChat(projectId, chatId),
       });
+      clearDraft(chatId);
       return { previousChats };
     },
     onError: (_err, _chatId, context) => {

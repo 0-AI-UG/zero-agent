@@ -123,13 +123,17 @@ export const RichTextarea = forwardRef<RichTextareaHandle, RichTextareaProps>(
       },
     }));
 
-    // Sync external value → DOM only when value is cleared (e.g. after submit)
+    // Sync external value → DOM when value differs and we didn't originate the change.
+    // Handles: clear after submit, and hydration from a persisted draft on mount/chat switch.
     useEffect(() => {
       if (isSyncing.current) return;
       const el = editorRef.current;
       if (!el) return;
-      if (value === "" && el.innerHTML !== "") {
+      if (serialise(el) === value) return;
+      if (value === "") {
         el.innerHTML = "";
+      } else {
+        el.textContent = value;
       }
     }, [value]);
 

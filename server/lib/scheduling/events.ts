@@ -20,9 +20,9 @@ export type AgentEvents = {
   "folder.deleted": { projectId: string; path: string };
 
   // Scheduled tasks
-  "task.started": { taskId: string; projectId: string; prompt: string };
-  "task.completed": { taskId: string; projectId: string; summary: string };
-  "task.failed": { taskId: string; projectId: string; error: string };
+  "task.started": { taskId: string; taskName: string; projectId: string; prompt: string };
+  "task.completed": { taskId: string; taskName: string; projectId: string; response: string };
+  "task.failed": { taskId: string; taskName: string; projectId: string; error: string };
 
   // Skills
   "skill.loaded": { projectId: string; skillName: string; chatId: string };

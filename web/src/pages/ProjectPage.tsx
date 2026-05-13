@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router";
 import { ChatPanel } from "@/components/chat/ChatPanel";
 import { useChats, useCreateChat } from "@/api/chats";
 import { Loader } from "@/components/chat-ui/Loader";
+import { pruneDrafts } from "@/lib/chat-drafts";
 
 export function ProjectPage() {
   const { projectId, chatId } = useParams<{
@@ -33,6 +34,11 @@ export function ProjectPage() {
       });
     }
   }, [chatId, chats, chatsLoading, createChat.isPending, projectId, navigate]);
+
+  useEffect(() => {
+    if (!chats) return;
+    pruneDrafts(chats.map((c) => c.id));
+  }, [chats]);
 
   const activeChat = useMemo(
     () => chats?.find((c) => c.id === chatId),

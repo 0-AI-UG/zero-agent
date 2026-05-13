@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState, type DragEvent, type FormEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type FormEvent, type ReactNode } from "react";
 import { CornerDownLeftIcon, SquareIcon, XIcon } from "lucide-react";
 import type { AgentMessage } from "@/lib/pi-events";
 import { contentText } from "@/lib/pi-events";
@@ -8,6 +8,7 @@ import { useModels } from "@/api/models";
 import { sendTyping } from "@/lib/ws";
 import type { TypingUser } from "@/stores/realtime";
 import { useUploadFiles } from "@/hooks/use-upload-files";
+import { readDraft, writeDraft, clearDraft } from "@/lib/chat-drafts";
 
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -111,7 +112,7 @@ export function Composer({
   typingUsers,
   presenceDots,
 }: ComposerProps) {
-  const [input, setInput] = useState("");
+  const [input, setInput] = useState(() => readDraft(chatId));
   const [isDragging, setIsDragging] = useState(false);
   const dragDepth = useRef(0);
   const lastTypingSentRef = useRef(0);
@@ -120,9 +121,14 @@ export function Composer({
 
   const selectedModelId = useModelStore((s) => s.selectedModelId);
 
+  useEffect(() => {
+    setInput(readDraft(chatId));
+  }, [chatId]);
+
   const handleInputChange = useCallback(
     (value: string) => {
       setInput(value);
+      writeDraft(chatId, value);
       const now = Date.now();
       if (value && now - lastTypingSentRef.current > 2000) {
         lastTypingSentRef.current = now;
@@ -137,7 +143,8 @@ export function Composer({
     if (!input.trim()) return;
     sendMessage({ text: input });
     setInput("");
-  }, [input, isStreaming, sendMessage]);
+    clearDraft(chatId);
+  }, [input, isStreaming, sendMessage, chatId]);
 
   const handleFiles = useCallback(
     async (files: File[]) => {

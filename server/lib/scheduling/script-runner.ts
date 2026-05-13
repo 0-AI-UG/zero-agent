@@ -249,7 +249,7 @@ export async function runScriptTask(
   const run = insertTaskRun(task.id, task.project_id);
   runningScripts.add(task.id);
 
-  events.emit("task.started", { taskId: task.id, projectId: task.project_id, prompt: task.prompt });
+  events.emit("task.started", { taskId: task.id, taskName: task.name, projectId: task.project_id, prompt: task.prompt });
 
   try {
     if (!v.valid) {
@@ -306,7 +306,7 @@ export async function runScriptTask(
         error: `script timed out after ${envTimeoutMs()}ms\n${outputSummary}`,
         finished_at: formatDateForSQLite(new Date()),
       });
-      events.emit("task.failed", { taskId: task.id, projectId: task.project_id, error: "script timed out" });
+      events.emit("task.failed", { taskId: task.id, taskName: task.name, projectId: task.project_id, error: "script timed out" });
       return;
     }
 
@@ -317,7 +317,7 @@ export async function runScriptTask(
           error: result.spawnError ?? (result.stderr || `script exited ${result.exitCode}`),
           finished_at: formatDateForSQLite(new Date()),
         });
-        events.emit("task.failed", { taskId: task.id, projectId: task.project_id, error: `exit ${result.exitCode}` });
+        events.emit("task.failed", { taskId: task.id, taskName: task.name, projectId: task.project_id, error: `exit ${result.exitCode}` });
       } else {
         updateTaskRun(run.id, {
           status: "completed",
@@ -325,7 +325,7 @@ export async function runScriptTask(
           chat_id: null,
           finished_at: formatDateForSQLite(new Date()),
         });
-        events.emit("task.completed", { taskId: task.id, projectId: task.project_id, summary: "script ran, no fire" });
+        events.emit("task.completed", { taskId: task.id, taskName: task.name, projectId: task.project_id, response: "script ran, no fire" });
       }
       return;
     }
@@ -340,7 +340,7 @@ export async function runScriptTask(
         chat_id: null,
         finished_at: formatDateForSQLite(new Date()),
       });
-      events.emit("task.completed", { taskId: task.id, projectId: task.project_id, summary: prompt.slice(0, 200) });
+      events.emit("task.completed", { taskId: task.id, taskName: task.name, projectId: task.project_id, response: prompt.slice(0, 200) });
       return;
     }
 
@@ -357,7 +357,7 @@ export async function runScriptTask(
         chat_id: turn.suppressed ? null : turn.chatId,
         finished_at: formatDateForSQLite(new Date()),
       });
-      events.emit("task.completed", { taskId: task.id, projectId: task.project_id, summary: turn.summary ?? "" });
+      events.emit("task.completed", { taskId: task.id, taskName: task.name, projectId: task.project_id, response: turn.summary ?? "" });
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
       const chatId = (err as any)?.chatId ?? null;
@@ -367,7 +367,7 @@ export async function runScriptTask(
         chat_id: chatId,
         finished_at: formatDateForSQLite(new Date()),
       });
-      events.emit("task.failed", { taskId: task.id, projectId: task.project_id, error: errorMsg });
+      events.emit("task.failed", { taskId: task.id, taskName: task.name, projectId: task.project_id, error: errorMsg });
     }
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
@@ -377,7 +377,7 @@ export async function runScriptTask(
       error: errorMsg,
       finished_at: formatDateForSQLite(new Date()),
     });
-    events.emit("task.failed", { taskId: task.id, projectId: task.project_id, error: errorMsg });
+    events.emit("task.failed", { taskId: task.id, taskName: task.name, projectId: task.project_id, error: errorMsg });
   } finally {
     runningScripts.delete(task.id);
     // Always advance next_run_at so we don't busy-loop on broken scripts.

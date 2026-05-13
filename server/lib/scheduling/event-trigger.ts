@@ -12,11 +12,13 @@ const triggerLog = log.child({ module: "event-trigger" });
 
 const DEFAULT_COOLDOWN_SECONDS = 30;
 const MIN_COOLDOWN_SECONDS = 5;
+const MAX_CHAIN_DEPTH = 5;
 
 // Per-task state
 const unsubscribers = new Map<string, () => void>();
 const pendingTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const eventBuffers = new Map<string, Array<Record<string, unknown>>>();
+const bufferMaxDepth = new Map<string, number>();
 const runningTasks = new Set<string>();
 
 export function startEventTriggers() {
@@ -55,6 +57,7 @@ export function unregisterEventTask(taskId: string) {
     pendingTimers.delete(taskId);
   }
   eventBuffers.delete(taskId);
+  bufferMaxDepth.delete(taskId);
 }
 
 export function stopAllEventTriggers() {
@@ -74,8 +77,18 @@ export function refreshEventTask(taskId: string) {
 }
 
 function handleEvent(taskId: string, projectId: string, eventName: EventName, eventData: Record<string, unknown>) {
-  // Guard against recursive loops: skip events emitted by event-triggered tasks
-  if ((eventData as any).depth > 0) return;
+  const depth = ((eventData as any).depth as number) ?? 0;
+  // Cycle guard: stop runaway chains (A→B→A→…)
+  if (depth >= MAX_CHAIN_DEPTH) {
+    triggerLog.warn("dropping event: max chain depth reached", { taskId, eventName, depth });
+    return;
+  }
+
+  // Don't let a task be triggered by its own lifecycle events
+  if ((eventName === "task.started" || eventName === "task.completed" || eventName === "task.failed")
+      && (eventData as any).taskId === taskId) {
+    return;
+  }
 
   // Check projectId matches
   if ((eventData as any).projectId !== projectId) return;
@@ -114,9 +127,12 @@ function bufferEvent(taskId: string, eventData: Record<string, unknown>, delaySe
   if (!eventBuffers.has(taskId)) {
     eventBuffers.set(taskId, []);
   }
-  // Strip internal metadata from buffer
+  // Strip internal metadata from buffer but remember the max depth seen
   const { depth, timestamp, ...payload } = eventData as any;
   eventBuffers.get(taskId)!.push(payload);
+  const incomingDepth = (depth as number) ?? 0;
+  const prev = bufferMaxDepth.get(taskId) ?? 0;
+  if (incomingDepth > prev) bufferMaxDepth.set(taskId, incomingDepth);
 
   // If there's already a timer, let it run (trailing edge)
   if (pendingTimers.has(taskId)) return;
@@ -141,9 +157,13 @@ async function flushTask(taskId: string) {
   }
 
   const buffered = eventBuffers.get(taskId) || [];
+  const inheritedDepth = bufferMaxDepth.get(taskId) ?? 0;
   eventBuffers.delete(taskId);
+  bufferMaxDepth.delete(taskId);
 
   if (buffered.length === 0) return;
+
+  const nextDepth = inheritedDepth + 1;
 
   const task = getTaskById(taskId);
   if (!task || !task.enabled || task.trigger_type !== "event") return;
@@ -156,7 +176,7 @@ async function flushTask(taskId: string) {
 
   try {
     triggerLog.info("executing event task", { taskId, name: task.name, event: task.trigger_event, bufferedEvents: buffered.length });
-    events.emit("task.started", { taskId, projectId: task.project_id, prompt: task.prompt });
+    events.emit("task.started", { taskId, taskName: task.name, projectId: task.project_id, prompt: task.prompt }, nextDepth);
 
     // Build prompt with event context
     const prompt = buildEventPrompt(task.prompt, task.trigger_event!, buffered);
@@ -180,7 +200,7 @@ async function flushTask(taskId: string) {
     });
 
     markEventTaskRun(task.id);
-    events.emit("task.completed", { taskId, projectId: task.project_id, summary: result.summary ?? "" });
+    events.emit("task.completed", { taskId, taskName: task.name, projectId: task.project_id, response: result.summary ?? "" }, nextDepth);
     triggerLog.info("event task completed", { taskId, name: task.name, runId: run.id });
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
@@ -193,7 +213,7 @@ async function flushTask(taskId: string) {
       chat_id: chatId,
       finished_at: formatDateForSQLite(new Date()),
     });
-    events.emit("task.failed", { taskId, projectId: task.project_id, error: errorMsg });
+    events.emit("task.failed", { taskId, taskName: task.name, projectId: task.project_id, error: errorMsg }, nextDepth);
 
     markEventTaskRun(task.id);
   } finally {

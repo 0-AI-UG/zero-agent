@@ -10,6 +10,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     openssh-client \
     python3 \
+    python3-pip \
+    python3-venv \
     make \
     g++ \
     ripgrep \

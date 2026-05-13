@@ -61,7 +61,7 @@ export async function tick() {
 
       try {
         schedLog.info("executing task", { taskId: task.id, taskName: task.name, projectId: task.project_id });
-        events.emit("task.started", { taskId: task.id, projectId: task.project_id, prompt: task.prompt });
+        events.emit("task.started", { taskId: task.id, taskName: task.name, projectId: task.project_id, prompt: task.prompt });
 
         const prompt = `${task.prompt} Current time: ${new Date().toISOString()}`;
 
@@ -80,7 +80,7 @@ export async function tick() {
         });
 
         markTaskRun(task.id, task.schedule);
-        events.emit("task.completed", { taskId: task.id, projectId: task.project_id, summary: result.summary ?? "" });
+        events.emit("task.completed", { taskId: task.id, taskName: task.name, projectId: task.project_id, response: result.summary ?? "" });
 
         schedLog.info("task completed", { taskId: task.id, taskName: task.name, runId: run.id });
       } catch (err) {
@@ -94,7 +94,7 @@ export async function tick() {
           chat_id: chatId,
           finished_at: formatDateForSQLite(new Date()),
         });
-        events.emit("task.failed", { taskId: task.id, projectId: task.project_id, error: errorMsg });
+        events.emit("task.failed", { taskId: task.id, taskName: task.name, projectId: task.project_id, error: errorMsg });
 
         // Still advance next_run_at so we don't retry immediately
         markTaskRun(task.id, task.schedule);
