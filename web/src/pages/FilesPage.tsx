@@ -384,11 +384,11 @@ export function FilesPage() {
 
       {/* Collapsed rail */}
       {showSplit && isPanelCollapsed && (
-        <div className="shrink-0 w-10 border-r flex flex-col items-center p-2 gap-1">
+        <div className="shrink-0 w-9 border-r flex flex-col items-center p-2 gap-1">
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8"
+            className="size-7"
             onClick={() => setIsPanelCollapsed(false)}
             title="Show files"
           >
@@ -397,7 +397,7 @@ export function FilesPage() {
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8"
+            className="size-7"
             onClick={() => refetch()}
             disabled={isFetching}
             title="Refresh"
@@ -407,7 +407,7 @@ export function FilesPage() {
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8"
+            className="size-7"
             onClick={() => setFileDialogOpen(true)}
             title="New file"
           >
@@ -416,13 +416,13 @@ export function FilesPage() {
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8"
+            className="size-7"
             onClick={() => setFolderDialogOpen(true)}
             title="New folder"
           >
             <FolderPlusIcon className="h-4 w-4" />
           </Button>
-          <UploadButton projectId={projectId!} currentPath={currentPath} compact variant="ghost" />
+          <UploadButton projectId={projectId!} currentPath={currentPath} compact small variant="ghost" />
         </div>
       )}
 

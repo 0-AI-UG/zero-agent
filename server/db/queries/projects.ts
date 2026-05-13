@@ -50,7 +50,7 @@ export function getProjectById(id: string): ProjectRow | null {
 
 export function updateProject(
   id: string,
-  fields: { name?: string; description?: string; automationEnabled?: boolean; showSkillsInFiles?: boolean; assistantName?: string; assistantDescription?: string; assistantIcon?: string; isStarred?: boolean; isArchived?: boolean },
+  fields: { name?: string; description?: string; automationEnabled?: boolean; showSkillsInFiles?: boolean; assistantName?: string; assistantDescription?: string; assistantIcon?: string; isStarred?: boolean; isArchived?: boolean; emailEnabled?: boolean; emailToken?: string | null },
 ): ProjectRow {
   const sets: string[] = [];
   const values: (string | number)[] = [];
@@ -91,6 +91,14 @@ export function updateProject(
     sets.push("is_archived = ?");
     values.push(fields.isArchived ? 1 : 0);
   }
+  if (fields.emailEnabled !== undefined) {
+    sets.push("email_enabled = ?");
+    values.push(fields.emailEnabled ? 1 : 0);
+  }
+  if (fields.emailToken !== undefined) {
+    sets.push("email_token = ?");
+    values.push(fields.emailToken as string);
+  }
 
   sets.push("updated_at = datetime('now')");
   values.push(id);
@@ -104,4 +112,10 @@ export function updateProject(
 
 export function deleteProject(id: string): void {
   db.prepare("DELETE FROM projects WHERE id = ?").run(id);
+}
+
+export function getProjectByEmailToken(token: string): ProjectRow | null {
+  return (db.prepare(
+    "SELECT * FROM projects WHERE email_token = ?",
+  ).get(token) as ProjectRow | undefined) ?? null;
 }
