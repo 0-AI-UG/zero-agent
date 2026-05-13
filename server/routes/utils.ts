@@ -66,7 +66,6 @@ export function formatProject(row: ProjectRow, opts?: { role?: string; memberCou
     name: row.name,
     description: row.description,
     automationEnabled: row.automation_enabled === 1,
-    syncGatingEnabled: row.sync_gating_enabled === 1,
     showSkillsInFiles: row.show_skills_in_files === 1,
     assistantName: row.assistant_name,
     assistantDescription: row.assistant_description,

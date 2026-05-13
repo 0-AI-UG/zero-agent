@@ -6,7 +6,6 @@ import type { ChatStatus, SendMessageOptions } from "@/hooks/use-pi-chat";
 import { useModelStore, getSelectedModel } from "@/stores/model";
 import { useModels } from "@/api/models";
 import { sendTyping } from "@/lib/ws";
-import type { ServerCapabilities } from "@/api/capabilities";
 import type { TypingUser } from "@/stores/realtime";
 import { useUploadFiles } from "@/hooks/use-upload-files";
 
@@ -28,7 +27,6 @@ interface ComposerProps {
   status: ChatStatus;
   sendMessage: (opts: SendMessageOptions) => void;
   stop: () => void;
-  capabilities: ServerCapabilities | undefined;
   typingUsers?: TypingUser[];
   presenceDots?: ReactNode;
 }
@@ -110,7 +108,6 @@ export function Composer({
   status,
   sendMessage,
   stop,
-  capabilities: _capabilities,
   typingUsers,
   presenceDots,
 }: ComposerProps) {

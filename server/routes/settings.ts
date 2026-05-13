@@ -2,6 +2,7 @@ import { corsHeaders } from "@/lib/http/cors.ts";
 import { requireAdmin } from "@/lib/auth/auth.ts";
 import { getSetting, setSetting, getAllSettings, deleteSetting } from "@/lib/settings.ts";
 import { handleError } from "@/routes/utils.ts";
+import imageModels from "@/lib/media/image_models.json" with { type: "json" };
 
 export async function handleGetSettings(request: Request): Promise<Response> {
   try {
@@ -20,6 +21,15 @@ export async function handleGetSettings(request: Request): Promise<Response> {
     }
 
     return Response.json({ settings: masked }, { headers: corsHeaders });
+  } catch (error) {
+    return handleError(error);
+  }
+}
+
+export async function handleListImageModels(request: Request): Promise<Response> {
+  try {
+    await requireAdmin(request);
+    return Response.json({ models: imageModels }, { headers: corsHeaders });
   } catch (error) {
     return handleError(error);
   }

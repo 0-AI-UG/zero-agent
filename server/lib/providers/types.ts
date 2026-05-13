@@ -5,8 +5,6 @@
  * or into the agent loop — the SDK client is shared.
  */
 
-export type SpecializedKind = "search-parse" | "edit-apply" | "enrich" | "extract";
-
 export interface ProviderCapabilities {
   chat: boolean;
   image: boolean;
@@ -36,7 +34,6 @@ export interface InferenceProvider {
   getImageModelId(modelId?: string): string;
   getVisionModelId(modelId?: string): string;
   getEmbeddingModelId(modelId?: string): string;
-  getSpecializedChatModelId(kind: SpecializedKind, modelId?: string): string;
 
   /**
    * Parse the provider-specific `provider_config` JSON blob from a model row.

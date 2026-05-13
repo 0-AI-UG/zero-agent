@@ -27,7 +27,6 @@ export interface ProjectRow {
   name: string;
   description: string;
   automation_enabled: number;
-  sync_gating_enabled: number;
   show_skills_in_files: number;
   assistant_name: string;
   assistant_description: string;

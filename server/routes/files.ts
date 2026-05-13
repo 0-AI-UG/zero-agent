@@ -12,6 +12,7 @@ import {
   updateFileHash,
 } from "@/db/queries/files.ts";
 import {
+  createProjectFolder,
   deleteProjectPath,
   moveProjectPath,
   streamProjectFile,
@@ -303,6 +304,7 @@ export async function handleCreateFolder(request: Request): Promise<Response> {
       throw new ValidationError("Folder already exists");
     }
 
+    await createProjectFolder(projectId, body.path);
     const folder = createFolder(projectId, body.path, body.name);
     events.emit("folder.created", { projectId, path: body.path });
     return Response.json(

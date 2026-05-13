@@ -10,7 +10,6 @@ import { Composer } from "./Composer";
 import { useTypingUsers, PresenceDots } from "./PresenceBar";
 import { useQuickActions } from "@/api/quick-actions";
 import { useProject } from "@/api/projects";
-import { useServerCapabilities } from "@/api/capabilities";
 import { useMembers } from "@/api/members";
 import { useViewChat } from "@/hooks/use-realtime";
 import { usePiChat } from "@/hooks/use-pi-chat";
@@ -32,7 +31,6 @@ function sourceLabel(source: string): string {
 }
 
 export function ChatPanel({ projectId, chatId, isAutonomous, source }: ChatPanelProps) {
-  const { data: capabilities } = useServerCapabilities();
   const { data: project } = useProject(projectId);
   const { data: quickActions } = useQuickActions(projectId);
   const { data: membersData } = useMembers(projectId);
@@ -111,7 +109,6 @@ export function ChatPanel({ projectId, chatId, isAutonomous, source }: ChatPanel
             status={status}
             sendMessage={sendMessage}
             stop={stop}
-            capabilities={capabilities}
             typingUsers={typingUsers}
             presenceDots={<PresenceDots chatId={chatId} />}
           />

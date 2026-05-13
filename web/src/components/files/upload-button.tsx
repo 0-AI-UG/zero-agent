@@ -8,9 +8,10 @@ interface UploadButtonProps {
   projectId: string;
   currentPath: string;
   compact?: boolean;
+  variant?: "outline" | "ghost";
 }
 
-export function UploadButton({ projectId, currentPath, compact }: UploadButtonProps) {
+export function UploadButton({ projectId, currentPath, compact, variant = "outline" }: UploadButtonProps) {
   const { upload, isUploading } = useUploadFiles(projectId);
 
   const onDrop = useCallback(
@@ -33,7 +34,7 @@ export function UploadButton({ projectId, currentPath, compact }: UploadButtonPr
   return (
     <>
       <Button
-        variant="outline"
+        variant={variant}
         size={compact ? "icon" : "sm"}
         className={compact ? "h-8 w-8" : undefined}
         onClick={open}

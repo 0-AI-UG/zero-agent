@@ -54,6 +54,14 @@ async function ensureUnderProject(projectId: string, relPath: string): Promise<s
   return abs;
 }
 
+export async function createProjectFolder(
+  projectId: string,
+  relPath: string,
+): Promise<void> {
+  const abs = await ensureUnderProject(projectId, relPath);
+  await mkdir(abs, { recursive: true });
+}
+
 export async function writeProjectFile(
   projectId: string,
   relPath: string,

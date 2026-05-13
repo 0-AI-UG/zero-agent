@@ -25,6 +25,3 @@ export function getEmbeddingModel(modelId: string) {
   return getProvider().textEmbeddingModel(modelId);
 }
 
-export function getImageModel(modelId: string) {
-  return getProvider().imageModel(modelId);
-}

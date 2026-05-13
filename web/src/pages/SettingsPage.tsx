@@ -137,23 +137,6 @@ export function SettingsPage() {
 
                 <div className="flex items-center justify-between gap-4">
                   <div className="space-y-1">
-                    <p className="text-sm font-medium">Review changes before saving</p>
-                    <p className="text-xs text-muted-foreground">
-                      Preview file changes and approve them before they're saved to your project.
-                    </p>
-                  </div>
-                  <Switch
-                    checked={project.syncGatingEnabled}
-                    onCheckedChange={(checked) =>
-                      updateProject.mutate({ syncGatingEnabled: checked })
-                    }
-                    disabled={updateProject.isPending}
-                    aria-label="Review changes before saving"
-                  />
-                </div>
-
-                <div className="flex items-center justify-between gap-4">
-                  <div className="space-y-1">
                     <p className="text-sm font-medium">Show skills in file explorer</p>
                     <p className="text-xs text-muted-foreground">
                       Display the skills folder in the file explorer.

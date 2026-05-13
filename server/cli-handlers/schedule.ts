@@ -23,8 +23,6 @@ import type {
   ScheduleRemoveInput,
 } from "zero/schemas";
 
-const AGENT_USER_ID = "agent";
-
 function summarize(t: any) {
   return {
     id: t.id,
@@ -53,7 +51,7 @@ export async function handleScheduleAdd(
   if (triggerType === "event") {
     if (!input.triggerEvent) return fail("invalid", "triggerEvent is required for event tasks");
     const task = insertTask(
-      ctx.projectId, AGENT_USER_ID, input.name, input.prompt, "event", true,
+      ctx.projectId, ctx.userId, input.name, input.prompt, "event", true,
       undefined, undefined,
       "event", input.triggerEvent, input.triggerFilter, input.cooldownSeconds ?? 0, input.maxSteps,
     );
@@ -71,7 +69,7 @@ export async function handleScheduleAdd(
       if (!v.valid) return fail("invalid", v.error ?? "invalid scriptPath");
     }
     const task = insertTask(
-      ctx.projectId, AGENT_USER_ID, input.name, input.prompt, input.schedule,
+      ctx.projectId, ctx.userId, input.name, input.prompt, input.schedule,
       true, undefined, undefined, "script", undefined, undefined, 0, input.maxSteps,
       scriptPath ?? null,
     );
@@ -82,7 +80,7 @@ export async function handleScheduleAdd(
   const validation = parseSchedule(input.schedule);
   if (!validation.valid) return fail("invalid", validation.error ?? "invalid schedule");
   const task = insertTask(
-    ctx.projectId, AGENT_USER_ID, input.name, input.prompt, input.schedule,
+    ctx.projectId, ctx.userId, input.name, input.prompt, input.schedule,
     true, undefined, undefined, "schedule", undefined, undefined, 0, input.maxSteps,
   );
   return ok(summarize(task));

@@ -16,13 +16,12 @@ export interface LlmGenerateResponse {
 export const llm = {
   generate(
     prompt: string,
-    opts?: { system?: string; model?: string; maxTokens?: number },
+    opts?: { system?: string; maxTokens?: number },
     callOptions?: CallOptions,
   ): Promise<LlmGenerateResponse> {
     const body = LlmGenerateInput.parse({
       prompt,
       system: opts?.system,
-      model: opts?.model,
       maxTokens: opts?.maxTokens,
     });
     return call<LlmGenerateResponse>("/zero/llm/generate", body, {

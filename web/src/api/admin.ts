@@ -62,6 +62,24 @@ export function useAdminSettings() {
   });
 }
 
+export interface ImageModelOption {
+  id: string;
+  name: string;
+  description: string;
+  outputModalities: string[];
+}
+
+export function useImageModels() {
+  return useQuery({
+    queryKey: ["admin", "image-models"],
+    queryFn: async () => {
+      const res = await apiFetch<{ models: ImageModelOption[] }>("/image-models");
+      return res.models;
+    },
+    staleTime: 5 * 60_000,
+  });
+}
+
 export function useUpdateSettings() {
   const queryClient = useQueryClient();
   return useMutation({

@@ -50,6 +50,7 @@ import {
   ZapIcon,
   FilterIcon,
   XIcon,
+  FileCodeIcon,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -211,10 +212,11 @@ export interface TaskFormData {
   prompt: string;
   schedule?: string;
   requiredTools?: string[] | null;
-  triggerType: "schedule" | "event";
+  triggerType: "schedule" | "event" | "script";
   triggerEvent?: string;
   triggerFilter?: Record<string, string> | null;
   cooldownSeconds?: number;
+  scriptPath?: string | null;
 }
 
 export function ToolPicker({
@@ -344,19 +346,24 @@ function TaskDialog({
 }) {
   const [name, setName] = useState(initial?.name ?? "");
   const [prompt, setPrompt] = useState(initial?.prompt ?? "");
-  const [triggerType, setTriggerType] = useState<"schedule" | "event">(initial?.triggerType ?? "schedule");
+  const [triggerType, setTriggerType] = useState<"schedule" | "event" | "script">(initial?.triggerType ?? "schedule");
   const [schedule, setSchedule] = useState(initial?.schedule ?? "every 2h");
   const [triggerEvent, setTriggerEvent] = useState(initial?.triggerEvent ?? "file.created");
   const [cooldownSeconds, setCooldownSeconds] = useState(initial?.cooldownSeconds ?? 30);
   const [triggerFilter, setTriggerFilter] = useState<Record<string, string>>(
     () => initial?.triggerFilter ?? {},
   );
+  const [scriptPath, setScriptPath] = useState(initial?.scriptPath ?? "");
   const [selectedTools, setSelectedTools] = useState<Set<string>>(
     () => new Set(initial?.requiredTools ?? []),
   );
 
   const isValid = name.trim() && prompt.trim() && (
-    triggerType === "schedule" ? schedule.trim() : triggerEvent
+    triggerType === "schedule"
+      ? schedule.trim()
+      : triggerType === "script"
+        ? schedule.trim()
+        : triggerEvent
   );
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -369,14 +376,16 @@ function TaskDialog({
     );
     const hasFilter = triggerType === "event" && Object.keys(cleanFilter).length > 0;
 
+    const trimmedScriptPath = scriptPath.trim();
     onSubmit({
       name: name.trim(),
       prompt: prompt.trim(),
       triggerType,
-      schedule: triggerType === "schedule" ? schedule.trim() : undefined,
+      schedule: triggerType === "schedule" || triggerType === "script" ? schedule.trim() : undefined,
       triggerEvent: triggerType === "event" ? triggerEvent : undefined,
       triggerFilter: hasFilter ? cleanFilter : null,
       cooldownSeconds: triggerType === "event" ? cooldownSeconds : undefined,
+      scriptPath: triggerType === "script" ? (trimmedScriptPath || null) : null,
       requiredTools: tools,
     });
   };
@@ -440,6 +449,19 @@ function TaskDialog({
                   <ZapIcon className="size-3" />
                   Event
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setTriggerType("script")}
+                  className={cn(
+                    "rounded px-3 py-1 text-xs font-medium transition-colors flex items-center gap-1.5",
+                    triggerType === "script"
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  <FileCodeIcon className="size-3" />
+                  Script
+                </button>
               </div>
             </div>
 
@@ -469,6 +491,52 @@ function TaskDialog({
                   ))}
                 </div>
               </div>
+            ) : triggerType === "script" ? (
+              <>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Schedule</label>
+                  <p className="text-xs text-muted-foreground">
+                    The script runs on this schedule. It can call <code className="text-[10px] bg-muted px-1 rounded">trigger.fire(...)</code> to invoke the prompt.
+                  </p>
+                  <Input
+                    value={schedule}
+                    onChange={(e) => setSchedule(e.target.value)}
+                    placeholder='e.g. "every 5m" or "0 9 * * *"'
+                  />
+                  <div className="flex flex-wrap gap-1.5">
+                    {SCHEDULE_PRESETS.map((p) => (
+                      <button
+                        key={p.value}
+                        type="button"
+                        onClick={() => setSchedule(p.value)}
+                        className={cn(
+                          "rounded-md px-2 py-1 text-xs transition-colors border",
+                          schedule === p.value
+                            ? "bg-primary text-primary-foreground border-primary"
+                            : "bg-muted text-muted-foreground hover:text-foreground border-transparent",
+                        )}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium flex items-center gap-1.5">
+                    <FileCodeIcon className="size-3.5 text-muted-foreground" />
+                    Script path
+                  </label>
+                  <p className="text-xs text-muted-foreground">
+                    Relative path to a <code className="text-[10px] bg-muted px-1 rounded">.ts</code> file in the project. Leave blank for the default (<code className="text-[10px] bg-muted px-1 rounded">.zero/triggers/&lt;taskId&gt;.ts</code>).
+                  </p>
+                  <Input
+                    value={scriptPath}
+                    onChange={(e) => setScriptPath(e.target.value)}
+                    placeholder=".zero/triggers/my-trigger.ts"
+                    className="font-mono text-xs"
+                  />
+                </div>
+              </>
             ) : (
               <>
                 <div className="space-y-2">
@@ -676,6 +744,16 @@ function TaskCard({
                   <ZapIcon className="size-2.5" />
                   {task.triggerEvent}
                 </Badge>
+              ) : task.triggerType === "script" ? (
+                <>
+                  <Badge variant="outline" className="text-[10px] shrink-0 gap-0.5 text-violet-600 border-violet-200 bg-violet-50 dark:bg-violet-950 dark:text-violet-400 dark:border-violet-800">
+                    <FileCodeIcon className="size-2.5" />
+                    Script
+                  </Badge>
+                  <Badge variant="outline" className="text-[10px] shrink-0">
+                    {task.schedule}
+                  </Badge>
+                </>
               ) : (
                 <Badge variant="outline" className="text-[10px] shrink-0">
                   {task.schedule}
@@ -697,10 +775,13 @@ function TaskCard({
                   Last: {formatDistanceToNow(new Date(task.lastRunAt), { addSuffix: true })}
                 </span>
               )}
-              {task.triggerType === "schedule" && (
+              {(task.triggerType === "schedule" || task.triggerType === "script") && (
                 <span>
                   Next: {formatDistanceToNow(new Date(task.nextRunAt), { addSuffix: true })}
                 </span>
+              )}
+              {task.triggerType === "script" && task.scriptPath && (
+                <span className="font-mono truncate max-w-[200px]">{task.scriptPath}</span>
               )}
               {task.triggerType === "event" && task.triggerFilter && Object.keys(task.triggerFilter).length > 0 && (
                 <span>
@@ -787,6 +868,7 @@ function TaskCard({
           triggerEvent: task.triggerEvent ?? undefined,
           triggerFilter: task.triggerFilter ?? undefined,
           cooldownSeconds: task.cooldownSeconds,
+          scriptPath: task.scriptPath,
           requiredTools: task.requiredTools,
         }}
       />

@@ -195,7 +195,6 @@ export const LlmGenerateInput = z
   .object({
     prompt: NonEmpty(100_000),
     system: z.string().max(20_000).optional(),
-    model: z.string().min(1).max(200).optional(),
     maxTokens: z.number().int().min(1).max(32_000).optional(),
   })
   .strict();

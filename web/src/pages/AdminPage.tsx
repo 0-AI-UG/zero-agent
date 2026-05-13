@@ -61,6 +61,7 @@ import {
   ToggleRightIcon,
   GaugeIcon,
   ChevronLeftIcon,
+  TerminalIcon,
 } from "lucide-react";
 import {
   useAdminInvitations,
@@ -74,8 +75,24 @@ import {
   useUpdateUser,
   useAdminSettings,
   useUpdateSettings,
+  useImageModels,
   type AdminUser,
+  type ImageModelOption,
 } from "@/api/admin";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+  CommandSeparator,
+} from "@/components/ui/command";
 import {
   useAdminModels,
   useCreateModel,
@@ -91,7 +108,6 @@ import type { ModelConfig } from "@/stores/model";
 import { Switch } from "@/components/ui/switch";
 import { Spinner } from "@/components/ui/spinner";
 import { toast } from "sonner";
-import { useQueryClient } from "@tanstack/react-query";
 import {
   Select,
   SelectContent,
@@ -312,11 +328,155 @@ function ApiKeyField({
   );
 }
 
+const IMAGE_MODEL_DEFAULT = "google/gemini-2.5-flash-image";
+
+function ImageModelPicker() {
+  const { data: settings } = useAdminSettings();
+  const { data: options } = useImageModels();
+  const updateSettings = useUpdateSettings();
+  const [open, setOpen] = useState(false);
+  const [customOpen, setCustomOpen] = useState(false);
+  const [customValue, setCustomValue] = useState("");
+
+  const active = settings?.IMAGE_MODEL ?? IMAGE_MODEL_DEFAULT;
+  const activeEntry = options?.find((m) => m.id === active);
+  const isCustom = !!options && !options.find((m) => m.id === active);
+
+  // Group models by provider (slug before /)
+  const grouped = useMemo(() => {
+    const map = new Map<string, ImageModelOption[]>();
+    for (const m of options ?? []) {
+      const provider = m.id.split("/")[0] ?? "other";
+      const list = map.get(provider) ?? [];
+      list.push(m);
+      map.set(provider, list);
+    }
+    return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b));
+  }, [options]);
+
+  function save(id: string) {
+    updateSettings.mutate(
+      { IMAGE_MODEL: id },
+      {
+        onSuccess: () => {
+          toast.success("Image model updated");
+          setOpen(false);
+          setCustomOpen(false);
+          setCustomValue("");
+        },
+        onError: (err) => toast.error(err.message),
+      },
+    );
+  }
+
+  return (
+    <div className="rounded-lg border p-3 flex items-center justify-between gap-3">
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <p className="text-sm font-medium truncate">
+            {activeEntry?.name ?? active}
+          </p>
+          {isCustom && (
+            <Badge variant="outline" className="text-[10px] h-4 px-1">Custom</Badge>
+          )}
+        </div>
+        <p className="text-[11px] text-muted-foreground font-mono truncate">{active}</p>
+        <p className="text-[11px] text-muted-foreground mt-0.5">
+          Used by the <code>image generate</code> tool.
+          {activeEntry?.description ? ` ${activeEntry.description}` : ""}
+        </p>
+      </div>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button size="sm" variant="outline">Change</Button>
+        </PopoverTrigger>
+        <PopoverContent align="end" className="p-0 w-80">
+          <Command>
+            <CommandInput placeholder="Search image models..." />
+            <CommandList className="max-h-72">
+              <CommandEmpty>No model found.</CommandEmpty>
+              {grouped.map(([provider, items]) => (
+                <CommandGroup key={provider} heading={provider}>
+                  {items.map((m) => (
+                    <CommandItem
+                      key={m.id}
+                      value={`${m.name} ${m.id}`}
+                      onSelect={() => save(m.id)}
+                      className="flex-col items-start gap-0"
+                    >
+                      <div className="flex items-center gap-2 w-full">
+                        <span className="text-xs font-medium truncate flex-1">{m.name}</span>
+                        {m.outputModalities.length > 1 && (
+                          <Badge variant="outline" className="text-[9px] h-4 px-1">
+                            +text
+                          </Badge>
+                        )}
+                        {m.id === active && <CheckIcon className="size-3.5 shrink-0" />}
+                      </div>
+                      <span className="text-[10px] text-muted-foreground font-mono">{m.id}</span>
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              ))}
+              <CommandSeparator />
+              <CommandGroup>
+                <CommandItem
+                  onSelect={() => {
+                    setCustomValue(isCustom ? active : "");
+                    setCustomOpen(true);
+                    setOpen(false);
+                  }}
+                  className="text-xs"
+                >
+                  <PencilIcon className="size-3.5 mr-2" />
+                  Use custom model ID…
+                </CommandItem>
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      </Popover>
+
+      <Dialog open={customOpen} onOpenChange={setCustomOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-display">Custom image model</DialogTitle>
+            <DialogDescription>
+              Enter any OpenRouter model slug. Image-only models work via{" "}
+              <code>modalities: ["image"]</code>; we auto-select the right modalities.
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (customValue.trim()) save(customValue.trim());
+            }}
+            className="space-y-3"
+          >
+            <Input
+              placeholder="provider/model-id"
+              value={customValue}
+              onChange={(e) => setCustomValue(e.target.value)}
+              className="font-mono text-xs"
+              autoFocus
+            />
+            <DialogFooter>
+              <Button
+                type="submit"
+                disabled={!customValue.trim() || updateSettings.isPending}
+              >
+                Save
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
 function InstanceSettingsSection() {
   const { data: settings } = useAdminSettings();
-  const updateSettings = useUpdateSettings();
-  const queryClient = useQueryClient();
-  const activeTheme = settings?.UI_THEME ?? "default";
 
   return (
     <section className="space-y-4">
@@ -325,45 +485,6 @@ function InstanceSettingsSection() {
         <h3 className="text-sm font-semibold">Instance Settings</h3>
       </div>
       <div className="rounded-lg border p-4 space-y-4">
-        <div className="space-y-2">
-          <label className="text-sm font-medium">UI Theme</label>
-          <p className="text-xs text-muted-foreground">
-            Switches the visual theme for all users. Applied at runtime.
-          </p>
-          <Select
-            value={activeTheme}
-            onValueChange={(next) => {
-              // Apply immediately so the admin sees the switch even before
-              // /capabilities refetches.
-              const root = document.documentElement;
-              if (next === "default") root.removeAttribute("data-theme");
-              else root.setAttribute("data-theme", next);
-              updateSettings.mutate(
-                { UI_THEME: next },
-                {
-                  onSuccess: () => {
-                    toast.success("Theme updated");
-                    queryClient.invalidateQueries({ queryKey: ["capabilities"] });
-                  },
-                  onError: (err) => toast.error(err.message),
-                },
-              );
-            }}
-          >
-            <SelectTrigger className="h-8 w-full text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="default">Default</SelectItem>
-              <SelectItem value="bw">Black & White</SelectItem>
-              <SelectItem value="sunset">Sunset</SelectItem>
-              <SelectItem value="compact">Compact</SelectItem>
-              <SelectItem value="editorial">Editorial</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-
         <ApiKeyField
           label="OpenRouter API Key"
           placeholder="sk-or-..."
@@ -433,7 +554,9 @@ type AdminModel = ModelConfig & { enabled: boolean; sortOrder: number };
 
 function ModelManagementSection() {
   const { data: models, isLoading } = useAdminModels();
+  const { data: settings } = useAdminSettings();
   const updateModel = useUpdateModel();
+  const updateSettings = useUpdateSettings();
   const deleteModelMutation = useDeleteModel();
   const [editModel, setEditModel] = useState<AdminModel | null>(null);
   const [addOpen, setAddOpen] = useState(false);
@@ -441,6 +564,10 @@ function ModelManagementSection() {
   const modelCount = models?.length ?? 0;
   const enabledCount = models?.filter((m) => m.enabled).length ?? 0;
   const providers = Array.from(new Set((models ?? []).map((m) => m.provider).filter(Boolean))).sort();
+
+  // Scripts model: explicit SCRIPTS_MODEL setting falls back to the admin-marked default.
+  const scriptsModelId =
+    settings?.SCRIPTS_MODEL ?? models?.find((m) => m.default)?.id ?? null;
 
   return (
     <section className="space-y-4">
@@ -456,6 +583,8 @@ function ModelManagementSection() {
         </div>
         <AddModelDialog open={addOpen} onOpenChange={setAddOpen} providers={providers} />
       </div>
+
+      <ImageModelPicker />
 
       <div className="rounded-lg border overflow-hidden">
         {isLoading ? (
@@ -491,6 +620,12 @@ function ModelManagementSection() {
                           <Badge variant="outline" className="text-[10px] h-4 px-1 border-amber-500/30 text-amber-600 dark:text-amber-400">
                             <StarIcon className="size-2 mr-0.5" />
                             Default
+                          </Badge>
+                        )}
+                        {model.id === scriptsModelId && (
+                          <Badge variant="outline" className="text-[10px] h-4 px-1 border-sky-500/30 text-sky-600 dark:text-sky-400">
+                            <TerminalIcon className="size-2 mr-0.5" />
+                            Scripts
                           </Badge>
                         )}
                         {model.multimodal && (
@@ -546,6 +681,22 @@ function ModelManagementSection() {
                           >
                             <StarIcon />
                             Set as default
+                          </DropdownMenuItem>
+                        )}
+                        {model.id !== scriptsModelId && model.enabled && (
+                          <DropdownMenuItem
+                            onSelect={() => {
+                              updateSettings.mutate(
+                                { SCRIPTS_MODEL: model.id },
+                                {
+                                  onSuccess: () => toast.success("Scripts model updated"),
+                                  onError: (err) => toast.error(err.message),
+                                }
+                              );
+                            }}
+                          >
+                            <TerminalIcon />
+                            Set as Scripts model
                           </DropdownMenuItem>
                         )}
                         <DropdownMenuSeparator />

@@ -9,19 +9,11 @@ import { getSetting } from "@/lib/settings.ts";
 import type {
   InferenceProvider,
   OpenRouterRouting,
-  SpecializedKind,
 } from "@/lib/providers/types.ts";
 
 function getDefaultModelId(): string {
   return getSetting("OPENROUTER_MODEL") ?? "~moonshotai/kimi-latest";
 }
-
-const SPECIALIZED_DEFAULTS: Record<SpecializedKind, () => string> = {
-  "search-parse": () => process.env.SEARCH_PARSE_MODEL ?? getDefaultModelId(),
-  "edit-apply": () => process.env.EDIT_APPLY_MODEL ?? "openai/gpt-4o",
-  "enrich": () => process.env.ENRICH_MODEL ?? "qwen/qwen3.6-flash",
-  "extract": () => process.env.EXTRACT_MODEL ?? "google/gemini-2.5-flash",
-};
 
 export const openrouterProvider: InferenceProvider = {
   id: "openrouter",
@@ -37,7 +29,7 @@ export const openrouterProvider: InferenceProvider = {
   },
 
   getImageModelId(modelId?: string) {
-    return modelId ?? process.env.IMAGE_MODEL ?? "black-forest-labs/flux.2-klein-4b";
+    return modelId ?? getSetting("IMAGE_MODEL") ?? "google/gemini-2.5-flash-image";
   },
 
   getVisionModelId(modelId?: string) {
@@ -46,10 +38,6 @@ export const openrouterProvider: InferenceProvider = {
 
   getEmbeddingModelId(modelId?: string) {
     return modelId ?? "openai/text-embedding-3-small";
-  },
-
-  getSpecializedChatModelId(kind: SpecializedKind, modelId?: string) {
-    return modelId ?? SPECIALIZED_DEFAULTS[kind]();
   },
 
   parseConfig(_raw: string | null) {

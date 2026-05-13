@@ -30,7 +30,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { FilePlusIcon, FolderPlusIcon, RefreshCwIcon, SearchIcon, UploadIcon, XIcon } from "lucide-react";
+import { FilePlusIcon, FolderPlusIcon, PanelLeftCloseIcon, PanelLeftOpenIcon, RefreshCwIcon, SearchIcon, UploadIcon, XIcon } from "lucide-react";
 import { apiFetch } from "@/api/client";
 import { queryKeys } from "@/lib/query-keys";
 import { toast } from "sonner";
@@ -274,6 +274,7 @@ export function FilesPage() {
   const DEFAULT_PANEL_WIDTH = 440;
   const COMPACT_THRESHOLD = 380;
   const [panelWidth, setPanelWidth] = useState(DEFAULT_PANEL_WIDTH);
+  const [isPanelCollapsed, setIsPanelCollapsed] = useState(false);
   const isCompact = panelWidth < COMPACT_THRESHOLD;
   const resizingRef = useRef(false);
   const startXRef = useRef(0);
@@ -381,7 +382,52 @@ export function FilesPage() {
         </div>
       )}
 
+      {/* Collapsed rail */}
+      {showSplit && isPanelCollapsed && (
+        <div className="shrink-0 w-10 border-r flex flex-col items-center p-2 gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            onClick={() => setIsPanelCollapsed(false)}
+            title="Show files"
+          >
+            <PanelLeftOpenIcon className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            onClick={() => refetch()}
+            disabled={isFetching}
+            title="Refresh"
+          >
+            <RefreshCwIcon className={cn("h-4 w-4", isFetching && "animate-spin")} />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            onClick={() => setFileDialogOpen(true)}
+            title="New file"
+          >
+            <FilePlusIcon className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            onClick={() => setFolderDialogOpen(true)}
+            title="New folder"
+          >
+            <FolderPlusIcon className="h-4 w-4" />
+          </Button>
+          <UploadButton projectId={projectId!} currentPath={currentPath} compact variant="ghost" />
+        </div>
+      )}
+
       {/* File list panel */}
+      {(!showSplit || !isPanelCollapsed) && (
       <div
         className={cn(
           "flex flex-col",
@@ -390,9 +436,22 @@ export function FilesPage() {
         style={showSplit ? { width: panelWidth } : undefined}
       >
         {/* Header */}
-        <div className="shrink-0 px-4 pt-4 pb-2 space-y-2.5">
+        <div className="shrink-0 p-2 space-y-2.5">
           <div className="flex items-center justify-between gap-2">
-            <h2 className="text-xl font-bold tracking-tight font-display">Files</h2>
+            <div className="flex items-center gap-1.5 min-w-0">
+              {showSplit && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 shrink-0"
+                  onClick={() => setIsPanelCollapsed(true)}
+                  title="Hide files"
+                >
+                  <PanelLeftCloseIcon className="h-4 w-4" />
+                </Button>
+              )}
+              <h2 className="text-xl font-bold tracking-tight font-display truncate">Files</h2>
+            </div>
             <div className="flex items-center gap-1.5">
               <Button
                 variant="ghost"
@@ -502,9 +561,10 @@ export function FilesPage() {
         </div>
 
       </div>
+      )}
 
       {/* Resize handle */}
-      {showSplit && (
+      {showSplit && !isPanelCollapsed && (
         <div
           onMouseDown={handleResizeStart}
           className="w-1 shrink-0 cursor-col-resize hover:bg-primary/20 active:bg-primary/30 transition-colors"

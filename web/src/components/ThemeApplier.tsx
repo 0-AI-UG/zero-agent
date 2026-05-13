@@ -1,17 +1,13 @@
 import { useEffect } from "react";
-import { useServerCapabilities } from "@/api/capabilities";
 import { useColorModeStore, resolveColorMode } from "@/stores/color-mode";
 import { themeConfigToCss } from "@/lib/theme-engine";
 
 /**
  * Applies:
  * 1. Color mode (.dark class on <html>) from user preference store
- * 2. Admin UI theme (data-theme attribute) from /capabilities
- * 3. Custom user theme CSS (<style id="custom-theme">) — from JSON config or legacy raw CSS
+ * 2. Custom user theme CSS (<style id="custom-theme">) — from JSON config or legacy raw CSS
  */
 export function ThemeApplier() {
-  const { data } = useServerCapabilities();
-  const theme = data?.theme ?? "default";
   const colorMode = useColorModeStore((s) => s.colorMode);
   const customTheme = useColorModeStore((s) => s.customTheme);
   const customThemeCss = useColorModeStore((s) => s.customThemeCss);
@@ -31,13 +27,6 @@ export function ThemeApplier() {
       return () => mql.removeEventListener("change", handler);
     }
   }, [colorMode]);
-
-  // Admin theme — data-theme attribute
-  useEffect(() => {
-    const root = document.documentElement;
-    if (theme === "default") root.removeAttribute("data-theme");
-    else root.setAttribute("data-theme", theme);
-  }, [theme]);
 
   // Custom theme CSS injection (JSON theme takes priority, legacy CSS as fallback)
   useEffect(() => {

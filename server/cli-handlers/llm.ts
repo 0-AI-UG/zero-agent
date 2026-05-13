@@ -5,7 +5,7 @@
  */
 import type { z } from "zod";
 import { generateText } from "@/lib/openrouter/text.ts";
-import { resolveChatModelId, getEnrichModelId } from "@/lib/providers/index.ts";
+import { getScriptsModelId } from "@/lib/providers/index.ts";
 import { insertUsageLog } from "@/db/queries/usage-logs.ts";
 import type { CliContext } from "./context.ts";
 import { ok } from "./response.ts";
@@ -15,9 +15,7 @@ export async function handleLlmGenerate(
   ctx: CliContext,
   input: z.infer<typeof LlmGenerateInput>,
 ): Promise<Response> {
-  const model = input.model
-    ? resolveChatModelId(input.model)
-    : getEnrichModelId();
+  const model = getScriptsModelId();
 
   const result = await generateText({
     model,
@@ -33,7 +31,7 @@ export async function handleLlmGenerate(
     projectId: ctx.projectId,
     userId: ctx.userId,
     chatId: null,
-    modelId: input.model ?? "enrich",
+    modelId: model,
     inputTokens,
     outputTokens,
     reasoningTokens: 0,
@@ -45,7 +43,7 @@ export async function handleLlmGenerate(
 
   return ok({
     text: result.text,
-    model: input.model ?? "enrich",
+    model,
     inputTokens,
     outputTokens,
   });

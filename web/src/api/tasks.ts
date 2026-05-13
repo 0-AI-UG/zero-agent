@@ -15,10 +15,11 @@ export interface ScheduledTask {
   runCount: number;
   requiredTools: string[] | null;
   requiredSkills: string[] | null;
-  triggerType: "schedule" | "event";
+  triggerType: "schedule" | "event" | "script";
   triggerEvent: string | null;
   triggerFilter: Record<string, string> | null;
   cooldownSeconds: number;
+  scriptPath: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -56,10 +57,11 @@ export function useCreateTask(projectId: string) {
       prompt: string;
       schedule?: string;
       requiredTools?: string[] | null;
-      triggerType?: "schedule" | "event";
+      triggerType?: "schedule" | "event" | "script";
       triggerEvent?: string;
       triggerFilter?: Record<string, string> | null;
       cooldownSeconds?: number;
+      scriptPath?: string | null;
     }) =>
       apiFetch<{ task: ScheduledTask }>(`/projects/${projectId}/tasks`, {
         method: "POST",
@@ -86,10 +88,11 @@ export function useUpdateTask(projectId: string) {
       schedule?: string;
       enabled?: boolean;
       requiredTools?: string[] | null;
-      triggerType?: "schedule" | "event";
+      triggerType?: "schedule" | "event" | "script";
       triggerEvent?: string;
       triggerFilter?: Record<string, string> | null;
       cooldownSeconds?: number;
+      scriptPath?: string | null;
     }) =>
       apiFetch<{ task: ScheduledTask }>(
         `/projects/${projectId}/tasks/${taskId}`,

@@ -125,7 +125,6 @@ import {
 } from "@/routes/apps.ts";
 import { startBrowserPool, stopBrowserPool } from "@/lib/browser/host-pool.ts";
 import { proxyAppRequest } from "@/lib/http/app-proxy.ts";
-import { getSetting } from "@/lib/settings.ts";
 
 import {
   handleListSkills,
@@ -148,7 +147,7 @@ import {
   handleAcceptUserInvitation,
 } from "@/routes/user-invitations.ts";
 import { handleSetupStatus, handleSetupComplete } from "@/routes/setup.ts";
-import { handleGetSettings, handleUpdateSettings } from "@/routes/settings.ts";
+import { handleGetSettings, handleUpdateSettings, handleListImageModels } from "@/routes/settings.ts";
 import {
   handleListEnabledModels,
   handleListAllModels,
@@ -410,6 +409,7 @@ app.get("/api/admin/usage/by-user", h(handleUsageByUser));
 // Settings
 app.get("/api/settings", h(handleGetSettings));
 app.put("/api/settings/:key", h(handleUpdateSettings));
+app.get("/api/image-models", h(handleListImageModels));
 
 // Credentials (saved logins)
 app.get("/api/projects/:projectId/credentials", h(handleListCredentials));
@@ -453,13 +453,6 @@ app.get("/api/projects/:projectId/blobs/:hash", h(async (req: Request) => {
       ETag: `"${hash}"`,
     },
   });
-}));
-
-// Capabilities
-app.get("/api/capabilities", h((_req: Request) => {
-  return Response.json({
-    theme: getSetting("UI_THEME") ?? "default",
-  }, { headers: corsHeaders });
 }));
 
 // Lightweight memory/process debug. Auth required; returns only counts, no user data.

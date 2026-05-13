@@ -1,9 +1,9 @@
 import { getSetting } from "@/lib/settings.ts";
 import { log } from "@/lib/utils/logger.ts";
+import { getDefaultModel } from "@/db/queries/models.ts";
 import type {
   InferenceProvider,
   OpenRouterRouting,
-  SpecializedKind,
 } from "@/lib/providers/types.ts";
 import { openrouterProvider } from "@/lib/providers/openrouter.ts";
 
@@ -89,20 +89,17 @@ export function getEmbeddingModelId(modelId?: string): string {
   return withCapability("embedding").getEmbeddingModelId(modelId);
 }
 
-export function getEnrichModelId(): string {
-  return getActiveProvider().getSpecializedChatModelId("enrich");
-}
-
-export function getExtractModelId(): string {
-  return getActiveProvider().getSpecializedChatModelId("extract");
-}
-
-export function getEditApplyModelId(): string {
-  return getActiveProvider().getSpecializedChatModelId("edit-apply");
-}
-
-export function getSearchParseModelId(): string {
-  return getActiveProvider().getSpecializedChatModelId("search-parse");
+/**
+ * Model used for `zero llm generate` — container scripts calling out via
+ * the SDK/CLI proxy. Resolved in order: SCRIPTS_MODEL setting →
+ * admin-marked default in the `models` table → active provider's default.
+ */
+export function getScriptsModelId(): string {
+  const setting = getSetting("SCRIPTS_MODEL");
+  if (setting) return setting;
+  const dbDefault = getDefaultModel();
+  if (dbDefault) return dbDefault.id;
+  return getActiveProvider().getDefaultChatModelId();
 }
 
 /**
@@ -115,4 +112,4 @@ export function getRoutingForModel(modelId: string): OpenRouterRouting | undefin
   return provider.getRoutingForModel?.(modelId);
 }
 
-export type { InferenceProvider, OpenRouterRouting, SpecializedKind };
+export type { InferenceProvider, OpenRouterRouting };
