@@ -9,9 +9,10 @@ interface UploadButtonProps {
   currentPath: string;
   compact?: boolean;
   variant?: "outline" | "ghost";
+  small?: boolean;
 }
 
-export function UploadButton({ projectId, currentPath, compact, variant = "outline" }: UploadButtonProps) {
+export function UploadButton({ projectId, currentPath, compact, variant = "outline", small }: UploadButtonProps) {
   const { upload, isUploading } = useUploadFiles(projectId);
 
   const onDrop = useCallback(
@@ -36,7 +37,7 @@ export function UploadButton({ projectId, currentPath, compact, variant = "outli
       <Button
         variant={variant}
         size={compact ? "icon" : "sm"}
-        className={compact ? "h-8 w-8" : undefined}
+        className={compact ? (small ? "size-7" : "h-8 w-8") : (small ? "h-7" : undefined)}
         onClick={open}
         disabled={isUploading}
         title="Upload files (drop folders onto the file list to upload recursively)"

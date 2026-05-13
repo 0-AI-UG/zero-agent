@@ -443,7 +443,7 @@ export function FilesPage() {
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8 shrink-0"
+                  className="size-7 shrink-0"
                   onClick={() => setIsPanelCollapsed(true)}
                   title="Hide files"
                 >
@@ -456,7 +456,7 @@ export function FilesPage() {
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-8 w-8"
+                className="size-7"
                 onClick={() => refetch()}
                 disabled={isFetching}
               >
@@ -465,7 +465,7 @@ export function FilesPage() {
               <Button
                 variant="outline"
                 size={isCompact ? "icon" : "sm"}
-                className={isCompact ? "h-8 w-8" : undefined}
+                className={isCompact ? "size-7" : "h-7"}
                 onClick={() => setFileDialogOpen(true)}
                 title="New file"
               >
@@ -475,14 +475,14 @@ export function FilesPage() {
               <Button
                 variant="outline"
                 size={isCompact ? "icon" : "sm"}
-                className={isCompact ? "h-8 w-8" : undefined}
+                className={isCompact ? "size-7" : "h-7"}
                 onClick={() => setFolderDialogOpen(true)}
                 title="New folder"
               >
                 <FolderPlusIcon className={cn("h-4 w-4", !isCompact && "mr-1")} />
                 {!isCompact && "Folder"}
               </Button>
-              <UploadButton projectId={projectId!} currentPath={currentPath} compact={isCompact} />
+              <UploadButton projectId={projectId!} currentPath={currentPath} compact={isCompact} small />
             </div>
           </div>
           {/* Search bar */}
