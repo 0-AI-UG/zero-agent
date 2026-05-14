@@ -12,22 +12,24 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array<ArrayBuffer> {
 export async function subscribeToPush(
   registration: ServiceWorkerRegistration,
 ): Promise<boolean> {
-  // Check existing subscription
-  let sub = await registration.pushManager.getSubscription();
+  // Request permission first — on iOS Safari/PWA, this MUST run as a direct
+  // response to the user gesture, with no awaited network calls before it.
+  const permission = await Notification.requestPermission();
+  if (permission !== "granted") return false;
+
+  // pushManager.subscribe needs an active SW; on iOS, subscribing against
+  // an installing registration fails silently.
+  const activeReg = await navigator.serviceWorker.ready;
+
+  let sub = await activeReg.pushManager.getSubscription();
   if (sub) {
-    // Re-send to server in case it was lost
     await sendSubscriptionToServer(sub);
     return true;
   }
 
-  // Fetch VAPID key from server
   const { publicKey } = await apiFetch<{ publicKey: string }>("/push/vapid-key");
 
-  // Request permission + subscribe
-  const permission = await Notification.requestPermission();
-  if (permission !== "granted") return false;
-
-  sub = await registration.pushManager.subscribe({
+  sub = await activeReg.pushManager.subscribe({
     userVisibleOnly: true,
     applicationServerKey: urlBase64ToUint8Array(publicKey),
   });
@@ -62,8 +64,9 @@ async function sendSubscriptionToServer(sub: PushSubscription): Promise<void> {
 }
 
 export async function isPushSubscribed(
-  registration: ServiceWorkerRegistration,
+  _registration: ServiceWorkerRegistration,
 ): Promise<boolean> {
-  const sub = await registration.pushManager.getSubscription();
+  const activeReg = await navigator.serviceWorker.ready;
+  const sub = await activeReg.pushManager.getSubscription();
   return !!sub;
 }

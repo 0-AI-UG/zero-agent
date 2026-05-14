@@ -12,6 +12,7 @@ import {
 } from "@/db/queries/scheduled-tasks.ts";
 import { insertTaskRun, updateTaskRun, getRunsByTask } from "@/db/queries/task-runs.ts";
 import { runAutonomousTurn } from "@/lib/pi/autonomous.ts";
+import { getTasksModelId } from "@/lib/providers/index.ts";
 import { markTaskRun } from "@/db/queries/scheduled-tasks.ts";
 import { parseSchedule } from "@/lib/scheduling/schedule-parser.ts";
 import { formatDateForSQLite } from "@/lib/scheduling/schedule-parser.ts";
@@ -41,7 +42,6 @@ function formatTask(row: ScheduledTaskRow) {
     lastRunAt: row.last_run_at ? toUTC(row.last_run_at) : null,
     nextRunAt: toUTC(row.next_run_at),
     runCount: row.run_count,
-    requiredTools: row.required_tools ? JSON.parse(row.required_tools) as string[] : null,
     requiredSkills: row.required_skills ? JSON.parse(row.required_skills) as string[] : null,
     triggerType: row.trigger_type,
     triggerEvent: row.trigger_event,
@@ -102,7 +102,6 @@ export async function handleCreateTask(request: Request): Promise<Response> {
       name?: string;
       prompt?: string;
       schedule?: string;
-      requiredTools?: string[] | null;
       requiredSkills?: string[] | null;
       triggerType?: "schedule" | "event" | "script";
       triggerEvent?: string;
@@ -147,10 +146,6 @@ export async function handleCreateTask(request: Request): Promise<Response> {
       }
     }
 
-    const requiredTools = Array.isArray(body.requiredTools) && body.requiredTools.length > 0
-      ? body.requiredTools
-      : undefined;
-
     const requiredSkills = Array.isArray(body.requiredSkills) && body.requiredSkills.length > 0
       ? body.requiredSkills
       : undefined;
@@ -159,7 +154,7 @@ export async function handleCreateTask(request: Request): Promise<Response> {
 
     const task = insertTask(
       projectId, userId, body.name, body.prompt, schedule, true,
-      requiredTools, requiredSkills,
+      requiredSkills,
       triggerType, body.triggerEvent, body.triggerFilter, body.cooldownSeconds ?? 0,
       body.maxSteps,
       triggerType === "script" ? (body.scriptPath ?? null) : null,
@@ -190,7 +185,6 @@ export async function handleUpdateTask(request: Request): Promise<Response> {
       prompt?: string;
       schedule?: string;
       enabled?: boolean;
-      requiredTools?: string[] | null;
       requiredSkills?: string[] | null;
       triggerType?: "schedule" | "event" | "script";
       triggerEvent?: string;
@@ -223,11 +217,6 @@ export async function handleUpdateTask(request: Request): Promise<Response> {
       prompt: body.prompt,
       schedule: body.schedule,
       enabled: body.enabled !== undefined ? (body.enabled ? 1 : 0) : undefined,
-      required_tools: body.requiredTools !== undefined
-        ? (Array.isArray(body.requiredTools) && body.requiredTools.length > 0
-          ? JSON.stringify(body.requiredTools)
-          : null)
-        : undefined,
       required_skills: body.requiredSkills !== undefined
         ? (Array.isArray(body.requiredSkills) && body.requiredSkills.length > 0
           ? JSON.stringify(body.requiredSkills)
@@ -288,6 +277,7 @@ export async function handleRunTaskNow(request: Request): Promise<Response> {
           { id: project.id, name: project.name },
           task.name,
           task.prompt,
+          { model: getTasksModelId(project.id) },
         );
         updateTaskRun(run.id, {
           status: "completed",

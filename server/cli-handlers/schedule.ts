@@ -52,7 +52,7 @@ export async function handleScheduleAdd(
     if (!input.triggerEvent) return fail("invalid", "triggerEvent is required for event tasks");
     const task = insertTask(
       ctx.projectId, ctx.userId, input.name, input.prompt, "event", true,
-      undefined, undefined,
+      undefined,
       "event", input.triggerEvent, input.triggerFilter, input.cooldownSeconds ?? 0, input.maxSteps,
     );
     registerEventTask(task);
@@ -70,7 +70,7 @@ export async function handleScheduleAdd(
     }
     const task = insertTask(
       ctx.projectId, ctx.userId, input.name, input.prompt, input.schedule,
-      true, undefined, undefined, "script", undefined, undefined, 0, input.maxSteps,
+      true, undefined, "script", undefined, undefined, 0, input.maxSteps,
       scriptPath ?? null,
     );
     return ok(summarize(task));
@@ -81,7 +81,7 @@ export async function handleScheduleAdd(
   if (!validation.valid) return fail("invalid", validation.error ?? "invalid schedule");
   const task = insertTask(
     ctx.projectId, ctx.userId, input.name, input.prompt, input.schedule,
-    true, undefined, undefined, "schedule", undefined, undefined, 0, input.maxSteps,
+    true, undefined, "schedule", undefined, undefined, 0, input.maxSteps,
   );
   return ok(summarize(task));
 }

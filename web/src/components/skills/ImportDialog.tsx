@@ -2,6 +2,7 @@ import { useState } from "react";
 import {
   useDiscoverSkills,
   useInstallFromGithub,
+  useInstallSkill,
   type DiscoveredSkill,
 } from "@/api/skills";
 import {
@@ -13,23 +14,35 @@ import {
 } from "@/components/ui/dialog";
 import { SearchIcon, CheckIcon, LoaderIcon } from "lucide-react";
 
-interface ImportDialogProps {
+interface DialogProps {
   projectId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
-export function ImportDialog({
+export function GithubImportDialog({
   projectId,
   open,
   onOpenChange,
-}: ImportDialogProps) {
+}: DialogProps) {
   const [githubUrl, setGithubUrl] = useState("");
   const discoverSkills = useDiscoverSkills(projectId);
   const installFromGithub = useInstallFromGithub(projectId);
   const [discovered, setDiscovered] = useState<DiscoveredSkill[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [error, setError] = useState("");
+
+  const reset = () => {
+    setGithubUrl("");
+    setDiscovered([]);
+    setSelected(new Set());
+    setError("");
+  };
+
+  const close = () => {
+    onOpenChange(false);
+    reset();
+  };
 
   const handleDiscover = () => {
     setError("");
@@ -52,12 +65,7 @@ export function ImportDialog({
     installFromGithub.mutate(
       { url: githubUrl, skills: Array.from(selected) },
       {
-        onSuccess: () => {
-          onOpenChange(false);
-          setGithubUrl("");
-          setDiscovered([]);
-          setSelected(new Set());
-        },
+        onSuccess: () => close(),
         onError: (err: Error) => setError(err.message),
       },
     );
@@ -73,7 +81,7 @@ export function ImportDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(o) => (o ? onOpenChange(true) : close())}>
       <DialogContent className="max-w-lg overflow-hidden">
         <DialogHeader>
           <DialogTitle>Import from GitHub</DialogTitle>
@@ -154,7 +162,7 @@ export function ImportDialog({
           {discovered.length > 0 && (
             <DialogFooter>
               <button
-                onClick={() => onOpenChange(false)}
+                onClick={close}
                 className="rounded-md border px-3 py-1.5 text-xs font-medium hover:bg-muted"
               >
                 Cancel
@@ -170,6 +178,79 @@ export function ImportDialog({
               </button>
             </DialogFooter>
           )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+export function PasteImportDialog({
+  projectId,
+  open,
+  onOpenChange,
+}: DialogProps) {
+  const installSkill = useInstallSkill(projectId);
+  const [content, setContent] = useState("");
+  const [error, setError] = useState("");
+
+  const close = () => {
+    onOpenChange(false);
+    setContent("");
+    setError("");
+  };
+
+  const handleInstall = () => {
+    if (!content.trim()) return;
+    setError("");
+    installSkill.mutate(
+      { content },
+      {
+        onSuccess: () => close(),
+        onError: (err: Error) => setError(err.message),
+      },
+    );
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => (o ? onOpenChange(true) : close())}>
+      <DialogContent className="max-w-lg overflow-hidden">
+        <DialogHeader>
+          <DialogTitle>Paste skill</DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-3">
+          <p className="text-xs text-muted-foreground">
+            Paste the contents of a SKILL.md file (must include YAML frontmatter
+            with <code className="font-mono">name</code> and{" "}
+            <code className="font-mono">description</code>).
+          </p>
+          <textarea
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+            placeholder={"---\nname: my-skill\ndescription: ...\n---\n\n# My Skill\n..."}
+            spellCheck={false}
+            className="w-full h-64 rounded-md border bg-background px-3 py-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-ring resize-none"
+          />
+
+          {error && (
+            <p className="text-[11px] text-destructive">{error}</p>
+          )}
+
+          <DialogFooter>
+            <button
+              onClick={close}
+              className="rounded-md border px-3 py-1.5 text-xs font-medium hover:bg-muted"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleInstall}
+              disabled={!content.trim() || installSkill.isPending}
+              className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            >
+              {installSkill.isPending ? "Installing..." : "Install"}
+            </button>
+          </DialogFooter>
         </div>
       </DialogContent>
     </Dialog>

@@ -17,9 +17,12 @@ import {
 } from "@/components/ui/alert-dialog";
 import { SkillCard, type UnifiedSkill } from "@/components/skills/SkillCard";
 import { SkillDetail } from "@/components/skills/SkillDetail";
-import { ImportDialog } from "@/components/skills/ImportDialog";
+import {
+  GithubImportDialog,
+  PasteImportDialog,
+} from "@/components/skills/ImportDialog";
 import { Input } from "@/components/ui/input";
-import { GithubIcon, SearchIcon, PuzzleIcon } from "lucide-react";
+import { GithubIcon, SearchIcon, PuzzleIcon, ClipboardIcon, DownloadIcon } from "lucide-react";
 import { toast } from "sonner";
 
 export function SkillsPage() {
@@ -30,7 +33,9 @@ export function SkillsPage() {
   const uninstallSkill = useUninstallSkill(pid);
 
   const [search, setSearch] = useState("");
-  const [importOpen, setImportOpen] = useState(false);
+  const [githubOpen, setGithubOpen] = useState(false);
+  const [pasteOpen, setPasteOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [detailSkill, setDetailSkill] = useState<UnifiedSkill | null>(null);
   const [confirmUninstall, setConfirmUninstall] = useState<string | null>(null);
   const [uninstallingName, setUninstallingName] = useState<string | null>(null);
@@ -71,14 +76,44 @@ export function SkillsPage() {
               Manage installed capabilities
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div
+            className="relative flex items-center gap-2"
+            onMouseEnter={() => setMenuOpen(true)}
+            onMouseLeave={() => setMenuOpen(false)}
+          >
             <button
-              onClick={() => setImportOpen(true)}
               className="flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium hover:bg-muted shrink-0"
+              onClick={() => setMenuOpen((o) => !o)}
             >
-              <GithubIcon className="size-3.5" />
+              <DownloadIcon className="size-3.5" />
               Import
             </button>
+            {menuOpen && (
+              <div className="absolute right-0 top-full z-10 pt-1">
+                <div className="min-w-[140px] rounded-md border bg-popover shadow-md p-1">
+                  <button
+                    onClick={() => {
+                      setMenuOpen(false);
+                      setGithubOpen(true);
+                    }}
+                    className="w-full flex items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-muted text-left"
+                  >
+                    <GithubIcon className="size-3.5" />
+                    GitHub
+                  </button>
+                  <button
+                    onClick={() => {
+                      setMenuOpen(false);
+                      setPasteOpen(true);
+                    }}
+                    className="w-full flex items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-muted text-left"
+                  >
+                    <ClipboardIcon className="size-3.5" />
+                    Paste
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -140,11 +175,16 @@ export function SkillsPage() {
         }
       />
 
-      {/* Import dialog */}
-      <ImportDialog
+      {/* Import dialogs */}
+      <GithubImportDialog
         projectId={pid}
-        open={importOpen}
-        onOpenChange={setImportOpen}
+        open={githubOpen}
+        onOpenChange={setGithubOpen}
+      />
+      <PasteImportDialog
+        projectId={pid}
+        open={pasteOpen}
+        onOpenChange={setPasteOpen}
       />
 
       {/* Uninstall confirmation */}

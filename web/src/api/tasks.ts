@@ -13,7 +13,6 @@ export interface ScheduledTask {
   lastRunAt: string | null;
   nextRunAt: string;
   runCount: number;
-  requiredTools: string[] | null;
   requiredSkills: string[] | null;
   triggerType: "schedule" | "event" | "script";
   triggerEvent: string | null;
@@ -56,7 +55,6 @@ export function useCreateTask(projectId: string) {
       name: string;
       prompt: string;
       schedule?: string;
-      requiredTools?: string[] | null;
       triggerType?: "schedule" | "event" | "script";
       triggerEvent?: string;
       triggerFilter?: Record<string, string> | null;
@@ -87,7 +85,6 @@ export function useUpdateTask(projectId: string) {
       prompt?: string;
       schedule?: string;
       enabled?: boolean;
-      requiredTools?: string[] | null;
       triggerType?: "schedule" | "event" | "script";
       triggerEvent?: string;
       triggerFilter?: Record<string, string> | null;

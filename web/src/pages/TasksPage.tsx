@@ -45,7 +45,6 @@ import {
   XCircleIcon,
   LoaderIcon,
   PauseCircleIcon,
-  WrenchIcon,
   CheckIcon,
   ZapIcon,
   FilterIcon,
@@ -54,7 +53,6 @@ import {
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
-import { AUTOMATION_TOOL_GROUPS } from "@/stores/tools";
 
 export const SCHEDULE_PRESETS = [
   { label: "Every 30 min", value: "every 30m" },
@@ -225,124 +223,11 @@ export interface TaskFormData {
   name: string;
   prompt: string;
   schedule?: string;
-  requiredTools?: string[] | null;
   triggerType: "schedule" | "event" | "script";
   triggerEvent?: string;
   triggerFilter?: Record<string, string> | null;
   cooldownSeconds?: number;
   scriptPath?: string | null;
-}
-
-export function ToolPicker({
-  selected,
-  onChange,
-}: {
-  selected: Set<string>;
-  onChange: (tools: Set<string>) => void;
-}) {
-  const allTools = AUTOMATION_TOOL_GROUPS.flatMap((g) => g.tools);
-  const isAllSelected = selected.size === 0; // empty = all tools allowed
-
-  const toggleTool = (tool: string) => {
-    const next = new Set(selected);
-    if (next.has(tool)) {
-      next.delete(tool);
-    } else {
-      next.add(tool);
-    }
-    onChange(next);
-  };
-
-  const toggleGroup = (groupTools: string[]) => {
-    const allInGroup = groupTools.every((t) => selected.has(t));
-    const next = new Set(selected);
-    if (allInGroup) {
-      for (const t of groupTools) next.delete(t);
-    } else {
-      for (const t of groupTools) next.add(t);
-    }
-    onChange(next);
-  };
-
-  const setAll = () => onChange(new Set());
-  const setRestrict = () => onChange(new Set(allTools));
-
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between">
-        <label className="text-sm font-medium flex items-center gap-1.5">
-          <WrenchIcon className="size-3.5 text-muted-foreground" />
-          Tools
-        </label>
-        <button
-          type="button"
-          onClick={isAllSelected ? setRestrict : setAll}
-          className="text-[11px] text-muted-foreground hover:text-foreground transition-colors"
-        >
-          {isAllSelected ? "Restrict tools..." : "Allow all"}
-        </button>
-      </div>
-
-      {isAllSelected ? (
-        <p className="text-xs text-muted-foreground">
-          All tools available. Click "Restrict tools" to limit which tools this task can use.
-        </p>
-      ) : (
-        <div className="rounded-md border divide-y max-h-[200px] overflow-y-auto">
-          {AUTOMATION_TOOL_GROUPS.map((group) => {
-            const groupSelected = group.tools.filter((t) => selected.has(t));
-            const allChecked = groupSelected.length === group.tools.length;
-            const someChecked = groupSelected.length > 0 && !allChecked;
-
-            return (
-              <div key={group.id} className="px-3 py-2">
-                <button
-                  type="button"
-                  onClick={() => toggleGroup(group.tools)}
-                  className="flex items-center gap-2 w-full text-left group/row"
-                >
-                  <div className={cn(
-                    "size-3.5 rounded-sm border flex items-center justify-center shrink-0 transition-colors",
-                    allChecked
-                      ? "bg-primary border-primary"
-                      : someChecked
-                        ? "bg-primary/40 border-primary/60"
-                        : "border-input group-hover/row:border-foreground/30",
-                  )}>
-                    {(allChecked || someChecked) && (
-                      <CheckIcon className="size-2.5 text-primary-foreground" strokeWidth={3} />
-                    )}
-                  </div>
-                  <span className="text-xs font-medium">{group.label}</span>
-                  <span className="text-[10px] text-muted-foreground ml-auto tabular-nums">
-                    {groupSelected.length}/{group.tools.length}
-                  </span>
-                </button>
-
-                <div className="flex flex-wrap gap-1 mt-1.5 ml-5.5">
-                  {group.tools.map((tool) => (
-                    <button
-                      key={tool}
-                      type="button"
-                      onClick={() => toggleTool(tool)}
-                      className={cn(
-                        "rounded px-1.5 py-0.5 text-[11px] transition-colors",
-                        selected.has(tool)
-                          ? "bg-primary/10 text-primary font-medium"
-                          : "text-muted-foreground/60 hover:text-muted-foreground",
-                      )}
-                    >
-                      {tool}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
 }
 
 function TaskDialog({
@@ -368,9 +253,6 @@ function TaskDialog({
     () => initial?.triggerFilter ?? {},
   );
   const [scriptPath, setScriptPath] = useState(initial?.scriptPath ?? "");
-  const [selectedTools, setSelectedTools] = useState<Set<string>>(
-    () => new Set(initial?.requiredTools ?? []),
-  );
 
   const isValid = name.trim() && prompt.trim() && (
     triggerType === "schedule"
@@ -383,7 +265,6 @@ function TaskDialog({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!isValid) return;
-    const tools = selectedTools.size > 0 ? Array.from(selectedTools) : null;
     // Only include non-empty filter values
     const cleanFilter = Object.fromEntries(
       Object.entries(triggerFilter).filter(([, v]) => v.trim() !== ""),
@@ -400,7 +281,6 @@ function TaskDialog({
       triggerFilter: hasFilter ? cleanFilter : null,
       cooldownSeconds: triggerType === "event" ? cooldownSeconds : undefined,
       scriptPath: triggerType === "script" ? (trimmedScriptPath || null) : null,
-      requiredTools: tools,
     });
   };
 
@@ -599,8 +479,6 @@ function TaskDialog({
                 </div>
               </>
             )}
-
-            <ToolPicker selected={selectedTools} onChange={setSelectedTools} />
           </div>
           <DialogFooter className="px-6 pb-6 pt-2">
             <Button type="submit" disabled={isPending || !isValid}>
@@ -773,12 +651,6 @@ function TaskCard({
                   {task.schedule}
                 </Badge>
               )}
-              {task.requiredTools && task.requiredTools.length > 0 && (
-                <Badge variant="outline" className="text-[10px] shrink-0 gap-0.5">
-                  <WrenchIcon className="size-2.5" />
-                  {task.requiredTools.length}
-                </Badge>
-              )}
             </div>
             <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
               {task.prompt}
@@ -883,7 +755,6 @@ function TaskCard({
           triggerFilter: task.triggerFilter ?? undefined,
           cooldownSeconds: task.cooldownSeconds,
           scriptPath: task.scriptPath,
-          requiredTools: task.requiredTools,
         }}
       />
     </>

@@ -1,6 +1,7 @@
 import { getSetting } from "@/lib/settings.ts";
 import { log } from "@/lib/utils/logger.ts";
 import { getDefaultModel } from "@/db/queries/models.ts";
+import { getProjectById } from "@/db/queries/projects.ts";
 import type {
   InferenceProvider,
   OpenRouterRouting,
@@ -91,12 +92,29 @@ export function getEmbeddingModelId(modelId?: string): string {
 
 /**
  * Model used for `zero llm generate` — container scripts calling out via
- * the SDK/CLI proxy. Resolved in order: SCRIPTS_MODEL setting →
+ * the SDK/CLI proxy. Resolved in order: project `scripts_model` column →
  * admin-marked default in the `models` table → active provider's default.
  */
-export function getScriptsModelId(): string {
-  const setting = getSetting("SCRIPTS_MODEL");
-  if (setting) return setting;
+export function getScriptsModelId(projectId?: string): string {
+  if (projectId) {
+    const project = getProjectById(projectId);
+    if (project?.scripts_model) return project.scripts_model;
+  }
+  const dbDefault = getDefaultModel();
+  if (dbDefault) return dbDefault.id;
+  return getActiveProvider().getDefaultChatModelId();
+}
+
+/**
+ * Model used by scheduled tasks (cron, event, script triggers, "run now").
+ * Resolved in order: project `tasks_model` column → admin-marked default
+ * in the `models` table → active provider's default.
+ */
+export function getTasksModelId(projectId?: string): string {
+  if (projectId) {
+    const project = getProjectById(projectId);
+    if (project?.tasks_model) return project.tasks_model;
+  }
   const dbDefault = getDefaultModel();
   if (dbDefault) return dbDefault.id;
   return getActiveProvider().getDefaultChatModelId();

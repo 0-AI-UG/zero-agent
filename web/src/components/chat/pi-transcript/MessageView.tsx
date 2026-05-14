@@ -13,6 +13,7 @@ import { Markdown } from "@/components/chat-ui/Markdown";
 import { ToolCallCard } from "./ToolCallCard";
 import { SubagentCallCard } from "./SubagentCallCard";
 import { renderWithFileChips } from "@/lib/file-chips";
+import { getModelsCache } from "@/stores/model";
 
 interface MessageViewProps {
   message: AgentMessage;
@@ -21,6 +22,8 @@ interface MessageViewProps {
   isMultiMember: boolean;
   /** Optional sender userId if Zero attached one to a user message. */
   senderUserId?: string;
+  /** True when this assistant message is the last one in its turn (next message is user or end of list). Only then do we render the model footer. */
+  isTurnEnd?: boolean;
 }
 
 function ReasoningBlock({ text }: { text: string }) {
@@ -95,9 +98,11 @@ function UserMessageView({
 function AssistantMessageView({
   message,
   executions,
+  showModel,
 }: {
   message: AssistantMessage;
   executions: Map<string, ToolExecution>;
+  showModel: boolean;
 }) {
   return (
     <>
@@ -141,11 +146,26 @@ function AssistantMessageView({
           <div className="text-sm text-destructive">{message.errorMessage}</div>
         </MessageShell>
       )}
+      {showModel && (message.model || message.timestamp) && (
+        <div className="text-[10px] text-muted-foreground/70 mt-2 pl-0.5 flex items-center gap-1.5">
+          {message.model && (
+            <span>
+              {getModelsCache().find((m) => m.id === message.model)?.name ?? message.model}
+            </span>
+          )}
+          {message.model && message.timestamp ? <span aria-hidden>·</span> : null}
+          {message.timestamp ? (
+            <time dateTime={new Date(message.timestamp).toISOString()}>
+              {new Date(message.timestamp).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
+            </time>
+          ) : null}
+        </div>
+      )}
     </>
   );
 }
 
-function MessageViewInner({ message, executions, isMultiMember, memberMap, senderUserId }: MessageViewProps) {
+function MessageViewInner({ message, executions, isMultiMember, memberMap, senderUserId, isTurnEnd }: MessageViewProps) {
   if (message.role === "user") {
     const email = senderUserId ? memberMap.get(senderUserId) : undefined;
     return (
@@ -153,7 +173,7 @@ function MessageViewInner({ message, executions, isMultiMember, memberMap, sende
     );
   }
   if (message.role === "assistant") {
-    return <AssistantMessageView message={message} executions={executions} />;
+    return <AssistantMessageView message={message} executions={executions} showModel={!!isTurnEnd} />;
   }
   // toolResult messages are rendered as part of their tool card via the
   // executions map, so we drop them here to avoid duplicating output.

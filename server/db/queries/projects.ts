@@ -50,10 +50,10 @@ export function getProjectById(id: string): ProjectRow | null {
 
 export function updateProject(
   id: string,
-  fields: { name?: string; description?: string; automationEnabled?: boolean; showSkillsInFiles?: boolean; assistantName?: string; assistantDescription?: string; assistantIcon?: string; systemPrompt?: string; isStarred?: boolean; isArchived?: boolean; emailEnabled?: boolean },
+  fields: { name?: string; description?: string; automationEnabled?: boolean; showSkillsInFiles?: boolean; assistantName?: string; assistantDescription?: string; assistantIcon?: string; systemPrompt?: string; tasksModel?: string | null; scriptsModel?: string | null; isStarred?: boolean; isArchived?: boolean; emailEnabled?: boolean },
 ): ProjectRow {
   const sets: string[] = [];
-  const values: (string | number)[] = [];
+  const values: (string | number | null)[] = [];
 
   if (fields.name !== undefined) {
     sets.push("name = ?");
@@ -86,6 +86,14 @@ export function updateProject(
   if (fields.systemPrompt !== undefined) {
     sets.push("system_prompt = ?");
     values.push(fields.systemPrompt);
+  }
+  if (fields.tasksModel !== undefined) {
+    sets.push("tasks_model = ?");
+    values.push(fields.tasksModel);
+  }
+  if (fields.scriptsModel !== undefined) {
+    sets.push("scripts_model = ?");
+    values.push(fields.scriptsModel);
   }
   if (fields.isStarred !== undefined) {
     sets.push("is_starred = ?");

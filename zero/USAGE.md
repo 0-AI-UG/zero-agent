@@ -1,8 +1,8 @@
 # zero — agent toolkit reference
 
-CLI and SDK bridge back to the server. Runs inside the session container; requests go via the trusted runner proxy (no credentials exposed).
+CLI and SDK bridge back to the server via the trusted runner proxy (no credentials exposed).
 
-Two forms: `zero <group> <action> [flags]` (CLI) or `import { web, browser, ... } from "zero"` (SDK, for bun scripts). SDK types at `/opt/zero/src/sdk/index.ts`.
+Two forms: `zero <group> <action> [flags]` (CLI) or `import { web, browser, ... } from "zero"` (SDK, for bun scripts).
 
 Every CLI command supports `--json`. `zero <group> --help` is authoritative; this file is an overview.
 
@@ -17,15 +17,17 @@ zero web fetch <url> [--query <q>]
 
 ## browser
 ```
-zero browser open <url> [--stealth]
-zero browser snapshot [--mode interactive|full] [--selector <css>] [--stealth]
-zero browser click <ref> [--stealth]
-zero browser fill <ref> <text> [--submit] [--stealth]
-zero browser screenshot [--stealth]
-zero browser evaluate <js> [--await-promise] [--stealth]
-zero browser wait <ms> [--stealth]
+zero browser open <url>
+zero browser snapshot [--mode interactive|full] [--selector <css>]
+zero browser click <ref>
+zero browser fill <ref> <text> [--submit]
+zero browser screenshot [-o file.png]
+zero browser evaluate <js>
+zero browser wait <ms>
+zero browser extract <query> [--max <n>]
+zero browser status
 ```
-`<ref>` comes from the most recent `snapshot` — always snapshot before interacting with an unfamiliar page. `--stealth` routes through an anti-detection profile.
+`<ref>` comes from the most recent `snapshot` — always snapshot before interacting with an unfamiliar page. Prefer `snapshot` (text a11y tree) or `extract` (query-driven excerpts) over `screenshot` to keep tool results small.
 
 ## image
 ```
@@ -35,17 +37,17 @@ Writes to workspace (`generated/` by default); `--path` overrides destination.
 
 ## schedule
 ```
-zero schedule add --name <n> --prompt <p> [--schedule <cron>|--event <e>|--script <path>] [--filter key=value ...] [--cooldown <seconds>]
+zero schedule add --name <n> --prompt <p> [--schedule <cron>|--event <e>|--script <path>] [--cooldown <seconds>]
 zero schedule ls
-zero schedule update --id <id> [--name ...] [--prompt ...] [--script <path>] [--enabled true|false] ...
-zero schedule rm --id <id>
+zero schedule update --task <id> [--name ...] [--prompt ...] [--schedule ...] [--script <path>] [--enabled true|false]
+zero schedule rm --task <id>
 ```
 Three trigger types — pick exactly one:
 - `--schedule <cron>` — fires on a cron interval (e.g. `every 10m`, `0 9 * * *`).
-- `--event <name>` — fires on an in-app event (e.g. `file.created`, `message.received`). Optional `--filter key=value` narrows matches.
+- `--event <name>` — fires on an in-app event (e.g. `file.created`, `message.received`).
 - `--script <path>` — runs a TypeScript trigger you authored. The script decides when to wake the agent. Combine with `--schedule` to set how often it runs.
 
-`ls` before adding to avoid duplicates. `--cooldown` (seconds) prevents event storms.
+`ls` before adding to avoid duplicates. `--cooldown` (seconds, event triggers only) prevents event storms.
 
 ### Script triggers
 A script trigger is a `.ts` file at `.zero/triggers/<task-id>.ts` (or any path you pass to `--script`). The scheduler runs it under Bun every `--schedule` interval. The script imports the `zero` SDK, checks whatever condition it wants, and calls `trigger.fire(...)` to wake the agent with the task's prompt. If it exits without firing, nothing happens — useful as a quiet condition check.
@@ -73,9 +75,9 @@ Scripts have a 30s wall-clock timeout. Write the file with the normal file tools
 
 ## notification
 ```
-zero notification send <text>
+zero notification send <text> [--respond] [--timeout <duration>]
 ```
-Delivers to all configured channels (Telegram, push, in-app).
+Delivers to all configured channels (Telegram, push, in-app). With `--respond`, waits for a reply from any channel and prints it. `--timeout` accepts `30s`, `5m`, `1h` (default 5m, min 5s, max 30m).
 
 ## email
 ```
@@ -106,26 +108,36 @@ curl -H "Authorization: Bearer $(zero creds get github)" https://api.github.com/
 ```
 Never echo, log, or surface credential values in output or messages.
 
-## ports
+## apps
 ```
-zero ports forward <port> [--label <label>]
+zero apps create [name]
+zero apps delete <slug>
+zero apps list
 ```
-Exposes a container port at `/app/<slug>`. Slug is stable per (project, port); calling twice returns the same URL.
+`create` allocates a free host port and registers a permanent slug; the platform proxies `/_apps/<slug>/*` to `127.0.0.1:<port>`. With a `name`, `create` is idempotent — calling twice returns the same record.
 
 ## llm
 ```
-zero llm generate <prompt> [--system <s>] [--model <m>] [--max-tokens <n>]
+zero llm generate <prompt> [--system <s>] [--max-tokens <n>]
 ```
-Proxies model calls through the server (no API key needed). Pass `-` as prompt to read from stdin:
+Proxies model calls through the server (no API key needed). The model is fixed by the admin in project settings; callers can't pick it. Pass `-` as prompt to read from stdin:
 ```bash
 cat report.txt | zero llm generate - --system "Summarize in 3 bullets"
 ```
 
-## embed / search
+## embed
 ```
-zero embed generate <text> [--model <m>]
-zero search query <text> [--limit <n>] [--type files|memory|messages]
+zero embed <text>
+zero embed --batch <file>     # one text per line
+echo "text" | zero embed -
 ```
+Generates vector embeddings through the server's configured embedding provider.
+
+## search
+```
+zero search <query> [--collection file|message] [--top-k <n>]
+```
+Hybrid vector search over project files and messages. `--collection` is repeatable; omit to search both.
 
 ## health
 ```
@@ -139,10 +151,5 @@ Sanity-check the runner→server proxy. Returns `{ ok: true }` on success.
 - `0` success, `1` runtime/network error (stderr: `code: message`), `2` usage error.
 - SDK throws `ZeroError` with `.code` and `.message`.
 
-## Workspace durability
-Files in `/workspace` have a ≤5 min recovery point: a watcher signals changes; a background scheduler flushes to S3 every 60s (also on container destroy). Ephemeral dirs (`node_modules`, `.venv`, `dist`, `.next`, `target`, etc.) are excluded from snapshots and must be regenerated on cold start.
-
 ## Tips
 - One-liners → CLI. Loops/composition/error handling → SDK bun script.
-- Write reusable tools as `.ts` in `/workspace` — they survive restarts. Never modify `/opt/zero/` directly (lost on restart).
-- SDK source at `/opt/zero/src/sdk/<group>.ts` shows exact input/output types.

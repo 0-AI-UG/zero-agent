@@ -37,9 +37,18 @@ import {
 } from "lucide-react";
 import { MembersManager } from "@/components/settings/MembersManager";
 import { CredentialsManager } from "@/components/settings/CredentialsManager";
+import { useModels } from "@/api/models";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 const NAV_ITEMS = [
   { id: "general", label: "General" },
+  { id: "models", label: "Models" },
   { id: "members", label: "Members" },
   { id: "email", label: "Email" },
   { id: "credentials", label: "Credentials" },
@@ -184,6 +193,11 @@ export function SettingsPage() {
             </div>
           </section>
 
+          {/* Models */}
+          <section id="models" className="scroll-mt-10">
+            <ProjectModelsSection projectId={projectId!} project={project} />
+          </section>
+
           {/* Members */}
           <section id="members" className="scroll-mt-10">
             <MembersManager projectId={projectId!} project={project} />
@@ -207,6 +221,76 @@ export function SettingsPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+function ProjectModelsSection({ projectId, project }: { projectId: string; project: Project }) {
+  const updateProject = useUpdateProject(projectId);
+  const { data: models } = useModels();
+  const DEFAULT = "__default__";
+
+  const save = (field: "tasksModel" | "scriptsModel", value: string) => {
+    const next = value === DEFAULT ? null : value;
+    updateProject.mutate({ [field]: next });
+  };
+
+  return (
+    <section className="space-y-4">
+      <h3 className="text-sm font-semibold">Models</h3>
+      <div className="rounded-lg border p-4 space-y-5">
+        <div className="space-y-2">
+          <div className="space-y-0.5">
+            <p className="text-sm font-medium">Tasks model</p>
+            <p className="text-xs text-muted-foreground">
+              Used by scheduled, event, and script-triggered tasks in this project.
+            </p>
+          </div>
+          <Select
+            value={project.tasksModel ?? DEFAULT}
+            onValueChange={(v) => save("tasksModel", v)}
+          >
+            <SelectTrigger className="w-full max-w-sm">
+              <SelectValue placeholder="Default" />
+            </SelectTrigger>
+            <SelectContent position="popper" className="max-h-[280px]">
+              <SelectItem value={DEFAULT}>Default</SelectItem>
+              {(models ?? []).map((m) => (
+                <SelectItem key={m.id} value={m.id}>
+                  {m.name}
+                  <span className="ml-2 text-muted-foreground text-[10px]">{m.id}</span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-2">
+          <div className="space-y-0.5">
+            <p className="text-sm font-medium">Scripts model</p>
+            <p className="text-xs text-muted-foreground">
+              Used by <code className="text-[10px] bg-muted px-1 rounded">zero llm generate</code> calls from this project's scripts.
+            </p>
+          </div>
+          <Select
+            value={project.scriptsModel ?? DEFAULT}
+            onValueChange={(v) => save("scriptsModel", v)}
+          >
+            <SelectTrigger className="w-full max-w-sm">
+              <SelectValue placeholder="Default" />
+            </SelectTrigger>
+            <SelectContent position="popper" className="max-h-[280px]">
+              <SelectItem value={DEFAULT}>Default</SelectItem>
+              {(models ?? []).map((m) => (
+                <SelectItem key={m.id} value={m.id}>
+                  {m.name}
+                  <span className="ml-2 text-muted-foreground text-[10px]">{m.id}</span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+    </section>
   );
 }
 

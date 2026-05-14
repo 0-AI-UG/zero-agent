@@ -15,7 +15,7 @@ export async function handleLlmGenerate(
   ctx: CliContext,
   input: z.infer<typeof LlmGenerateInput>,
 ): Promise<Response> {
-  const model = getScriptsModelId();
+  const model = getScriptsModelId(ctx.projectId);
 
   const result = await generateText({
     model,

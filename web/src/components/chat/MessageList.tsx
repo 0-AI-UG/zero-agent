@@ -168,6 +168,18 @@ export function MessageList({
       {messages.map((message, index) => {
         if (!isVisibleMessage(message, executions)) return null;
         const senderUserId = (message as { userId?: string }).userId;
+        // Turn end = no later assistant message until a user message (or end).
+        // We render the model footer once per assistant turn on the last
+        // assistant message of that turn.
+        let isTurnEnd = false;
+        if (message.role === "assistant") {
+          isTurnEnd = true;
+          for (let j = index + 1; j < messages.length; j++) {
+            const next = messages[j]!;
+            if (next.role === "user") break;
+            if (next.role === "assistant") { isTurnEnd = false; break; }
+          }
+        }
         return (
           <div key={`${message.timestamp}-${index}`}>
             <MessageView
@@ -176,6 +188,7 @@ export function MessageList({
               memberMap={memberMap}
               isMultiMember={isMultiMember}
               senderUserId={senderUserId}
+              isTurnEnd={isTurnEnd}
             />
           </div>
         );

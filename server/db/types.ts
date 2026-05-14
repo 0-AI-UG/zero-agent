@@ -32,6 +32,8 @@ export interface ProjectRow {
   assistant_description: string;
   assistant_icon: string;
   system_prompt: string;
+  tasks_model: string | null;
+  scripts_model: string | null;
   is_starred: number;
   is_archived: number;
   email_enabled: number;
@@ -120,7 +122,6 @@ export interface ScheduledTaskRow {
   last_run_at: string | null;
   next_run_at: string;
   run_count: number;
-  required_tools: string | null;
   required_skills: string | null;
   trigger_type: "schedule" | "event" | "script";
   trigger_event: string | null;
@@ -204,6 +205,8 @@ export interface SettingRow {
   updated_at: string;
 }
 
+export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+
 export interface ModelRow {
   id: string;
   name: string;
@@ -212,6 +215,7 @@ export interface ModelRow {
   multimodal: number;
   enabled: number;
   sort_order: number;
+  thinking_level: ThinkingLevel | null;
   created_at: string;
   updated_at: string;
 }

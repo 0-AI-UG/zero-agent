@@ -61,7 +61,6 @@ import {
   ToggleRightIcon,
   GaugeIcon,
   ChevronLeftIcon,
-  TerminalIcon,
 } from "lucide-react";
 import {
   useAdminInvitations,
@@ -593,9 +592,7 @@ type AdminModel = ModelConfig & { enabled: boolean; sortOrder: number };
 
 function ModelManagementSection() {
   const { data: models, isLoading } = useAdminModels();
-  const { data: settings } = useAdminSettings();
   const updateModel = useUpdateModel();
-  const updateSettings = useUpdateSettings();
   const deleteModelMutation = useDeleteModel();
   const [editModel, setEditModel] = useState<AdminModel | null>(null);
   const [addOpen, setAddOpen] = useState(false);
@@ -603,10 +600,6 @@ function ModelManagementSection() {
   const modelCount = models?.length ?? 0;
   const enabledCount = models?.filter((m) => m.enabled).length ?? 0;
   const providers = Array.from(new Set((models ?? []).map((m) => m.provider).filter(Boolean))).sort();
-
-  // Scripts model: explicit SCRIPTS_MODEL setting falls back to the admin-marked default.
-  const scriptsModelId =
-    settings?.SCRIPTS_MODEL ?? models?.find((m) => m.default)?.id ?? null;
 
   return (
     <section className="space-y-4">
@@ -659,12 +652,6 @@ function ModelManagementSection() {
                           <Badge variant="outline" className="text-[10px] h-4 px-1 border-amber-500/30 text-amber-600 dark:text-amber-400">
                             <StarIcon className="size-2 mr-0.5" />
                             Default
-                          </Badge>
-                        )}
-                        {model.id === scriptsModelId && (
-                          <Badge variant="outline" className="text-[10px] h-4 px-1 border-sky-500/30 text-sky-600 dark:text-sky-400">
-                            <TerminalIcon className="size-2 mr-0.5" />
-                            Scripts
                           </Badge>
                         )}
                         {model.multimodal && (
@@ -720,22 +707,6 @@ function ModelManagementSection() {
                           >
                             <StarIcon />
                             Set as default
-                          </DropdownMenuItem>
-                        )}
-                        {model.id !== scriptsModelId && model.enabled && (
-                          <DropdownMenuItem
-                            onSelect={() => {
-                              updateSettings.mutate(
-                                { SCRIPTS_MODEL: model.id },
-                                {
-                                  onSuccess: () => toast.success("Scripts model updated"),
-                                  onError: (err) => toast.error(err.message),
-                                }
-                              );
-                            }}
-                          >
-                            <TerminalIcon />
-                            Set as Scripts model
                           </DropdownMenuItem>
                         )}
                         <DropdownMenuSeparator />
@@ -857,11 +828,17 @@ function AddModelDialog({ open, onOpenChange, providers }: { open: boolean; onOp
   );
 }
 
+const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
+const THINKING_DEFAULT = "__default__";
+
 function EditModelDialog({ model, providers, open, onOpenChange }: { model: AdminModel; providers: string[]; open: boolean; onOpenChange: (v: boolean) => void }) {
   const updateModelMutation = useUpdateModel();
   const [name, setName] = useState(model.name);
   const [provider, setProvider] = useState(model.provider);
   const [multimodal, setMultimodal] = useState(model.multimodal);
+  const [thinkingLevel, setThinkingLevel] = useState<string>(
+    model.thinkingLevel ?? THINKING_DEFAULT,
+  );
 
   function handleSave() {
     updateModelMutation.mutate(
@@ -870,6 +847,7 @@ function EditModelDialog({ model, providers, open, onOpenChange }: { model: Admi
         name: name.trim(),
         provider: provider.trim(),
         multimodal,
+        thinkingLevel: thinkingLevel === THINKING_DEFAULT ? null : thinkingLevel,
       },
       {
         onSuccess: () => { onOpenChange(false); toast.success("Model updated"); },
@@ -906,6 +884,23 @@ function EditModelDialog({ model, providers, open, onOpenChange }: { model: Admi
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+            <div className="space-y-1 col-span-2">
+              <label className="text-xs font-medium">Thinking level</label>
+              <Select value={thinkingLevel} onValueChange={setThinkingLevel}>
+                <SelectTrigger className="h-8 w-full text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={THINKING_DEFAULT}>Default</SelectItem>
+                  {THINKING_LEVELS.map((lvl) => (
+                    <SelectItem key={lvl} value={lvl}>{lvl}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-[10px] text-muted-foreground leading-tight">
+                Reasoning budget. `off` disables thinking for the turn.
+              </p>
             </div>
             <div className="col-span-2 flex items-end gap-2">
               <label className="flex items-center gap-2 text-xs font-medium cursor-pointer">

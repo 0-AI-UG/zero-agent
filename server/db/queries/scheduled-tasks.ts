@@ -3,7 +3,7 @@ import type { ScheduledTaskRow } from "@/db/types.ts";
 import { computeNextRun, formatDateForSQLite } from "@/lib/scheduling/schedule-parser.ts";
 
 const insertStmt = db.prepare(
-  "INSERT INTO scheduled_tasks (id, project_id, user_id, name, prompt, schedule, next_run_at, enabled, required_tools, required_skills, trigger_type, trigger_event, trigger_filter, cooldown_seconds, max_steps, script_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *",
+  "INSERT INTO scheduled_tasks (id, project_id, user_id, name, prompt, schedule, next_run_at, enabled, required_skills, trigger_type, trigger_event, trigger_filter, cooldown_seconds, max_steps, script_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *",
 );
 
 const byProjectStmt = db.prepare(
@@ -45,7 +45,6 @@ export function insertTask(
   prompt: string,
   schedule: string,
   enabled: boolean = true,
-  requiredTools?: string[],
   requiredSkills?: string[],
   triggerType: "schedule" | "event" | "script" = "schedule",
   triggerEvent?: string,
@@ -60,7 +59,6 @@ export function insertTask(
     : formatDateForSQLite(computeNextRun(schedule));
   return insertStmt.get(
     id, projectId, userId, name, prompt, schedule, nextRunAt, enabled ? 1 : 0,
-    requiredTools ? JSON.stringify(requiredTools) : null,
     requiredSkills ? JSON.stringify(requiredSkills) : null,
     triggerType,
     triggerEvent ?? null,
@@ -81,7 +79,7 @@ export function getTaskById(id: string): ScheduledTaskRow | null {
 
 export function updateTask(
   id: string,
-  fields: Partial<Pick<ScheduledTaskRow, "name" | "prompt" | "schedule" | "enabled" | "required_tools" | "required_skills" | "trigger_type" | "trigger_event" | "trigger_filter" | "cooldown_seconds" | "max_steps" | "script_path">>,
+  fields: Partial<Pick<ScheduledTaskRow, "name" | "prompt" | "schedule" | "enabled" | "required_skills" | "trigger_type" | "trigger_event" | "trigger_filter" | "cooldown_seconds" | "max_steps" | "script_path">>,
 ): ScheduledTaskRow {
   const task = byIdStmt.get(id) as ScheduledTaskRow | undefined;
   if (!task) throw new Error("Task not found");
@@ -107,14 +105,6 @@ export function updateTask(
   if (fields.enabled !== undefined) {
     sets.push("enabled = ?");
     values.push(fields.enabled);
-  }
-  if (fields.required_tools !== undefined) {
-    if (fields.required_tools === null) {
-      sets.push("required_tools = NULL");
-    } else {
-      sets.push("required_tools = ?");
-      values.push(fields.required_tools);
-    }
   }
   if (fields.required_skills !== undefined) {
     if (fields.required_skills === null) {

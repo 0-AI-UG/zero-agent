@@ -16,7 +16,15 @@
  * Zero never imports `@mariozechner/pi-coding-agent` at runtime here.
  */
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  createReadStream,
+  existsSync,
+  mkdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
+import { createInterface } from "node:readline";
 import { tmpdir } from "node:os";
 import { delimiter as pathDelimiter, isAbsolute, join, resolve } from "node:path";
 import { randomBytes } from "node:crypto";
@@ -69,6 +77,16 @@ export interface TurnResult {
   events: number;
   aborted: boolean;
   exitCode: number;
+  /**
+   * True when the final assistant message in the session JSONL has no
+   * `stop_reason` or `stop_reason="max_tokens"`. Pi can exit cleanly even
+   * when the model's stream was truncated mid-response (e.g. Kimi hitting
+   * its output cap during a thinking loop); the OS exit code alone is not
+   * a reliable success signal.
+   */
+  truncated: boolean;
+  /** Human-readable reason if truncated; `null` otherwise. */
+  truncationReason: string | null;
 }
 
 // Always resolve to an absolute path. Pi (and git, snapshot service, etc.)
@@ -157,6 +175,10 @@ export async function runTurn(opts: RunTurnOptions): Promise<TurnResult> {
     "--provider", opts.model.provider,
     "--model", opts.model.modelId,
   ];
+
+  if (opts.model.thinkingLevel) {
+    args.push("--thinking", opts.model.thinkingLevel);
+  }
 
   let imageDir: string | null = null;
   if (opts.images && opts.images.length > 0 && opts.model.supportsImages) {
@@ -282,6 +304,11 @@ export async function runTurn(opts: RunTurnOptions): Promise<TurnResult> {
 
   const sessionFileExists = existsSync(sessionFile);
   const sessionFileSize = sessionFileExists ? statSync(sessionFile).size : 0;
+
+  const truncation = aborted
+    ? { truncated: false, truncationReason: null }
+    : await detectTruncation(sessionFile);
+
   turnLog.info("pi exited", {
     runId,
     chatId: opts.chatId,
@@ -291,9 +318,69 @@ export async function runTurn(opts: RunTurnOptions): Promise<TurnResult> {
     sessionFile,
     sessionFileExists,
     sessionFileSize,
+    truncated: truncation.truncated,
+    truncationReason: truncation.truncationReason,
   });
 
-  return { runId, sessionFile, events: count, aborted, exitCode };
+  return {
+    runId,
+    sessionFile,
+    events: count,
+    aborted,
+    exitCode,
+    truncated: truncation.truncated,
+    truncationReason: truncation.truncationReason,
+  };
+}
+
+/**
+ * Read the session JSONL and check the last assistant message for a clean
+ * stop. Returns truncation status the caller can surface as a failure.
+ *
+ * pi-ai's `StopReason = "stop" | "length" | "toolUse" | "error" | "aborted"`.
+ * `stop` and `toolUse` are healthy outcomes; `length` means the model hit its
+ * output cap mid-response (the Kimi failure mode); `error`/`aborted` are
+ * already surfaced through other channels but we still flag them so the
+ * caller doesn't record a misleading "completed".
+ */
+async function detectTruncation(
+  sessionFile: string,
+): Promise<{ truncated: boolean; truncationReason: string | null }> {
+  if (!existsSync(sessionFile)) {
+    return { truncated: true, truncationReason: "session file missing" };
+  }
+  let lastAssistant: { stopReason?: string | null } | null = null;
+  try {
+    const stream = createReadStream(sessionFile, { encoding: "utf-8" });
+    const rl = createInterface({ input: stream, crlfDelay: Infinity });
+    for await (const line of rl) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      let parsed: { type?: string; message?: { role?: string; stopReason?: string | null } };
+      try { parsed = JSON.parse(trimmed); } catch { continue; }
+      if (parsed.type !== "message") continue;
+      const msg = parsed.message;
+      if (msg?.role !== "assistant") continue;
+      lastAssistant = msg;
+    }
+  } catch (err) {
+    turnLog.warn("truncation check: failed to read session file", {
+      sessionFile,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return { truncated: false, truncationReason: null };
+  }
+  if (!lastAssistant) {
+    return { truncated: true, truncationReason: "no assistant message in transcript" };
+  }
+  const stop = lastAssistant.stopReason;
+  if (stop === "stop" || stop === "toolUse") {
+    return { truncated: false, truncationReason: null };
+  }
+  if (stop == null) {
+    return { truncated: true, truncationReason: "missing stopReason (model stream cut off)" };
+  }
+  return { truncated: true, truncationReason: `stopReason=${stop}` };
 }
 
 function recordTurnUsage(
@@ -308,6 +395,10 @@ function recordTurnUsage(
   if (!message || message.role !== "assistant") return;
   const usage = message.usage;
   if (!usage) return;
+  // usage_logs.user_id is `NOT NULL REFERENCES users(id)`. Autonomous runs may
+  // pass an empty userId (no human in the loop) — skip the insert rather than
+  // log a FK violation on every turn_end.
+  if (!opts.userId) return;
   try {
     insertUsageLog({
       projectId: opts.projectId,

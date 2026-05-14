@@ -4,6 +4,7 @@ import { insertTaskRun, updateTaskRun } from "@/db/queries/task-runs.ts";
 import { getProjectById } from "@/db/queries/projects.ts";
 import { getProjectMembers } from "@/db/queries/members.ts";
 import { runAutonomousTurn } from "@/lib/pi/autonomous.ts";
+import { getTasksModelId } from "@/lib/providers/index.ts";
 import { formatDateForSQLite } from "@/lib/scheduling/schedule-parser.ts";
 import { log } from "@/lib/utils/logger.ts";
 import type { ScheduledTaskRow } from "@/db/types.ts";
@@ -189,7 +190,7 @@ async function flushTask(taskId: string) {
       { id: project.id, name: project.name },
       task.name,
       prompt,
-      { userId },
+      { userId, model: getTasksModelId(project.id) },
     );
 
     updateTaskRun(run.id, {

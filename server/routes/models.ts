@@ -36,8 +36,20 @@ function formatModel(m: ModelRow) {
     multimodal: m.multimodal === 1,
     enabled: m.enabled === 1,
     sortOrder: m.sort_order,
+    thinkingLevel: m.thinking_level,
     contextWindow: lookupContextWindow(m.provider, m.id),
   };
+}
+
+const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
+
+function parseThinkingLevel(v: unknown): ModelInput["thinkingLevel"] | undefined {
+  if (v === undefined) return undefined;
+  if (v === null || v === "") return null;
+  if (typeof v === "string" && (THINKING_LEVELS as readonly string[]).includes(v)) {
+    return v as ModelInput["thinkingLevel"];
+  }
+  throw new Error(`invalid thinkingLevel: ${String(v)}`);
 }
 
 export async function handleListEnabledModels(request: Request): Promise<Response> {
@@ -77,6 +89,7 @@ export async function handleCreateModel(request: Request): Promise<Response> {
       multimodal: body.multimodal,
       enabled: body.enabled,
       sortOrder: body.sortOrder,
+      thinkingLevel: parseThinkingLevel(body.thinkingLevel),
     };
 
     const model = insertModel(data);
@@ -103,6 +116,7 @@ export async function handleUpdateModel(request: Request): Promise<Response> {
     if (body.multimodal !== undefined) data.multimodal = body.multimodal;
     if (body.enabled !== undefined) data.enabled = body.enabled;
     if (body.sortOrder !== undefined) data.sortOrder = body.sortOrder;
+    if (body.thinkingLevel !== undefined) data.thinkingLevel = parseThinkingLevel(body.thinkingLevel);
 
     const model = updateModel(body.id, data);
     if (!model) {

@@ -1,5 +1,5 @@
 import { db } from "@/db/index.ts";
-import type { ModelRow } from "@/db/types.ts";
+import type { ModelRow, ThinkingLevel } from "@/db/types.ts";
 
 const listAll = db.prepare(
   "SELECT * FROM models ORDER BY sort_order, provider, name",
@@ -13,12 +13,12 @@ const getById = db.prepare("SELECT * FROM models WHERE id = ?");
 const getDefault = db.prepare("SELECT * FROM models WHERE is_default = 1 LIMIT 1");
 
 const insert = db.prepare(
-  `INSERT INTO models (id, name, provider, is_default, multimodal, enabled, sort_order)
-   VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  `INSERT INTO models (id, name, provider, is_default, multimodal, enabled, sort_order, thinking_level)
+   VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 );
 
 const update = db.prepare(
-  `UPDATE models SET name = ?, provider = ?, is_default = ?, multimodal = ?, enabled = ?, sort_order = ?, updated_at = datetime('now') WHERE id = ?`,
+  `UPDATE models SET name = ?, provider = ?, is_default = ?, multimodal = ?, enabled = ?, sort_order = ?, thinking_level = ?, updated_at = datetime('now') WHERE id = ?`,
 );
 
 const remove = db.prepare("DELETE FROM models WHERE id = ?");
@@ -48,6 +48,7 @@ export interface ModelInput {
   multimodal?: boolean;
   enabled?: boolean;
   sortOrder?: number;
+  thinkingLevel?: ThinkingLevel | null;
 }
 
 export function insertModel(data: ModelInput): ModelRow {
@@ -60,6 +61,7 @@ export function insertModel(data: ModelInput): ModelRow {
     data.multimodal ? 1 : 0,
     data.enabled !== false ? 1 : 0,
     data.sortOrder ?? 0,
+    data.thinkingLevel ?? null,
   );
   return getById.get(data.id) as ModelRow;
 }
@@ -75,6 +77,7 @@ export function updateModel(id: string, data: Partial<ModelInput>): ModelRow | n
     data.multimodal !== undefined ? (data.multimodal ? 1 : 0) : existing.multimodal,
     data.enabled !== undefined ? (data.enabled ? 1 : 0) : existing.enabled,
     data.sortOrder ?? existing.sort_order,
+    data.thinkingLevel !== undefined ? data.thinkingLevel : existing.thinking_level,
     id,
   );
   return getById.get(id) as ModelRow;

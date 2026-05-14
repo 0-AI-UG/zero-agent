@@ -55,6 +55,8 @@ db.exec(`
     assistant_description     TEXT NOT NULL DEFAULT 'Ask me anything - I can browse the web, manage files, run code, and automate tasks.',
     assistant_icon            TEXT NOT NULL DEFAULT 'message',
     system_prompt             TEXT NOT NULL DEFAULT '',
+    tasks_model               TEXT,
+    scripts_model             TEXT,
     is_starred                INTEGER NOT NULL DEFAULT 0,
     is_archived               INTEGER NOT NULL DEFAULT 0,
     created_at                TEXT NOT NULL DEFAULT (datetime('now')),
@@ -126,7 +128,6 @@ db.exec(`
     last_run_at      TEXT,
     next_run_at      TEXT NOT NULL,
     run_count        INTEGER NOT NULL DEFAULT 0,
-    required_tools   TEXT,
     required_skills  TEXT,
     trigger_type     TEXT NOT NULL DEFAULT 'schedule',
     trigger_event    TEXT,
@@ -282,19 +283,27 @@ db.exec(`
   )
 `);
 
+// Drop the stale global SCRIPTS_MODEL key — replaced by the per-project
+// projects.scripts_model column.
+db.exec("DELETE FROM settings WHERE key = 'SCRIPTS_MODEL'");
+
 db.exec(`
   CREATE TABLE IF NOT EXISTS models (
-    id          TEXT PRIMARY KEY,
-    name        TEXT NOT NULL,
-    provider    TEXT NOT NULL,
-    is_default  INTEGER NOT NULL DEFAULT 0,
-    multimodal  INTEGER NOT NULL DEFAULT 0,
-    enabled     INTEGER NOT NULL DEFAULT 1,
-    sort_order  INTEGER NOT NULL DEFAULT 0,
-    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    provider        TEXT NOT NULL,
+    is_default      INTEGER NOT NULL DEFAULT 0,
+    multimodal      INTEGER NOT NULL DEFAULT 0,
+    enabled         INTEGER NOT NULL DEFAULT 1,
+    sort_order      INTEGER NOT NULL DEFAULT 0,
+    thinking_level  TEXT,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
   )
 `);
+
+try { db.exec(`ALTER TABLE models ADD COLUMN thinking_level TEXT`); } catch { /* already present */ }
+try { db.exec(`ALTER TABLE models DROP COLUMN max_tokens`); } catch { /* never added */ }
 
 // Drop legacy columns if upgrading from a pre-cutover DB. SQLite supports
 // ALTER TABLE DROP COLUMN since 3.35; older runtimes will no-op via the try.
@@ -437,6 +446,9 @@ db.exec(`
   }
   if (!cols.some((c: any) => c.name === "script_path")) {
     db.exec("ALTER TABLE scheduled_tasks ADD COLUMN script_path TEXT");
+  }
+  if (cols.some((c: any) => c.name === "required_tools")) {
+    db.exec("ALTER TABLE scheduled_tasks DROP COLUMN required_tools");
   }
 }
 
@@ -583,6 +595,12 @@ db.exec(`
   }
   if (!cols.some((c) => c.name === "system_prompt")) {
     db.exec("ALTER TABLE projects ADD COLUMN system_prompt TEXT NOT NULL DEFAULT ''");
+  }
+  if (!cols.some((c) => c.name === "tasks_model")) {
+    db.exec("ALTER TABLE projects ADD COLUMN tasks_model TEXT");
+  }
+  if (!cols.some((c) => c.name === "scripts_model")) {
+    db.exec("ALTER TABLE projects ADD COLUMN scripts_model TEXT");
   }
 }
 

@@ -165,9 +165,19 @@ async function handleChatSend(
     abortSignal: abortController.signal,
     onEvent: (env) => publishPiEvent(env),
   })
-    .then(({ runId, aborted }) => {
-      endChatStream(chat.id, aborted ? "aborted" : "completed");
-      chatLog.info("pi turn finished", { chatId: chat.id, runId, aborted });
+    .then(({ runId, aborted, truncated, truncationReason }) => {
+      if (aborted) {
+        endChatStream(chat.id, "aborted");
+      } else if (truncated) {
+        endChatStream(
+          chat.id,
+          "error",
+          `model response truncated: ${truncationReason ?? "no stop_reason"}`,
+        );
+      } else {
+        endChatStream(chat.id, "completed");
+      }
+      chatLog.info("pi turn finished", { chatId: chat.id, runId, aborted, truncated });
     })
     .catch((err) => {
       const errorMsg = err instanceof Error ? err.message : String(err);

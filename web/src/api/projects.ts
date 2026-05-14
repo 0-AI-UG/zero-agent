@@ -13,6 +13,8 @@ export interface Project {
   assistantIcon: string;
   systemPrompt: string;
   defaultSystemPrompt: string;
+  tasksModel: string | null;
+  scriptsModel: string | null;
   isStarred: boolean;
   isArchived: boolean;
   emailEnabled: boolean;
@@ -62,7 +64,7 @@ export function useCreateProject() {
 export function useUpdateProject(id: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (data: { name?: string; description?: string; automationEnabled?: boolean; showSkillsInFiles?: boolean; assistantName?: string; assistantDescription?: string; assistantIcon?: string; systemPrompt?: string }) => {
+    mutationFn: async (data: { name?: string; description?: string; automationEnabled?: boolean; showSkillsInFiles?: boolean; assistantName?: string; assistantDescription?: string; assistantIcon?: string; systemPrompt?: string; tasksModel?: string | null; scriptsModel?: string | null }) => {
       const res = await apiFetch<{ project: Project }>(`/projects/${id}`, {
         method: "PUT",
         body: JSON.stringify(data),

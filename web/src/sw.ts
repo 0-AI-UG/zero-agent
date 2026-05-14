@@ -2,7 +2,15 @@
 declare const self: ServiceWorkerGlobalScope;
 
 self.addEventListener("push", (event) => {
-  const data = event.data?.json() ?? { title: "Zero Agent", body: "New notification" };
+  let data: any = { title: "Zero Agent", body: "New notification" };
+  try {
+    if (event.data) data = event.data.json();
+  } catch {
+    try {
+      const text = event.data?.text();
+      if (text) data = { title: "Zero Agent", body: text };
+    } catch {}
+  }
   const notifData: Record<string, unknown> = {
     url: data.url ?? "/",
     kind: data.kind,

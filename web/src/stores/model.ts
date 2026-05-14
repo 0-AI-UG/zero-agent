@@ -1,6 +1,8 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
+export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+
 export interface ModelConfig {
   id: string;
   name: string;
@@ -8,6 +10,7 @@ export interface ModelConfig {
   default?: boolean;
   multimodal: boolean;
   contextWindow?: number;
+  thinkingLevel?: ThinkingLevel | null;
 }
 
 interface ModelState {

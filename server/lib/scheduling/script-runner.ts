@@ -35,6 +35,7 @@ import { registerPiTurnToken } from "@/lib/pi/cli-server.ts";
 import { projectDirFor } from "@/lib/pi/run-turn.ts";
 import { ensureZeroOnPath } from "@/lib/pi/zero-cli.ts";
 import { runAutonomousTurn } from "@/lib/pi/autonomous.ts";
+import { getTasksModelId } from "@/lib/providers/index.ts";
 import { log } from "@/lib/utils/logger.ts";
 import type { ScheduledTaskRow } from "@/db/types.ts";
 
@@ -349,7 +350,7 @@ export async function runScriptTask(
         { id: project.id, name: project.name },
         task.name,
         prompt,
-        { userId },
+        { userId, model: getTasksModelId(project.id) },
       );
       updateTaskRun(run.id, {
         status: "completed",

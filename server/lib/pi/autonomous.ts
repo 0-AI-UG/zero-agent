@@ -44,8 +44,9 @@ export async function runAutonomousTurn(
   const resolved = resolveModelForPi(options?.model);
   const collected: string[] = [];
 
+  let turn;
   try {
-    await runTurn({
+    turn = await runTurn({
       projectId: project.id,
       chatId: chat.id,
       userId: options?.userId ?? "",
@@ -71,6 +72,18 @@ export async function runAutonomousTurn(
     const enriched = err instanceof Error ? err : new Error(String(err));
     (enriched as { chatId?: string }).chatId = chat.id;
     throw enriched;
+  }
+
+  // Truncation = model stream cut off mid-response (e.g. Kimi hit its 16384
+  // output cap during a thinking loop). Pi exits 0 in this case, but the
+  // task did not actually complete. Surface as a failed run so the scheduler
+  // doesn't write a misleading "completed" summary.
+  if (turn.truncated) {
+    const err = new Error(
+      `model response truncated: ${turn.truncationReason ?? "no stop_reason"}`,
+    );
+    (err as { chatId?: string }).chatId = chat.id;
+    throw err;
   }
 
   const responseText = collected.join("\n").trim();

@@ -73,6 +73,8 @@ export function formatProject(row: ProjectRow, opts?: { role?: string; memberCou
     assistantIcon: row.assistant_icon,
     systemPrompt: row.system_prompt,
     defaultSystemPrompt: DEFAULT_SYSTEM_PROMPT,
+    tasksModel: row.tasks_model,
+    scriptsModel: row.scripts_model,
     isStarred: row.is_starred === 1,
     isArchived: row.is_archived === 1,
     emailEnabled: row.email_enabled === 1,

@@ -6,6 +6,7 @@
 import { getSetting } from "@/lib/settings.ts";
 import { getActiveProvider, resolveChatModelId } from "@/lib/providers/index.ts";
 import { getModelById } from "@/db/queries/models.ts";
+import type { ThinkingLevel } from "@/db/types.ts";
 
 export interface ResolvedPiModel {
   /** Pi-AI model id, e.g. "anthropic/claude-sonnet-4". */
@@ -14,6 +15,8 @@ export interface ResolvedPiModel {
   provider: string;
   /** Whether this model accepts image input — sourced from the models table. */
   supportsImages: boolean;
+  /** Admin-configured thinking budget level. Passed via `--thinking` CLI flag. */
+  thinkingLevel: ThinkingLevel | null;
 }
 
 export function resolveModelForPi(modelId?: string): ResolvedPiModel {
@@ -22,8 +25,12 @@ export function resolveModelForPi(modelId?: string): ResolvedPiModel {
     : getActiveProvider().getDefaultChatModelId();
   const provider = getActiveProvider().id;
   const row = getModelById(id);
-  const supportsImages = row?.multimodal === 1;
-  return { modelId: id, provider, supportsImages };
+  return {
+    modelId: id,
+    provider,
+    supportsImages: row?.multimodal === 1,
+    thinkingLevel: row?.thinking_level ?? null,
+  };
 }
 
 /** Build the env-var map handed to the Pi subprocess. */

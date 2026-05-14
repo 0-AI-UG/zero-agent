@@ -24,7 +24,7 @@
       }
     },
     {
-      "id": "deepseek/deepseek-v4",
+      "id": "deepseek/deepseek-v4-flash",
       "name": "DeepSeek V4",
       "provider": "deepseek",
       "description": "Strong general-purpose model with Chinese and coding capabilities.",

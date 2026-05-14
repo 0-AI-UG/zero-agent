@@ -235,7 +235,7 @@ async function runEmailAgentTurn(
   beginChatStream(chatId, "");
   let turnError: string | null = null;
   try {
-    await runTurn({
+    const turn = await runTurn({
       projectId: project.id,
       chatId,
       userId: project.user_id,
@@ -245,6 +245,10 @@ async function runEmailAgentTurn(
         publishPiEvent(env);
       },
     });
+    if (turn.truncated) {
+      turnError = `model response truncated: ${turn.truncationReason ?? "no stop_reason"}`;
+      rLog.warn("email agent turn truncated", { chatId, reason: turn.truncationReason });
+    }
   } catch (err) {
     turnError = err instanceof Error ? err.message : String(err);
     rLog.error("email agent turn failed", err);

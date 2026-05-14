@@ -33,19 +33,19 @@ const HELP = `zero - agent toolkit CLI
 Usage:
   zero <group> <action> [...args] [--json]
 
-Groups (added by migration steps):
+Groups:
   health           Check that the runner→server proxy is reachable
   web              search, fetch
   image            generate
   schedule         add (with --schedule, --event, or --script), ls, update, rm
   creds            ls, get, set, rm
-  browser          open, click, fill, screenshot, evaluate, wait, status
+  browser          open, snapshot, click, fill, screenshot, evaluate, wait, extract, status
   apps             create, delete, list
   llm              generate
-  notification     notify the user (Telegram + push + in-app)
+  notification     send (with --respond to wait for a reply)
   email            list, read, send, reply, search the project's mailbox
-  embed            generate vector embeddings
-  search           vector search over project files, memory, and messages
+  embed            generate vector embeddings (single text or --batch)
+  search           vector search over project files and messages
 
 Run 'zero <group> --help' for details. All commands support --json.
 
