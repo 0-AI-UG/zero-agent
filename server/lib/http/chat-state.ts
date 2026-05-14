@@ -96,11 +96,31 @@ export function hydrateChatState(state: ChatState, projectId: string): void {
     const ctx = buildSessionContext(entries, sm.getLeafId());
     state.messages = ctx.messages.slice() as unknown as AgentMessage[];
     state.hydrated = true;
+    // Persist a truncation error across server restarts / scene eviction:
+    // derive it from the final assistant message's `stopReason` so a refresh
+    // doesn't lose the banner that `endChatStream("error", ...)` set live.
+    // Skipped while streaming — partial messages naturally have no stopReason.
+    if (!state.isStreaming && !state.error) {
+      const derived = deriveTruncationError(state.messages);
+      if (derived) state.error = derived;
+    }
   } catch (err) {
     stateLog.warn("hydrate failed", { chatId: state.chatId, err: String(err) });
     state.messages = [];
     state.hydrated = true;
   }
+}
+
+function deriveTruncationError(messages: AgentMessage[]): string | undefined {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i] as { role?: string; stopReason?: string | null };
+    if (m?.role !== "assistant") continue;
+    const stop = m.stopReason;
+    if (stop === "stop" || stop === "toolUse") return undefined;
+    if (stop == null) return "model response truncated: missing stopReason (stream cut off)";
+    return `model response truncated: stopReason=${stop}`;
+  }
+  return undefined;
 }
 
 /**

@@ -249,7 +249,7 @@ function ProjectModelsSection({ projectId, project }: { projectId: string; proje
             value={project.tasksModel ?? DEFAULT}
             onValueChange={(v) => save("tasksModel", v)}
           >
-            <SelectTrigger className="w-full max-w-sm">
+            <SelectTrigger className="w-full">
               <SelectValue placeholder="Default" />
             </SelectTrigger>
             <SelectContent position="popper" className="max-h-[280px]">
@@ -275,7 +275,7 @@ function ProjectModelsSection({ projectId, project }: { projectId: string; proje
             value={project.scriptsModel ?? DEFAULT}
             onValueChange={(v) => save("scriptsModel", v)}
           >
-            <SelectTrigger className="w-full max-w-sm">
+            <SelectTrigger className="w-full">
               <SelectValue placeholder="Default" />
             </SelectTrigger>
             <SelectContent position="popper" className="max-h-[280px]">
