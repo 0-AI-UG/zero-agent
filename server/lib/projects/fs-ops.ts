@@ -40,16 +40,29 @@ async function deepestRealpath(abs: string): Promise<string> {
   }
 }
 
-async function ensureUnderProject(projectId: string, relPath: string): Promise<string> {
+async function ensureUnderProject(
+  projectId: string,
+  relPath: string,
+  opts: { allowSymlinkEscape?: boolean } = {},
+): Promise<string> {
   const projectDir = await realProjectDir(projectId);
   const cleaned = normalize(relPath).replace(/^\/+/, "");
   const abs = resolve(projectDir, cleaned);
   if (abs !== projectDir && !abs.startsWith(projectDir + "/")) {
     throw new ValidationError(`path escapes project dir: ${relPath}`);
   }
-  const real = await deepestRealpath(abs);
-  if (real !== projectDir && !real.startsWith(projectDir + "/")) {
-    throw new ValidationError(`path escapes project dir via symlink: ${relPath}`);
+  // For writes/deletes/moves we also realpath the leaf and require the
+  // resolved target to stay inside the project — this stops a symlink
+  // planted inside the project from being used to write to /etc, etc.
+  // Reads can skip this: the only API surface that can create symlinks
+  // inside a project dir is our own pi-config wiring (bundled subagent
+  // .md files, zero-sdk.mjs), and the user already has shell-level read
+  // access to anything Pi can reach.
+  if (!opts.allowSymlinkEscape) {
+    const real = await deepestRealpath(abs);
+    if (real !== projectDir && !real.startsWith(projectDir + "/")) {
+      throw new ValidationError(`path escapes project dir via symlink: ${relPath}`);
+    }
   }
   return abs;
 }
@@ -76,7 +89,7 @@ export async function readProjectFile(
   projectId: string,
   relPath: string,
 ): Promise<Buffer | null> {
-  const abs = await ensureUnderProject(projectId, relPath);
+  const abs = await ensureUnderProject(projectId, relPath, { allowSymlinkEscape: true });
   try {
     return await readFile(abs);
   } catch (err) {
@@ -118,7 +131,7 @@ export async function streamProjectFile(
   projectId: string,
   relPath: string,
 ): Promise<ProjectFileStream | null> {
-  const abs = await ensureUnderProject(projectId, relPath);
+  const abs = await ensureUnderProject(projectId, relPath, { allowSymlinkEscape: true });
   let st: Awaited<ReturnType<typeof stat>>;
   try {
     st = await stat(abs);
