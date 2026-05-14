@@ -14,18 +14,56 @@ import { turnDiffsStore } from "@/stores/turn-diffs";
 
 const toastIdForResponse = (responseId: string) => `pending-${responseId}`;
 
-// Coalesce file.changed invalidations per project so a reconcile pass that
-// inserts N files doesn't trigger N refetches of the folder list.
-const FILE_INVALIDATE_DEBOUNCE_MS = 200;
-const pendingFileInvalidations = new Map<string, ReturnType<typeof setTimeout>>();
-function invalidateFilesSoon(projectId: string) {
-  const existing = pendingFileInvalidations.get(projectId);
-  if (existing) clearTimeout(existing);
-  const t = setTimeout(() => {
-    pendingFileInvalidations.delete(projectId);
-    queryClient.invalidateQueries({ queryKey: queryKeys.files.byProject(projectId) });
-  }, FILE_INVALIDATE_DEBOUNCE_MS);
-  pendingFileInvalidations.set(projectId, t);
+interface FileChangedFile {
+  id: string;
+  projectId: string;
+  filename: string;
+  mimeType: string;
+  sizeBytes: number;
+  folderPath: string;
+  createdAt: string;
+}
+
+// Patch the cached folder listing in place so reconcile inserts appear one
+// by one as `file.changed` events stream in — no follow-up refetch needed.
+// Falls back to invalidation when the event has no row payload (deletes or
+// stale rows the server couldn't look up).
+function applyFileChange(
+  projectId: string,
+  path: string,
+  filename: string,
+  action: "created" | "updated" | "deleted",
+  file: FileChangedFile | undefined,
+) {
+  const queryKey = queryKeys.files.byProject(projectId, path);
+  const cached = queryClient.getQueryData<{
+    files: FileChangedFile[];
+    folders: unknown[];
+    currentPath: string;
+  }>(queryKey);
+
+  if (!cached) {
+    queryClient.invalidateQueries({ queryKey });
+    return;
+  }
+
+  if (action === "deleted") {
+    const next = cached.files.filter((f) => f.filename !== filename);
+    if (next.length === cached.files.length) return;
+    queryClient.setQueryData(queryKey, { ...cached, files: next });
+    return;
+  }
+
+  if (!file) {
+    queryClient.invalidateQueries({ queryKey });
+    return;
+  }
+
+  const idx = cached.files.findIndex((f) => f.id === file.id);
+  const nextFiles = idx === -1
+    ? [...cached.files, file]
+    : cached.files.map((f, i) => (i === idx ? file : f));
+  queryClient.setQueryData(queryKey, { ...cached, files: nextFiles });
 }
 
 /**
@@ -86,7 +124,17 @@ export function useRealtime(projectId: string | undefined) {
           break;
 
         case "file.changed":
-          if (pid) invalidateFilesSoon(pid);
+          if (pid) {
+            const path = typeof msg.path === "string" ? msg.path : "/";
+            const filename = typeof msg.filename === "string" ? msg.filename : "";
+            const action = (msg.action === "created" || msg.action === "updated" || msg.action === "deleted")
+              ? msg.action
+              : "updated";
+            const file = (msg.file && typeof msg.file === "object")
+              ? (msg.file as FileChangedFile)
+              : undefined;
+            if (filename) applyFileChange(pid, path, filename, action, file);
+          }
           break;
 
         case "turn.diff.ready": {
