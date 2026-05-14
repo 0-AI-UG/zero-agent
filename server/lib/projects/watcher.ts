@@ -147,11 +147,23 @@ export async function reconcileFolder(
   let entries: { name: string; isFile: boolean; isDir: boolean }[] = [];
   try {
     const list = await readdir(absFolder, { withFileTypes: true });
-    entries = list.map((e) => ({
-      name: e.name,
-      isFile: e.isFile(),
-      isDir: e.isDirectory(),
-    }));
+    entries = await Promise.all(
+      list.map(async (e) => {
+        // Symlinks need a follow-the-link stat to classify — `Dirent.isFile`
+        // / `isDirectory` report on the link itself, so symlinked files
+        // (e.g. the bundled subagent .md files under `.pi/agents/`) would
+        // otherwise be ignored entirely.
+        if (e.isSymbolicLink()) {
+          try {
+            const target = await stat(join(absFolder, e.name));
+            return { name: e.name, isFile: target.isFile(), isDir: target.isDirectory() };
+          } catch {
+            return { name: e.name, isFile: false, isDir: false };
+          }
+        }
+        return { name: e.name, isFile: e.isFile(), isDir: e.isDirectory() };
+      }),
+    );
   } catch {
     // Folder doesn't exist on disk — drop all DB rows for it.
     entries = [];
