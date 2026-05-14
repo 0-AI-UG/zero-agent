@@ -274,8 +274,8 @@ function displayItems(messages: SubagentMessage[]): DisplayItem[] {
   for (const msg of messages) {
     if (msg.role !== "assistant") continue;
     for (const part of msg.content) {
-      if (part.type === "text" && typeof part.text === "string" && part.text.length > 0) {
-        items.push({ kind: "text", text: part.text });
+      if (part.type === "text" && typeof part.text === "string" && part.text.trim().length > 0) {
+        items.push({ kind: "text", text: part.text.trim() });
       } else if (part.type === "toolCall" && typeof part.name === "string") {
         items.push({
           kind: "toolCall",

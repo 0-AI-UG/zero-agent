@@ -49,8 +49,8 @@ Groups:
 
 Run 'zero <group> --help' for details. All commands support --json.
 
+Full reference (CLI + SDK): ${ZERO_ROOT}/USAGE.md
 Source: ${ZERO_ROOT}/src/
-Full reference: ${ZERO_ROOT}/USAGE.md
 `;
 
 async function main(argv: string[]): Promise<number> {
