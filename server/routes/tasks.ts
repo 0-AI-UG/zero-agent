@@ -9,17 +9,17 @@ import {
   getTaskById,
   updateTask,
   deleteTask,
-} from "@/db/queries/scheduled-tasks.ts";
+} from "@/db/queries/tasks.ts";
 import { insertTaskRun, updateTaskRun, getRunsByTask } from "@/db/queries/task-runs.ts";
 import { runAutonomousTurn } from "@/lib/pi/autonomous.ts";
 import { getTasksModelId } from "@/lib/providers/index.ts";
-import { markTaskRun } from "@/db/queries/scheduled-tasks.ts";
-import { parseSchedule } from "@/lib/scheduling/schedule-parser.ts";
-import { formatDateForSQLite } from "@/lib/scheduling/schedule-parser.ts";
-import { registerEventTask, unregisterEventTask, refreshEventTask } from "@/lib/scheduling/event-trigger.ts";
-import { validateScriptPath } from "@/lib/scheduling/script-runner.ts";
-import type { ScheduledTaskRow, TaskRunRow } from "@/db/types.ts";
-import type { EventName } from "@/lib/scheduling/events.ts";
+import { markTaskRun } from "@/db/queries/tasks.ts";
+import { parseSchedule } from "@/lib/tasks/schedule-parser.ts";
+import { formatDateForSQLite } from "@/lib/tasks/schedule-parser.ts";
+import { registerEventTask, unregisterEventTask, refreshEventTask } from "@/lib/tasks/event-trigger.ts";
+import { validateScriptPath } from "@/lib/tasks/script-runner.ts";
+import type { TaskRow, TaskRunRow } from "@/db/types.ts";
+import type { EventName } from "@/lib/tasks/events.ts";
 
 const VALID_TRIGGER_EVENTS: EventName[] = [
   "file.created", "file.updated", "file.deleted", "file.moved",
@@ -30,7 +30,7 @@ const VALID_TRIGGER_EVENTS: EventName[] = [
   "skill.loaded", "skill.installed", "skill.uninstalled",
 ];
 
-function formatTask(row: ScheduledTaskRow) {
+function formatTask(row: TaskRow) {
   return {
     id: row.id,
     projectId: row.project_id,
@@ -68,7 +68,7 @@ function formatRun(row: TaskRunRow) {
   };
 }
 
-function verifyTaskOwnership(taskId: string, projectId: string): ScheduledTaskRow {
+function verifyTaskOwnership(taskId: string, projectId: string): TaskRow {
   const task = getTaskById(taskId);
   if (!task || task.project_id !== projectId) {
     throw new NotFoundError("Task not found");

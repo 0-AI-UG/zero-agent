@@ -42,7 +42,7 @@ export const WebFetchInput = z
 // -- schedule --
 const TriggerFilter = z.record(z.string(), z.string()).optional();
 
-export const ScheduleAddInput = z
+export const TasksAddInput = z
   .object({
     name: NonEmpty(200),
     prompt: NonEmpty(8000),
@@ -56,9 +56,9 @@ export const ScheduleAddInput = z
   })
   .strict();
 
-export const ScheduleListInput = z.object({}).strict();
+export const TasksListInput = z.object({}).strict();
 
-export const ScheduleUpdateInput = z
+export const TasksUpdateInput = z
   .object({
     taskId: NonEmpty(64),
     name: z.string().min(1).max(200).optional(),
@@ -73,7 +73,7 @@ export const ScheduleUpdateInput = z
   })
   .strict();
 
-export const ScheduleRemoveInput = z
+export const TasksRemoveInput = z
   .object({ taskId: NonEmpty(64) })
   .strict();
 
@@ -322,9 +322,9 @@ export const EmailSearchInput = z
 // Convenience re-exports for SDK type inference.
 export type WebSearchInputT = z.infer<typeof WebSearchInput>;
 export type WebFetchInputT = z.infer<typeof WebFetchInput>;
-export type ScheduleAddInputT = z.infer<typeof ScheduleAddInput>;
-export type ScheduleUpdateInputT = z.infer<typeof ScheduleUpdateInput>;
-export type ScheduleRemoveInputT = z.infer<typeof ScheduleRemoveInput>;
+export type TasksAddInputT = z.infer<typeof TasksAddInput>;
+export type TasksUpdateInputT = z.infer<typeof TasksUpdateInput>;
+export type TasksRemoveInputT = z.infer<typeof TasksRemoveInput>;
 export type ImageGenerateInputT = z.infer<typeof ImageGenerateInput>;
 export type CredsGetInputT = z.infer<typeof CredsGetInput>;
 export type CredsSetInputT = z.infer<typeof CredsSetInput>;

@@ -11,7 +11,7 @@ import {
   useRunTaskNow,
   useTaskRuns,
 } from "@/api/tasks";
-import type { ScheduledTask, TaskRun } from "@/api/tasks";
+import type { Task, TaskRun } from "@/api/tasks";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -587,7 +587,7 @@ function TaskCard({
   task,
   projectId,
 }: {
-  task: ScheduledTask;
+  task: Task;
   projectId: string;
 }) {
   const [expanded, setExpanded] = useState(false);

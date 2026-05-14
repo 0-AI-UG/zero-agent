@@ -1,13 +1,13 @@
-import { events, type EventName, type AgentEvents } from "@/lib/scheduling/events.ts";
-import { getAllEventTasks, getEventTasksForEvent, getTaskById, markEventTaskRun } from "@/db/queries/scheduled-tasks.ts";
+import { events, type EventName, type AgentEvents } from "@/lib/tasks/events.ts";
+import { getAllEventTasks, getEventTasksForEvent, getTaskById, markEventTaskRun } from "@/db/queries/tasks.ts";
 import { insertTaskRun, updateTaskRun } from "@/db/queries/task-runs.ts";
 import { getProjectById } from "@/db/queries/projects.ts";
 import { getProjectMembers } from "@/db/queries/members.ts";
 import { runAutonomousTurn } from "@/lib/pi/autonomous.ts";
 import { getTasksModelId } from "@/lib/providers/index.ts";
-import { formatDateForSQLite } from "@/lib/scheduling/schedule-parser.ts";
+import { formatDateForSQLite } from "@/lib/tasks/schedule-parser.ts";
 import { log } from "@/lib/utils/logger.ts";
-import type { ScheduledTaskRow } from "@/db/types.ts";
+import type { TaskRow } from "@/db/types.ts";
 
 const triggerLog = log.child({ module: "event-trigger" });
 
@@ -30,7 +30,7 @@ export function startEventTriggers() {
   }
 }
 
-export function registerEventTask(task: ScheduledTaskRow) {
+export function registerEventTask(task: TaskRow) {
   if (task.trigger_type !== "event" || !task.trigger_event) return;
 
   // Clean up any existing subscription

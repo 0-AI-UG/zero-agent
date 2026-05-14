@@ -11,7 +11,7 @@ import path from "node:path";
 import { printError, printJson } from "./format.ts";
 import { call } from "../sdk/client.ts";
 import { webCommand } from "./commands/web.ts";
-import { scheduleCommand } from "./commands/schedule.ts";
+import { tasksCommand } from "./commands/tasks.ts";
 import { imageCommand } from "./commands/image.ts";
 import { credsCommand } from "./commands/creds.ts";
 import { browserCommand } from "./commands/browser.ts";
@@ -37,7 +37,7 @@ Groups:
   health           Check that the runner→server proxy is reachable
   web              search, fetch
   image            generate
-  schedule         add (with --schedule, --event, or --script), ls, update, rm
+  tasks            add (with --schedule, --event, or --script), ls, update, rm
   creds            ls, get, set, rm
   browser          open, snapshot, click, fill, screenshot, evaluate, wait, extract, status
   apps             create, delete, list
@@ -72,8 +72,8 @@ async function main(argv: string[]): Promise<number> {
       }
       case "web":
         return await webCommand(rest);
-      case "schedule":
-        return await scheduleCommand(rest);
+      case "tasks":
+        return await tasksCommand(rest);
       case "image":
         return await imageCommand(rest);
       case "creds":

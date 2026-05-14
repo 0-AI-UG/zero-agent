@@ -31,7 +31,7 @@ import {
 } from "@/db/queries/folders.ts";
 import { generateId } from "@/db/index.ts";
 import { searchFileContent } from "@/db/queries/search.ts";
-import { events } from "@/lib/scheduling/events.ts";
+import { events } from "@/lib/tasks/events.ts";
 import { embedAndStore, semanticSearch } from "@/lib/search/vectors.ts";
 import { reconcileFolder } from "@/lib/projects/watcher.ts";
 import { sha256Hex } from "@/lib/utils/hash.ts";

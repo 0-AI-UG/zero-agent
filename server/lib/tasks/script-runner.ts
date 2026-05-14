@@ -27,17 +27,17 @@ import { delimiter as pathDelimiter } from "node:path";
 import { getProjectById } from "@/db/queries/projects.ts";
 import { getProjectMembers } from "@/db/queries/members.ts";
 import { insertTaskRun, updateTaskRun } from "@/db/queries/task-runs.ts";
-import { markTaskRun } from "@/db/queries/scheduled-tasks.ts";
-import { formatDateForSQLite } from "@/lib/scheduling/schedule-parser.ts";
-import { events } from "@/lib/scheduling/events.ts";
-import { takeFires, type FireRecord } from "@/lib/scheduling/script-fire-registry.ts";
+import { markTaskRun } from "@/db/queries/tasks.ts";
+import { formatDateForSQLite } from "@/lib/tasks/schedule-parser.ts";
+import { events } from "@/lib/tasks/events.ts";
+import { takeFires, type FireRecord } from "@/lib/tasks/script-fire-registry.ts";
 import { registerPiTurnToken } from "@/lib/pi/cli-server.ts";
 import { projectDirFor } from "@/lib/pi/run-turn.ts";
 import { ensureZeroOnPath } from "@/lib/pi/zero-cli.ts";
 import { runAutonomousTurn } from "@/lib/pi/autonomous.ts";
 import { getTasksModelId } from "@/lib/providers/index.ts";
 import { log } from "@/lib/utils/logger.ts";
-import type { ScheduledTaskRow } from "@/db/types.ts";
+import type { TaskRow } from "@/db/types.ts";
 
 const runnerLog = log.child({ module: "script-runner" });
 
@@ -221,7 +221,7 @@ export interface RunScriptTaskOptions {
  * `next_run_at`. Errors are caught and reported on the run row.
  */
 export async function runScriptTask(
-  task: ScheduledTaskRow,
+  task: TaskRow,
   options: RunScriptTaskOptions = {},
 ): Promise<void> {
   if (runningScripts.has(task.id)) {
@@ -237,7 +237,7 @@ export async function runScriptTask(
   }
   if (!project.automation_enabled) {
     // Advance next_run_at without counting as a run — mirror scheduler.tick().
-    const { skipTaskRun } = await import("@/db/queries/scheduled-tasks.ts");
+    const { skipTaskRun } = await import("@/db/queries/tasks.ts");
     skipTaskRun(task.id, task.schedule);
     return;
   }

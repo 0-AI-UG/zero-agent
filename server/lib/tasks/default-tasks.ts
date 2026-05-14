@@ -1,4 +1,4 @@
-import { insertTask, getTasksByProject, updateTask } from "@/db/queries/scheduled-tasks.ts";
+import { insertTask, getTasksByProject, updateTask } from "@/db/queries/tasks.ts";
 
 const DEFAULT_TASKS: {
   name: string;

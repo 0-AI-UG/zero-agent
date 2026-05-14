@@ -1,5 +1,5 @@
 /**
- * Scheduled task handlers - wrap server/db/queries/scheduled-tasks.ts
+ * Task handlers - wrap server/db/queries/tasks.ts
  * plus the event-trigger registration helpers. Mirrors the four
  * in-process tools in server/tools/scheduling.ts: scheduleTask,
  * listScheduledTasks, updateScheduledTask, removeScheduledTask.
@@ -11,16 +11,16 @@ import {
   getTaskById,
   updateTask,
   deleteTask,
-} from "@/db/queries/scheduled-tasks.ts";
-import { parseSchedule } from "@/lib/scheduling/schedule-parser.ts";
-import { registerEventTask, unregisterEventTask, refreshEventTask } from "@/lib/scheduling/event-trigger.ts";
-import { validateScriptPath } from "@/lib/scheduling/script-runner.ts";
+} from "@/db/queries/tasks.ts";
+import { parseSchedule } from "@/lib/tasks/schedule-parser.ts";
+import { registerEventTask, unregisterEventTask, refreshEventTask } from "@/lib/tasks/event-trigger.ts";
+import { validateScriptPath } from "@/lib/tasks/script-runner.ts";
 import type { CliContext } from "./context.ts";
 import { ok, fail } from "./response.ts";
 import type {
-  ScheduleAddInput,
-  ScheduleUpdateInput,
-  ScheduleRemoveInput,
+  TasksAddInput,
+  TasksUpdateInput,
+  TasksRemoveInput,
 } from "zero/schemas";
 
 function summarize(t: any) {
@@ -42,9 +42,9 @@ function summarize(t: any) {
   };
 }
 
-export async function handleScheduleAdd(
+export async function handleTasksAdd(
   ctx: CliContext,
-  input: z.infer<typeof ScheduleAddInput>,
+  input: z.infer<typeof TasksAddInput>,
 ): Promise<Response> {
   const triggerType = input.triggerType ?? (input.scriptPath ? "script" : "schedule");
 
@@ -86,14 +86,14 @@ export async function handleScheduleAdd(
   return ok(summarize(task));
 }
 
-export async function handleScheduleList(ctx: CliContext): Promise<Response> {
+export async function handleTasksList(ctx: CliContext): Promise<Response> {
   const tasks = getTasksByProject(ctx.projectId);
   return ok({ tasks: tasks.map(summarize) });
 }
 
-export async function handleScheduleUpdate(
+export async function handleTasksUpdate(
   ctx: CliContext,
-  input: z.infer<typeof ScheduleUpdateInput>,
+  input: z.infer<typeof TasksUpdateInput>,
 ): Promise<Response> {
   const existing = getTaskById(input.taskId);
   if (!existing || existing.project_id !== ctx.projectId) return fail("not_found", "Task not found", 404);
@@ -126,9 +126,9 @@ export async function handleScheduleUpdate(
   return ok(summarize(task));
 }
 
-export async function handleScheduleRemove(
+export async function handleTasksRemove(
   ctx: CliContext,
-  input: z.infer<typeof ScheduleRemoveInput>,
+  input: z.infer<typeof TasksRemoveInput>,
 ): Promise<Response> {
   const existing = getTaskById(input.taskId);
   if (!existing || existing.project_id !== ctx.projectId) return fail("not_found", "Task not found", 404);

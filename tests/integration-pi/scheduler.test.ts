@@ -19,21 +19,21 @@ import { randomBytes } from "node:crypto";
 
 let tmpRoot: string;
 
-let parseSchedule: typeof import("@/lib/scheduling/schedule-parser.ts").parseSchedule;
-let computeNextRun: typeof import("@/lib/scheduling/schedule-parser.ts").computeNextRun;
-let formatDateForSQLite: typeof import("@/lib/scheduling/schedule-parser.ts").formatDateForSQLite;
+let parseSchedule: typeof import("@/lib/tasks/schedule-parser.ts").parseSchedule;
+let computeNextRun: typeof import("@/lib/tasks/schedule-parser.ts").computeNextRun;
+let formatDateForSQLite: typeof import("@/lib/tasks/schedule-parser.ts").formatDateForSQLite;
 
-let events: typeof import("@/lib/scheduling/events.ts").events;
-let tick: typeof import("@/lib/scheduling/scheduler.ts").tick;
-let registerEventTask: typeof import("@/lib/scheduling/event-trigger.ts").registerEventTask;
-let unregisterEventTask: typeof import("@/lib/scheduling/event-trigger.ts").unregisterEventTask;
+let events: typeof import("@/lib/tasks/events.ts").events;
+let tick: typeof import("@/lib/tasks/scheduler.ts").tick;
+let registerEventTask: typeof import("@/lib/tasks/event-trigger.ts").registerEventTask;
+let unregisterEventTask: typeof import("@/lib/tasks/event-trigger.ts").unregisterEventTask;
 
 let insertUser: typeof import("@/db/queries/users.ts").insertUser;
 let insertProject: typeof import("@/db/queries/projects.ts").insertProject;
 let updateProject: typeof import("@/db/queries/projects.ts").updateProject;
 let insertProjectMember: typeof import("@/db/queries/members.ts").insertProjectMember;
-let insertTask: typeof import("@/db/queries/scheduled-tasks.ts").insertTask;
-let getTaskById: typeof import("@/db/queries/scheduled-tasks.ts").getTaskById;
+let insertTask: typeof import("@/db/queries/tasks.ts").insertTask;
+let getTaskById: typeof import("@/db/queries/tasks.ts").getTaskById;
 let getRunsByTask: typeof import("@/db/queries/task-runs.ts").getRunsByTask;
 let db: typeof import("@/db/index.ts").db;
 
@@ -48,17 +48,17 @@ beforeAll(async () => {
   mkdirSync(process.env.PI_PROJECTS_ROOT, { recursive: true });
 
   ({ parseSchedule, computeNextRun, formatDateForSQLite } = await import(
-    "@/lib/scheduling/schedule-parser.ts"
+    "@/lib/tasks/schedule-parser.ts"
   ));
-  ({ events } = await import("@/lib/scheduling/events.ts"));
-  ({ tick } = await import("@/lib/scheduling/scheduler.ts"));
+  ({ events } = await import("@/lib/tasks/events.ts"));
+  ({ tick } = await import("@/lib/tasks/scheduler.ts"));
   ({ registerEventTask, unregisterEventTask } = await import(
-    "@/lib/scheduling/event-trigger.ts"
+    "@/lib/tasks/event-trigger.ts"
   ));
   ({ insertUser } = await import("@/db/queries/users.ts"));
   ({ insertProject, updateProject } = await import("@/db/queries/projects.ts"));
   ({ insertProjectMember } = await import("@/db/queries/members.ts"));
-  ({ insertTask, getTaskById } = await import("@/db/queries/scheduled-tasks.ts"));
+  ({ insertTask, getTaskById } = await import("@/db/queries/tasks.ts"));
   ({ getRunsByTask } = await import("@/db/queries/task-runs.ts"));
   ({ db } = await import("@/db/index.ts"));
 });

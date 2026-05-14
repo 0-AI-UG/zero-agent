@@ -1,14 +1,14 @@
-import { getDueTasks, markTaskRun, skipTaskRun } from "@/db/queries/scheduled-tasks.ts";
+import { getDueTasks, markTaskRun, skipTaskRun } from "@/db/queries/tasks.ts";
 import { insertTaskRun, updateTaskRun } from "@/db/queries/task-runs.ts";
 import { getProjectById } from "@/db/queries/projects.ts";
 import { getProjectMembers } from "@/db/queries/members.ts";
 import { runAutonomousTurn } from "@/lib/pi/autonomous.ts";
 import { getTasksModelId } from "@/lib/providers/index.ts";
-import { formatDateForSQLite } from "@/lib/scheduling/schedule-parser.ts";
-import { events } from "@/lib/scheduling/events.ts";
+import { formatDateForSQLite } from "@/lib/tasks/schedule-parser.ts";
+import { events } from "@/lib/tasks/events.ts";
 import { isShuttingDown } from "@/lib/durability/shutdown.ts";
 import { log } from "@/lib/utils/logger.ts";
-import { runScriptTask, isScriptRunning } from "@/lib/scheduling/script-runner.ts";
+import { runScriptTask, isScriptRunning } from "@/lib/tasks/script-runner.ts";
 
 const schedLog = log.child({ module: "scheduler" });
 

@@ -30,12 +30,12 @@ let insertUser: typeof import("@/db/queries/users.ts").insertUser;
 let insertProject: typeof import("@/db/queries/projects.ts").insertProject;
 let updateProject: typeof import("@/db/queries/projects.ts").updateProject;
 let insertProjectMember: typeof import("@/db/queries/members.ts").insertProjectMember;
-let insertTask: typeof import("@/db/queries/scheduled-tasks.ts").insertTask;
+let insertTask: typeof import("@/db/queries/tasks.ts").insertTask;
 let getRunsByTask: typeof import("@/db/queries/task-runs.ts").getRunsByTask;
-let runScriptTask: typeof import("@/lib/scheduling/script-runner.ts").runScriptTask;
-let validateScriptPath: typeof import("@/lib/scheduling/script-runner.ts").validateScriptPath;
+let runScriptTask: typeof import("@/lib/tasks/script-runner.ts").runScriptTask;
+let validateScriptPath: typeof import("@/lib/tasks/script-runner.ts").validateScriptPath;
 let buildCliHandlerApp: typeof import("@/cli-handlers/index.ts").buildCliHandlerApp;
-let _clearFires: typeof import("@/lib/scheduling/script-fire-registry.ts")._clearFires;
+let _clearFires: typeof import("@/lib/tasks/script-fire-registry.ts")._clearFires;
 
 beforeAll(async () => {
   tmpRoot = mkdtempSync(join(tmpdir(), "script-trigger-int-"));
@@ -50,13 +50,13 @@ beforeAll(async () => {
   ({ insertUser } = await import("@/db/queries/users.ts"));
   ({ insertProject, updateProject } = await import("@/db/queries/projects.ts"));
   ({ insertProjectMember } = await import("@/db/queries/members.ts"));
-  ({ insertTask } = await import("@/db/queries/scheduled-tasks.ts"));
+  ({ insertTask } = await import("@/db/queries/tasks.ts"));
   ({ getRunsByTask } = await import("@/db/queries/task-runs.ts"));
   ({ runScriptTask, validateScriptPath } = await import(
-    "@/lib/scheduling/script-runner.ts"
+    "@/lib/tasks/script-runner.ts"
   ));
   ({ buildCliHandlerApp } = await import("@/cli-handlers/index.ts"));
-  ({ _clearFires } = await import("@/lib/scheduling/script-fire-registry.ts"));
+  ({ _clearFires } = await import("@/lib/tasks/script-fire-registry.ts"));
 
   // Stand up an in-process proxy so the script (spawned via `bun run`) can
   // POST to /v1/proxy/zero/trigger/fire. The script-runner stamps

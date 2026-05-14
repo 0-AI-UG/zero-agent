@@ -19,8 +19,8 @@ import { indexFileContent } from "@/db/queries/search.ts";
 import { writeProjectFile, deleteProjectRoot } from "@/lib/projects/fs-ops.ts";
 import { handleError, formatProject, verifyProjectOwnership, verifyProjectAccess } from "@/routes/utils.ts";
 import { insertProjectMember, getMemberRole, getMemberCount } from "@/db/queries/members.ts";
-import { createHeartbeatTask } from "@/lib/scheduling/heartbeat.ts";
-import { createDefaultTasks } from "@/lib/scheduling/default-tasks.ts";
+import { createHeartbeatTask } from "@/lib/tasks/heartbeat.ts";
+import { createDefaultTasks } from "@/lib/tasks/default-tasks.ts";
 
 type RequestWithId = Request & { params: { id: string } };
 

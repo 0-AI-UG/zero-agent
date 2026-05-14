@@ -11,7 +11,7 @@ import {
   deleteChat,
 } from "@/db/queries/chats.ts";
 import type { ChatRow } from "@/db/types.ts";
-import { events } from "@/lib/scheduling/events.ts";
+import { events } from "@/lib/tasks/events.ts";
 import { semanticSearch } from "@/lib/search/vectors.ts";
 import { ValidationError } from "@/lib/utils/errors.ts";
 

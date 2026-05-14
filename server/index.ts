@@ -63,7 +63,7 @@ import {
   handleDeleteTask,
   handleRunTaskNow,
   handleGetTaskRuns,
-} from "@/routes/scheduled-tasks.ts";
+} from "@/routes/tasks.ts";
 import {
   handleListMembers,
   handleInviteMember,
@@ -137,7 +137,7 @@ import {
   handleDeleteSkill,
 } from "@/routes/skills.ts";
 
-import { startScheduler, stopScheduler } from "@/lib/scheduling/scheduler.ts";
+import { startScheduler, stopScheduler } from "@/lib/tasks/scheduler.ts";
 import { requestShutdown, drainActiveRuns, isShuttingDown } from "@/lib/durability/shutdown.ts";
 import { pruneOrphanedMessageVectors } from "@/lib/search/vectors.ts";
 import { handleListUsers, handleCreateUser, handleDeleteUser, handleUpdateUser } from "@/routes/admin.ts";
@@ -571,7 +571,7 @@ startScheduler();
 // here just installs the idle-eviction sweep + frame event emitter wiring.
 startBrowserPool();
 
-import { startEventTriggers, stopAllEventTriggers } from "@/lib/scheduling/event-trigger.ts";
+import { startEventTriggers, stopAllEventTriggers } from "@/lib/tasks/event-trigger.ts";
 startEventTriggers();
 
 // Register the global Telegram provider + wire webhook or start the long-poller.

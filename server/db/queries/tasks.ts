@@ -1,6 +1,6 @@
 import { db, generateId } from "@/db/index.ts";
-import type { ScheduledTaskRow } from "@/db/types.ts";
-import { computeNextRun, formatDateForSQLite } from "@/lib/scheduling/schedule-parser.ts";
+import type { TaskRow } from "@/db/types.ts";
+import { computeNextRun, formatDateForSQLite } from "@/lib/tasks/schedule-parser.ts";
 
 const insertStmt = db.prepare(
   "INSERT INTO scheduled_tasks (id, project_id, user_id, name, prompt, schedule, next_run_at, enabled, required_skills, trigger_type, trigger_event, trigger_filter, cooldown_seconds, max_steps, script_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *",
@@ -52,7 +52,7 @@ export function insertTask(
   cooldownSeconds: number = 0,
   maxSteps?: number,
   scriptPath?: string | null,
-): ScheduledTaskRow {
+): TaskRow {
   const id = generateId();
   const nextRunAt = triggerType === "event"
     ? formatDateForSQLite(new Date("2099-01-01"))
@@ -66,22 +66,22 @@ export function insertTask(
     cooldownSeconds,
     maxSteps ?? null,
     scriptPath ?? null,
-  ) as ScheduledTaskRow;
+  ) as TaskRow;
 }
 
-export function getTasksByProject(projectId: string): ScheduledTaskRow[] {
-  return byProjectStmt.all(projectId) as ScheduledTaskRow[];
+export function getTasksByProject(projectId: string): TaskRow[] {
+  return byProjectStmt.all(projectId) as TaskRow[];
 }
 
-export function getTaskById(id: string): ScheduledTaskRow | null {
-  return (byIdStmt.get(id) as ScheduledTaskRow | undefined) ?? null;
+export function getTaskById(id: string): TaskRow | null {
+  return (byIdStmt.get(id) as TaskRow | undefined) ?? null;
 }
 
 export function updateTask(
   id: string,
-  fields: Partial<Pick<ScheduledTaskRow, "name" | "prompt" | "schedule" | "enabled" | "required_skills" | "trigger_type" | "trigger_event" | "trigger_filter" | "cooldown_seconds" | "max_steps" | "script_path">>,
-): ScheduledTaskRow {
-  const task = byIdStmt.get(id) as ScheduledTaskRow | undefined;
+  fields: Partial<Pick<TaskRow, "name" | "prompt" | "schedule" | "enabled" | "required_skills" | "trigger_type" | "trigger_event" | "trigger_filter" | "cooldown_seconds" | "max_steps" | "script_path">>,
+): TaskRow {
+  const task = byIdStmt.get(id) as TaskRow | undefined;
   if (!task) throw new Error("Task not found");
 
   const sets: string[] = [];
@@ -161,15 +161,15 @@ export function updateTask(
   values.push(id);
 
   const sql = `UPDATE scheduled_tasks SET ${sets.join(", ")} WHERE id = ? RETURNING *`;
-  return db.prepare(sql).get(...values) as ScheduledTaskRow;
+  return db.prepare(sql).get(...values) as TaskRow;
 }
 
 export function deleteTask(id: string): void {
   deleteStmt.run(id);
 }
 
-export function getDueTasks(): ScheduledTaskRow[] {
-  return dueStmt.all() as ScheduledTaskRow[];
+export function getDueTasks(): TaskRow[] {
+  return dueStmt.all() as TaskRow[];
 }
 
 export function markTaskRun(id: string, schedule: string): void {
@@ -183,12 +183,12 @@ export function skipTaskRun(id: string, schedule: string): void {
   skipRunStmt.run(nextRunAt, id);
 }
 
-export function getEventTasksForEvent(eventName: string, projectId: string): ScheduledTaskRow[] {
-  return eventTasksStmt.all(eventName, projectId) as ScheduledTaskRow[];
+export function getEventTasksForEvent(eventName: string, projectId: string): TaskRow[] {
+  return eventTasksStmt.all(eventName, projectId) as TaskRow[];
 }
 
-export function getAllEventTasks(): ScheduledTaskRow[] {
-  return allEventTasksStmt.all() as ScheduledTaskRow[];
+export function getAllEventTasks(): TaskRow[] {
+  return allEventTasksStmt.all() as TaskRow[];
 }
 
 /** Update last_run_at and run_count for an event-triggered task (no next_run_at change) */

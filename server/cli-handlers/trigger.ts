@@ -9,14 +9,14 @@
 import type { z } from "zod";
 import type { CliContext } from "./context.ts";
 import { ok, fail } from "./response.ts";
-import { getTaskById } from "@/db/queries/scheduled-tasks.ts";
+import { getTaskById } from "@/db/queries/tasks.ts";
 import {
   getTriggerState,
   setTriggerState,
   deleteTriggerState,
   getAllTriggerState,
 } from "@/db/queries/trigger-state.ts";
-import { recordFire } from "@/lib/scheduling/script-fire-registry.ts";
+import { recordFire } from "@/lib/tasks/script-fire-registry.ts";
 import type {
   TriggerFireInput,
   TriggerStateGetInput,

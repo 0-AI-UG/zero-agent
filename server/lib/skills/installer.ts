@@ -11,7 +11,7 @@ import { promises as fs } from "node:fs";
 import { projectDirFor } from "@/lib/pi/run-turn.ts";
 import { parseSkillMd } from "./parser.ts";
 import { insertSkill, deleteSkill } from "@/db/queries/skills.ts";
-import { events } from "@/lib/scheduling/events.ts";
+import { events } from "@/lib/tasks/events.ts";
 import { log } from "@/lib/utils/logger.ts";
 import type { SkillFrontmatter } from "./types.ts";
 

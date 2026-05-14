@@ -22,7 +22,7 @@ import { runTurn } from "@/lib/pi/run-turn.ts";
 import { resolveModelForPi } from "@/lib/pi/model.ts";
 import { getActiveProvider } from "@/lib/providers/index.ts";
 import { beginChatStream, endChatStream, publishPiEvent } from "@/lib/http/ws.ts";
-import { events as eventBus } from "@/lib/scheduling/events.ts";
+import { events as eventBus } from "@/lib/tasks/events.ts";
 
 import { getProjectById } from "@/db/queries/projects.ts";
 import {

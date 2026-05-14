@@ -1,4 +1,4 @@
-import { insertTask, getTasksByProject } from "@/db/queries/scheduled-tasks.ts";
+import { insertTask, getTasksByProject } from "@/db/queries/tasks.ts";
 
 const HEARTBEAT_NAME = "Project Heartbeat";
 const HEARTBEAT_SCHEDULE = "every 2h";

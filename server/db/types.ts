@@ -111,7 +111,7 @@ export interface TurnSnapshotRow {
   created_at: string;
 }
 
-export interface ScheduledTaskRow {
+export interface TaskRow {
   id: string;
   project_id: string;
   user_id: string;

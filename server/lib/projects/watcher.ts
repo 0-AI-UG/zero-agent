@@ -34,7 +34,7 @@ import {
   removeFileIndex,
 } from "@/db/queries/search.ts";
 import { projectDirFor } from "@/lib/pi/run-turn.ts";
-import { events } from "@/lib/scheduling/events.ts";
+import { events } from "@/lib/tasks/events.ts";
 import { deleteVectorsBySource, embedAndStore } from "@/lib/search/vectors.ts";
 import { log } from "@/lib/utils/logger.ts";
 

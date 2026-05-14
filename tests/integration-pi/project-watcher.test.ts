@@ -19,7 +19,7 @@ let projectsRoot: string;
 let tmpRoot: string;
 
 let attachProjectWatcher: typeof import("@/lib/projects/watcher.ts").attachProjectWatcher;
-let events: typeof import("@/lib/scheduling/events.ts").events;
+let events: typeof import("@/lib/tasks/events.ts").events;
 let insertProject: typeof import("@/db/queries/projects.ts").insertProject;
 let insertUser: typeof import("@/db/queries/users.ts").insertUser;
 
@@ -32,7 +32,7 @@ beforeAll(async () => {
   process.env.BLOB_STORE_DIR = join(tmpRoot, "blobs");
 
   ({ attachProjectWatcher } = await import("@/lib/projects/watcher.ts"));
-  ({ events } = await import("@/lib/scheduling/events.ts"));
+  ({ events } = await import("@/lib/tasks/events.ts"));
   ({ insertProject } = await import("@/db/queries/projects.ts"));
   ({ insertUser } = await import("@/db/queries/users.ts"));
 });

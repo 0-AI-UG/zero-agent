@@ -35,12 +35,12 @@ zero image generate <prompt> [--path <file>]
 ```
 Writes to workspace (`generated/` by default); `--path` overrides destination.
 
-## schedule
+## tasks
 ```
-zero schedule add --name <n> --prompt <p> [--schedule <cron>|--event <e>|--script <path>] [--cooldown <seconds>]
-zero schedule ls
-zero schedule update --task <id> [--name ...] [--prompt ...] [--schedule ...] [--script <path>] [--enabled true|false]
-zero schedule rm --task <id>
+zero tasks add --name <n> --prompt <p> [--schedule <cron>|--event <e>|--script <path>] [--cooldown <seconds>]
+zero tasks ls
+zero tasks update --task <id> [--name ...] [--prompt ...] [--schedule ...] [--script <path>] [--enabled true|false]
+zero tasks rm --task <id>
 ```
 Three trigger types — pick exactly one:
 - `--schedule <cron>` — fires on a cron interval (e.g. `every 10m`, `0 9 * * *`).

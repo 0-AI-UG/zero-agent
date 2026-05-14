@@ -1,4 +1,4 @@
-import { events } from "@/lib/scheduling/events.ts";
+import { events } from "@/lib/tasks/events.ts";
 import { broadcastToProject } from "@/lib/http/ws.ts";
 
 /**

@@ -25,11 +25,11 @@ import { fail, failFromError } from "./response.ts";
 import { handleHealth } from "./health.ts";
 import { handleWebSearch, handleWebFetch } from "./web.ts";
 import {
-  handleScheduleAdd,
-  handleScheduleList,
-  handleScheduleUpdate,
-  handleScheduleRemove,
-} from "./schedule.ts";
+  handleTasksAdd,
+  handleTasksList,
+  handleTasksUpdate,
+  handleTasksRemove,
+} from "./tasks.ts";
 import { handleImageGenerate } from "./image.ts";
 import {
   handleCredsList,
@@ -65,10 +65,10 @@ import {
   HealthInput,
   WebSearchInput,
   WebFetchInput,
-  ScheduleAddInput,
-  ScheduleListInput,
-  ScheduleUpdateInput,
-  ScheduleRemoveInput,
+  TasksAddInput,
+  TasksListInput,
+  TasksUpdateInput,
+  TasksRemoveInput,
   ImageGenerateInput,
   CredsListInput,
   CredsGetInput,
@@ -165,10 +165,10 @@ export function buildCliHandlerApp(): Hono {
   app.post("/zero/web/search", bind(WebSearchInput, handleWebSearch));
   app.post("/zero/web/fetch", bind(WebFetchInput, handleWebFetch));
 
-  app.post("/zero/schedule/add", bind(ScheduleAddInput, handleScheduleAdd));
-  app.post("/zero/schedule/list", bind(ScheduleListInput, handleScheduleList));
-  app.post("/zero/schedule/update", bind(ScheduleUpdateInput, handleScheduleUpdate));
-  app.post("/zero/schedule/remove", bind(ScheduleRemoveInput, handleScheduleRemove));
+  app.post("/zero/tasks/add", bind(TasksAddInput, handleTasksAdd));
+  app.post("/zero/tasks/list", bind(TasksListInput, handleTasksList));
+  app.post("/zero/tasks/update", bind(TasksUpdateInput, handleTasksUpdate));
+  app.post("/zero/tasks/remove", bind(TasksRemoveInput, handleTasksRemove));
 
   app.post("/zero/image/generate", bind(ImageGenerateInput, handleImageGenerate));
 

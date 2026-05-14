@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "@/api/client";
 import { queryKeys } from "@/lib/query-keys";
 
-export interface ScheduledTask {
+export interface Task {
   id: string;
   projectId: string;
   userId: string;
@@ -39,7 +39,7 @@ export function useTasks(projectId: string) {
   return useQuery({
     queryKey: queryKeys.tasks.byProject(projectId),
     queryFn: async () => {
-      const res = await apiFetch<{ tasks: ScheduledTask[] }>(
+      const res = await apiFetch<{ tasks: Task[] }>(
         `/projects/${projectId}/tasks`,
       );
       return res.tasks;
@@ -61,7 +61,7 @@ export function useCreateTask(projectId: string) {
       cooldownSeconds?: number;
       scriptPath?: string | null;
     }) =>
-      apiFetch<{ task: ScheduledTask }>(`/projects/${projectId}/tasks`, {
+      apiFetch<{ task: Task }>(`/projects/${projectId}/tasks`, {
         method: "POST",
         body: JSON.stringify(data),
       }),
@@ -91,7 +91,7 @@ export function useUpdateTask(projectId: string) {
       cooldownSeconds?: number;
       scriptPath?: string | null;
     }) =>
-      apiFetch<{ task: ScheduledTask }>(
+      apiFetch<{ task: Task }>(
         `/projects/${projectId}/tasks/${taskId}`,
         {
           method: "PUT",

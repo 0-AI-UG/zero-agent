@@ -30,7 +30,7 @@ import {
 } from "@/lib/http/ws.ts";
 import { runTurn } from "@/lib/pi/run-turn.ts";
 import { resolveModelForPi } from "@/lib/pi/model.ts";
-import { events } from "@/lib/scheduling/events.ts";
+import { events } from "@/lib/tasks/events.ts";
 
 const chatLog = log.child({ module: "ws-chat" });
 

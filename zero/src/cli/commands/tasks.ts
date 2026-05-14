@@ -1,18 +1,18 @@
-import { schedule } from "../../sdk/schedule.ts";
+import { tasks as tasksSdk } from "../../sdk/tasks.ts";
 import { hasFlag, getOption, printJson } from "../format.ts";
 
-const HELP = `zero schedule - manage scheduled / event / script triggers
+const HELP = `zero tasks - manage scheduled / event / script tasks
 
 Usage:
-  zero schedule add --name <n> --prompt <p>
-                    [--schedule <expr> | --event <name> | --script <path>]
-                    [--schedule <expr>]   (required for --script)
-                    [--cooldown N] [--json]
-  zero schedule ls [--json]
-  zero schedule update --task <id>
-                       [--name <n>] [--prompt <p>] [--schedule <expr>]
-                       [--script <path>] [--enabled true|false] [--json]
-  zero schedule rm --task <id> [--json]
+  zero tasks add --name <n> --prompt <p>
+                 [--schedule <expr> | --event <name> | --script <path>]
+                 [--schedule <expr>]   (required for --script)
+                 [--cooldown N] [--json]
+  zero tasks ls [--json]
+  zero tasks update --task <id>
+                    [--name <n>] [--prompt <p>] [--schedule <expr>]
+                    [--script <path>] [--enabled true|false] [--json]
+  zero tasks rm --task <id> [--json]
 
 Trigger types:
   --schedule <expr>   cron-like interval. Examples: "every 15m", "every 2h",
@@ -51,21 +51,21 @@ Script triggers:
 
   Notes:
     - The script is responsible for writing itself with the file API; the
-      schedule command does NOT create the file for you.
+      tasks command does NOT create the file for you.
     - Default timeout is 30s (ZERO_SCRIPT_TIMEOUT_MS env override).
     - Exiting without calling trigger.fire() records a "no fire" run and
       does NOT wake the agent. trigger.skip() is a no-op alias for clarity.
     - Non-zero exit + no fire is reported as a failed run with stderr.
 `;
 
-export async function scheduleCommand(args: string[]): Promise<number> {
+export async function tasksCommand(args: string[]): Promise<number> {
   const [action, ...rest] = args;
   if (!action || action === "--help" || action === "-h") { process.stdout.write(HELP); return 0; }
 
   if (action === "add") {
     const name = getOption(rest, "--name");
     const prompt = getOption(rest, "--prompt");
-    if (!name || !prompt) { process.stderr.write("zero schedule add: --name and --prompt required\n"); return 2; }
+    if (!name || !prompt) { process.stderr.write("zero tasks add: --name and --prompt required\n"); return 2; }
     const sched = getOption(rest, "--schedule");
     const event = getOption(rest, "--event");
     const script = getOption(rest, "--script");
@@ -75,7 +75,7 @@ export async function scheduleCommand(args: string[]): Promise<number> {
     if (script) {
       triggerType = "script";
       if (!sched) {
-        process.stderr.write("zero schedule add: --schedule is required when using --script (the cron interval the script runs on)\n");
+        process.stderr.write("zero tasks add: --schedule is required when using --script (the cron interval the script runs on)\n");
         return 2;
       }
     } else if (event) {
@@ -84,7 +84,7 @@ export async function scheduleCommand(args: string[]): Promise<number> {
       triggerType = "schedule";
     }
 
-    const data = await schedule.add({
+    const data = await tasksSdk.add({
       name, prompt,
       triggerType,
       schedule: sched,
@@ -98,7 +98,7 @@ export async function scheduleCommand(args: string[]): Promise<number> {
   }
 
   if (action === "ls" || action === "list") {
-    const data = await schedule.list();
+    const data = await tasksSdk.list();
     if (hasFlag(rest, "--json")) printJson(data);
     else for (const t of data.tasks) {
       let trig: string;
@@ -112,9 +112,9 @@ export async function scheduleCommand(args: string[]): Promise<number> {
 
   if (action === "update") {
     const taskId = getOption(rest, "--task");
-    if (!taskId) { process.stderr.write("zero schedule update: --task required\n"); return 2; }
+    if (!taskId) { process.stderr.write("zero tasks update: --task required\n"); return 2; }
     const enabledStr = getOption(rest, "--enabled");
-    const data = await schedule.update({
+    const data = await tasksSdk.update({
       taskId,
       name: getOption(rest, "--name"),
       prompt: getOption(rest, "--prompt"),
@@ -129,13 +129,13 @@ export async function scheduleCommand(args: string[]): Promise<number> {
 
   if (action === "rm" || action === "remove") {
     const taskId = getOption(rest, "--task");
-    if (!taskId) { process.stderr.write("zero schedule rm: --task required\n"); return 2; }
-    const data = await schedule.remove(taskId);
+    if (!taskId) { process.stderr.write("zero tasks rm: --task required\n"); return 2; }
+    const data = await tasksSdk.remove(taskId);
     if (hasFlag(rest, "--json")) printJson(data);
     else process.stdout.write(`removed ${data.deletedTask}\n`);
     return 0;
   }
 
-  process.stderr.write(`zero schedule: unknown action "${action}"\n${HELP}`);
+  process.stderr.write(`zero tasks: unknown action "${action}"\n${HELP}`);
   return 2;
 }
