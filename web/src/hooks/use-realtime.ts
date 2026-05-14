@@ -14,6 +14,20 @@ import { turnDiffsStore } from "@/stores/turn-diffs";
 
 const toastIdForResponse = (responseId: string) => `pending-${responseId}`;
 
+// Coalesce file.changed invalidations per project so a reconcile pass that
+// inserts N files doesn't trigger N refetches of the folder list.
+const FILE_INVALIDATE_DEBOUNCE_MS = 200;
+const pendingFileInvalidations = new Map<string, ReturnType<typeof setTimeout>>();
+function invalidateFilesSoon(projectId: string) {
+  const existing = pendingFileInvalidations.get(projectId);
+  if (existing) clearTimeout(existing);
+  const t = setTimeout(() => {
+    pendingFileInvalidations.delete(projectId);
+    queryClient.invalidateQueries({ queryKey: queryKeys.files.byProject(projectId) });
+  }, FILE_INVALIDATE_DEBOUNCE_MS);
+  pendingFileInvalidations.set(projectId, t);
+}
+
 /**
  * Initializes the WebSocket connection and routes incoming messages
  * to the realtime store and query cache. Call once in the project layout.
@@ -72,9 +86,7 @@ export function useRealtime(projectId: string | undefined) {
           break;
 
         case "file.changed":
-          if (pid) {
-            queryClient.invalidateQueries({ queryKey: queryKeys.files.byProject(pid) });
-          }
+          if (pid) invalidateFilesSoon(pid);
           break;
 
         case "turn.diff.ready": {

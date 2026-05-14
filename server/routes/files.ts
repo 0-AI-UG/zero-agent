@@ -79,10 +79,19 @@ export async function handleListFiles(request: Request): Promise<Response> {
 
     const currentPath = folderPath ?? "/";
 
-    // Self-heal: bring the `files` table in line with disk for this folder
-    // before listing. Cheap (one readdir + a few inserts/deletes) and covers
-    // gaps where `fs.watch` events were missed.
-    await reconcileFolder(projectId, currentPath);
+    // Self-heal: bring the `files` table in line with disk for this folder.
+    // Fire-and-forget — the response returns the current DB snapshot
+    // immediately, and any new rows the reconcile inserts surface via
+    // `file.updated` / `file.deleted` events that the WS bridge broadcasts
+    // back to the client. This lets large folders trickle in instead of
+    // blocking the whole list on a cold readdir + hash + insert pass.
+    reconcileFolder(projectId, currentPath).catch((err) => {
+      routeLog.warn("reconcileFolder failed", {
+        projectId,
+        path: currentPath,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
 
     const files = getFilesByFolder(projectId, folderPath);
     const folders = getFoldersByParent(projectId, currentPath);
