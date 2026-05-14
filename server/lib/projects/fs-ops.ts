@@ -56,7 +56,7 @@ async function ensureUnderProject(
   // planted inside the project from being used to write to /etc, etc.
   // Reads can skip this: the only API surface that can create symlinks
   // inside a project dir is our own pi-config wiring (bundled subagent
-  // .md files, zero-sdk.mjs), and the user already has shell-level read
+  // .md files, the zero-sdk source dir), and the user already has shell-level read
   // access to anything Pi can reach.
   if (!opts.allowSymlinkEscape) {
     const real = await deepestRealpath(abs);

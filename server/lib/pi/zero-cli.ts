@@ -14,22 +14,31 @@ const require = createRequire(import.meta.url);
 
 let cachedBinDir: string | null = null;
 
-function resolveZeroDist(): { cli: string; sdk: string } {
-  // `zero` is a workspace package with `"main": "./dist/sdk.js"` — resolvable
-  // by name. Walk to the package root and pick the dist artifacts.
-  const sdk = require.resolve("zero");
-  const root = path.dirname(path.dirname(sdk));
-  const cli = path.join(root, "dist", "cli.js");
+function resolveZeroPaths(): { cli: string; sdkDir: string; pkgRoot: string } {
+  // `zero` is a workspace package; resolve its package.json to find the
+  // root, then derive the bundled CLI and the SDK source directory. The
+  // SDK is shipped as TypeScript source under src/sdk/ (no bundling) so
+  // the agent can read individual modules.
+  const pkgJson = require.resolve("zero/package.json");
+  const pkgRoot = path.dirname(pkgJson);
+  const cli = path.join(pkgRoot, "dist", "cli.js");
+  const sdkDir = path.join(pkgRoot, "src", "sdk");
   if (!existsSync(cli)) {
     throw new Error(
       `zero CLI not found at ${cli} — run \`bun --filter zero build\` first`,
     );
   }
-  return { cli, sdk };
+  return { cli, sdkDir, pkgRoot };
 }
 
-export function resolveZeroSdkPath(): string {
-  return resolveZeroDist().sdk;
+/** Absolute path to the SDK source directory (src/sdk/). */
+export function resolveZeroSdkDir(): string {
+  return resolveZeroPaths().sdkDir;
+}
+
+/** Absolute path to the zero package root (parent of src/ and dist/). */
+export function resolveZeroPackageRoot(): string {
+  return resolveZeroPaths().pkgRoot;
 }
 
 /**
@@ -39,7 +48,7 @@ export function resolveZeroSdkPath(): string {
 export function ensureZeroOnPath(): string {
   if (cachedBinDir) return cachedBinDir;
 
-  const { cli: cliPath } = resolveZeroDist();
+  const { cli: cliPath } = resolveZeroPaths();
   chmodSync(cliPath, 0o755);
 
   // Co-locate the bin dir with the resolved CLI so it follows the install.

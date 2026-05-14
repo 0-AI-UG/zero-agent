@@ -1,12 +1,14 @@
 /**
  * Build script for the `zero` package.
- * Produces dist/cli.js (executable) and dist/sdk.js (library entry).
+ * Produces dist/cli.js (executable).
  *
- * Strategy: in dev/runtime we use tsx, so this build is only needed for
- * the published shape inside the session container image. We use esbuild
- * if available, otherwise fall back to tsc emit.
+ * The SDK itself is shipped as TypeScript source under src/sdk/ — both
+ * Bun (used to run agent scripts) and tsx (server runtime) execute .ts
+ * directly, and shipping source lets the agent read the individual
+ * module files (web.ts, browser.ts, …) to reverse-engineer the API
+ * instead of staring at one bundled blob.
  */
-import { mkdir, writeFile, chmod, copyFile } from "node:fs/promises";
+import { mkdir, chmod, rm } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -16,9 +18,11 @@ const dist = resolve(root, "dist");
 
 await mkdir(dist, { recursive: true });
 
-// Use Bun's bundler if available (sessions have Bun), otherwise try esbuild.
+// Remove the legacy bundled SDK if a prior build left it behind, so the
+// only resolvable entry is src/sdk/index.ts via package.json.
+await rm(resolve(dist, "sdk.js"), { force: true });
+
 async function build() {
-  // Prefer Bun.build when running under Bun
   if (typeof (globalThis as any).Bun !== "undefined") {
     const Bun = (globalThis as any).Bun;
     await Bun.build({
@@ -28,17 +32,9 @@ async function build() {
       format: "esm",
       naming: "cli.js",
     });
-    await Bun.build({
-      entrypoints: [resolve(root, "src/sdk/index.ts")],
-      outdir: dist,
-      target: "bun",
-      format: "esm",
-      naming: "sdk.js",
-    });
     return;
   }
 
-  // Fallback: try esbuild
   try {
     const esbuild = await import("esbuild");
     await esbuild.build({
@@ -50,14 +46,6 @@ async function build() {
       format: "esm",
       banner: { js: "#!/usr/bin/env node" },
     });
-    await esbuild.build({
-      entryPoints: [resolve(root, "src/sdk/index.ts")],
-      outfile: resolve(dist, "sdk.js"),
-      bundle: true,
-      platform: "node",
-      target: "node20",
-      format: "esm",
-    });
     return;
   } catch {}
 
@@ -66,4 +54,4 @@ async function build() {
 
 await build();
 await chmod(resolve(dist, "cli.js"), 0o755);
-console.log("zero: built dist/cli.js and dist/sdk.js");
+console.log("zero: built dist/cli.js (SDK ships as source under src/sdk/)");

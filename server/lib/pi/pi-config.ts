@@ -26,7 +26,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import { sha256Hex } from "@/lib/utils/hash.ts";
-import { resolveZeroSdkPath } from "./zero-cli.ts";
+import { resolveZeroSdkDir } from "./zero-cli.ts";
 
 export interface PiConfigInputs {
   projectDir: string;
@@ -133,7 +133,16 @@ export function ensurePiConfig(opts: PiConfigInputs): {
     : DEFAULT_SYSTEM_PROMPT;
   writeIfChanged(path.join(configDir, "SYSTEM.md"), systemPrompt);
 
-  ensureSymlink(path.join(configDir, "zero-sdk.mjs"), resolveZeroSdkPath());
+  // Surface the SDK as a directory of source files (.pi/zero-sdk/web.ts,
+  // browser.ts, …) rather than a single bundled .mjs — the agent can
+  // read individual modules to learn the API. Replace any pre-existing
+  // file symlink from older versions.
+  const sdkLink = path.join(configDir, "zero-sdk");
+  const legacySdkLink = path.join(configDir, "zero-sdk.mjs");
+  if (existsSync(legacySdkLink)) {
+    try { unlinkSync(legacySdkLink); } catch {}
+  }
+  ensureSymlink(sdkLink, resolveZeroSdkDir());
 
   // Materialize bundled subagent definitions into <project>/.pi/agents/*.md
   // so the subagent extension's project-scope discovery picks them up.

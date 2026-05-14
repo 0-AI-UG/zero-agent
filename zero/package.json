@@ -7,16 +7,11 @@
     "zero": "./dist/cli.js"
   },
   "exports": {
-    ".": {
-      "types": "./src/sdk/index.ts",
-      "default": "./dist/sdk.js"
-    },
-    "./schemas": {
-      "types": "./src/sdk/schemas.ts",
-      "default": "./src/sdk/schemas.ts"
-    }
+    ".": "./src/sdk/index.ts",
+    "./schemas": "./src/sdk/schemas.ts",
+    "./package.json": "./package.json"
   },
-  "main": "./dist/sdk.js",
+  "main": "./src/sdk/index.ts",
   "types": "./src/sdk/index.ts",
   "scripts": {
     "build": "bun build.ts",

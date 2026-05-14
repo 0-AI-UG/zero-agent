@@ -38,7 +38,7 @@ import {
   DANGEROUS_FILES,
   DANGEROUS_DIRECTORIES,
 } from "@anthropic-ai/sandbox-runtime/dist/sandbox/sandbox-utils.js";
-import { resolveZeroSdkPath } from "../../zero-cli.ts";
+import { resolveZeroPackageRoot } from "../../zero-cli.ts";
 
 // Entries we want sandbox-runtime to stop treating as mandatory write denies.
 // Keep blocks on shell rc files (.bashrc/.zshrc/etc.) and .gitconfig —
@@ -215,10 +215,7 @@ export default function (pi: ExtensionAPI) {
   // source — useful for the agent to inspect when figuring out shapes.
   const readOnlyRoots: string[] = [];
   try {
-    const zeroPackageRoot = realpathSync(
-      path.dirname(path.dirname(resolveZeroSdkPath())),
-    );
-    readOnlyRoots.push(zeroPackageRoot);
+    readOnlyRoots.push(realpathSync(resolveZeroPackageRoot()));
   } catch {
     // zero CLI not built yet — agent can still read project files; just no
     // SDK/USAGE access via the read tool. Bash is unaffected.
