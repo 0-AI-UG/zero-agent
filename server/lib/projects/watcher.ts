@@ -42,8 +42,6 @@ const watcherLog = log.child({ module: "project-watcher" });
 
 const EXCLUDED_PREFIXES = [
   ".git-snapshots",
-  ".pi-sessions",
-  ".pi",
   ".git",
   "node_modules",
   ".venv",
