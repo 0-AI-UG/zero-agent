@@ -106,6 +106,7 @@ import {
 } from "@/lib/telegram-global/poller.ts";
 import { ensureWebhookRegistered } from "@/lib/telegram-global/bot.ts";
 import { startupExpirySweep } from "@/lib/pending-responses/store.ts";
+import { registerTaskNotifier } from "@/lib/notifications/task-notifier.ts";
 import {
   handleGetVapidKey,
   handlePushSubscribe,
@@ -597,6 +598,9 @@ void startAllMailboxes().catch((err) => log.error("email mailboxes start failed"
 
 // Sweep pending-responses that expired while the server was down.
 startupExpirySweep();
+
+// Subscribe task lifecycle events into the notification dispatcher.
+registerTaskNotifier();
 
 // ── Heap monitoring + self-defense (every 60s) ──
 // heap cap is 400MB (--max-old-space-size=400). Above 300MB we aggressively
