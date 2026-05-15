@@ -7,6 +7,7 @@ export interface AdminInvitation {
   status: "pending" | "accepted" | "expired";
   canCreateProjects: boolean;
   tokenLimit: number | null;
+  costLimit: number | null;
   expiresAt: number;
   acceptedAt: number | null;
   createdAt: number;
@@ -16,6 +17,7 @@ export interface CreateInvitationInput {
   username: string;
   canCreateProjects?: boolean;
   tokenLimit?: number | null;
+  costLimit?: number | null;
   expiresInDays?: number;
 }
 

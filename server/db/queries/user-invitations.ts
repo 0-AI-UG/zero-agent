@@ -7,6 +7,7 @@ export interface UserInvitationRow {
   inviter_id: string;
   can_create_projects: number;
   token_limit: number | null;
+  cost_limit: number | null;
   expires_at: number;
   accepted_at: number | null;
   accepted_user_id: string | null;
@@ -19,6 +20,7 @@ export interface CreateInvitationInput {
   inviterId: string;
   canCreateProjects: boolean;
   tokenLimit: number | null;
+  costLimit: number | null;
   expiresAt: number;
 }
 
@@ -27,8 +29,8 @@ export function createInvitation(input: CreateInvitationInput): UserInvitationRo
   const now = Math.floor(Date.now() / 1000);
   db.prepare(
     `INSERT INTO user_invitations
-      (id, token_hash, username, inviter_id, can_create_projects, token_limit, expires_at, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      (id, token_hash, username, inviter_id, can_create_projects, token_limit, cost_limit, expires_at, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
     input.tokenHash,
@@ -36,6 +38,7 @@ export function createInvitation(input: CreateInvitationInput): UserInvitationRo
     input.inviterId,
     input.canCreateProjects ? 1 : 0,
     input.tokenLimit,
+    input.costLimit,
     input.expiresAt,
     now,
   );

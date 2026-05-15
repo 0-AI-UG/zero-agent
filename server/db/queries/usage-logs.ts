@@ -95,6 +95,27 @@ export function getUserTokenTotalsByIds(userIds: string[]): Record<string, numbe
   return result;
 }
 
+export function getUserUsageTotals(userId: string): { tokens: number; cost: number } {
+  const row = db.prepare(
+    `SELECT coalesce(sum(input_tokens + output_tokens), 0) as tokens,
+            coalesce(sum(cost_input + cost_output), 0) as cost
+     FROM usage_logs WHERE user_id = ?`
+  ).get(userId) as { tokens: number; cost: number };
+  return row;
+}
+
+export function getUserCostTotalsByIds(userIds: string[]): Record<string, number> {
+  if (userIds.length === 0) return {};
+  const placeholders = userIds.map(() => "?").join(",");
+  const rows = db.prepare(
+    `SELECT user_id as userId, coalesce(sum(cost_input + cost_output), 0) as total
+     FROM usage_logs WHERE user_id IN (${placeholders}) GROUP BY user_id`
+  ).all(...userIds) as { userId: string; total: number }[];
+  const result: Record<string, number> = {};
+  for (const r of rows) result[r.userId] = r.total;
+  return result;
+}
+
 export function getUsageByUser(opts?: { from?: string; to?: string }): UsageByUser[] {
   let sql = `SELECT u.user_id as userId, users.username as username, count(*) as totalRequests, coalesce(sum(u.input_tokens),0) as totalInputTokens, coalesce(sum(u.output_tokens),0) as totalOutputTokens, coalesce(sum(u.cost_input + u.cost_output),0) as totalCost FROM usage_logs u LEFT JOIN users ON u.user_id = users.id`;
   const conditions: string[] = [];

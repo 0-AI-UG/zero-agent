@@ -48,7 +48,8 @@ import {
 } from "@/lib/snapshots/snapshot-service.ts";
 import { attachProjectWatcher } from "@/lib/projects/watcher.ts";
 import { getProjectById } from "@/db/queries/projects.ts";
-import { insertUsageLog } from "@/db/queries/usage-logs.ts";
+import { getUserById } from "@/db/queries/users.ts";
+import { getUserUsageTotals, insertUsageLog } from "@/db/queries/usage-logs.ts";
 import { log } from "@/lib/utils/logger.ts";
 
 const turnLog = log.child({ module: "pi-run-turn" });
@@ -112,6 +113,8 @@ export function sessionsDirFor(projectId: string): string {
 }
 
 export async function runTurn(opts: RunTurnOptions): Promise<TurnResult> {
+  enforceUsageLimits(opts.userId);
+
   const runId = `run-${Date.now()}-${randomBytes(4).toString("hex")}`;
   const projectDir = projectDirFor(opts.projectId);
   const sessionsDir = sessionsDirFor(opts.projectId);
@@ -304,6 +307,26 @@ export async function runTurn(opts: RunTurnOptions): Promise<TurnResult> {
   });
 
   return { runId, sessionFile, events: count, aborted, truncated, truncationReason };
+}
+
+function enforceUsageLimits(userId: string): void {
+  if (!userId) return;
+  const user = getUserById(userId);
+  if (!user) return;
+  const tokenLimit = user.token_limit ?? null;
+  const costLimit = user.cost_limit ?? null;
+  if (tokenLimit == null && costLimit == null) return;
+  const totals = getUserUsageTotals(userId);
+  if (tokenLimit != null && totals.tokens >= tokenLimit) {
+    throw new Error(
+      `Token limit reached (${totals.tokens.toLocaleString()} / ${tokenLimit.toLocaleString()}). Contact your admin to raise it.`,
+    );
+  }
+  if (costLimit != null && totals.cost >= costLimit) {
+    throw new Error(
+      `Cost limit reached ($${totals.cost.toFixed(2)} / $${costLimit.toFixed(2)}). Contact your admin to raise it.`,
+    );
+  }
 }
 
 function recordTurnUsage(
