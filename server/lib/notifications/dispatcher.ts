@@ -251,13 +251,13 @@ async function deliverChannel(
         return sent > 0;
       }
       case "push": {
-        await sendPushToUser(userId, {
+        const result = await sendPushToUser(userId, {
           title: input.title,
           body: input.body.slice(0, 300),
           url: input.url,
           tag: `${input.kind}-${ctx.pendingResponseId ?? "broadcast"}`,
         });
-        return true;
+        return result.succeeded > 0;
       }
       case "telegram": {
         if (!telegramNotifier) return false;

@@ -4,6 +4,8 @@ import { getVapidKeys } from "@/lib/notifications/vapid.ts";
 import {
   upsertSubscription,
   deleteSubscription,
+  deleteAllSubscriptionsByUser,
+  getSubscriptionsByUserId,
 } from "@/db/queries/push-subscriptions.ts";
 import { dispatch } from "@/lib/notifications/dispatcher.ts";
 
@@ -67,6 +69,36 @@ export async function handlePushUnsubscribe(req: Request): Promise<Response> {
 
     deleteSubscription(endpoint);
     return Response.json({ ok: true });
+  } catch (e) {
+    return handleError(e);
+  }
+}
+
+/**
+ * Account-level push status. `subscribed` reflects whether *any* of the
+ * user's devices have an active subscription. The notifications UI is keyed
+ * off this so the toggle reads the same on every device.
+ */
+export async function handlePushStatus(req: Request): Promise<Response> {
+  try {
+    const { userId } = await authenticateRequest(req);
+    const subs = getSubscriptionsByUserId(userId);
+    return Response.json({ subscribed: subs.length > 0, deviceCount: subs.length });
+  } catch (e) {
+    return handleError(e);
+  }
+}
+
+/**
+ * Disable push for the entire account by removing every subscription row.
+ * Each device's local `pushManager.unsubscribe()` is best-effort and runs
+ * client-side after this returns.
+ */
+export async function handlePushDisableAll(req: Request): Promise<Response> {
+  try {
+    const { userId } = await authenticateRequest(req);
+    const removed = deleteAllSubscriptionsByUser(userId);
+    return Response.json({ ok: true, removed });
   } catch (e) {
     return handleError(e);
   }

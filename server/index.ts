@@ -110,6 +110,8 @@ import {
   handleGetVapidKey,
   handlePushSubscribe,
   handlePushUnsubscribe,
+  handlePushStatus,
+  handlePushDisableAll,
   handleNotificationTest,
 } from "@/routes/push.ts";
 import {
@@ -374,8 +376,10 @@ app.put("/api/me/telegram/active-project", h(handleTelegramSetActiveProject));
 
 // Web Push (authenticated)
 app.get("/api/push/vapid-key", h(handleGetVapidKey));
+app.get("/api/push/status", h(handlePushStatus));
 app.post("/api/push/subscribe", h(handlePushSubscribe));
 app.delete("/api/push/subscribe", h(handlePushUnsubscribe));
+app.delete("/api/push/all", h(handlePushDisableAll));
 app.post("/api/notifications/test", h(handleNotificationTest));
 
 // Notification subscriptions (per-user kind × channel opt-out)
