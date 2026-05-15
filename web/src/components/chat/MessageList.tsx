@@ -95,7 +95,7 @@ function isVisibleMessage(msg: AgentMessage, executions: Map<string, ToolExecuti
 function lastMessageHasInlineError(messages: AgentMessage[]): boolean {
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i];
-    if (m.role === "assistant") return !!m.errorMessage;
+    if (m?.role === "assistant") return !!m.errorMessage;
   }
   return false;
 }
