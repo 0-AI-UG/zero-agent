@@ -88,7 +88,7 @@ export function AccountPage() {
 
       {/* Content */}
       <div ref={contentRef} className="flex-1 overflow-y-auto">
-        <div className="px-4 md:px-10 pt-6 md:pt-10 pb-8 space-y-10">
+        <div className="max-w-3xl px-4 md:px-10 pt-6 md:pt-10 pb-8 space-y-10">
 
           {/* General */}
           <div id="section-general">
