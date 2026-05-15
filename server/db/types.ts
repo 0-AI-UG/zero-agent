@@ -6,6 +6,7 @@ export interface UserRow {
   can_create_projects?: number;
   companion_sharing?: number;
   token_limit?: number | null;
+  cost_limit?: number | null;
   token_version: number;
   created_at: string;
 }

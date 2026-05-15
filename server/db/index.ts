@@ -23,12 +23,13 @@ db.exec(`
     can_create_projects INTEGER NOT NULL DEFAULT 1,
     companion_sharing   INTEGER NOT NULL DEFAULT 0,
     token_limit         INTEGER,
+    cost_limit          REAL,
     token_version       INTEGER NOT NULL DEFAULT 0,
     created_at          TEXT NOT NULL DEFAULT (datetime('now'))
   )
 `);
 
-// Migration: drop legacy TOTP columns and add token_version on existing DBs.
+// Migration: drop legacy TOTP columns and add token_version / cost_limit on existing DBs.
 {
   const cols = db.prepare("PRAGMA table_info(users)").all() as { name: string }[];
   if (cols.some((c) => c.name === "totp_secret")) {
@@ -39,6 +40,9 @@ db.exec(`
   }
   if (!cols.some((c) => c.name === "token_version")) {
     db.exec("ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0");
+  }
+  if (!cols.some((c) => c.name === "cost_limit")) {
+    db.exec("ALTER TABLE users ADD COLUMN cost_limit REAL");
   }
 }
 db.exec(`DROP TABLE IF EXISTS totp_backup_codes`);
@@ -198,6 +202,7 @@ db.exec(`
     inviter_id          TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     can_create_projects INTEGER NOT NULL DEFAULT 1,
     token_limit         INTEGER,
+    cost_limit          REAL,
     expires_at          INTEGER NOT NULL,
     accepted_at         INTEGER,
     accepted_user_id    TEXT REFERENCES users(id) ON DELETE SET NULL,
@@ -205,6 +210,12 @@ db.exec(`
   )
 `);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_user_invitations_token ON user_invitations(token_hash)`);
+{
+  const cols = db.prepare("PRAGMA table_info(user_invitations)").all() as { name: string }[];
+  if (!cols.some((c) => c.name === "cost_limit")) {
+    db.exec("ALTER TABLE user_invitations ADD COLUMN cost_limit REAL");
+  }
+}
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS todos (

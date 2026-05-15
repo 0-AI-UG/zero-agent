@@ -5,7 +5,7 @@ import { db, generateId } from "@/db/index.ts";
 import { handleError } from "@/routes/utils.ts";
 import { log } from "@/lib/utils/logger.ts";
 import type { UserRow } from "@/db/types.ts";
-import { getUserTokenTotalsByIds } from "@/db/queries/usage-logs.ts";
+import { getUserTokenTotalsByIds, getUserCostTotalsByIds } from "@/db/queries/usage-logs.ts";
 
 const adminLog = log.child({ module: "admin" });
 
@@ -14,10 +14,12 @@ export async function handleListUsers(request: Request): Promise<Response> {
     await requireAdmin(request);
 
     const users = db.prepare(
-      "SELECT id, username, is_admin, can_create_projects, token_limit, created_at FROM users ORDER BY created_at"
-    ).all() as Pick<UserRow, "id" | "username" | "is_admin" | "can_create_projects" | "token_limit" | "created_at">[];
+      "SELECT id, username, is_admin, can_create_projects, token_limit, cost_limit, created_at FROM users ORDER BY created_at"
+    ).all() as Pick<UserRow, "id" | "username" | "is_admin" | "can_create_projects" | "token_limit" | "cost_limit" | "created_at">[];
 
-    const tokensUsedMap = getUserTokenTotalsByIds(users.map((u) => u.id));
+    const ids = users.map((u) => u.id);
+    const tokensUsedMap = getUserTokenTotalsByIds(ids);
+    const costUsedMap = getUserCostTotalsByIds(ids);
 
     return Response.json(
       {
@@ -28,6 +30,8 @@ export async function handleListUsers(request: Request): Promise<Response> {
           canCreateProjects: u.can_create_projects !== 0,
           tokenLimit: u.token_limit ?? null,
           tokensUsed: tokensUsedMap[u.id] ?? 0,
+          costLimit: u.cost_limit ?? null,
+          costUsed: costUsedMap[u.id] ?? 0,
           createdAt: u.created_at,
         })),
       },
@@ -150,6 +154,21 @@ export async function handleUpdateUser(request: Request): Promise<Response> {
           );
         }
         db.prepare("UPDATE users SET token_limit = ? WHERE id = ?").run(limit, targetId);
+      }
+    }
+
+    if (body.costLimit !== undefined) {
+      if (body.costLimit === null) {
+        db.prepare("UPDATE users SET cost_limit = NULL WHERE id = ?").run(targetId);
+      } else {
+        const limit = Number(body.costLimit);
+        if (!Number.isFinite(limit) || limit < 0) {
+          return Response.json(
+            { error: "costLimit must be a non-negative number or null" },
+            { status: 400, headers: corsHeaders }
+          );
+        }
+        db.prepare("UPDATE users SET cost_limit = ? WHERE id = ?").run(limit, targetId);
       }
     }
 

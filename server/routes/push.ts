@@ -5,6 +5,7 @@ import {
   upsertSubscription,
   deleteSubscription,
 } from "@/db/queries/push-subscriptions.ts";
+import { dispatch } from "@/lib/notifications/dispatcher.ts";
 
 export async function handleGetVapidKey(req: Request): Promise<Response> {
   try {
@@ -27,6 +28,29 @@ export async function handlePushSubscribe(req: Request): Promise<Response> {
 
     upsertSubscription(userId, endpoint, p256dh, auth);
     return Response.json({ ok: true });
+  } catch (e) {
+    return handleError(e);
+  }
+}
+
+export async function handleNotificationTest(req: Request): Promise<Response> {
+  try {
+    const { userId } = await authenticateRequest(req);
+    const result = await dispatch({
+      userIds: [userId],
+      kind: "test",
+      title: "Zero Agent",
+      body: "Test notification — delivery is working.",
+      url: "/",
+    });
+    const perUser = result.perUser[userId];
+    return Response.json({
+      ok: true,
+      delivered: result.delivered,
+      availability: perUser?.availability,
+      skipped: perUser?.skipped ?? [],
+      failed: perUser?.failed ?? [],
+    });
   } catch (e) {
     return handleError(e);
   }

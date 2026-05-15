@@ -50,6 +50,7 @@ function serializeInvitation(row: UserInvitationRow) {
     status,
     canCreateProjects: row.can_create_projects === 1,
     tokenLimit: row.token_limit,
+    costLimit: row.cost_limit,
     expiresAt: row.expires_at,
     acceptedAt: row.accepted_at,
     createdAt: row.created_at,
@@ -60,6 +61,7 @@ const createSchema = z.object({
   username: usernameSchema,
   canCreateProjects: z.boolean().optional(),
   tokenLimit: z.number().int().nonnegative().nullable().optional(),
+  costLimit: z.number().nonnegative().nullable().optional(),
   expiresInDays: z.number().int().positive().max(365).optional(),
 });
 
@@ -99,6 +101,7 @@ export async function handleCreateInvitation(request: Request): Promise<Response
       inviterId: userId,
       canCreateProjects: body.canCreateProjects ?? true,
       tokenLimit: body.tokenLimit ?? null,
+      costLimit: body.costLimit ?? null,
       expiresAt,
     });
 
@@ -188,8 +191,8 @@ export async function handleAcceptUserInvitation(request: Request): Promise<Resp
     const newUser = insertUser(row.username, passwordHash);
 
     db.prepare(
-      "UPDATE users SET can_create_projects = ?, token_limit = ? WHERE id = ?",
-    ).run(row.can_create_projects, row.token_limit, newUser.id);
+      "UPDATE users SET can_create_projects = ?, token_limit = ?, cost_limit = ? WHERE id = ?",
+    ).run(row.can_create_projects, row.token_limit, row.cost_limit, newUser.id);
 
     markInvitationAccepted(row.id, newUser.id);
     inviteLog.info("invitation accepted", { id: row.id, userId: newUser.id, username: row.username });

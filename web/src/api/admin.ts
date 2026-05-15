@@ -8,6 +8,8 @@ export interface AdminUser {
   canCreateProjects: boolean;
   tokenLimit: number | null;
   tokensUsed: number;
+  costLimit: number | null;
+  costUsed: number;
   createdAt: string;
 }
 
@@ -99,11 +101,12 @@ export function useUpdateSettings() {
 export function useUpdateUser() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ userId, password, canCreateProjects, tokenLimit }: { userId: string; password?: string; canCreateProjects?: boolean; tokenLimit?: number | null }) => {
+    mutationFn: async ({ userId, password, canCreateProjects, tokenLimit, costLimit }: { userId: string; password?: string; canCreateProjects?: boolean; tokenLimit?: number | null; costLimit?: number | null }) => {
       const body: Record<string, unknown> = {};
       if (password !== undefined) body.password = password;
       if (canCreateProjects !== undefined) body.canCreateProjects = canCreateProjects;
       if (tokenLimit !== undefined) body.tokenLimit = tokenLimit;
+      if (costLimit !== undefined) body.costLimit = costLimit;
       return apiFetch<{ success: boolean }>(`/admin/users/${userId}`, {
         method: "PUT",
         body: JSON.stringify(body),

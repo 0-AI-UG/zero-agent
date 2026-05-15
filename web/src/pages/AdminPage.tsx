@@ -1270,6 +1270,9 @@ function UserManagementSection() {
                 <TableHead className="text-xs font-medium text-muted-foreground hidden md:table-cell">
                   Tokens
                 </TableHead>
+                <TableHead className="text-xs font-medium text-muted-foreground hidden md:table-cell">
+                  Cost
+                </TableHead>
                 <TableHead className="text-xs font-medium text-muted-foreground w-10">
                   <span className="sr-only">Actions</span>
                 </TableHead>
@@ -1365,6 +1368,13 @@ function UserRow({ user, index }: { user: AdminUser; index: number }) {
           {user.tokenLimit == null ? "∞" : user.tokenLimit.toLocaleString()}
         </span>
       </TableCell>
+      <TableCell className="hidden md:table-cell">
+        <span className="text-xs text-muted-foreground tabular-nums">
+          {formatCost(user.costUsed)}
+          {" / "}
+          {user.costLimit == null ? "∞" : formatCost(user.costLimit)}
+        </span>
+      </TableCell>
       <TableCell>
         <UserActions user={user} />
       </TableCell>
@@ -1399,7 +1409,7 @@ function UserActions({ user }: { user: AdminUser }) {
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => setLimitOpen(true)}>
             <GaugeIcon />
-            Set token limit
+            Set usage limits
           </DropdownMenuItem>
           {!user.isAdmin && (
             <DropdownMenuItem
@@ -1443,7 +1453,7 @@ function UserActions({ user }: { user: AdminUser }) {
         onOpenChange={setResetOpen}
       />
 
-      <TokenLimitDialog
+      <UsageLimitDialog
         user={user}
         open={limitOpen}
         onOpenChange={setLimitOpen}
@@ -1485,6 +1495,7 @@ function CreateInvitationDialog() {
   const [username, setUsername] = useState("");
   const [canCreateProjects, setCanCreateProjects] = useState(true);
   const [tokenLimit, setTokenLimit] = useState("");
+  const [costLimit, setCostLimit] = useState("");
   const [expiresInDays, setExpiresInDays] = useState("7");
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -1495,6 +1506,7 @@ function CreateInvitationDialog() {
     setUsername("");
     setCanCreateProjects(true);
     setTokenLimit("");
+    setCostLimit("");
     setExpiresInDays("7");
     setInviteUrl(null);
     setCopied(false);
@@ -1504,6 +1516,11 @@ function CreateInvitationDialog() {
     const parsedLimit = tokenLimit.trim() === "" ? null : Number(tokenLimit);
     if (parsedLimit !== null && (!Number.isFinite(parsedLimit) || parsedLimit < 0)) {
       toast.error("Token limit must be a non-negative number");
+      return;
+    }
+    const parsedCost = costLimit.trim() === "" ? null : Number(costLimit);
+    if (parsedCost !== null && (!Number.isFinite(parsedCost) || parsedCost < 0)) {
+      toast.error("Cost limit must be a non-negative number");
       return;
     }
     const parsedDays = Number(expiresInDays);
@@ -1516,6 +1533,7 @@ function CreateInvitationDialog() {
         username: username.trim(),
         canCreateProjects,
         tokenLimit: parsedLimit,
+        costLimit: parsedCost,
         expiresInDays: parsedDays,
       },
       {
@@ -1606,6 +1624,17 @@ function CreateInvitationDialog() {
                 placeholder="Unlimited"
                 value={tokenLimit}
                 onChange={(e) => setTokenLimit(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Cost limit, USD (optional)</label>
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="Unlimited"
+                value={costLimit}
+                onChange={(e) => setCostLimit(e.target.value)}
               />
             </div>
             <div className="space-y-2">
@@ -1838,7 +1867,7 @@ function ResetPasswordDialog({
   );
 }
 
-function TokenLimitDialog({
+function UsageLimitDialog({
   user,
   open,
   onOpenChange,
@@ -1848,25 +1877,46 @@ function TokenLimitDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const updateUser = useUpdateUser();
-  const [value, setValue] = useState<string>(user.tokenLimit == null ? "" : String(user.tokenLimit));
+  const [tokenValue, setTokenValue] = useState<string>(user.tokenLimit == null ? "" : String(user.tokenLimit));
+  const [costValue, setCostValue] = useState<string>(user.costLimit == null ? "" : String(user.costLimit));
 
   useEffect(() => {
-    if (open) setValue(user.tokenLimit == null ? "" : String(user.tokenLimit));
-  }, [open, user.tokenLimit]);
+    if (open) {
+      setTokenValue(user.tokenLimit == null ? "" : String(user.tokenLimit));
+      setCostValue(user.costLimit == null ? "" : String(user.costLimit));
+    }
+  }, [open, user.tokenLimit, user.costLimit]);
 
-  const parsed = value.trim() === "" ? null : Number(value);
-  const isValid =
-    parsed === null || (Number.isInteger(parsed) && parsed >= 0);
+  const parsedTokens = tokenValue.trim() === "" ? null : Number(tokenValue);
+  const tokensValid =
+    parsedTokens === null || (Number.isInteger(parsedTokens) && parsedTokens >= 0);
 
-  function save(limit: number | null) {
+  const parsedCost = costValue.trim() === "" ? null : Number(costValue);
+  const costValid =
+    parsedCost === null || (Number.isFinite(parsedCost) && parsedCost >= 0);
+
+  const isValid = tokensValid && costValid;
+
+  function save() {
     updateUser.mutate(
-      { userId: user.id, tokenLimit: limit },
+      { userId: user.id, tokenLimit: parsedTokens, costLimit: parsedCost },
       {
         onSuccess: () => {
           onOpenChange(false);
-          toast.success(
-            limit === null ? "Token limit cleared" : `Token limit set to ${limit.toLocaleString()}`,
-          );
+          toast.success("Usage limits updated");
+        },
+        onError: (err) => toast.error(err.message),
+      },
+    );
+  }
+
+  function clearAll() {
+    updateUser.mutate(
+      { userId: user.id, tokenLimit: null, costLimit: null },
+      {
+        onSuccess: () => {
+          onOpenChange(false);
+          toast.success("Usage limits cleared");
         },
         onError: (err) => toast.error(err.message),
       },
@@ -1877,17 +1927,17 @@ function TokenLimitDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle className="font-display">Set token limit</DialogTitle>
+          <DialogTitle className="font-display">Set usage limits</DialogTitle>
           <DialogDescription>
-            Cap total input+output tokens for{" "}
+            Cap usage for{" "}
             <span className="font-medium text-foreground">{user.username}</span>.
-            Chat requests are blocked once the cap is reached. Leave empty for unlimited.
+            Leave a field empty for unlimited.
           </DialogDescription>
         </DialogHeader>
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            if (isValid) save(parsed);
+            if (isValid) save();
           }}
           className="space-y-4"
         >
@@ -1898,28 +1948,47 @@ function TokenLimitDialog({
               min={0}
               step={1}
               placeholder="Unlimited"
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
+              value={tokenValue}
+              onChange={(e) => setTokenValue(e.target.value)}
               autoFocus
             />
             <p className="text-[11px] text-muted-foreground tabular-nums">
               Used: {user.tokensUsed.toLocaleString()} tokens
             </p>
-            {!isValid && (
+            {!tokensValid && (
               <p className="text-[11px] text-destructive">
                 Must be a non-negative integer.
               </p>
             )}
           </div>
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Cost limit (USD)</label>
+            <Input
+              type="number"
+              min={0}
+              step="0.01"
+              placeholder="Unlimited"
+              value={costValue}
+              onChange={(e) => setCostValue(e.target.value)}
+            />
+            <p className="text-[11px] text-muted-foreground tabular-nums">
+              Used: {formatCost(user.costUsed)}
+            </p>
+            {!costValid && (
+              <p className="text-[11px] text-destructive">
+                Must be a non-negative number.
+              </p>
+            )}
+          </div>
           <DialogFooter className="gap-2 sm:gap-2">
-            {user.tokenLimit != null && (
+            {(user.tokenLimit != null || user.costLimit != null) && (
               <Button
                 type="button"
                 variant="outline"
                 disabled={updateUser.isPending}
-                onClick={() => save(null)}
+                onClick={clearAll}
               >
-                Clear limit
+                Clear limits
               </Button>
             )}
             <Button
