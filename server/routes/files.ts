@@ -10,11 +10,7 @@ import {
   getFileById,
   updateFileSize,
   updateFileHash,
-  updateFileSymlinkFlag,
 } from "@/db/queries/files.ts";
-import { realpath } from "node:fs/promises";
-import { join } from "node:path";
-import { projectDirFor } from "@/lib/pi/run-turn.ts";
 import {
   createProjectFolder,
   deleteProjectPath,
@@ -83,47 +79,21 @@ export async function handleListFiles(request: Request): Promise<Response> {
 
     const currentPath = folderPath ?? "/";
 
-    // Self-heal: bring the `files` table in line with disk for this folder.
-    // Fire-and-forget — the response returns the current DB snapshot
-    // immediately, and any new rows the reconcile inserts surface via
-    // `file.updated` / `file.deleted` events that the WS bridge broadcasts
-    // back to the client. This lets large folders trickle in instead of
-    // blocking the whole list on a cold readdir + hash + insert pass.
-    reconcileFolder(projectId, currentPath).catch((err) => {
+    // Await reconcile so the response always reflects disk truth — no
+    // fire-and-forget + WS-trickle race, no separate inline backfill. One
+    // source of truth (reconcileFolder), one deterministic order.
+    try {
+      await reconcileFolder(projectId, currentPath);
+    } catch (err) {
       routeLog.warn("reconcileFolder failed", {
         projectId,
         path: currentPath,
         error: err instanceof Error ? err.message : String(err),
       });
-    });
+    }
 
     const files = getFilesByFolder(projectId, folderPath);
     const folders = getFoldersByParent(projectId, currentPath);
-
-    // Refresh is_symlink from disk inline. Reconcile only touches files
-    // where presence on disk diverges from the DB row, so symlink flips
-    // on existing-matching rows wouldn't otherwise propagate to the UI
-    // until the next restart-with-reseed. The check follows the path: a
-    // leaf isn't a symlink itself but may live under one (e.g. files
-    // inside `.pi/zero-sdk/`, where the directory is the symlink), so we
-    // realpath the full path and flag anything whose real location
-    // escapes the project dir.
-    const projDir = projectDirFor(projectId);
-    const projReal = await realpath(projDir).catch(() => projDir);
-    await Promise.all(
-      files.map(async (row) => {
-        const abs = join(projDir, workspacePathFor(row.folder_path, row.filename));
-        try {
-          const real = await realpath(abs);
-          const escapes = real !== projReal && !real.startsWith(projReal + "/");
-          const flag = escapes ? 1 : 0;
-          if (flag !== row.is_symlink) {
-            updateFileSymlinkFlag(row.id, flag === 1);
-            row.is_symlink = flag;
-          }
-        } catch {}
-      }),
-    );
 
     return Response.json(
       {
@@ -189,7 +159,9 @@ export async function handleGetFileUrl(request: Request): Promise<Response> {
 
     const headers: Record<string, string> = {
       "Content-Type": file.mime_type,
-      "Cache-Control": "private, max-age=300",
+      // No-store: the URL is keyed by file.id alone, so a cached response
+      // would survive a save+reload and show stale content.
+      "Cache-Control": "private, no-store",
     };
     if (result.size > 0) {
       headers["Content-Length"] = String(result.size);
@@ -419,17 +391,23 @@ export async function handleUpdateFileContent(request: Request): Promise<Respons
     }
 
     const buffer = Buffer.from(body.content, "utf-8");
-    const updated = updateFileSize(id, buffer.length);
-    const hash = sha256Hex(buffer);
-    updateFileHash(id, hash);
-    const workspacePath = `${file.folder_path}${file.filename}`.replace(/^\/+/, "");
-    // writeProjectFile enforces the realpath-stays-under-project guard, so
-    // paths that traverse a symlinked dir (e.g. `.pi/zero-sdk/*`) are
-    // rejected even though the leaf isn't itself a symlink.
+    const workspacePath = workspacePathFor(file.folder_path, file.filename);
     await writeProjectFile(projectId, workspacePath, buffer);
-    // Indexing, embedding, and file.updated emission happen via the watcher →
-    // mirror-receiver once the imported file lands in /workspace.
 
+    const hash = sha256Hex(buffer);
+    updateFileSize(id, buffer.length);
+    updateFileHash(id, hash);
+    indexFileContent(id, projectId, file.filename, body.content);
+    embedAndStore(projectId, "file", id, body.content, { filename: file.filename }).catch(() => {});
+
+    events.emit("file.updated", {
+      projectId,
+      path: file.folder_path,
+      filename: file.filename,
+      mimeType: file.mime_type,
+    });
+
+    const updated = getFileById(id)!;
     return Response.json({ success: true, file: formatFile(updated) }, { headers: corsHeaders });
   } catch (error) {
     return handleError(error);

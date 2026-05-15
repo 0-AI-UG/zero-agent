@@ -50,7 +50,6 @@ db.exec(`
     name                      TEXT NOT NULL,
     description               TEXT DEFAULT '',
     automation_enabled        INTEGER NOT NULL DEFAULT 0,
-    show_skills_in_files      INTEGER NOT NULL DEFAULT 1,
     assistant_name            TEXT NOT NULL DEFAULT 'Zero Agent',
     assistant_description     TEXT NOT NULL DEFAULT 'Ask me anything - I can browse the web, manage files, run code, and automate tasks.',
     assistant_icon            TEXT NOT NULL DEFAULT 'message',
@@ -562,6 +561,9 @@ db.exec(`
   }
   if (!cols.some((c) => c.name === "is_archived")) {
     db.exec("ALTER TABLE projects ADD COLUMN is_archived INTEGER NOT NULL DEFAULT 0");
+  }
+  if (cols.some((c) => c.name === "show_skills_in_files")) {
+    db.exec("ALTER TABLE projects DROP COLUMN show_skills_in_files");
   }
   // Per-project mailbox config (one IMAP+SMTP account per project).
   // Drop the legacy index *before* the column it references — SQLite

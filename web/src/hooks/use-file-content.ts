@@ -34,10 +34,10 @@ export function useFileContent(projectId: string, file: FileItem) {
   return useQuery({
     queryKey: ["fileContent", file.id],
     queryFn: async () => {
-      const res = await fetch(data!.url);
+      const res = await fetch(data!.url, { cache: "no-store" });
       return res.text();
     },
     enabled: !!data?.url && isTextFile(file),
-    staleTime: 5 * 60_000,
+    staleTime: 0,
   });
 }

@@ -85,13 +85,14 @@ export async function writeProjectFile(
   // mutate the target — for bundled subagent .md files (and zero-sdk source)
   // wired up by pi-config, that target lives outside the project tree and
   // must stay read-only from the file viewer.
+  let link: Awaited<ReturnType<typeof lstat>> | null = null;
   try {
-    const link = await lstat(abs);
-    if (link.isSymbolicLink()) {
-      throw new ValidationError(`cannot write through symlink: ${relPath}`);
-    }
+    link = await lstat(abs);
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+  }
+  if (link?.isSymbolicLink()) {
+    throw new ValidationError(`cannot write through symlink: ${relPath}`);
   }
   await mkdir(dirname(abs), { recursive: true });
   await writeFile(abs, Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer));

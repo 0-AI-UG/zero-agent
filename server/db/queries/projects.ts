@@ -50,7 +50,7 @@ export function getProjectById(id: string): ProjectRow | null {
 
 export function updateProject(
   id: string,
-  fields: { name?: string; description?: string; automationEnabled?: boolean; showSkillsInFiles?: boolean; assistantName?: string; assistantDescription?: string; assistantIcon?: string; systemPrompt?: string; tasksModel?: string | null; scriptsModel?: string | null; isStarred?: boolean; isArchived?: boolean; emailEnabled?: boolean },
+  fields: { name?: string; description?: string; automationEnabled?: boolean; assistantName?: string; assistantDescription?: string; assistantIcon?: string; systemPrompt?: string; tasksModel?: string | null; scriptsModel?: string | null; isStarred?: boolean; isArchived?: boolean; emailEnabled?: boolean },
 ): ProjectRow {
   const sets: string[] = [];
   const values: (string | number | null)[] = [];
@@ -66,10 +66,6 @@ export function updateProject(
   if (fields.automationEnabled !== undefined) {
     sets.push("automation_enabled = ?");
     values.push(fields.automationEnabled ? 1 : 0);
-  }
-  if (fields.showSkillsInFiles !== undefined) {
-    sets.push("show_skills_in_files = ?");
-    values.push(fields.showSkillsInFiles ? 1 : 0);
   }
   if (fields.assistantName !== undefined) {
     sets.push("assistant_name = ?");
