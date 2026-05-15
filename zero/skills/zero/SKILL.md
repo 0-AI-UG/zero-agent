@@ -1,3 +1,8 @@
+---
+name: zero
+description: Reference for the `zero` CLI and SDK — the agent's toolkit for web search/fetch, browser control, image generation, scheduled/event/script tasks, credentials, apps, notifications, email, LLM calls, embeddings, and vector search. Use this skill whenever you need to reach outside the project sandbox (network, browser, mailbox, scheduling) or inspect available CLI/SDK shapes before writing a bun script. `zero <group> --help` is authoritative; this is the overview.
+---
+
 # zero — agent toolkit reference
 
 CLI and SDK bridge back to the server via the trusted runner proxy (no credentials exposed).

@@ -27,7 +27,6 @@ export interface ProjectRow {
   name: string;
   description: string;
   automation_enabled: number;
-  show_skills_in_files: number;
   assistant_name: string;
   assistant_description: string;
   assistant_icon: string;
@@ -89,6 +88,7 @@ export interface FileRow {
   size_bytes: number;
   folder_path: string;
   hash: string;
+  is_symlink: number;
   created_at: string;
 }
 
@@ -216,6 +216,8 @@ export interface ModelRow {
   enabled: number;
   sort_order: number;
   thinking_level: ThinkingLevel | null;
+  pi_provider: string;
+  pi_model_id: string | null;
   created_at: string;
   updated_at: string;
 }

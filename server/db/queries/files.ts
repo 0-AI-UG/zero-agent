@@ -25,6 +25,7 @@ export function insertFile(
   sizeBytes: number,
   folderPath: string,
   hash: string = "",
+  isSymlink: boolean = false,
 ): FileRow {
   // Upsert by (project_id, folder_path, filename)
   const existing = db.prepare(
@@ -33,8 +34,8 @@ export function insertFile(
 
   if (existing) {
     db.prepare(
-      "UPDATE files SET mime_type = ?, size_bytes = ?, hash = ? WHERE id = ?",
-    ).run(mimeType, sizeBytes, hash, existing.id);
+      "UPDATE files SET mime_type = ?, size_bytes = ?, hash = ?, is_symlink = ? WHERE id = ?",
+    ).run(mimeType, sizeBytes, hash, isSymlink ? 1 : 0, existing.id);
     bumpVersion(projectId);
     return db.prepare(
       "SELECT * FROM files WHERE id = ?",
@@ -43,8 +44,8 @@ export function insertFile(
 
   const id = generateId();
   db.prepare(
-    "INSERT INTO files (id, project_id, filename, mime_type, size_bytes, folder_path, hash) VALUES (?, ?, ?, ?, ?, ?, ?)",
-  ).run(id, projectId, filename, mimeType, sizeBytes, folderPath, hash);
+    "INSERT INTO files (id, project_id, filename, mime_type, size_bytes, folder_path, hash, is_symlink) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+  ).run(id, projectId, filename, mimeType, sizeBytes, folderPath, hash, isSymlink ? 1 : 0);
 
   bumpVersion(projectId);
   return db.prepare(
@@ -116,6 +117,12 @@ export function updateFileSize(id: string, sizeBytes: number): FileRow {
   ).run(sizeBytes, id);
   if (row?.project_id) bumpVersion(row.project_id);
   return db.prepare("SELECT * FROM files WHERE id = ?").get(id) as FileRow;
+}
+
+export function updateFileSymlinkFlag(id: string, isSymlink: boolean): void {
+  const row = db.prepare("SELECT project_id FROM files WHERE id = ?").get(id) as { project_id?: string } | undefined;
+  db.prepare("UPDATE files SET is_symlink = ? WHERE id = ?").run(isSymlink ? 1 : 0, id);
+  if (row?.project_id) bumpVersion(row.project_id);
 }
 
 export function updateFileHash(id: string, hash: string): void {

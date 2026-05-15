@@ -45,6 +45,10 @@
           "deepseek"
         ],
         "allow_fallbacks": true
+      },
+      "pi": {
+        "provider": "deepseek",
+        "model": "deepseek-v4-flash"
       }
     },
     {
@@ -69,6 +73,10 @@
           "deepseek"
         ],
         "allow_fallbacks": true
+      },
+      "pi": {
+        "provider": "deepseek",
+        "model": "deepseek-v4-pro"
       }
     },
     {
@@ -114,6 +122,28 @@
       "providerConfig": {
         "order": [
           "alibaba"
+        ],
+        "allow_fallbacks": true
+      }
+    },
+    {
+      "id": "xiaomi/mimo-v2.5-pro",
+      "name": "MiMo v2.5 Pro",
+      "provider": "xiaomi",
+      "description": "Xiaomi's flagship reasoning model with strong Chinese capabilities.",
+      "contextWindow": 262144,
+      "pricing": {
+        "input": 0.5,
+        "output": 2.0
+      },
+      "tags": [
+        "chinese",
+        "reasoning"
+      ],
+      "multimodal": false,
+      "providerConfig": {
+        "order": [
+          "xiaomi"
         ],
         "allow_fallbacks": true
       }
@@ -178,29 +208,6 @@
         "premium",
         "reasoning",
         "writing"
-      ],
-      "multimodal": true,
-      "providerConfig": {
-        "order": [
-          "anthropic"
-        ],
-        "allow_fallbacks": true
-      }
-    },
-    {
-      "id": "~anthropic/claude-opus-latest",
-      "name": "Claude Opus (latest)",
-      "provider": "anthropic",
-      "description": "Anthropic's most capable model. Top-tier reasoning and coding.",
-      "contextWindow": 1000000,
-      "pricing": {
-        "input": 5.0,
-        "output": 25.0
-      },
-      "tags": [
-        "premium",
-        "reasoning",
-        "coding"
       ],
       "multimodal": true,
       "providerConfig": {

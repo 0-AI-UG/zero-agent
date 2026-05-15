@@ -37,6 +37,8 @@ function formatModel(m: ModelRow) {
     enabled: m.enabled === 1,
     sortOrder: m.sort_order,
     thinkingLevel: m.thinking_level,
+    piProvider: m.pi_provider,
+    piModelId: m.pi_model_id,
     contextWindow: lookupContextWindow(m.provider, m.id),
   };
 }
@@ -90,6 +92,8 @@ export async function handleCreateModel(request: Request): Promise<Response> {
       enabled: body.enabled,
       sortOrder: body.sortOrder,
       thinkingLevel: parseThinkingLevel(body.thinkingLevel),
+      piProvider: body.piProvider,
+      piModelId: body.piModelId === "" ? null : body.piModelId,
     };
 
     const model = insertModel(data);
@@ -117,6 +121,10 @@ export async function handleUpdateModel(request: Request): Promise<Response> {
     if (body.enabled !== undefined) data.enabled = body.enabled;
     if (body.sortOrder !== undefined) data.sortOrder = body.sortOrder;
     if (body.thinkingLevel !== undefined) data.thinkingLevel = parseThinkingLevel(body.thinkingLevel);
+    if (body.piProvider !== undefined) data.piProvider = body.piProvider;
+    if (body.piModelId !== undefined) {
+      data.piModelId = body.piModelId === "" || body.piModelId === null ? null : body.piModelId;
+    }
 
     const model = updateModel(body.id, data);
     if (!model) {

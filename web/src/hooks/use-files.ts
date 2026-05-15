@@ -10,6 +10,7 @@ export interface FileItem {
   mimeType: string;
   sizeBytes: number;
   folderPath: string;
+  isSymlink?: boolean;
   createdAt: string;
 }
 
@@ -48,7 +49,7 @@ export function useFiles(projectId: string, folderPath?: string) {
       const res = await apiFetch<FilesResponse>(url);
       return res;
     },
-    staleTime: 30_000,
+    staleTime: 0,
     placeholderData: keepPreviousData,
   });
 }

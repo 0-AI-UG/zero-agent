@@ -74,14 +74,11 @@ export async function runAutonomousTurn(
     throw enriched;
   }
 
-  // Truncation = model stream cut off mid-response (e.g. Kimi hit its 16384
-  // output cap during a thinking loop). Pi exits 0 in this case, but the
-  // task did not actually complete. Surface as a failed run so the scheduler
-  // doesn't write a misleading "completed" summary.
+  // stopReason=length means the model stream was cut off mid-response.
+  // Pi-ai sees that as a successful turn so pi's retry never fires; surface
+  // it as a failure so the scheduler doesn't record a misleading "completed".
   if (turn.truncated) {
-    const err = new Error(
-      `model response truncated: ${turn.truncationReason ?? "no stop_reason"}`,
-    );
+    const err = new Error(turn.truncationReason ?? "model response truncated");
     (err as { chatId?: string }).chatId = chat.id;
     throw err;
   }

@@ -35,7 +35,6 @@ import { events } from "@/lib/tasks/events.ts";
 import { embedAndStore, semanticSearch } from "@/lib/search/vectors.ts";
 import { reconcileFolder } from "@/lib/projects/watcher.ts";
 import { sha256Hex } from "@/lib/utils/hash.ts";
-import { importUploadedFile } from "@/lib/uploads/import-event.ts";
 import { log } from "@/lib/utils/logger.ts";
 
 const routeLog = log.child({ module: "routes:files" });
@@ -48,6 +47,7 @@ function formatFile(row: import("@/db/types.ts").FileRow) {
     mimeType: row.mime_type,
     sizeBytes: row.size_bytes,
     folderPath: row.folder_path,
+    isSymlink: row.is_symlink === 1,
     createdAt: toUTC(row.created_at),
   };
 }
@@ -79,19 +79,18 @@ export async function handleListFiles(request: Request): Promise<Response> {
 
     const currentPath = folderPath ?? "/";
 
-    // Self-heal: bring the `files` table in line with disk for this folder.
-    // Fire-and-forget — the response returns the current DB snapshot
-    // immediately, and any new rows the reconcile inserts surface via
-    // `file.updated` / `file.deleted` events that the WS bridge broadcasts
-    // back to the client. This lets large folders trickle in instead of
-    // blocking the whole list on a cold readdir + hash + insert pass.
-    reconcileFolder(projectId, currentPath).catch((err) => {
+    // Await reconcile so the response always reflects disk truth — no
+    // fire-and-forget + WS-trickle race, no separate inline backfill. One
+    // source of truth (reconcileFolder), one deterministic order.
+    try {
+      await reconcileFolder(projectId, currentPath);
+    } catch (err) {
       routeLog.warn("reconcileFolder failed", {
         projectId,
         path: currentPath,
         error: err instanceof Error ? err.message : String(err),
       });
-    });
+    }
 
     const files = getFilesByFolder(projectId, folderPath);
     const folders = getFoldersByParent(projectId, currentPath);
@@ -160,7 +159,9 @@ export async function handleGetFileUrl(request: Request): Promise<Response> {
 
     const headers: Record<string, string> = {
       "Content-Type": file.mime_type,
-      "Cache-Control": "private, max-age=300",
+      // No-store: the URL is keyed by file.id alone, so a cached response
+      // would survive a save+reload and show stale content.
+      "Cache-Control": "private, no-store",
     };
     if (result.size > 0) {
       headers["Content-Length"] = String(result.size);
@@ -376,6 +377,10 @@ export async function handleUpdateFileContent(request: Request): Promise<Respons
       throw new NotFoundError("File not found");
     }
 
+    if (file.is_symlink === 1) {
+      throw new ValidationError("File is read-only");
+    }
+
     // Only allow text-based files
     const isTextFile = file.mime_type.startsWith("text/") ||
       file.mime_type === "application/json" ||
@@ -386,14 +391,23 @@ export async function handleUpdateFileContent(request: Request): Promise<Respons
     }
 
     const buffer = Buffer.from(body.content, "utf-8");
-    const updated = updateFileSize(id, buffer.length);
-    const hash = sha256Hex(buffer);
-    updateFileHash(id, hash);
-    const workspacePath = `${file.folder_path}${file.filename}`.replace(/^\/+/, "");
-    await importUploadedFile({ projectId, path: workspacePath, buffer });
-    // Indexing, embedding, and file.updated emission happen via the watcher →
-    // mirror-receiver once the imported file lands in /workspace.
+    const workspacePath = workspacePathFor(file.folder_path, file.filename);
+    await writeProjectFile(projectId, workspacePath, buffer);
 
+    const hash = sha256Hex(buffer);
+    updateFileSize(id, buffer.length);
+    updateFileHash(id, hash);
+    indexFileContent(id, projectId, file.filename, body.content);
+    embedAndStore(projectId, "file", id, body.content, { filename: file.filename }).catch(() => {});
+
+    events.emit("file.updated", {
+      projectId,
+      path: file.folder_path,
+      filename: file.filename,
+      mimeType: file.mime_type,
+    });
+
+    const updated = getFileById(id)!;
     return Response.json({ success: true, file: formatFile(updated) }, { headers: corsHeaders });
   } catch (error) {
     return handleError(error);

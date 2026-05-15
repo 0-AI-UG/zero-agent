@@ -12,7 +12,6 @@ import { EmptyFilesIllustration } from "@/components/ui/illustrations";
 import { Trash2Icon, XIcon } from "lucide-react";
 import { FileRow } from "./file-row";
 import { FolderRow } from "./folder-row";
-import { useProject } from "@/api/projects";
 import type { FileItem, FolderItem } from "@/hooks/use-files";
 
 interface FileListProps {
@@ -71,8 +70,6 @@ export function FileList({
   breadcrumb,
 }: FileListProps) {
   const anchorIndexRef = useRef<number | null>(null);
-  const { data: project } = useProject(projectId);
-  const showSkillsInFiles = project?.showSkillsInFiles ?? true;
   // Protect skill name folders and SKILL.md, but allow editing other files inside skills
   const isSkillsRoot = currentPath === "/skills/";
   // Match /skills/{name}/ but not deeper paths like /skills/{name}/templates/
@@ -97,12 +94,8 @@ export function FileList({
 
   const sortedFolders = useMemo(() => {
     if (!folders) return [];
-    let filtered = folders;
-    if (!showSkillsInFiles && currentPath === "/") {
-      filtered = folders.filter((f) => f.path !== "/skills/");
-    }
-    return [...filtered].sort((a, b) => a.name.localeCompare(b.name));
-  }, [folders, showSkillsInFiles, currentPath]);
+    return [...folders].sort((a, b) => a.name.localeCompare(b.name));
+  }, [folders]);
 
   if (isLoading) {
     return (

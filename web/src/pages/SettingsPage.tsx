@@ -155,22 +155,6 @@ export function SettingsPage() {
                   />
                 </div>
 
-                <div className="flex items-center justify-between gap-4">
-                  <div className="space-y-1">
-                    <p className="text-sm font-medium">Show skills in file explorer</p>
-                    <p className="text-xs text-muted-foreground">
-                      Display the skills folder in the file explorer.
-                    </p>
-                  </div>
-                  <Switch
-                    checked={project.showSkillsInFiles}
-                    onCheckedChange={(checked) =>
-                      updateProject.mutate({ showSkillsInFiles: checked })
-                    }
-                    disabled={updateProject.isPending}
-                    aria-label="Show skills in file explorer"
-                  />
-                </div>
               </div>
             </div>
 

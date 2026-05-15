@@ -69,7 +69,8 @@ export function MarkdownPreview({ file, content, projectId }: MarkdownPreviewPro
   const [editContent, setEditContent] = useState(content);
   const [showToolbar, setShowToolbar] = useState(false);
   const updateFile = useUpdateFileContent(projectId);
-  const isDirty = editContent !== content;
+  const readOnly = file.isSymlink === true;
+  const isDirty = !readOnly && editContent !== content;
   const { setActions } = usePreviewActions();
 
   const handleSave = () => {
@@ -127,9 +128,15 @@ export function MarkdownPreview({ file, content, projectId }: MarkdownPreviewPro
 
   return (
     <div className={cn("mdxeditor-wrapper p-4", !showToolbar && "mdxeditor-toolbar-hidden")}>
+      {readOnly && (
+        <div className="mb-2 text-xs text-muted-foreground">
+          Read-only
+        </div>
+      )}
       <MDXEditor
         key={file.id}
         ref={editorRef}
+        readOnly={readOnly}
         className={resolvedTheme === "dark" ? "dark-theme" : ""}
         markdown={content}
         onChange={setEditContent}

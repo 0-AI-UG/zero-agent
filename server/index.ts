@@ -503,9 +503,9 @@ app.all("/_apps/:slug/*", (c) => {
 });
 
 // Mount the in-sandbox `zero` CLI handlers under `/v1/proxy/zero/*`.
-// Auth is the per-turn token registered by `runTurn` (see
-// `server/lib/pi/cli-server.ts`). Pi is pointed here via
-// `ZERO_PROXY_URL=http://127.0.0.1:<port>` in the spawned env.
+// Auth is the per-turn token minted by `runTurn` (see
+// `server/lib/auth/proxy-token.ts`). Subprocesses spawned during a turn
+// reach this server at `ZERO_PROXY_URL=http://127.0.0.1:<port>`.
 import { buildCliHandlerApp } from "@/cli-handlers/index.ts";
 app.route("/v1/proxy", buildCliHandlerApp());
 

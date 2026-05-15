@@ -31,7 +31,7 @@ import { markTaskRun } from "@/db/queries/tasks.ts";
 import { formatDateForSQLite } from "@/lib/tasks/schedule-parser.ts";
 import { events } from "@/lib/tasks/events.ts";
 import { takeFires, type FireRecord } from "@/lib/tasks/script-fire-registry.ts";
-import { registerPiTurnToken } from "@/lib/pi/cli-server.ts";
+import { registerPiTurnToken } from "@/lib/auth/proxy-token.ts";
 import { projectDirFor } from "@/lib/pi/run-turn.ts";
 import { ensureZeroOnPath } from "@/lib/pi/zero-cli.ts";
 import { runAutonomousTurn } from "@/lib/pi/autonomous.ts";

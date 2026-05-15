@@ -64,11 +64,17 @@ interface UsageTotals {
   outputTokens: number;
   totalTokens: number;
   cachedInputTokens: number;
+  costInput: number;
+  costOutput: number;
+  costCacheRead: number;
+  costCacheWrite: number;
+  totalCost: number;
 }
 
 /** Accumulate token usage across all assistant messages in this chat. */
 function totalUsage(messages: AgentMessage[]): UsageTotals {
   let inputTokens = 0, outputTokens = 0, totalTokens = 0, cachedInputTokens = 0;
+  let costInput = 0, costOutput = 0, costCacheRead = 0, costCacheWrite = 0, totalCost = 0;
   for (const msg of messages) {
     if (msg.role !== "assistant") continue;
     const u = msg.usage;
@@ -77,8 +83,15 @@ function totalUsage(messages: AgentMessage[]): UsageTotals {
     outputTokens += u.output ?? 0;
     totalTokens += u.totalTokens ?? 0;
     cachedInputTokens += u.cacheRead ?? 0;
+    if (u.cost) {
+      costInput += u.cost.input ?? 0;
+      costOutput += u.cost.output ?? 0;
+      costCacheRead += u.cost.cacheRead ?? 0;
+      costCacheWrite += u.cost.cacheWrite ?? 0;
+      totalCost += u.cost.total ?? 0;
+    }
   }
-  return { inputTokens, outputTokens, totalTokens, cachedInputTokens };
+  return { inputTokens, outputTokens, totalTokens, cachedInputTokens, costInput, costOutput, costCacheRead, costCacheWrite, totalCost };
 }
 
 /** Char-based estimate of context tokens. Pi's exact context usage isn't
@@ -275,6 +288,11 @@ export function Composer({
                     outputTokens: usage.outputTokens,
                     totalTokens: usage.totalTokens,
                     cachedInputTokens: usage.cachedInputTokens,
+                    costInput: usage.costInput,
+                    costOutput: usage.costOutput,
+                    costCacheRead: usage.costCacheRead,
+                    costCacheWrite: usage.costCacheWrite,
+                    totalCost: usage.totalCost,
                   }}
                   modelId={getSelectedModel().id}
                 />

@@ -13,7 +13,7 @@
  * once the last subscriber detaches.
  */
 import { watch, type FSWatcher } from "node:fs";
-import { readdir, stat, readFile } from "node:fs/promises";
+import { readdir, realpath, stat, readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { join, sep } from "node:path";
 import {
@@ -21,6 +21,7 @@ import {
   getFileByPath,
   getFilesByFolder,
   insertFile,
+  updateFileSymlinkFlag,
 } from "@/db/queries/files.ts";
 import {
   createFolder,
@@ -195,6 +196,27 @@ export async function reconcileFolder(
       }),
   );
 
+  // Refresh is_symlink on rows that already match disk. processChange only
+  // fires on the diff, so symlink flips on existing files (e.g. rows
+  // inserted before is_symlink existed, or a path that became a symlink
+  // since last reconcile) would otherwise stay stale.
+  const projReal = await realpath(projectDir).catch(() => projectDir);
+  await Promise.all(
+    dbRows
+      .filter((row) => filesOnDisk.has(row.filename))
+      .map(async (row) => {
+        const abs = join(absFolder, row.filename);
+        try {
+          const real = await realpath(abs);
+          const escapes = real !== projReal && !real.startsWith(projReal + "/");
+          const flag = escapes ? 1 : 0;
+          if (flag !== row.is_symlink) {
+            updateFileSymlinkFlag(row.id, flag === 1);
+          }
+        } catch {}
+      }),
+  );
+
   // Reconcile direct child folders. `fs.watch` does not give us reliable
   // directory create/delete events, and tools like the project sandbox may
   // mkdir paths without going through the API — so the `folders` table
@@ -294,6 +316,17 @@ async function processChange(projectId: string, relPath: string): Promise<void> 
 
   const hash = createHash("sha256").update(buffer).digest("hex");
   const mimeType = guessMimeType(filename);
+  // Flag the row read-only if the file's real location escapes the
+  // project dir. Covers both leaf symlinks (e.g. bundled subagent .md
+  // files at `.pi/agents/*`) and files inside symlinked directories
+  // (e.g. `.pi/zero-sdk/*`, where the dir is the symlink and the leaf
+  // is a regular file).
+  let isSymlink = false;
+  try {
+    const projReal = await realpath(projectDir).catch(() => projectDir);
+    const real = await realpath(absPath);
+    isSymlink = real !== projReal && !real.startsWith(projReal + "/");
+  } catch {}
   const fileRow = insertFile(
     projectId,
     filename,
@@ -301,6 +334,7 @@ async function processChange(projectId: string, relPath: string): Promise<void> 
     buffer.byteLength,
     folderPath,
     hash,
+    isSymlink,
   );
 
   if (isTextMime(mimeType)) {

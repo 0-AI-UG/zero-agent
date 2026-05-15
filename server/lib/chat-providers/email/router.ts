@@ -246,7 +246,7 @@ async function runEmailAgentTurn(
       },
     });
     if (turn.truncated) {
-      turnError = `model response truncated: ${turn.truncationReason ?? "no stop_reason"}`;
+      turnError = turn.truncationReason ?? "model response truncated";
       rLog.warn("email agent turn truncated", { chatId, reason: turn.truncationReason });
     }
   } catch (err) {

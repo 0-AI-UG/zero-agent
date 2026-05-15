@@ -24,11 +24,16 @@ import { Markdown } from "@/components/chat-ui/Markdown";
 export function SubagentCallCard({
   execution,
   fallbackArgs,
+  interrupted,
 }: {
   execution: ToolExecution | undefined;
   fallbackArgs?: Record<string, unknown>;
+  /** Parent assistant message ended with `stopReason="aborted"`. */
+  interrupted?: boolean;
 }) {
-  const state = execution?.state ?? "running";
+  const rawState = execution?.state ?? "running";
+  const state: ToolExecution["state"] | "interrupted" =
+    interrupted && rawState === "running" ? "interrupted" : rawState;
   const rawArgs =
     (execution?.args as SubagentArgs | undefined) ??
     (fallbackArgs as SubagentArgs | undefined) ??
@@ -116,7 +121,7 @@ function SubagentResultRow({ result }: { result: SingleResult }) {
         {result.model && (
           <span className="text-muted-foreground truncate">· {result.model}</span>
         )}
-        {result.stopReason && state !== "done" && (
+        {result.stopReason && isUnhealthyStop(result.stopReason) && (
           <span className="text-destructive">[{result.stopReason}]</span>
         )}
       </div>
@@ -305,6 +310,15 @@ function resultState(r: SingleResult): ToolExecution["state"] {
   return "done";
 }
 
+/**
+ * `toolUse` and `stop` are healthy stream terminations — `toolUse` just
+ * means the assistant turn ended with a tool call (intermediate state
+ * during streaming). Only flag the genuinely-bad ones in the header.
+ */
+function isUnhealthyStop(reason: string): boolean {
+  return reason === "error" || reason === "aborted" || reason === "length";
+}
+
 function detectMode(args: SubagentArgs): Mode {
   if (Array.isArray(args.chain) && args.chain.length > 0) return "chain";
   if (Array.isArray(args.tasks) && args.tasks.length > 0) return "parallel";
@@ -347,7 +361,7 @@ function describe(
   return { headline: "subagent", subline: "" };
 }
 
-function StateIcon({ state }: { state: ToolExecution["state"] }) {
+function StateIcon({ state }: { state: ToolExecution["state"] | "interrupted" }) {
   if (state === "running") {
     return <Loader2Icon className="size-3 shrink-0 mt-0.5 animate-spin text-muted-foreground" />;
   }
@@ -356,6 +370,9 @@ function StateIcon({ state }: { state: ToolExecution["state"] }) {
   }
   if (state === "done") {
     return <CheckIcon className="size-3 shrink-0 mt-0.5 text-emerald-500" />;
+  }
+  if (state === "interrupted") {
+    return <CircleDotIcon className="size-3 shrink-0 mt-0.5 text-muted-foreground/60" />;
   }
   return <CircleDotIcon className="size-3 shrink-0 mt-0.5 text-muted-foreground" />;
 }

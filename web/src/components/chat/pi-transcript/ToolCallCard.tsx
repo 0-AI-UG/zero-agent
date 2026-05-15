@@ -25,15 +25,24 @@ export function ToolCallCard({
   execution,
   fallbackArgs,
   fallbackName,
+  interrupted,
 }: {
   execution: ToolExecution | undefined;
   /** Tool call from the assistant message, used while we wait for `tool_execution_start`. */
   fallbackArgs?: Record<string, unknown>;
   fallbackName: string;
+  /**
+   * True when the parent assistant message ended with `stopReason="aborted"`.
+   * If the tool also has no recorded execution result we treat it as
+   * interrupted rather than perpetually "running".
+   */
+  interrupted?: boolean;
 }) {
   const [open, setOpen] = useState(false);
 
-  const state = execution?.state ?? "running";
+  const rawState = execution?.state ?? "running";
+  const state: ToolExecution["state"] | "interrupted" =
+    interrupted && rawState === "running" ? "interrupted" : rawState;
   const name = execution?.toolName ?? fallbackName;
   const rawArgs = (execution?.args as Record<string, unknown>) ?? fallbackArgs ?? {};
   const args = sanitizeValue(rawArgs);
@@ -94,7 +103,7 @@ export function ToolCallCard({
   );
 }
 
-function StateIcon({ state }: { state: ToolExecution["state"] }) {
+function StateIcon({ state }: { state: ToolExecution["state"] | "interrupted" }) {
   if (state === "running") {
     return <Loader2Icon className="size-3 shrink-0 animate-spin text-muted-foreground" />;
   }
@@ -103,6 +112,9 @@ function StateIcon({ state }: { state: ToolExecution["state"] }) {
   }
   if (state === "done") {
     return <CheckIcon className="size-3 shrink-0 text-emerald-500" />;
+  }
+  if (state === "interrupted") {
+    return <WrenchIcon className="size-3 shrink-0 text-muted-foreground/60" />;
   }
   return <WrenchIcon className="size-3 shrink-0 text-muted-foreground" />;
 }

@@ -1,18 +1,14 @@
 /**
- * In-process token registry for the in-sandbox `zero` CLI.
+ * Per-turn proxy-token registry for the in-sandbox `zero` CLI.
  *
- * Each Pi turn registers `(token → CliContext)` here before spawning Pi
- * and releases it when the turn ends. The CLI handler routes (mounted on
- * the main HTTP server under `/v1/proxy/zero/*`) auth via `requirePi`,
- * which resolves the token in `X-Pi-Run-Token` against this map.
- *
- * Why this is the only thing we need: the CLI handlers ride the main
- * HTTP server — no separate TCP/unix listener. `runTurn` points the
- * spawned Pi at `http://127.0.0.1:<server-port>` via `ZERO_PROXY_URL`.
- * The token is the trust boundary; the mount path is the same one the
- * SDK already POSTs to (`/v1/proxy/zero/<route>`).
+ * Subprocesses spawned during a Pi turn (bash tool, subagent child `pi`,
+ * script-runner triggers) call back into the main HTTP server at
+ * `/v1/proxy/zero/*` to use SDK features. They authenticate with an
+ * `X-Pi-Run-Token` header minted here for the lifetime of one turn; the
+ * CLI handler middleware (`requirePi`) resolves the token against this
+ * map. The Pi agent itself runs in-process and does not use this.
  */
-import type { PiCliContext } from "./cli-context.ts";
+import type { PiCliContext } from "@/lib/pi/cli-context.ts";
 
 const tokens = new Map<string, PiCliContext>();
 
