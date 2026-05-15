@@ -25,6 +25,10 @@ const deleteStmt = db.prepare(
   "DELETE FROM push_subscriptions WHERE endpoint = ?",
 );
 
+const deleteAllByUserStmt = db.prepare(
+  "DELETE FROM push_subscriptions WHERE user_id = ?",
+);
+
 export function getSubscriptionsByUserId(userId: string): PushSubscriptionRow[] {
   return byUserStmt.all(userId) as PushSubscriptionRow[];
 }
@@ -41,4 +45,8 @@ export function upsertSubscription(
 
 export function deleteSubscription(endpoint: string): void {
   deleteStmt.run(endpoint);
+}
+
+export function deleteAllSubscriptionsByUser(userId: string): number {
+  return deleteAllByUserStmt.run(userId).changes;
 }

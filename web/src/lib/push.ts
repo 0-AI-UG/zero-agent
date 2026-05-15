@@ -12,13 +12,13 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array<ArrayBuffer> {
 export async function subscribeToPush(
   registration: ServiceWorkerRegistration,
 ): Promise<boolean> {
-  // Request permission first — on iOS Safari/PWA, this MUST run as a direct
-  // response to the user gesture, with no awaited network calls before it.
+  // Permission MUST be requested as a direct response to the user gesture on
+  // iOS Safari/PWA — no awaited network calls before this.
   const permission = await Notification.requestPermission();
   if (permission !== "granted") return false;
 
-  // pushManager.subscribe needs an active SW; on iOS, subscribing against
-  // an installing registration fails silently.
+  // pushManager.subscribe needs an active SW; on iOS, subscribing against an
+  // installing registration fails silently.
   const activeReg = await navigator.serviceWorker.ready;
 
   let sub = await activeReg.pushManager.getSubscription();
@@ -38,17 +38,16 @@ export async function subscribeToPush(
   return true;
 }
 
-export async function unsubscribeFromPush(
+/**
+ * Drop only this device's `pushManager` subscription. The server-side row is
+ * removed elsewhere (e.g. account-wide purge via `DELETE /push/all`).
+ */
+export async function unsubscribeLocalDevice(
   registration: ServiceWorkerRegistration,
 ): Promise<void> {
   const sub = await registration.pushManager.getSubscription();
   if (!sub) return;
-
-  await apiFetch("/push/subscribe", {
-    method: "DELETE",
-    body: JSON.stringify({ endpoint: sub.endpoint }),
-  });
-  await sub.unsubscribe();
+  try { await sub.unsubscribe(); } catch { /* best-effort */ }
 }
 
 async function sendSubscriptionToServer(sub: PushSubscription): Promise<void> {
@@ -61,12 +60,4 @@ async function sendSubscriptionToServer(sub: PushSubscription): Promise<void> {
       auth: json.keys!.auth,
     }),
   });
-}
-
-export async function isPushSubscribed(
-  _registration: ServiceWorkerRegistration,
-): Promise<boolean> {
-  const activeReg = await navigator.serviceWorker.ready;
-  const sub = await activeReg.pushManager.getSubscription();
-  return !!sub;
 }
