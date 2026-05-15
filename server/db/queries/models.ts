@@ -13,12 +13,12 @@ const getById = db.prepare("SELECT * FROM models WHERE id = ?");
 const getDefault = db.prepare("SELECT * FROM models WHERE is_default = 1 LIMIT 1");
 
 const insert = db.prepare(
-  `INSERT INTO models (id, name, provider, is_default, multimodal, enabled, sort_order, thinking_level)
-   VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+  `INSERT INTO models (id, name, provider, is_default, multimodal, enabled, sort_order, thinking_level, pi_provider, pi_model_id)
+   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 );
 
 const update = db.prepare(
-  `UPDATE models SET name = ?, provider = ?, is_default = ?, multimodal = ?, enabled = ?, sort_order = ?, thinking_level = ?, updated_at = datetime('now') WHERE id = ?`,
+  `UPDATE models SET name = ?, provider = ?, is_default = ?, multimodal = ?, enabled = ?, sort_order = ?, thinking_level = ?, pi_provider = ?, pi_model_id = ?, updated_at = datetime('now') WHERE id = ?`,
 );
 
 const remove = db.prepare("DELETE FROM models WHERE id = ?");
@@ -49,6 +49,8 @@ export interface ModelInput {
   enabled?: boolean;
   sortOrder?: number;
   thinkingLevel?: ThinkingLevel | null;
+  piProvider?: string;
+  piModelId?: string | null;
 }
 
 export function insertModel(data: ModelInput): ModelRow {
@@ -62,6 +64,8 @@ export function insertModel(data: ModelInput): ModelRow {
     data.enabled !== false ? 1 : 0,
     data.sortOrder ?? 0,
     data.thinkingLevel ?? null,
+    data.piProvider ?? "openrouter",
+    data.piModelId ?? null,
   );
   return getById.get(data.id) as ModelRow;
 }
@@ -78,6 +82,8 @@ export function updateModel(id: string, data: Partial<ModelInput>): ModelRow | n
     data.enabled !== undefined ? (data.enabled ? 1 : 0) : existing.enabled,
     data.sortOrder ?? existing.sort_order,
     data.thinkingLevel !== undefined ? data.thinkingLevel : existing.thinking_level,
+    data.piProvider ?? existing.pi_provider,
+    data.piModelId !== undefined ? data.piModelId : existing.pi_model_id,
     id,
   );
   return getById.get(id) as ModelRow;

@@ -6,7 +6,7 @@
  * to the runner backend.
  */
 import { createReadStream } from "node:fs";
-import { mkdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join, normalize, resolve } from "node:path";
 import { projectDirFor } from "@/lib/pi/run-turn.ts";
 import { ValidationError } from "@/lib/utils/errors.ts";
@@ -81,6 +81,18 @@ export async function writeProjectFile(
   buffer: Buffer | Uint8Array,
 ): Promise<void> {
   const abs = await ensureUnderProject(projectId, relPath);
+  // Refuse to overwrite symlinks. fs.writeFile would follow the link and
+  // mutate the target — for bundled subagent .md files (and zero-sdk source)
+  // wired up by pi-config, that target lives outside the project tree and
+  // must stay read-only from the file viewer.
+  try {
+    const link = await lstat(abs);
+    if (link.isSymbolicLink()) {
+      throw new ValidationError(`cannot write through symlink: ${relPath}`);
+    }
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+  }
   await mkdir(dirname(abs), { recursive: true });
   await writeFile(abs, Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer));
 }

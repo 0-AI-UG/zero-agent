@@ -7,7 +7,6 @@
  * Step 1 only ships the dispatcher and a `health` command for end-to-end
  * verification. Subsequent steps add real subcommands.
  */
-import path from "node:path";
 import { printError, printJson } from "./format.ts";
 import { call } from "../sdk/client.ts";
 import { webCommand } from "./commands/web.ts";
@@ -21,12 +20,6 @@ import { notificationCommand } from "./commands/notification.ts";
 import { embedCommand } from "./commands/embed.ts";
 import { searchCommand } from "./commands/search.ts";
 import { emailCommand } from "./commands/email.ts";
-
-// Source layout: zero/src/cli/index.ts → two levels up = zero/.
-// Bundled layout: zero/dist/cli.js → one level up = zero/.
-const ZERO_ROOT = path.basename(import.meta.dirname) === "dist"
-  ? path.dirname(import.meta.dirname)
-  : path.dirname(path.dirname(import.meta.dirname));
 
 const HELP = `zero - agent toolkit CLI
 
@@ -48,9 +41,6 @@ Groups:
   search           vector search over project files and messages
 
 Run 'zero <group> --help' for details. All commands support --json.
-
-Full reference (CLI + SDK): ${ZERO_ROOT}/USAGE.md
-Source: ${ZERO_ROOT}/src/
 `;
 
 async function main(argv: string[]): Promise<number> {

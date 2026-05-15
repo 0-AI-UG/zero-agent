@@ -87,6 +87,19 @@ function isVisibleMessage(msg: AgentMessage, executions: Map<string, ToolExecuti
   return !!msg.errorMessage;
 }
 
+/**
+ * The last assistant message owns the on-message error notice (pi-ai puts
+ * `errorMessage` on the message itself for stream-time failures and aborts).
+ * When that's present, the global banner would just duplicate it, so skip.
+ */
+function lastMessageHasInlineError(messages: AgentMessage[]): boolean {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m.role === "assistant") return !!m.errorMessage;
+  }
+  return false;
+}
+
 function shouldShowLoader(
   messages: AgentMessage[],
   executions: Map<string, ToolExecution>,
@@ -200,7 +213,7 @@ export function MessageList({
         </MessageShell>
       )}
 
-      {error && !isStreaming && (
+      {error && !isStreaming && !lastMessageHasInlineError(messages) && (
         <MessageShell role="assistant">
           <div className="flex items-center gap-3 text-destructive text-sm">
             <AlertCircleIcon className="size-4 shrink-0" />

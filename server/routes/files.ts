@@ -10,7 +10,11 @@ import {
   getFileById,
   updateFileSize,
   updateFileHash,
+  updateFileSymlinkFlag,
 } from "@/db/queries/files.ts";
+import { realpath } from "node:fs/promises";
+import { join } from "node:path";
+import { projectDirFor } from "@/lib/pi/run-turn.ts";
 import {
   createProjectFolder,
   deleteProjectPath,
@@ -35,7 +39,6 @@ import { events } from "@/lib/tasks/events.ts";
 import { embedAndStore, semanticSearch } from "@/lib/search/vectors.ts";
 import { reconcileFolder } from "@/lib/projects/watcher.ts";
 import { sha256Hex } from "@/lib/utils/hash.ts";
-import { importUploadedFile } from "@/lib/uploads/import-event.ts";
 import { log } from "@/lib/utils/logger.ts";
 
 const routeLog = log.child({ module: "routes:files" });
@@ -48,6 +51,7 @@ function formatFile(row: import("@/db/types.ts").FileRow) {
     mimeType: row.mime_type,
     sizeBytes: row.size_bytes,
     folderPath: row.folder_path,
+    isSymlink: row.is_symlink === 1,
     createdAt: toUTC(row.created_at),
   };
 }
@@ -95,6 +99,31 @@ export async function handleListFiles(request: Request): Promise<Response> {
 
     const files = getFilesByFolder(projectId, folderPath);
     const folders = getFoldersByParent(projectId, currentPath);
+
+    // Refresh is_symlink from disk inline. Reconcile only touches files
+    // where presence on disk diverges from the DB row, so symlink flips
+    // on existing-matching rows wouldn't otherwise propagate to the UI
+    // until the next restart-with-reseed. The check follows the path: a
+    // leaf isn't a symlink itself but may live under one (e.g. files
+    // inside `.pi/zero-sdk/`, where the directory is the symlink), so we
+    // realpath the full path and flag anything whose real location
+    // escapes the project dir.
+    const projDir = projectDirFor(projectId);
+    const projReal = await realpath(projDir).catch(() => projDir);
+    await Promise.all(
+      files.map(async (row) => {
+        const abs = join(projDir, workspacePathFor(row.folder_path, row.filename));
+        try {
+          const real = await realpath(abs);
+          const escapes = real !== projReal && !real.startsWith(projReal + "/");
+          const flag = escapes ? 1 : 0;
+          if (flag !== row.is_symlink) {
+            updateFileSymlinkFlag(row.id, flag === 1);
+            row.is_symlink = flag;
+          }
+        } catch {}
+      }),
+    );
 
     return Response.json(
       {
@@ -376,6 +405,10 @@ export async function handleUpdateFileContent(request: Request): Promise<Respons
       throw new NotFoundError("File not found");
     }
 
+    if (file.is_symlink === 1) {
+      throw new ValidationError("File is read-only");
+    }
+
     // Only allow text-based files
     const isTextFile = file.mime_type.startsWith("text/") ||
       file.mime_type === "application/json" ||
@@ -390,7 +423,10 @@ export async function handleUpdateFileContent(request: Request): Promise<Respons
     const hash = sha256Hex(buffer);
     updateFileHash(id, hash);
     const workspacePath = `${file.folder_path}${file.filename}`.replace(/^\/+/, "");
-    await importUploadedFile({ projectId, path: workspacePath, buffer });
+    // writeProjectFile enforces the realpath-stays-under-project guard, so
+    // paths that traverse a symlinked dir (e.g. `.pi/zero-sdk/*`) are
+    // rejected even though the leaf isn't itself a symlink.
+    await writeProjectFile(projectId, workspacePath, buffer);
     // Indexing, embedding, and file.updated emission happen via the watcher →
     // mirror-receiver once the imported file lands in /workspace.
 

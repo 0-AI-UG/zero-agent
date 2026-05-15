@@ -13,7 +13,7 @@
  * once the last subscriber detaches.
  */
 import { watch, type FSWatcher } from "node:fs";
-import { readdir, stat, readFile } from "node:fs/promises";
+import { readdir, realpath, stat, readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { join, sep } from "node:path";
 import {
@@ -294,6 +294,17 @@ async function processChange(projectId: string, relPath: string): Promise<void> 
 
   const hash = createHash("sha256").update(buffer).digest("hex");
   const mimeType = guessMimeType(filename);
+  // Flag the row read-only if the file's real location escapes the
+  // project dir. Covers both leaf symlinks (e.g. bundled subagent .md
+  // files at `.pi/agents/*`) and files inside symlinked directories
+  // (e.g. `.pi/zero-sdk/*`, where the dir is the symlink and the leaf
+  // is a regular file).
+  let isSymlink = false;
+  try {
+    const projReal = await realpath(projectDir).catch(() => projectDir);
+    const real = await realpath(absPath);
+    isSymlink = real !== projReal && !real.startsWith(projReal + "/");
+  } catch {}
   const fileRow = insertFile(
     projectId,
     filename,
@@ -301,6 +312,7 @@ async function processChange(projectId: string, relPath: string): Promise<void> 
     buffer.byteLength,
     folderPath,
     hash,
+    isSymlink,
   );
 
   if (isTextMime(mimeType)) {

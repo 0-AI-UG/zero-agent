@@ -1,16 +1,14 @@
 /**
- * Materialize <project>/.pi/settings.json before each Pi turn. Zero owns
- * this file; manual user edits will be overwritten on the next turn (file
- * is regenerated when content hash changes).
+ * System-prompt builder, bundled-resource paths, and per-turn `.pi/`
+ * inspection scaffolding for the in-process Pi agent.
  *
- * Sandbox config used to live in <project>/.pi/sandbox.json for the
- * upstream sandbox extension. We've replaced that extension with our own
- * project-sandbox extension which derives its config from `process.cwd()`
- * directly, so sandbox.json is no longer written.
- *
- * Also resolves the `pi` binary so spawn() can launch it from the
- * project working directory regardless of how this server is invoked
- * (node, tsx, bun-compiled binary).
+ * Pi itself no longer reads anything from `<project>/.pi/` — we wire
+ * SettingsManager/SessionManager in-memory and feed extensions in via
+ * factories. The `.pi/` folder is now purely for human inspection: it
+ * lets developers `cat`/`ls` the bundled SDK source, agent prompts, and
+ * the effective system prompt without diving into node_modules. The
+ * project-sandbox extension denies *writes* to `.pi/`, so the agent can
+ * read these but can't tamper with them.
  */
 import {
   existsSync,
@@ -24,68 +22,23 @@ import {
 } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { createRequire } from "node:module";
-import { sha256Hex } from "@/lib/utils/hash.ts";
-import { resolveZeroSdkDir } from "./zero-cli.ts";
-
-export interface PiConfigInputs {
-  projectDir: string;
-  /** Pi-AI model id (already resolved). */
-  modelId: string;
-  /** Pi provider id, e.g. "openrouter". */
-  provider: string;
-  /** Optional extra extensions to enable. Each item must be an absolute path. */
-  extraExtensions?: string[];
-  /** Optional override for the system prompt. Falls back to the default. */
-  systemPrompt?: string;
-}
+import { resolveZeroPackageRoot, resolveZeroSdkDir } from "./zero-cli.ts";
 
 export const DEFAULT_SYSTEM_PROMPT = `You are Zero, a general-purpose assistant running inside the Zero web app, working in a sandboxed project workspace.
 
-The \`zero\` CLI and SDK are installed by default: web search/fetch, browser control, image generation, tasks (scheduled/event/script triggers), credentials, apps, sending messages to the user, LLM calls, and embeddings/search. Run \`zero --help\` for the authoritative interface.
+The \`zero\` CLI and SDK are installed by default: web search/fetch, browser control, image generation, tasks (scheduled/event/script triggers), credentials, apps, sending messages to the user, LLM calls, and embeddings/search.
 
 `;
 
-function projectSandboxExtensionPath(): string {
-  // Co-located with this file: server/lib/pi/extensions/project-sandbox/
+/** Where the bundled skill definitions live (one subdir per skill). */
+export function defaultSkillsDir(): string {
+  return path.join(resolveZeroPackageRoot(), "skills");
+}
+
+/** Where the bundled subagent definitions live. */
+export function defaultAgentsDir(): string {
   const here = path.dirname(fileURLToPath(import.meta.url));
-  const ext = path.join(here, "extensions", "project-sandbox");
-  if (!existsSync(ext)) {
-    throw new Error(`project-sandbox extension not found at ${ext}`);
-  }
-  return ext;
-}
-
-function subagentExtensionPath(): string {
-  const here = path.dirname(fileURLToPath(import.meta.url));
-  const ext = path.join(here, "extensions", "subagent");
-  if (!existsSync(ext)) {
-    throw new Error(`subagent extension not found at ${ext}`);
-  }
-  return ext;
-}
-
-/** Where the bundled agent definitions live. */
-function defaultAgentsDir(): string {
-  return path.join(subagentExtensionPath(), "default-agents");
-}
-
-function buildSettings(opts: PiConfigInputs) {
-  const extensions = [
-    projectSandboxExtensionPath(),
-    subagentExtensionPath(),
-    ...(opts.extraExtensions ?? []),
-  ];
-  return {
-    defaultProvider: opts.provider,
-    defaultModel: opts.modelId,
-    extensions,
-    skills: ["./skills"],
-    sessionDir: "../.pi-sessions",
-    quietStartup: true,
-    compaction: { enabled: true, reserveTokens: 16384, keepRecentTokens: 20000 },
-    retry: { enabled: true, maxRetries: 3 },
-  };
+  return path.join(here, "extensions", "subagent", "default-agents");
 }
 
 function ensureSymlink(link: string, target: string): void {
@@ -93,7 +46,7 @@ function ensureSymlink(link: string, target: string): void {
     try {
       if (readlinkSync(link) === target) return;
     } catch {
-      // Not a symlink — fall through to replace.
+      // Not a symlink — replace.
     }
     unlinkSync(link);
   }
@@ -103,84 +56,62 @@ function ensureSymlink(link: string, target: string): void {
 
 function writeIfChanged(file: string, content: string): void {
   if (existsSync(file)) {
-    const cur = readFileSync(file, "utf-8");
-    if (sha256Hex(Buffer.from(cur)) === sha256Hex(Buffer.from(content))) return;
+    try {
+      if (readFileSync(file, "utf-8") === content) return;
+    } catch {
+      // Unreadable — fall through and overwrite.
+    }
   }
   mkdirSync(path.dirname(file), { recursive: true });
   writeFileSync(file, content, "utf-8");
 }
 
 /**
- * Idempotently writes <project>/.pi/settings.json and .pi/SYSTEM.md.
- * Returns the directory paths Pi will read from.
+ * Idempotently materialize `<projectDir>/.pi/` for human inspection:
+ *
+ *   .pi/SYSTEM.md      — effective system prompt for the turn
+ *   .pi/zero-sdk       — symlink to the bundled SDK source dir
+ *   .pi/agents/*.md    — symlinks to bundled subagent prompts
+ *
+ * Pi never reads these; they're a transparency surface for the developer.
+ * The agent itself can read them (they're under projectDir) but cannot
+ * modify them (project-sandbox denies writes to `.pi/`).
  */
-export function ensurePiConfig(opts: PiConfigInputs): {
-  configDir: string;
-  skillsDir: string;
-} {
-  const configDir = path.join(opts.projectDir, ".pi");
-  const skillsDir = path.join(configDir, "skills");
-  mkdirSync(skillsDir, { recursive: true });
+export function materializePiInspection(opts: {
+  projectDir: string;
+  systemPrompt: string;
+}): void {
+  const piDir = path.join(opts.projectDir, ".pi");
+  mkdirSync(piDir, { recursive: true });
 
-  const settings = buildSettings(opts);
-  writeIfChanged(
-    path.join(configDir, "settings.json"),
-    JSON.stringify(settings, null, 2) + "\n",
-  );
+  writeIfChanged(path.join(piDir, "SYSTEM.md"), opts.systemPrompt);
 
-  const systemPrompt = opts.systemPrompt && opts.systemPrompt.trim().length > 0
-    ? opts.systemPrompt
-    : DEFAULT_SYSTEM_PROMPT;
-  writeIfChanged(path.join(configDir, "SYSTEM.md"), systemPrompt);
-
-  // Surface the SDK as a directory of source files (.pi/zero-sdk/web.ts,
-  // browser.ts, …) rather than a single bundled .mjs — the agent can
-  // read individual modules to learn the API. Replace any pre-existing
-  // file symlink from older versions.
-  const sdkLink = path.join(configDir, "zero-sdk");
-  const legacySdkLink = path.join(configDir, "zero-sdk.mjs");
-  if (existsSync(legacySdkLink)) {
-    try { unlinkSync(legacySdkLink); } catch {}
+  try {
+    ensureSymlink(path.join(piDir, "zero-sdk"), resolveZeroSdkDir());
+  } catch {
+    // SDK not built yet — skip; agent inspection just won't see it.
   }
-  ensureSymlink(sdkLink, resolveZeroSdkDir());
 
-  // Materialize bundled subagent definitions into <project>/.pi/agents/*.md
-  // so the subagent extension's project-scope discovery picks them up.
-  // User-added .md files in this directory coexist with the symlinks.
-  const agentsDir = path.join(configDir, "agents");
+  const agentsDir = path.join(piDir, "agents");
   mkdirSync(agentsDir, { recursive: true });
   const srcAgents = defaultAgentsDir();
-  for (const name of readdirSync(srcAgents)) {
-    if (!name.endsWith(".md")) continue;
-    ensureSymlink(path.join(agentsDir, name), path.join(srcAgents, name));
+  try {
+    for (const name of readdirSync(srcAgents)) {
+      if (!name.endsWith(".md")) continue;
+      ensureSymlink(path.join(agentsDir, name), path.join(srcAgents, name));
+    }
+  } catch {
+    // No bundled agents shipped — leave .pi/agents/ empty for the user.
   }
-
-  return { configDir, skillsDir };
 }
 
 /**
- * Resolve how to invoke the `pi` binary. Mirrors the pattern used by
- * the subagent example so the same logic works under node, tsx, and a
- * bun-compiled host.
+ * Compose the system prompt for a turn. Project-level prompt is appended
+ * to the default — the default carries baseline behavior (zero CLI/SDK
+ * affordances) that the per-project prompt should extend, not replace.
  */
-export function getPiInvocation(args: string[]): {
-  command: string;
-  args: string[];
-} {
-  const require = createRequire(import.meta.url);
-  // Prefer the resolved CLI entry from node_modules — most reliable.
-  try {
-    const cli = require.resolve("@mariozechner/pi-coding-agent/dist/cli.js");
-    return { command: process.execPath, args: [cli, ...args] };
-  } catch {
-    // fall through
-  }
-  // Fall back to a `pi` on PATH.
-  return { command: "pi", args };
+export function buildSystemPrompt(projectSystemPrompt?: string): string {
+  const extra = projectSystemPrompt?.trim();
+  if (!extra) return DEFAULT_SYSTEM_PROMPT;
+  return DEFAULT_SYSTEM_PROMPT + extra;
 }
-
-/** Test-only: peek at the resolved sandbox extension path. */
-export function _projectSandboxExtensionPath(): string {
-  return projectSandboxExtensionPath();
-}
-

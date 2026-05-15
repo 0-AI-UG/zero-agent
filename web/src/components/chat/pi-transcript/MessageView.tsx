@@ -121,12 +121,14 @@ function AssistantMessageView({
           return <ReasoningBlock key={key} text={part.thinking} />;
         }
         if (part.type === "toolCall") {
+          const interrupted = message.stopReason === "aborted";
           if (part.name === "subagent") {
             return (
               <SubagentCallCard
                 key={key}
                 execution={executions.get(part.id)}
                 fallbackArgs={part.arguments}
+                interrupted={interrupted}
               />
             );
           }
@@ -136,6 +138,7 @@ function AssistantMessageView({
               execution={executions.get(part.id)}
               fallbackName={part.name}
               fallbackArgs={part.arguments}
+              interrupted={interrupted}
             />
           );
         }
@@ -143,7 +146,11 @@ function AssistantMessageView({
       })}
       {message.errorMessage && (
         <MessageShell role="assistant">
-          <div className="text-sm text-destructive">{message.errorMessage}</div>
+          {message.stopReason === "aborted" ? (
+            <div className="text-sm text-muted-foreground italic">Agent was interrupted.</div>
+          ) : (
+            <div className="text-sm text-destructive">{message.errorMessage}</div>
+          )}
         </MessageShell>
       )}
       {showModel && (message.model || message.timestamp) && (

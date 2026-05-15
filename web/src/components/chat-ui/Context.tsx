@@ -6,6 +6,11 @@ interface MessageUsage {
   totalTokens?: number;
   reasoningTokens?: number;
   cachedInputTokens?: number;
+  costInput?: number;
+  costOutput?: number;
+  costCacheRead?: number;
+  costCacheWrite?: number;
+  totalCost?: number;
 }
 import { Button } from "@/components/ui/button";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
@@ -25,15 +30,6 @@ function indicator(pct: number) {
   if (pct >= CRIT) return "[&_[data-slot=progress-indicator]]:bg-destructive";
   if (pct >= WARN) return "[&_[data-slot=progress-indicator]]:bg-amber-500";
   return "";
-}
-
-function calcCost(
-  _modelId: string | undefined,
-  _t: { input?: number; output?: number; reasoning?: number; cache?: number },
-): number | undefined {
-  // Pricing was dropped from the models table in the Pi cutover; usage rows
-  // now omit cost. Re-introduce when Pi exposes its own pricing catalog.
-  return undefined;
 }
 
 const pct = (n: number) =>
@@ -97,7 +93,6 @@ export function Context({
   usedTokens,
   maxTokens,
   usage,
-  modelId,
 }: {
   usedTokens: number;
   maxTokens: number;
@@ -106,12 +101,7 @@ export function Context({
 }) {
   const pctUsed = usedTokens / maxTokens;
   const c = color(pctUsed);
-  const totalCost = calcCost(modelId, {
-    input: usage?.inputTokens ?? 0,
-    output: usage?.outputTokens ?? 0,
-    reasoning: usage?.reasoningTokens ?? 0,
-    cache: usage?.cachedInputTokens ?? 0,
-  });
+  const totalCost = usage?.totalCost;
 
   return (
     <HoverCard closeDelay={0} openDelay={0}>
@@ -138,22 +128,22 @@ export function Context({
           <UsageRow
             label="Input"
             tokens={usage?.inputTokens ?? 0}
-            cost={calcCost(modelId, { input: usage?.inputTokens ?? 0 })}
+            cost={usage?.costInput}
           />
           <UsageRow
             label="Output"
             tokens={usage?.outputTokens ?? 0}
-            cost={calcCost(modelId, { output: usage?.outputTokens ?? 0 })}
+            cost={usage?.costOutput}
           />
           <UsageRow
             label="Reasoning"
             tokens={usage?.reasoningTokens ?? 0}
-            cost={calcCost(modelId, { reasoning: usage?.reasoningTokens ?? 0 })}
+            cost={undefined}
           />
           <UsageRow
             label="Cache"
             tokens={usage?.cachedInputTokens ?? 0}
-            cost={calcCost(modelId, { cache: usage?.cachedInputTokens ?? 0 })}
+            cost={usage?.costCacheRead}
           />
         </div>
         <div className="flex w-full items-center justify-between gap-3 bg-secondary p-3 text-xs">

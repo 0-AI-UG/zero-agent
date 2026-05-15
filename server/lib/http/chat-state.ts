@@ -116,9 +116,20 @@ function deriveTruncationError(messages: AgentMessage[]): string | undefined {
     const m = messages[i] as { role?: string; stopReason?: string | null };
     if (m?.role !== "assistant") continue;
     const stop = m.stopReason;
-    if (stop === "stop" || stop === "toolUse") return undefined;
+    // Healthy or otherwise-handled terminations:
+    //  - "stop"/"toolUse" — normal completions
+    //  - "aborted"        — user pressed stop; the message itself carries
+    //                       an inline notice, no banner needed
+    //  - "error"          — pi-ai already attaches `errorMessage` to the
+    //                       message, so the inline render covers it
+    // Only `length` (and the unknown-cause `null`) are genuine silent
+    // truncations that deserve a top-level banner on rehydrate.
+    if (stop === "stop" || stop === "toolUse" || stop === "aborted" || stop === "error") {
+      return undefined;
+    }
+    if (stop === "length") return "model response truncated: stopReason=length";
     if (stop == null) return "model response truncated: missing stopReason (stream cut off)";
-    return `model response truncated: stopReason=${stop}`;
+    return undefined;
   }
   return undefined;
 }

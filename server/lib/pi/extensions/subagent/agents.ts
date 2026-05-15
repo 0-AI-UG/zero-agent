@@ -1,9 +1,18 @@
 /**
- * Agent discovery and configuration
+ * Agent discovery and configuration.
+ *
+ * Sources, in lowest-to-highest precedence:
+ *   1. Bundled default-agents (always included) — shipped alongside this
+ *      extension under ./default-agents/*.md. Replaces the old behavior of
+ *      symlinking these into <project>/.pi/agents from `ensurePiConfig`.
+ *   2. User agents (~/.pi/agent/agents) — opt-in via scope.
+ *   3. Project agents (<project>/.pi/agents) — opt-in via scope; intended
+ *      for repo-controlled overrides.
  */
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 import { getAgentDir, parseFrontmatter } from "@mariozechner/pi-coding-agent";
 
 export type AgentScope = "user" | "project" | "both";
@@ -14,16 +23,29 @@ export interface AgentConfig {
 	tools?: string[];
 	model?: string;
 	systemPrompt: string;
-	source: "user" | "project";
+	source: "bundled" | "user" | "project";
 	filePath: string;
 }
 
 export interface AgentDiscoveryResult {
 	agents: AgentConfig[];
 	projectAgentsDir: string | null;
+	bundledAgentsDir: string;
 }
 
-function loadAgentsFromDir(dir: string, source: "user" | "project"): AgentConfig[] {
+function bundledAgentsDir(): string {
+	return path.join(path.dirname(fileURLToPath(import.meta.url)), "default-agents");
+}
+
+function realpathOrNull(p: string): string | null {
+	try {
+		return fs.realpathSync(p);
+	} catch {
+		return null;
+	}
+}
+
+function loadAgentsFromDir(dir: string, source: "bundled" | "user" | "project"): AgentConfig[] {
 	const agents: AgentConfig[] = [];
 
 	if (!fs.existsSync(dir)) {
@@ -97,22 +119,35 @@ function findNearestProjectAgentsDir(cwd: string): string | null {
 export function discoverAgents(cwd: string, scope: AgentScope): AgentDiscoveryResult {
 	const userDir = path.join(getAgentDir(), "agents");
 	const projectAgentsDir = findNearestProjectAgentsDir(cwd);
+	const bundledDir = bundledAgentsDir();
 
+	const bundledAgents = loadAgentsFromDir(bundledDir, "bundled");
+	// `.pi/agents/` is materialized with symlinks to the bundled defaults for
+	// inspection. Drop project entries whose realpath matches a bundled one
+	// so they don't shadow the canonical "bundled" source label with "project".
+	const bundledRealpaths = new Set(
+		bundledAgents.map((a) => realpathOrNull(a.filePath) ?? a.filePath),
+	);
 	const userAgents = scope === "project" ? [] : loadAgentsFromDir(userDir, "user");
-	const projectAgents = scope === "user" || !projectAgentsDir ? [] : loadAgentsFromDir(projectAgentsDir, "project");
+	const rawProjectAgents =
+		scope === "user" || !projectAgentsDir ? [] : loadAgentsFromDir(projectAgentsDir, "project");
+	const projectAgents = rawProjectAgents.filter(
+		(a) => !bundledRealpaths.has(realpathOrNull(a.filePath) ?? a.filePath),
+	);
 
+	// Bundled defaults form the baseline. User/project overrides win by name
+	// — letting a repo or the local user replace a bundled agent's prompt
+	// without losing the others.
 	const agentMap = new Map<string, AgentConfig>();
-
-	if (scope === "both") {
+	for (const agent of bundledAgents) agentMap.set(agent.name, agent);
+	if (scope !== "project") {
 		for (const agent of userAgents) agentMap.set(agent.name, agent);
-		for (const agent of projectAgents) agentMap.set(agent.name, agent);
-	} else if (scope === "user") {
-		for (const agent of userAgents) agentMap.set(agent.name, agent);
-	} else {
+	}
+	if (scope !== "user") {
 		for (const agent of projectAgents) agentMap.set(agent.name, agent);
 	}
 
-	return { agents: Array.from(agentMap.values()), projectAgentsDir };
+	return { agents: Array.from(agentMap.values()), projectAgentsDir, bundledAgentsDir: bundledDir };
 }
 
 export function formatAgentList(agents: AgentConfig[], maxItems: number): { text: string; remaining: number } {

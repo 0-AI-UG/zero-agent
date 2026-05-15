@@ -10,6 +10,7 @@ export interface FileItem {
   mimeType: string;
   sizeBytes: number;
   folderPath: string;
+  isSymlink?: boolean;
   createdAt: string;
 }
 

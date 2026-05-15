@@ -1,39 +1,47 @@
 /**
- * `runTurn` — spawn a Pi subprocess for one turn against the chat's
- * session JSONL.
+ * `runTurn` — drive one Pi agent turn in-process via `AgentSession`.
  *
- * Each call:
- *  - resolves the project directory under PI_PROJECTS_ROOT
- *  - mints a per-turn run id + auth token
- *  - registers the token on the singleton in-process CLI server
- *  - materializes <project>/.pi/{settings,sandbox}.json
- *  - spawns `pi --mode json -p --session <chat>.jsonl <prompt>` with
- *    OPENROUTER_API_KEY + ZERO_PROXY_URL/TOKEN in its env
- *  - parses stdout JSONL into `AgentSessionEvent` and fans out via onEvent
- *  - takes pre/post snapshots and ref-counts the project watcher
+ * Per turn:
+ *  - resolve the project directory under PI_PROJECTS_ROOT,
+ *  - open (or implicitly create) `<project>/.pi-sessions/<chatId>.jsonl`,
+ *  - bootstrap an in-memory AuthStorage + ModelRegistry from settings/DB,
+ *  - build a DefaultResourceLoader with per-turn project-sandbox and
+ *    subagent factories (both close over the resolved projectDir) plus the
+ *    bundled `zero` skill,
+ *  - subscribe to the session event stream and forward each event to the
+ *    caller via `onEvent`,
+ *  - await `session.prompt(userMessage)`,
+ *  - bracket the prompt with snapshotBeforeTurn / snapshotAfterTurn and
+ *    ref-count the project watcher.
  *
- * Pi owns the conversation history in `<project>/.pi-sessions/<chatId>.jsonl`.
- * Zero never imports `@mariozechner/pi-coding-agent` at runtime here.
+ * The bash tool still spawns subprocesses that call back into our HTTP
+ * server via `ZERO_PROXY_URL`/`ZERO_PROXY_TOKEN`; we mint a token and set
+ * those env vars for the duration of the turn. Subagents now run
+ * in-process (no child `pi`), so no env-based model inheritance is needed.
  */
-import { spawn } from "node:child_process";
-import {
-  createReadStream,
-  existsSync,
-  mkdirSync,
-  rmSync,
-  statSync,
-  writeFileSync,
-} from "node:fs";
-import { createInterface } from "node:readline";
-import { tmpdir } from "node:os";
-import { delimiter as pathDelimiter, isAbsolute, join, resolve } from "node:path";
+import { existsSync, mkdirSync } from "node:fs";
+import { isAbsolute, join, resolve } from "node:path";
 import { randomBytes } from "node:crypto";
-import type { AgentSessionEvent } from "@mariozechner/pi-coding-agent";
-import type { PiCliContext } from "./cli-context.ts";
-import { registerPiTurnToken } from "./cli-server.ts";
-import { ensurePiConfig, getPiInvocation } from "./pi-config.ts";
-import { buildPiEnv, type ResolvedPiModel } from "./model.ts";
+import {
+  type AgentSessionEvent,
+  createAgentSession,
+  DefaultResourceLoader,
+  getAgentDir,
+  SessionManager,
+  SettingsManager,
+} from "@mariozechner/pi-coding-agent";
+import type { Api, Model } from "@mariozechner/pi-ai";
+import {
+  buildSystemPrompt,
+  defaultAgentsDir,
+  defaultSkillsDir,
+  materializePiInspection,
+} from "./pi-config.ts";
+import { createProjectSandboxExtension } from "./extensions/project-sandbox/index.ts";
+import { createSubagentExtension } from "./extensions/subagent/index.ts";
+import { bootstrapAuthAndRegistry, type ResolvedPiModel } from "./model.ts";
 import { ensureZeroOnPath } from "./zero-cli.ts";
+import { registerPiTurnToken } from "@/lib/auth/proxy-token.ts";
 import {
   snapshotAfterTurn,
   snapshotBeforeTurn,
@@ -63,11 +71,8 @@ export interface RunTurnOptions {
    * declares image input support (per the `models` table).
    */
   images?: Array<{ data: string; mimeType: string }>;
-  /** Resolved Pi model + provider. Caller is `resolveModelForPi`. */
   model: ResolvedPiModel;
-  /** Aborts the running turn. SIGTERM, then SIGKILL after 5s. */
   abortSignal?: AbortSignal;
-  /** Receives every Pi event wrapped in the envelope. */
   onEvent: (e: PiEventEnvelope) => void;
 }
 
@@ -76,22 +81,19 @@ export interface TurnResult {
   sessionFile: string;
   events: number;
   aborted: boolean;
-  exitCode: number;
   /**
-   * True when the final assistant message in the session JSONL has no
-   * `stop_reason` or `stop_reason="max_tokens"`. Pi can exit cleanly even
-   * when the model's stream was truncated mid-response (e.g. Kimi hitting
-   * its output cap during a thinking loop); the OS exit code alone is not
-   * a reliable success signal.
+   * True when the final assistant `message_end` carried `stopReason="length"`,
+   * i.e. the model hit its output cap mid-response. Pi-ai treats this as a
+   * successful turn so pi's retry loop doesn't fire — we surface it
+   * explicitly so callers can flag the chat as truncated. Other terminal
+   * stop reasons (`stop`, `toolUse`, `error`, `aborted`) are reported
+   * through their own channels and never set this flag.
    */
   truncated: boolean;
-  /** Human-readable reason if truncated; `null` otherwise. */
+  /** Human-readable reason when `truncated`; `null` otherwise. */
   truncationReason: string | null;
 }
 
-// Always resolve to an absolute path. Pi (and git, snapshot service, etc.)
-// receive these paths and resolve them against their own cwd, which would
-// otherwise double the prefix when we spawn Pi with cwd=projectDir.
 const PROJECTS_ROOT_INPUT =
   process.env.PI_PROJECTS_ROOT ||
   (process.env.NODE_ENV === "production"
@@ -109,278 +111,199 @@ export function sessionsDirFor(projectId: string): string {
   return join(projectDirFor(projectId), ".pi-sessions");
 }
 
-const MIME_TO_EXT: Record<string, string> = {
-  "image/png": "png",
-  "image/jpeg": "jpg",
-  "image/jpg": "jpg",
-  "image/webp": "webp",
-  "image/gif": "gif",
-};
-
-function writeImageFiles(
-  dir: string,
-  images: Array<{ data: string; mimeType: string }>,
-): string[] {
-  mkdirSync(dir, { recursive: true });
-  const paths: string[] = [];
-  images.forEach((img, i) => {
-    const ext = MIME_TO_EXT[img.mimeType] ?? "bin";
-    const file = join(dir, `image-${i}.${ext}`);
-    writeFileSync(file, Buffer.from(img.data, "base64"));
-    paths.push(file);
-  });
-  return paths;
-}
-
 export async function runTurn(opts: RunTurnOptions): Promise<TurnResult> {
   const runId = `run-${Date.now()}-${randomBytes(4).toString("hex")}`;
-  const token = randomBytes(24).toString("hex");
   const projectDir = projectDirFor(opts.projectId);
   const sessionsDir = sessionsDirFor(opts.projectId);
   mkdirSync(projectDir, { recursive: true });
   mkdirSync(sessionsDir, { recursive: true });
+  const sessionFile = join(sessionsDir, `${opts.chatId}.jsonl`);
 
   const projectRow = getProjectById(opts.projectId);
-  ensurePiConfig({
-    projectDir,
-    modelId: opts.model.modelId,
-    provider: opts.model.provider,
-    systemPrompt: projectRow?.system_prompt || undefined,
+  const systemPrompt = buildSystemPrompt(projectRow?.system_prompt ?? undefined);
+  materializePiInspection({ projectDir, systemPrompt });
+
+  const { authStorage, modelRegistry } = bootstrapAuthAndRegistry();
+
+  const model = modelRegistry.find(opts.model.provider, opts.model.modelId);
+  if (!model) {
+    throw new Error(
+      `runTurn: model not found: provider=${opts.model.provider} id=${opts.model.modelId}`,
+    );
+  }
+
+  const settingsManager = SettingsManager.inMemory({
+    defaultProvider: opts.model.provider,
+    defaultModel: opts.model.modelId,
+    compaction: { enabled: true, reserveTokens: 16384, keepRecentTokens: 20000 },
+    retry: { enabled: true, maxRetries: 3 },
+    quietStartup: true,
   });
 
-  const detachWatcher = attachProjectWatcher(opts.projectId);
-
-  const ctx: PiCliContext = {
+  // The bash tool spawns subprocesses that call back into the server via
+  // ZERO_PROXY_URL with this token. The token's lifetime tracks the turn —
+  // released in finally. Per-turn env is plumbed through the bash sandbox's
+  // BashOperations.exec rather than mutated on process.env so concurrent
+  // turns can't clobber each other's ZERO_PROXY_TOKEN.
+  const proxyToken = randomBytes(24).toString("hex");
+  const releaseToken = registerPiTurnToken(proxyToken, {
     projectId: opts.projectId,
     chatId: opts.chatId,
     userId: opts.userId,
     runId,
     expiresAt: Date.now() + 30 * 60 * 1000,
+  });
+  const cliPort = parseInt(process.env.PORT ?? "3000");
+  const zeroBinDir = ensureZeroOnPath();
+  const bashEnv: Record<string, string> = {
+    PATH_PREFIX: zeroBinDir,
+    ZERO_PROXY_URL: `http://127.0.0.1:${cliPort}/v1/proxy`,
+    ZERO_PROXY_TOKEN: proxyToken,
+    ZERO_RUN_ID: runId,
   };
 
-  const releaseToken = registerPiTurnToken(token, ctx);
-  const cliPort = parseInt(process.env.PORT ?? "3000");
+  const resourceLoader = new DefaultResourceLoader({
+    cwd: projectDir,
+    agentDir: getAgentDir(),
+    settingsManager,
+    extensionFactories: [
+      createProjectSandboxExtension({
+        projectDir,
+        bashEnv,
+        // .pi/agents/*.md are symlinks to the bundled default-agents dir;
+        // realpath resolution would otherwise put them outside both the
+        // project dir and the zero package root, and the agent could not
+        // read its own agent definitions.
+        extraReadOnlyRoots: [defaultAgentsDir()],
+      }),
+      // Subagents need the same per-turn env (ZERO_PROXY_URL/TOKEN, PATH
+      // prefix) so their bash subprocesses can reach the `zero` CLI proxy
+      // for browser, web, image, etc. Without this `zero browser` falls
+      // back to "no proxy configured" inside subagents.
+      createSubagentExtension({
+        childBashEnv: bashEnv,
+        childExtraReadOnlyRoots: [defaultAgentsDir()],
+      }),
+    ],
+    additionalSkillPaths: [defaultSkillsDir()],
+    systemPromptOverride: () => systemPrompt,
+  });
+  await resourceLoader.reload();
 
-  const sessionFile = join(sessionsDir, `${opts.chatId}.jsonl`);
+  // SessionManager.open tolerates a missing/empty file (returns [] entries)
+  // — the first appendMessage from the session writes the header.
+  const sessionManager = SessionManager.open(sessionFile, sessionsDir, projectDir);
+
+  const detachWatcher = attachProjectWatcher(opts.projectId);
   const preSnapshot = await snapshotBeforeTurn({
     projectId: opts.projectId,
     chatId: opts.chatId,
     runId,
   });
 
-  const args: string[] = [
-    "--mode", "json",
-    "-p",
-    "--session", sessionFile,
-    "--provider", opts.model.provider,
-    "--model", opts.model.modelId,
-  ];
-
-  if (opts.model.thinkingLevel) {
-    args.push("--thinking", opts.model.thinkingLevel);
-  }
-
-  let imageDir: string | null = null;
-  if (opts.images && opts.images.length > 0 && opts.model.supportsImages) {
-    imageDir = join(tmpdir(), "zero-pi-turn", runId, "images");
-    const paths = writeImageFiles(imageDir, opts.images);
-    for (const p of paths) args.push(`@${p}`);
-  }
-
-  args.push(opts.userMessage);
-
-  const zeroBinDir = ensureZeroOnPath();
-  const env: NodeJS.ProcessEnv = {
-    ...process.env,
-    ...buildPiEnv(),
-    PATH: `${zeroBinDir}${pathDelimiter}${process.env.PATH ?? ""}`,
-    ZERO_PROXY_URL: `http://127.0.0.1:${cliPort}/v1/proxy`,
-    ZERO_PROXY_TOKEN: token,
-    ZERO_RUN_ID: runId,
-    // Forwarded to subagent subprocesses so they inherit the parent's model
-    // when the agent definition doesn't pin one. See subagent extension.
-    ZERO_PI_PROVIDER: opts.model.provider,
-    ZERO_PI_MODEL_ID: opts.model.modelId,
-  };
-
-  const invocation = getPiInvocation(args);
-  turnLog.info("spawning pi", {
+  turnLog.info("starting pi turn", {
     runId,
     chatId: opts.chatId,
-    command: invocation.command,
     modelId: opts.model.modelId,
+    provider: opts.model.provider,
     sessionFile,
     sessionFileExistsBefore: existsSync(sessionFile),
   });
 
-  let count = 0;
-  let aborted = false;
-
-  const exitCode = await new Promise<number>((resolve) => {
-    const proc = spawn(invocation.command, invocation.args, {
-      cwd: projectDir,
-      env,
-      shell: false,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-
-    let buffer = "";
-    const processLine = (line: string) => {
-      const trimmed = line.trim();
-      if (!trimmed) return;
-      let event: AgentSessionEvent;
-      try {
-        event = JSON.parse(trimmed);
-      } catch (err) {
-        turnLog.warn("pi stdout: non-JSON line", { line: trimmed.slice(0, 200) });
-        return;
-      }
-      count++;
-      try {
-        opts.onEvent({
-          type: "pi.event",
-          projectId: opts.projectId,
-          chatId: opts.chatId,
-          runId,
-          event,
-        });
-      } catch (err) {
-        turnLog.error("onEvent threw", err);
-      }
-      recordTurnUsage(event, opts, runId);
-    };
-
-    proc.stdout.on("data", (data: Buffer) => {
-      buffer += data.toString();
-      const lines = buffer.split("\n");
-      buffer = lines.pop() ?? "";
-      for (const line of lines) processLine(line);
-    });
-
-    proc.stderr.on("data", (data: Buffer) => {
-      const text = data.toString();
-      // Pi's quietStartup setting suppresses banners but model errors
-      // still arrive on stderr — surface those.
-      turnLog.info("pi stderr", { runId, text: text.slice(0, 4000) });
-    });
-
-    proc.on("close", (code) => {
-      if (buffer.trim()) processLine(buffer);
-      resolve(code ?? 0);
-    });
-
-    proc.on("error", (err) => {
-      turnLog.error("pi spawn error", err);
-      resolve(1);
-    });
-
-    if (opts.abortSignal) {
-      const onAbort = () => {
-        aborted = true;
-        proc.kill("SIGTERM");
-        setTimeout(() => {
-          if (!proc.killed) proc.kill("SIGKILL");
-        }, 5000).unref();
-      };
-      if (opts.abortSignal.aborted) onAbort();
-      else opts.abortSignal.addEventListener("abort", onAbort, { once: true });
-    }
+  const { session } = await createAgentSession({
+    cwd: projectDir,
+    agentDir: getAgentDir(),
+    authStorage,
+    modelRegistry,
+    model: model as Model<Api>,
+    thinkingLevel: opts.model.thinkingLevel ?? undefined,
+    resourceLoader,
+    sessionManager,
+    settingsManager,
   });
 
-  try {
-    if (preSnapshot) {
-      await snapshotAfterTurn({
+  let count = 0;
+  let aborted = false;
+  // Track the most recent assistant stop reason so we can flag `length`
+  // truncations after the prompt resolves. pi-ai treats `length` as a
+  // healthy stream end, so without this the turn would silently report
+  // success even when the model was cut off mid-thinking.
+  let lastAssistantStopReason: string | null = null;
+  const unsubscribe = session.subscribe((event) => {
+    count++;
+    try {
+      opts.onEvent({
+        type: "pi.event",
         projectId: opts.projectId,
         chatId: opts.chatId,
         runId,
-        preSnapshotId: preSnapshot.snapshotId,
+        event,
       });
+    } catch (err) {
+      turnLog.error("onEvent threw", err);
     }
-  } finally {
-    detachWatcher();
-    releaseToken();
-    if (imageDir) rmSync(imageDir, { recursive: true, force: true });
-  }
-
-  const sessionFileExists = existsSync(sessionFile);
-  const sessionFileSize = sessionFileExists ? statSync(sessionFile).size : 0;
-
-  const truncation = aborted
-    ? { truncated: false, truncationReason: null }
-    : await detectTruncation(sessionFile);
-
-  turnLog.info("pi exited", {
-    runId,
-    chatId: opts.chatId,
-    exitCode,
-    aborted,
-    events: count,
-    sessionFile,
-    sessionFileExists,
-    sessionFileSize,
-    truncated: truncation.truncated,
-    truncationReason: truncation.truncationReason,
+    if (event.type === "message_end") {
+      const msg = (event as { message?: { role?: string; stopReason?: string | null } }).message;
+      if (msg?.role === "assistant") {
+        lastAssistantStopReason = msg.stopReason ?? null;
+      }
+    }
+    recordTurnUsage(event, opts, runId);
   });
 
-  return {
-    runId,
-    sessionFile,
-    events: count,
-    aborted,
-    exitCode,
-    truncated: truncation.truncated,
-    truncationReason: truncation.truncationReason,
+  const onAbort = () => {
+    aborted = true;
+    void session.abort();
   };
-}
+  if (opts.abortSignal) {
+    if (opts.abortSignal.aborted) onAbort();
+    else opts.abortSignal.addEventListener("abort", onAbort, { once: true });
+  }
 
-/**
- * Read the session JSONL and check the last assistant message for a clean
- * stop. Returns truncation status the caller can surface as a failure.
- *
- * pi-ai's `StopReason = "stop" | "length" | "toolUse" | "error" | "aborted"`.
- * `stop` and `toolUse` are healthy outcomes; `length` means the model hit its
- * output cap mid-response (the Kimi failure mode); `error`/`aborted` are
- * already surfaced through other channels but we still flag them so the
- * caller doesn't record a misleading "completed".
- */
-async function detectTruncation(
-  sessionFile: string,
-): Promise<{ truncated: boolean; truncationReason: string | null }> {
-  if (!existsSync(sessionFile)) {
-    return { truncated: true, truncationReason: "session file missing" };
-  }
-  let lastAssistant: { stopReason?: string | null } | null = null;
   try {
-    const stream = createReadStream(sessionFile, { encoding: "utf-8" });
-    const rl = createInterface({ input: stream, crlfDelay: Infinity });
-    for await (const line of rl) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
-      let parsed: { type?: string; message?: { role?: string; stopReason?: string | null } };
-      try { parsed = JSON.parse(trimmed); } catch { continue; }
-      if (parsed.type !== "message") continue;
-      const msg = parsed.message;
-      if (msg?.role !== "assistant") continue;
-      lastAssistant = msg;
+    const images = opts.images?.length && opts.model.supportsImages
+      ? opts.images.map((img) => ({
+          type: "image" as const,
+          data: img.data,
+          mimeType: img.mimeType,
+        }))
+      : undefined;
+    await session.prompt(opts.userMessage, images ? { images } : undefined);
+  } finally {
+    unsubscribe();
+    session.dispose();
+    try {
+      if (preSnapshot) {
+        await snapshotAfterTurn({
+          projectId: opts.projectId,
+          chatId: opts.chatId,
+          runId,
+          preSnapshotId: preSnapshot.snapshotId,
+        });
+      }
+    } finally {
+      detachWatcher();
+      releaseToken();
     }
-  } catch (err) {
-    turnLog.warn("truncation check: failed to read session file", {
-      sessionFile,
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return { truncated: false, truncationReason: null };
   }
-  if (!lastAssistant) {
-    return { truncated: true, truncationReason: "no assistant message in transcript" };
-  }
-  const stop = lastAssistant.stopReason;
-  if (stop === "stop" || stop === "toolUse") {
-    return { truncated: false, truncationReason: null };
-  }
-  if (stop == null) {
-    return { truncated: true, truncationReason: "missing stopReason (model stream cut off)" };
-  }
-  return { truncated: true, truncationReason: `stopReason=${stop}` };
+
+  const truncated = !aborted && lastAssistantStopReason === "length";
+  const truncationReason = truncated
+    ? "model response truncated (stopReason=length — output cap hit mid-response)"
+    : null;
+
+  turnLog.info("pi turn ended", {
+    runId,
+    chatId: opts.chatId,
+    aborted,
+    events: count,
+    sessionFile,
+    sessionFileExists: existsSync(sessionFile),
+    stopReason: lastAssistantStopReason,
+    truncated,
+  });
+
+  return { runId, sessionFile, events: count, aborted, truncated, truncationReason };
 }
 
 function recordTurnUsage(
@@ -396,8 +319,7 @@ function recordTurnUsage(
   const usage = message.usage;
   if (!usage) return;
   // usage_logs.user_id is `NOT NULL REFERENCES users(id)`. Autonomous runs may
-  // pass an empty userId (no human in the loop) — skip the insert rather than
-  // log a FK violation on every turn_end.
+  // pass an empty userId — skip the insert rather than FK-violate every turn.
   if (!opts.userId) return;
   try {
     insertUsageLog({

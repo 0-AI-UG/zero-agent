@@ -83,7 +83,8 @@ interface CodePreviewProps {
 export function CodePreview({ file, content, projectId }: CodePreviewProps) {
   const [editContent, setEditContent] = useState(content);
   const updateFile = useUpdateFileContent(projectId);
-  const isDirty = editContent !== content;
+  const readOnly = file.isSymlink === true;
+  const isDirty = !readOnly && editContent !== content;
   const { setActions } = usePreviewActions();
 
   const handleSave = () => {
@@ -99,15 +100,17 @@ export function CodePreview({ file, content, projectId }: CodePreviewProps) {
   useEffect(() => {
     setActions(
       <>
-        <Button
-          variant="default"
-          size="sm"
-          onClick={handleSave}
-          disabled={updateFile.isPending || !isDirty}
-        >
-          <SaveIcon className="h-4 w-4 mr-1" />
-          {updateFile.isPending ? "Saving..." : "Save"}
-        </Button>
+        {!readOnly && (
+          <Button
+            variant="default"
+            size="sm"
+            onClick={handleSave}
+            disabled={updateFile.isPending || !isDirty}
+          >
+            <SaveIcon className="h-4 w-4 mr-1" />
+            {updateFile.isPending ? "Saving..." : "Save"}
+          </Button>
+        )}
         <Button
           variant="ghost"
           size="icon-sm"
@@ -122,7 +125,7 @@ export function CodePreview({ file, content, projectId }: CodePreviewProps) {
       </>
     );
     return () => setActions(null);
-  }, [isDirty, updateFile.isPending, editContent]);
+  }, [isDirty, updateFile.isPending, editContent, readOnly]);
 
   const onChange = useCallback((value: string) => {
     setEditContent(value);
@@ -132,11 +135,17 @@ export function CodePreview({ file, content, projectId }: CodePreviewProps) {
 
   return (
     <div className="p-4">
+      {readOnly && (
+        <div className="mb-2 text-xs text-muted-foreground">
+          Read-only
+        </div>
+      )}
       <div className="rounded-md border overflow-hidden">
         <CodeMirror
           value={editContent}
           extensions={extensions}
           onChange={onChange}
+          readOnly={readOnly}
           theme="dark"
           basicSetup={{
             lineNumbers: true,

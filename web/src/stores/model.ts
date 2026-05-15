@@ -11,6 +11,8 @@ export interface ModelConfig {
   multimodal: boolean;
   contextWindow?: number;
   thinkingLevel?: ThinkingLevel | null;
+  piProvider?: string;
+  piModelId?: string | null;
 }
 
 interface ModelState {

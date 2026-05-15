@@ -510,6 +510,43 @@ function InstanceSettingsSection() {
   );
 }
 
+const DIRECT_ROUTE_PROVIDERS: Array<{ provider: string; envVar: string }> = [
+  { provider: "anthropic", envVar: "ANTHROPIC_API_KEY" },
+  { provider: "openai", envVar: "OPENAI_API_KEY" },
+  { provider: "deepseek", envVar: "DEEPSEEK_API_KEY" },
+  { provider: "google", envVar: "GOOGLE_API_KEY" },
+  { provider: "groq", envVar: "GROQ_API_KEY" },
+  { provider: "cerebras", envVar: "CEREBRAS_API_KEY" },
+  { provider: "mistral", envVar: "MISTRAL_API_KEY" },
+  { provider: "xai", envVar: "XAI_API_KEY" },
+  { provider: "zai", envVar: "ZAI_API_KEY" },
+  { provider: "fireworks", envVar: "FIREWORKS_API_KEY" },
+  { provider: "minimax", envVar: "MINIMAX_API_KEY" },
+  { provider: "huggingface", envVar: "HUGGINGFACE_API_KEY" },
+];
+
+function DirectRouteKeysCard() {
+  const { data: settings } = useAdminSettings();
+
+  return (
+    <details className="rounded-lg border">
+      <summary className="cursor-pointer px-4 py-3 text-sm font-medium select-none">
+        Direct-route provider keys
+      </summary>
+      <div className="px-4 pb-4 pt-1 space-y-4">
+        {DIRECT_ROUTE_PROVIDERS.map((b) => (
+          <ApiKeyField
+            key={b.envVar}
+            label={b.provider}
+            placeholder={b.envVar}
+            currentValue={settings?.[b.envVar]}
+            settingKey={b.envVar}
+          />
+        ))}
+      </div>
+    </details>
+  );
+}
 
 function EmailSettingsSection() {
   const { data: status } = useEmailFeatureStatus();
@@ -590,6 +627,24 @@ function SecuritySection() {
 
 type AdminModel = ModelConfig & { enabled: boolean; sortOrder: number };
 
+/** Inline chip showing where a model's chat turns actually route. */
+function RouteChip({ piProvider, piModelId }: { piProvider?: string; piModelId?: string | null }) {
+  const route = piProvider ?? "openrouter";
+  const isDirect = route !== "openrouter";
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded px-1 py-px font-mono text-[10px] ${
+        isDirect
+          ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+          : "bg-muted text-muted-foreground"
+      }`}
+      title={isDirect && piModelId ? `Direct → ${route} (${piModelId})` : `Routes via ${route}`}
+    >
+      {isDirect ? "→ " : ""}{route}{isDirect && piModelId ? `:${piModelId}` : ""}
+    </span>
+  );
+}
+
 function ModelManagementSection() {
   const { data: models, isLoading } = useAdminModels();
   const updateModel = useUpdateModel();
@@ -660,7 +715,11 @@ function ModelManagementSection() {
                           </Badge>
                         )}
                       </div>
-                      <p className="text-[11px] text-muted-foreground truncate">{model.id}</p>
+                      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground truncate">
+                        <span className="font-mono truncate">{model.id}</span>
+                        <span aria-hidden>·</span>
+                        <RouteChip piProvider={model.piProvider} piModelId={model.piModelId} />
+                      </div>
                     </div>
                   </TableCell>
                   <TableCell>
@@ -731,6 +790,8 @@ function ModelManagementSection() {
           </Table>
         )}
       </div>
+
+      <DirectRouteKeysCard />
 
       {editModel && (
         <EditModelDialog
@@ -809,11 +870,16 @@ function AddModelDialog({ open, onOpenChange, providers }: { open: boolean; onOp
                 </SelectContent>
               </Select>
             </div>
-            <div className="col-span-2 flex items-end gap-2">
-              <label className="flex items-center gap-2 text-xs font-medium cursor-pointer">
-                <input type="checkbox" checked={multimodal} onChange={(e) => setMultimodal(e.target.checked)} className="rounded" />
-                Multimodal (Vision)
-              </label>
+            <div className="col-span-2 flex items-center justify-between gap-2">
+              <div className="space-y-0.5">
+                <p className="text-xs font-medium">Multimodal (Vision)</p>
+                <p className="text-[10px] text-muted-foreground leading-tight">Accepts image input alongside text.</p>
+              </div>
+              <Switch
+                checked={multimodal}
+                onCheckedChange={setMultimodal}
+                aria-label="Multimodal (Vision)"
+              />
             </div>
           </div>
           <DialogFooter>
@@ -839,6 +905,28 @@ function EditModelDialog({ model, providers, open, onOpenChange }: { model: Admi
   const [thinkingLevel, setThinkingLevel] = useState<string>(
     model.thinkingLevel ?? THINKING_DEFAULT,
   );
+  const [piProvider, setPiProvider] = useState<string>(model.piProvider ?? "openrouter");
+  const [piModelId, setPiModelId] = useState<string>(model.piModelId ?? "");
+
+  const piOptions = [
+    { value: "openrouter", label: "openrouter" },
+    { value: "anthropic", label: "anthropic" },
+    { value: "openai", label: "openai" },
+    { value: "deepseek", label: "deepseek" },
+    { value: "google", label: "google" },
+    { value: "groq", label: "groq" },
+    { value: "cerebras", label: "cerebras" },
+    { value: "mistral", label: "mistral" },
+    { value: "xai", label: "xai" },
+    { value: "zai", label: "zai" },
+    { value: "fireworks", label: "fireworks" },
+    { value: "minimax", label: "minimax" },
+    { value: "huggingface", label: "huggingface" },
+  ];
+  // Keep existing rows editable even if their pi_provider isn't in the list.
+  if (piProvider && !piOptions.some((o) => o.value === piProvider)) {
+    piOptions.unshift({ value: piProvider, label: piProvider });
+  }
 
   function handleSave() {
     updateModelMutation.mutate(
@@ -848,6 +936,8 @@ function EditModelDialog({ model, providers, open, onOpenChange }: { model: Admi
         provider: provider.trim(),
         multimodal,
         thinkingLevel: thinkingLevel === THINKING_DEFAULT ? null : thinkingLevel,
+        piProvider: piProvider.trim() || "openrouter",
+        piModelId: piModelId.trim() === "" ? null : piModelId.trim(),
       },
       {
         onSuccess: () => { onOpenChange(false); toast.success("Model updated"); },
@@ -870,7 +960,7 @@ function EditModelDialog({ model, providers, open, onOpenChange }: { model: Admi
               <Input value={name} onChange={(e) => setName(e.target.value)} className="h-8 text-xs" autoFocus />
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium">Provider</label>
+              <label className="text-xs font-medium">Provider Tag</label>
               <Select value={provider} onValueChange={setProvider}>
                 <SelectTrigger className="h-8 w-full text-xs">
                   <SelectValue />
@@ -898,15 +988,35 @@ function EditModelDialog({ model, providers, open, onOpenChange }: { model: Admi
                   ))}
                 </SelectContent>
               </Select>
-              <p className="text-[10px] text-muted-foreground leading-tight">
-                Reasoning budget. `off` disables thinking for the turn.
-              </p>
             </div>
-            <div className="col-span-2 flex items-end gap-2">
-              <label className="flex items-center gap-2 text-xs font-medium cursor-pointer">
-                <input type="checkbox" checked={multimodal} onChange={(e) => setMultimodal(e.target.checked)} className="rounded" />
-                Multimodal (Vision)
-              </label>
+            <div className="col-span-2 flex items-center justify-between gap-2">
+              <p className="text-xs font-medium">Vision</p>
+              <Switch
+                checked={multimodal}
+                onCheckedChange={setMultimodal}
+                aria-label="Vision"
+              />
+            </div>
+            <div className="col-span-2 pt-3 border-t space-y-2">
+              <p className="text-xs font-medium">Route through</p>
+              <div className="grid grid-cols-[1fr_1fr] gap-2">
+                <Select value={piProvider} onValueChange={setPiProvider}>
+                  <SelectTrigger className="h-8 w-full text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {piOptions.map((o) => (
+                      <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Input
+                  value={piModelId}
+                  onChange={(e) => setPiModelId(e.target.value)}
+                  placeholder={piProvider === "openrouter" ? model.id : "upstream model id"}
+                  className="h-8 text-xs font-mono"
+                />
+              </div>
             </div>
           </div>
           <DialogFooter>

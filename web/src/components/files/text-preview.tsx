@@ -15,7 +15,8 @@ interface TextPreviewProps {
 export function TextPreview({ file, content, projectId }: TextPreviewProps) {
   const [editContent, setEditContent] = useState(content);
   const updateFile = useUpdateFileContent(projectId);
-  const isDirty = editContent !== content;
+  const readOnly = file.isSymlink === true;
+  const isDirty = !readOnly && editContent !== content;
   const { setActions } = usePreviewActions();
 
   const handleSave = () => {
@@ -31,15 +32,17 @@ export function TextPreview({ file, content, projectId }: TextPreviewProps) {
   useEffect(() => {
     setActions(
       <>
-        <Button
-          variant="default"
-          size="sm"
-          onClick={handleSave}
-          disabled={updateFile.isPending || !isDirty}
-        >
-          <SaveIcon className="h-4 w-4 mr-1" />
-          {updateFile.isPending ? "Saving..." : "Save"}
-        </Button>
+        {!readOnly && (
+          <Button
+            variant="default"
+            size="sm"
+            onClick={handleSave}
+            disabled={updateFile.isPending || !isDirty}
+          >
+            <SaveIcon className="h-4 w-4 mr-1" />
+            {updateFile.isPending ? "Saving..." : "Save"}
+          </Button>
+        )}
         <Button
           variant="ghost"
           size="icon-sm"
@@ -54,14 +57,20 @@ export function TextPreview({ file, content, projectId }: TextPreviewProps) {
       </>
     );
     return () => setActions(null);
-  }, [isDirty, updateFile.isPending, editContent]);
+  }, [isDirty, updateFile.isPending, editContent, readOnly]);
 
   return (
     <div className="p-4">
+      {readOnly && (
+        <div className="mb-2 text-xs text-muted-foreground">
+          Read-only
+        </div>
+      )}
       <textarea
         value={editContent}
         onChange={(e) => setEditContent(e.target.value)}
-        className="w-full min-h-[400px] p-4 rounded-md border bg-background font-mono text-sm resize-y focus:outline-none focus:ring-2 focus:ring-ring"
+        readOnly={readOnly}
+        className="w-full min-h-[400px] p-4 rounded-md border bg-background font-mono text-sm resize-y focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-60 read-only:bg-muted/30"
       />
     </div>
   );

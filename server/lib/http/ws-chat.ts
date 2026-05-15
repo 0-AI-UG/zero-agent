@@ -169,11 +169,7 @@ async function handleChatSend(
       if (aborted) {
         endChatStream(chat.id, "aborted");
       } else if (truncated) {
-        endChatStream(
-          chat.id,
-          "error",
-          `model response truncated: ${truncationReason ?? "no stop_reason"}`,
-        );
+        endChatStream(chat.id, "error", truncationReason ?? "model response truncated");
       } else {
         endChatStream(chat.id, "completed");
       }

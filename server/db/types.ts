@@ -89,6 +89,7 @@ export interface FileRow {
   size_bytes: number;
   folder_path: string;
   hash: string;
+  is_symlink: number;
   created_at: string;
 }
 
@@ -216,6 +217,8 @@ export interface ModelRow {
   enabled: number;
   sort_order: number;
   thinking_level: ThinkingLevel | null;
+  pi_provider: string;
+  pi_model_id: string | null;
   created_at: string;
   updated_at: string;
 }

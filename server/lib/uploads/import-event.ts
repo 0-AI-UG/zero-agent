@@ -5,10 +5,11 @@
  * (`server/lib/projects/watcher.ts`) picks up the new bytes and updates the
  * `files` row, FTS index, embeddings, and emits `file.updated`.
  */
-import { mkdir, writeFile } from "node:fs/promises";
+import { lstat, mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { projectDirFor } from "@/lib/pi/run-turn.ts";
 import { log } from "@/lib/utils/logger.ts";
+import { ValidationError } from "@/lib/utils/errors.ts";
 import { sha256Hex } from "@/lib/utils/hash.ts";
 
 const importLog = log.child({ module: "upload-import" });
@@ -25,6 +26,17 @@ export async function importUploadedFile(params: {
 }): Promise<void> {
   const { projectId, path, buffer } = params;
   const absPath = join(projectDirFor(projectId), path);
+  // Refuse to write through symlinks — fs.writeFile would follow the link
+  // and mutate the target (e.g. the bundled subagent .md files mounted at
+  // `.pi/agents/*` whose real source lives outside the project dir).
+  try {
+    const link = await lstat(absPath);
+    if (link.isSymbolicLink()) {
+      throw new ValidationError(`cannot write through symlink: ${path}`);
+    }
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+  }
   await mkdir(dirname(absPath), { recursive: true });
   await writeFile(
     absPath,

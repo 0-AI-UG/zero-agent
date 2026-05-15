@@ -9,8 +9,8 @@ import {
   _clearPiTurnTokens,
   registerPiTurnToken,
   resolvePiTurnToken,
-} from "./cli-server.ts";
-import type { PiCliContext } from "./cli-context.ts";
+} from "./proxy-token.ts";
+import type { PiCliContext } from "@/lib/pi/cli-context.ts";
 
 afterEach(() => {
   _clearPiTurnTokens();

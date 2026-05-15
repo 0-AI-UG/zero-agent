@@ -90,6 +90,7 @@ db.exec(`
     size_bytes       INTEGER DEFAULT 0,
     folder_path      TEXT NOT NULL DEFAULT '/',
     hash             TEXT NOT NULL DEFAULT '',
+    is_symlink       INTEGER NOT NULL DEFAULT 0,
     created_at       TEXT NOT NULL DEFAULT (datetime('now'))
   )
 `);
@@ -102,6 +103,9 @@ db.exec(`
   }
   if (cols.some((c) => c.name === "thumbnail_s3_key")) {
     db.exec("ALTER TABLE files DROP COLUMN thumbnail_s3_key");
+  }
+  if (!cols.some((c) => c.name === "is_symlink")) {
+    db.exec("ALTER TABLE files ADD COLUMN is_symlink INTEGER NOT NULL DEFAULT 0");
   }
 }
 
@@ -304,6 +308,15 @@ db.exec(`
 
 try { db.exec(`ALTER TABLE models ADD COLUMN thinking_level TEXT`); } catch { /* already present */ }
 try { db.exec(`ALTER TABLE models DROP COLUMN max_tokens`); } catch { /* never added */ }
+try { db.exec(`ALTER TABLE models ADD COLUMN pi_provider TEXT NOT NULL DEFAULT 'openrouter'`); } catch { /* already present */ }
+try { db.exec(`ALTER TABLE models ADD COLUMN pi_model_id TEXT`); } catch { /* already present */ }
+
+// One-shot: DeepSeek deprecates `deepseek-chat` / `deepseek-reasoner` on
+// 2026-07-24. Any row previously seeded with those values gets upgraded
+// to the current ids in-place. Idempotent and bounded — touches only the
+// two known deprecated values.
+db.exec(`UPDATE models SET pi_model_id = 'deepseek-v4-flash' WHERE pi_provider = 'deepseek' AND pi_model_id = 'deepseek-chat'`);
+db.exec(`UPDATE models SET pi_model_id = 'deepseek-v4-pro' WHERE pi_provider = 'deepseek' AND pi_model_id = 'deepseek-reasoner'`);
 
 // Drop legacy columns if upgrading from a pre-cutover DB. SQLite supports
 // ALTER TABLE DROP COLUMN since 3.35; older runtimes will no-op via the try.
@@ -687,25 +700,44 @@ db.exec(`CREATE INDEX IF NOT EXISTS idx_email_messages_chat ON email_messages(ch
   const seedModels = (modelsJson as any).models as Array<{
     id: string; name: string; provider: string;
     default?: boolean; multimodal?: boolean;
+    pi?: { provider?: string; model?: string };
   }>;
-  const upsertModel = db.prepare(
-    `INSERT INTO models (id, name, provider, is_default, multimodal, sort_order)
-     VALUES (?, ?, ?, ?, ?, ?)
+  // Seed-driven fields only — never overwrite admin-edited pi routing on
+  // existing rows. New rows still get the seed's pi block as initial values.
+  // Upsert. On conflict we re-apply seed-canonical fields but only update
+  // pi routing when the row is still at the default (openrouter / no
+  // override) — this lets new pi blocks in models.json reach existing DBs
+  // without clobbering admin customizations.
+  const insertModel = db.prepare(
+    `INSERT INTO models (id, name, provider, is_default, multimodal, sort_order, pi_provider, pi_model_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
        name = excluded.name,
        provider = excluded.provider,
        is_default = excluded.is_default,
        multimodal = excluded.multimodal,
        sort_order = excluded.sort_order,
+       pi_provider = CASE
+         WHEN models.pi_provider = 'openrouter' AND models.pi_model_id IS NULL
+           THEN excluded.pi_provider
+         ELSE models.pi_provider
+       END,
+       pi_model_id = CASE
+         WHEN models.pi_provider = 'openrouter' AND models.pi_model_id IS NULL
+           THEN excluded.pi_model_id
+         ELSE models.pi_model_id
+       END,
        updated_at = datetime('now')`
   );
   for (let i = 0; i < seedModels.length; i++) {
     const m = seedModels[i]!;
-    upsertModel.run(
+    insertModel.run(
       m.id, m.name, m.provider,
       m.default ? 1 : 0,
       m.multimodal ? 1 : 0,
       i,
+      m.pi?.provider ?? "openrouter",
+      m.pi?.model ?? null,
     );
   }
   const seedIds = seedModels.map((m) => m.id);
