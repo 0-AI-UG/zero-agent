@@ -6,8 +6,16 @@
  *
  * Pass --watch to rebuild on file change.
  */
-import { rmSync, cpSync, watch } from "node:fs";
+import { rmSync, cpSync, readFileSync, writeFileSync, watch } from "node:fs";
 import tailwind from "bun-plugin-tailwind";
+
+// PWA link tags must be present at first HTML parse for iOS to recognize the
+// site as a PWA at "Add to Home Screen" time. They are injected here rather
+// than in src/index.html because Bun's HTML bundler would hash the icon URL
+// and break the stable path.
+const PWA_LINKS = `    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+`;
 
 const WATCH = process.argv.includes("--watch");
 
@@ -49,6 +57,13 @@ async function build() {
 
   // Copy static assets (manifest, icons)
   cpSync("./public", "./dist", { recursive: true, force: true });
+
+  // Inject PWA link tags into the built index.html — see PWA_LINKS comment above.
+  const htmlPath = "./dist/index.html";
+  const html = readFileSync(htmlPath, "utf8");
+  if (!html.includes('rel="manifest"')) {
+    writeFileSync(htmlPath, html.replace("</head>", `${PWA_LINKS}  </head>`));
+  }
 
   console.log(`Built ${result.outputs.length + swResult.outputs.length} files → web/dist/ (${Date.now() - start}ms)`);
 }
