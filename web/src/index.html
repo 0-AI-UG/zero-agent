@@ -9,6 +9,15 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="Zero" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <!--
+      Manifest and apple-touch-icon links are injected post-build into
+      dist/index.html (see web/build.ts). They are NOT in the source HTML
+      because Bun's HTML bundler would try to hash /icons/icon-192.png,
+      breaking the stable URL iOS needs at "Add to Home Screen" time.
+
+      In dev (bun --hot src/index.html) iOS PWA install isn't testable
+      anyway (no HTTPS), so the missing dev tags don't matter.
+    -->
     <script>
       // Inject PWA tags at runtime — bun's HTML bundler tries to resolve
       // these as bundleable assets, but the files are copied verbatim from
