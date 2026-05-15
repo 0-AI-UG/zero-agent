@@ -20,6 +20,7 @@ import { registerEventTask, unregisterEventTask, refreshEventTask } from "@/lib/
 import { validateScriptPath } from "@/lib/tasks/script-runner.ts";
 import type { TaskRow, TaskRunRow } from "@/db/types.ts";
 import type { EventName } from "@/lib/tasks/events.ts";
+import { events } from "@/lib/tasks/events.ts";
 
 const VALID_TRIGGER_EVENTS: EventName[] = [
   "file.created", "file.updated", "file.deleted", "file.moved",
@@ -272,6 +273,9 @@ export async function handleRunTaskNow(request: Request): Promise<Response> {
 
     // Run async, don't block the response
     (async () => {
+      events.emit("task.started", {
+        taskId: task.id, taskName: task.name, projectId: project.id, prompt: task.prompt,
+      });
       try {
         const result = await runAutonomousTurn(
           { id: project.id, name: project.name },
@@ -285,12 +289,18 @@ export async function handleRunTaskNow(request: Request): Promise<Response> {
           chat_id: result.chatId,
           finished_at: formatDateForSQLite(new Date()),
         });
+        events.emit("task.completed", {
+          taskId: task.id, taskName: task.name, projectId: project.id, response: result.summary ?? "",
+        });
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : String(err);
         updateTaskRun(run.id, {
           status: "failed",
           error: errorMsg,
           finished_at: formatDateForSQLite(new Date()),
+        });
+        events.emit("task.failed", {
+          taskId: task.id, taskName: task.name, projectId: project.id, error: errorMsg,
         });
       }
     })();
