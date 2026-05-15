@@ -6,7 +6,25 @@
     <link rel="icon" type="image/svg+xml" href="./logo.svg" />
     <meta name="theme-color" content="#15171a" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Zero" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <script>
+      // Inject PWA tags at runtime — bun's HTML bundler tries to resolve
+      // these as bundleable assets, but the files are copied verbatim from
+      // web/public/ and need stable, unhashed URLs.
+      (function() {
+        var head = document.head;
+        var m = document.createElement('link');
+        m.rel = 'manifest';
+        m.href = '/manifest.webmanifest';
+        head.appendChild(m);
+        var a = document.createElement('link');
+        a.rel = 'apple-touch-icon';
+        a.href = '/icons/icon-192.png';
+        head.appendChild(a);
+      })();
+    </script>
     <script>
       // Prevent flash of wrong theme — runs synchronously before first paint
       (function() {

@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { toast } from "sonner";
 import { apiFetch } from "@/api/client";
 import { usePushSubscription } from "@/hooks/use-push-subscription";
 import { useInstallPrompt } from "@/hooks/use-install-prompt";
@@ -191,6 +192,39 @@ export function NotificationsCenter() {
   // ───── Install state ─────
   const { canInstall, install, isStandalone, isIOS } = useInstallPrompt();
 
+  // ───── Test notification ─────
+  const [testing, setTesting] = useState(false);
+  const sendTestNotification = async () => {
+    setTesting(true);
+    try {
+      const res = await apiFetch<{
+        delivered: Channel[];
+        skipped: Array<{ channel: Channel; reason: string }>;
+        failed: Channel[];
+      }>("/notifications/test", { method: "POST" });
+      if (res.delivered.length === 0) {
+        const skippedList = res.skipped.map((s) => `${s.channel} (${s.reason})`).join(", ");
+        toast.error("No channels delivered", {
+          description: skippedList
+            ? `Skipped: ${skippedList}`
+            : "Enable a channel above first.",
+        });
+      } else {
+        toast.success(`Sent via ${res.delivered.join(", ")}`, {
+          description: res.failed.length
+            ? `Failed: ${res.failed.join(", ")}`
+            : undefined,
+        });
+      }
+    } catch (err) {
+      toast.error("Test notification failed", {
+        description: (err as Error)?.message,
+      });
+    } finally {
+      setTesting(false);
+    }
+  };
+
   // ───── Derived ─────
   const channels: Channel[] = data?.channels ?? ["ws", "push", "telegram"];
   const kinds = data?.kinds ?? Object.keys(KIND_META);
@@ -221,6 +255,14 @@ export function NotificationsCenter() {
       <div className="flex items-center gap-2">
         <BellIcon className="size-4 text-muted-foreground" />
         <h3 className="text-sm font-semibold">Notifications</h3>
+        <button
+          type="button"
+          onClick={sendTestNotification}
+          disabled={testing}
+          className="ml-auto text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground hover:text-foreground disabled:opacity-50"
+        >
+          {testing ? "Sending…" : "Send test"}
+        </button>
       </div>
 
       {/* ─── Channels platform ─── */}
