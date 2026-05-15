@@ -13,9 +13,12 @@ import { log } from "@/lib/utils/logger.ts";
 
 const tnLog = log.child({ module: "notifications/task-notifier" });
 
-function recipientUserIds(projectId: string): string[] {
-  const members = getProjectMembers(projectId);
-  return members.map((m) => m.user_id);
+function recipientUserIds(projectId: string, triggeredByUserId?: string): string[] {
+  const members = getProjectMembers(projectId).map((m) => m.user_id);
+  if (!triggeredByUserId) return members;
+  // Manual runs notify the triggering user even if they aren't a project
+  // member (admins can run any project's tasks but aren't auto-added).
+  return Array.from(new Set([triggeredByUserId, ...members]));
 }
 
 function projectName(projectId: string): string {
@@ -29,7 +32,7 @@ function truncate(value: string, max = 200): string {
 
 export function registerTaskNotifier(): void {
   events.on("task.completed", (e) => {
-    const userIds = recipientUserIds(e.projectId);
+    const userIds = recipientUserIds(e.projectId, e.triggeredByUserId);
     if (userIds.length === 0) return;
     void dispatch({
       userIds,
@@ -43,7 +46,7 @@ export function registerTaskNotifier(): void {
   });
 
   events.on("task.failed", (e) => {
-    const userIds = recipientUserIds(e.projectId);
+    const userIds = recipientUserIds(e.projectId, e.triggeredByUserId);
     if (userIds.length === 0) return;
     void dispatch({
       userIds,

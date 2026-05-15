@@ -275,6 +275,7 @@ export async function handleRunTaskNow(request: Request): Promise<Response> {
     (async () => {
       events.emit("task.started", {
         taskId: task.id, taskName: task.name, projectId: project.id, prompt: task.prompt,
+        triggeredByUserId: userId,
       });
       try {
         const result = await runAutonomousTurn(
@@ -291,6 +292,7 @@ export async function handleRunTaskNow(request: Request): Promise<Response> {
         });
         events.emit("task.completed", {
           taskId: task.id, taskName: task.name, projectId: project.id, response: result.summary ?? "",
+          triggeredByUserId: userId,
         });
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : String(err);
@@ -301,6 +303,7 @@ export async function handleRunTaskNow(request: Request): Promise<Response> {
         });
         events.emit("task.failed", {
           taskId: task.id, taskName: task.name, projectId: project.id, error: errorMsg,
+          triggeredByUserId: userId,
         });
       }
     })();
