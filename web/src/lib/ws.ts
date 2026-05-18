@@ -10,6 +10,7 @@ const MAX_RECONNECT_DELAY = 30_000;
 const listeners = new Set<MessageHandler>();
 let currentProjectId: string | null = null;
 let currentChatId: string | null = null;
+const activeBrowserSubs = new Set<string>();
 let _connected = false;
 /** Tracks how many useRealtime hooks are mounted (for StrictMode resilience) */
 let mountCount = 0;
@@ -53,6 +54,9 @@ export function connectWs() {
     }
     if (currentChatId) {
       send({ type: "viewChat", chatId: currentChatId });
+    }
+    for (const pid of activeBrowserSubs) {
+      send({ type: "subscribeBrowser", projectId: pid });
     }
 
     // Start heartbeat
@@ -137,10 +141,13 @@ export function refreshWsToken(token: string) {
 }
 
 export function subscribeBrowser(projectId: string) {
+  activeBrowserSubs.add(projectId);
   send({ type: "subscribeBrowser", projectId });
 }
 
 export function unsubscribeBrowser(projectId?: string) {
+  if (projectId) activeBrowserSubs.delete(projectId);
+  else activeBrowserSubs.clear();
   send({ type: "unsubscribeBrowser", ...(projectId ? { projectId } : {}) });
 }
 
