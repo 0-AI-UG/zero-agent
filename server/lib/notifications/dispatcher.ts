@@ -251,10 +251,16 @@ async function deliverChannel(
         return sent > 0;
       }
       case "push": {
+        // When this notification carries a pending-response, navigate to the
+        // respond UI on click. Push has no inline actions on most browsers,
+        // so url-driven navigation is the only way to reach the form.
+        const pushUrl = ctx.pendingResponseId
+          ? `/pending/${ctx.pendingResponseId}`
+          : input.url;
         const result = await sendPushToUser(userId, {
           title: input.title,
           body: input.body.slice(0, 300),
-          url: input.url,
+          url: pushUrl,
           tag: `${input.kind}-${ctx.pendingResponseId ?? "broadcast"}`,
         });
         return result.succeeded > 0;

@@ -102,6 +102,7 @@ class HostBrowserPool extends EventEmitter {
   private browser: Browser | null = null;
   private launching: Promise<Browser> | null = null;
   private sessions = new Map<string, ProjectSession>();
+  private creating = new Map<string, Promise<ProjectSession>>();
   private sweep: NodeJS.Timeout | null = null;
   private stopping = false;
   private lastFrameAt = new Map<string, number>();
@@ -163,35 +164,49 @@ class HostBrowserPool extends EventEmitter {
       existing.lastUsedAt = Date.now();
       return existing;
     }
-    const browser = await this.ensureBrowser();
-    const context = await browser.newContext({
-      viewport: { width: 1280, height: 800 },
-    });
-    const page = await context.newPage();
-    const cdp = await context.newCDPSession(page);
-    await cdp.send("Page.enable").catch(() => {});
-    await cdp.send("DOM.enable").catch(() => {});
-    await cdp.send("Accessibility.enable").catch(() => {});
+    // Coalesce concurrent first-time callers so only one context/page is created.
+    // Without this, N racing callers each create a context; only the last one
+    // gets stored in `sessions`, and the rest leak renderer processes.
+    const inflight = this.creating.get(projectId);
+    if (inflight) return inflight;
 
-    const session: ProjectSession = {
-      projectId,
-      context,
-      page,
-      cdp,
-      refMap: new Map(),
-      snapshotCache: { dirty: true },
-      lastUsedAt: Date.now(),
-      lastFrame: null,
-      queue: Promise.resolve(),
-    };
-    this.sessions.set(projectId, session);
+    const p = (async () => {
+      const browser = await this.ensureBrowser();
+      const context = await browser.newContext({
+        viewport: { width: 1280, height: 800 },
+      });
+      const page = await context.newPage();
+      const cdp = await context.newCDPSession(page);
+      await cdp.send("Page.enable").catch(() => {});
+      await cdp.send("DOM.enable").catch(() => {});
+      await cdp.send("Accessibility.enable").catch(() => {});
 
-    page.on("close", () => {
-      if (this.sessions.get(projectId) === session) this.sessions.delete(projectId);
-    });
+      const session: ProjectSession = {
+        projectId,
+        context,
+        page,
+        cdp,
+        refMap: new Map(),
+        snapshotCache: { dirty: true },
+        lastUsedAt: Date.now(),
+        lastFrame: null,
+        queue: Promise.resolve(),
+      };
+      this.sessions.set(projectId, session);
 
-    browserLog.info("session opened", { projectId });
-    return session;
+      page.on("close", () => {
+        if (this.sessions.get(projectId) === session) this.sessions.delete(projectId);
+      });
+
+      browserLog.info("session opened", { projectId });
+      return session;
+    })();
+    this.creating.set(projectId, p);
+    try {
+      return await p;
+    } finally {
+      this.creating.delete(projectId);
+    }
   }
 
   async closeSession(projectId: string): Promise<void> {

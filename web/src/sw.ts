@@ -34,9 +34,15 @@ self.addEventListener("notificationclick", (event) => {
 });
 
 async function openOrFocus(url: string): Promise<void> {
-  const clients = await self.clients.matchAll({ type: "window" });
+  const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+  // If a window is already open, focus it and navigate. openWindow is
+  // unreliable when the PWA is already running (popup blockers, single-window
+  // PWAs) — navigating an existing client always lands on the right page.
   for (const client of clients) {
-    if (client.url.includes(url) && "focus" in client) {
+    if ("focus" in client) {
+      try {
+        if ("navigate" in client) await (client as WindowClient).navigate(url);
+      } catch { /* cross-origin or unsupported — fall back to focus only */ }
       await client.focus();
       return;
     }
