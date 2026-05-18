@@ -141,7 +141,13 @@ class HostBrowserPool extends EventEmitter {
         "--disable-dev-shm-usage",
         "--disable-blink-features=AutomationControlled",
       ];
-      const b = await chromium.launch({ headless, args });
+      // Pass env explicitly. With BROWSER_HEADLESS=false we rely on Xvfb +
+      // DISPLAY=:99; if some wrapper in the chain (playwright-extra / stealth
+      // / rebrowser) trims env, chromium silently launches without DISPLAY and
+      // fails with "Missing X server or $DISPLAY".
+      const env = { ...process.env };
+      if (!headless && !env.DISPLAY) env.DISPLAY = ":99";
+      const b = await chromium.launch({ headless, args, env });
       b.on("disconnected", () => {
         browserLog.warn("chromium disconnected");
         if (this.browser === b) this.browser = null;
