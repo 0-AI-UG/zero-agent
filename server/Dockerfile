@@ -62,15 +62,11 @@ RUN bun run compile
 # Create data directories
 RUN mkdir -p /app/data/workspaces
 
-# Headful browser support: build with --build-arg BROWSER_HEADLESS=false to
-# install Xvfb so Chromium can launch with a real GUI inside a virtual display.
-# Default (true) keeps the image lean — Xvfb is not installed.
-ARG BROWSER_HEADLESS=true
-ENV BROWSER_HEADLESS=${BROWSER_HEADLESS}
-RUN if [ "$BROWSER_HEADLESS" = "false" ]; then \
-      apt-get update && apt-get install -y --no-install-recommends xvfb xauth && \
-      rm -rf /var/lib/apt/lists/*; \
-    fi
+# Headful browser support via xvfb-run. Toggled at runtime by BROWSER_HEADLESS
+# env var, so both xvfb and xauth are installed unconditionally — xvfb-run
+# needs xauth to manage MIT-MAGIC-COOKIE auth.
+RUN apt-get update && apt-get install -y --no-install-recommends xvfb xauth && \
+    rm -rf /var/lib/apt/lists/*
 ENV DISPLAY=:99
 
 EXPOSE 3000
