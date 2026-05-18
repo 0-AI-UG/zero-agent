@@ -2,12 +2,9 @@ import { AlertCircleIcon } from "lucide-react";
 import { useMemo, type ReactNode } from "react";
 import type { AgentMessage, PendingTool, ToolExecution, ToolResultContentPart } from "@/lib/pi-events";
 import { contentText } from "@/lib/pi-events";
-import { ConversationEmptyState } from "@/components/chat-ui/Conversation";
 import { MessageShell } from "@/components/chat-ui/MessageShell";
 import { ZeroLoader } from "@/components/chat-ui/ZeroLoader";
-import { Suggestion } from "@/components/chat-ui/Suggestion";
 import { MessageView } from "./pi-transcript";
-import logoSvg from "@/logo-mark.svg";
 
 /**
  * Derive `executions` by combining:
@@ -61,9 +58,7 @@ interface MessageListProps {
   error: Error | undefined;
   memberMap: Map<string, string>;
   isMultiMember: boolean;
-  project: { assistantName?: string; assistantDescription?: string } | undefined;
-  starterSuggestions: Array<{ text: string; icon: ReactNode; description: string }>;
-  onSuggestion: (suggestion: string) => void;
+  emptyState?: ReactNode;
 }
 
 /** Whether a Pi message has any visible content. Tool calls always do. */
@@ -130,9 +125,7 @@ export function MessageList({
   error,
   memberMap,
   isMultiMember,
-  project,
-  starterSuggestions,
-  onSuggestion,
+  emptyState,
 }: MessageListProps) {
   const executions = useMemo(
     () => deriveExecutions(messages, pendingTools),
@@ -143,28 +136,7 @@ export function MessageList({
 
   return (
     <>
-      {messages.length === 0 && (
-        <div className="flex flex-col items-center justify-center flex-1 min-h-[60vh] gap-4">
-          <ConversationEmptyState
-            className="flex-none"
-            icon={<img src={logoSvg} alt="Zero Agent" className="size-10" />}
-            title={project?.assistantName ?? "Zero Agent"}
-            description={project?.assistantDescription ?? "How can I help?"}
-          />
-          <div className="flex justify-center pb-4">
-            <div className="flex flex-wrap justify-center gap-2">
-              {starterSuggestions.map((s) => (
-                <Suggestion
-                  key={s.text}
-                  suggestion={s.text}
-                  description={s.description}
-                  onClick={onSuggestion}
-                />
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
+      {messages.length === 0 && emptyState}
 
       {messages.map((message, index) => {
         if (!isVisibleMessage(message, executions)) return null;

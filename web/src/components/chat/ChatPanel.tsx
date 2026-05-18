@@ -7,6 +7,8 @@ import {
 import { getQuickActionIcon } from "./QuickActionsManager";
 import { MessageList } from "./MessageList";
 import { Composer } from "./Composer";
+import { PromptMarquee } from "./PromptMarquee";
+import { StartHints } from "./StartHints";
 import { useTypingUsers, PresenceDots } from "./PresenceBar";
 import { useQuickActions } from "@/api/quick-actions";
 import { useProject } from "@/api/projects";
@@ -31,7 +33,7 @@ function sourceLabel(source: string): string {
 }
 
 export function ChatPanel({ projectId, chatId, isAutonomous, source }: ChatPanelProps) {
-  const { data: project } = useProject(projectId);
+  useProject(projectId);
   const { data: quickActions } = useQuickActions(projectId);
   const { data: membersData } = useMembers(projectId);
 
@@ -48,15 +50,30 @@ export function ChatPanel({ projectId, chatId, isAutonomous, source }: ChatPanel
 
   const typingUsers = useTypingUsers(chatId);
 
-  const starterSuggestions = useMemo(
-    () =>
-      (quickActions ?? []).map((a) => ({
-        text: a.text,
-        icon: getQuickActionIcon(a.icon),
-        description: a.description,
-      })),
-    [quickActions],
-  );
+  const starterSuggestions = useMemo(() => {
+    const fromActions = (quickActions ?? []).map((a) => ({
+      text: a.text,
+      icon: getQuickActionIcon(a.icon),
+      description: a.description,
+    }));
+    const fallbacks: Array<{ text: string; iconKey: string; description: string }> = [
+      { text: "Schedule a recurring task", iconKey: "zap", description: "Run something on a schedule" },
+      { text: "Find files in this project", iconKey: "file", description: "Search project files" },
+      { text: "Send an email update", iconKey: "mail", description: "Draft and send mail" },
+      { text: "Brainstorm ideas", iconKey: "lightbulb", description: "Open-ended ideation" },
+      { text: "Pull data from a website", iconKey: "globe", description: "Browse and extract" },
+      { text: "Summarize this week", iconKey: "trending", description: "Recap recent activity" },
+    ];
+    const seen = new Set(fromActions.map((s) => s.text.toLowerCase()));
+    const extras = fallbacks
+      .filter((f) => !seen.has(f.text.toLowerCase()))
+      .map((f) => ({
+        text: f.text,
+        icon: getQuickActionIcon(f.iconKey),
+        description: f.description,
+      }));
+    return [...fromActions, ...extras];
+  }, [quickActions]);
 
   const handleSuggestion = useCallback(
     (suggestion: string) => {
@@ -78,9 +95,7 @@ export function ChatPanel({ projectId, chatId, isAutonomous, source }: ChatPanel
             error={errorObj}
             memberMap={memberMap}
             isMultiMember={isMultiMember}
-            project={project}
-            starterSuggestions={starterSuggestions}
-            onSuggestion={handleSuggestion}
+            emptyState={<StartHints projectId={projectId} />}
           />
         </ConversationContent>
         <ConversationScrollButton />
@@ -100,17 +115,24 @@ export function ChatPanel({ projectId, chatId, isAutonomous, source }: ChatPanel
             </p>
           </div>
         ) : (
-          <Composer
-            projectId={projectId}
-            chatId={chatId}
-            messages={messages}
-            isStreaming={isStreaming}
-            status={status}
-            sendMessage={sendMessage}
-            stop={stop}
-            typingUsers={typingUsers}
-            presenceDots={<PresenceDots chatId={chatId} />}
-          />
+          <>
+            {messages.length === 0 && starterSuggestions.length > 0 && (
+              <div className="px-4 md:px-10 max-w-4xl mx-auto w-full pb-2">
+                <PromptMarquee items={starterSuggestions} onSelect={handleSuggestion} />
+              </div>
+            )}
+            <Composer
+              projectId={projectId}
+              chatId={chatId}
+              messages={messages}
+              isStreaming={isStreaming}
+              status={status}
+              sendMessage={sendMessage}
+              stop={stop}
+              typingUsers={typingUsers}
+              presenceDots={<PresenceDots chatId={chatId} />}
+            />
+          </>
         )}
       </div>
     </div>

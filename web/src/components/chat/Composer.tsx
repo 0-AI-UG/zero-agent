@@ -172,21 +172,25 @@ export function Composer({
     [upload],
   );
 
+  const isAcceptedDrag = (e: DragEvent<HTMLFormElement>) =>
+    e.dataTransfer.types.includes("Files") ||
+    e.dataTransfer.types.includes("application/x-zero-file");
+
   const handleDragEnter = useCallback((e: DragEvent<HTMLFormElement>) => {
-    if (!e.dataTransfer.types.includes("Files")) return;
+    if (!isAcceptedDrag(e)) return;
     e.preventDefault();
     dragDepth.current += 1;
     setIsDragging(true);
   }, []);
 
   const handleDragOver = useCallback((e: DragEvent<HTMLFormElement>) => {
-    if (!e.dataTransfer.types.includes("Files")) return;
+    if (!isAcceptedDrag(e)) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = "copy";
   }, []);
 
   const handleDragLeave = useCallback((e: DragEvent<HTMLFormElement>) => {
-    if (!e.dataTransfer.types.includes("Files")) return;
+    if (!isAcceptedDrag(e)) return;
     dragDepth.current -= 1;
     if (dragDepth.current <= 0) {
       dragDepth.current = 0;
@@ -196,10 +200,29 @@ export function Composer({
 
   const handleDrop = useCallback(
     (e: DragEvent<HTMLFormElement>) => {
-      if (!e.dataTransfer.types.includes("Files")) return;
+      if (!isAcceptedDrag(e)) return;
       e.preventDefault();
       dragDepth.current = 0;
       setIsDragging(false);
+      const zeroFile = e.dataTransfer.getData("application/x-zero-file");
+      if (zeroFile) {
+        try {
+          const parsed = JSON.parse(zeroFile) as {
+            id: string;
+            filename: string;
+            fullPath: string;
+          };
+          richTextareaRef.current?.insertFileChip(
+            parsed.id,
+            parsed.fullPath,
+            parsed.filename,
+          );
+          richTextareaRef.current?.focus();
+        } catch {
+          /* ignore malformed */
+        }
+        return;
+      }
       const files = Array.from(e.dataTransfer.files);
       void handleFiles(files);
     },
