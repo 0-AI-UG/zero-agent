@@ -68,7 +68,7 @@ RUN mkdir -p /app/data/workspaces
 ARG BROWSER_HEADLESS=true
 ENV BROWSER_HEADLESS=${BROWSER_HEADLESS}
 RUN if [ "$BROWSER_HEADLESS" = "false" ]; then \
-      apt-get update && apt-get install -y --no-install-recommends xvfb && \
+      apt-get update && apt-get install -y --no-install-recommends xvfb xauth && \
       rm -rf /var/lib/apt/lists/*; \
     fi
 ENV DISPLAY=:99
