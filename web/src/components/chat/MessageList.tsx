@@ -1,4 +1,3 @@
-import { Link } from "react-router";
 import { AlertCircleIcon } from "lucide-react";
 import { useMemo, type ReactNode } from "react";
 import type { AgentMessage, PendingTool, ToolExecution, ToolResultContentPart } from "@/lib/pi-events";
@@ -58,7 +57,6 @@ function deriveExecutions(
 interface MessageListProps {
   messages: AgentMessage[];
   pendingTools: PendingTool[];
-  projectId: string;
   isStreaming: boolean;
   error: Error | undefined;
   memberMap: Map<string, string>;
@@ -128,7 +126,6 @@ function shouldShowLoader(
 export function MessageList({
   messages,
   pendingTools,
-  projectId,
   isStreaming,
   error,
   memberMap,
@@ -152,10 +149,7 @@ export function MessageList({
             className="flex-none"
             icon={<img src={logoSvg} alt="Zero Agent" className="size-10" />}
             title={project?.assistantName ?? "Zero Agent"}
-            description={
-              project?.assistantDescription ??
-              "Ask me anything - I can browse the web, manage files, run code, and automate tasks."
-            }
+            description={project?.assistantDescription ?? "How can I help?"}
           />
           <div className="flex justify-center pb-4">
             <div className="flex flex-wrap justify-center gap-2">
@@ -169,12 +163,6 @@ export function MessageList({
               ))}
             </div>
           </div>
-          <Link
-            to={`/projects/${projectId}/settings`}
-            className="text-xs text-muted-foreground underline hover:text-foreground transition-colors"
-          >
-            Customize agent
-          </Link>
         </div>
       )}
 

@@ -74,7 +74,6 @@ export function ChatPanel({ projectId, chatId, isAutonomous, source }: ChatPanel
           <MessageList
             messages={messages}
             pendingTools={pendingTools}
-            projectId={projectId}
             isStreaming={isStreaming}
             error={errorObj}
             memberMap={memberMap}
