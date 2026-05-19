@@ -5,15 +5,14 @@
 <h1 align="center">Zero Agent</h1>
 
 <p align="center">
-  <strong><a href="https://github.com/block/pi-ai">Pi</a> with a collaborative web UI. Self-hosted, multi-user, autonomous.</strong>
+  <strong><a href="https://github.com/badlogic/pi-mono">Pi</a> with a collaborative web UI. Self-hosted, multi-user, autonomous.</strong>
 </p>
 
 <p align="center">
   <a href="https://zero-agent.cero-ai.com">Website</a> ·
   <a href="#quick-start">Quick Start</a> ·
   <a href="#features">Features</a> ·
-  <a href="https://github.com/0-AI-UG/zero-agent/issues">Issues</a> ·
-  <a href="https://github.com/0-AI-UG/zero-agent/discussions">Discussions</a>
+  <a href="https://github.com/0-AI-UG/zero-agent/issues">Issues</a>
 </p>
 
 <p align="center">
@@ -30,7 +29,7 @@
 
 ## What is this?
 
-Zero Agent takes [**Pi**](https://github.com/block/pi-ai), Block's open agentic runtime, and wraps it in a **collaborative web UI** for teams.
+Zero Agent takes [**Pi**](https://github.com/badlogic/pi-mono), an open agentic coding runtime, and wraps it in a **collaborative web UI** for teams.
 
 You get Pi's coding agent (real tool-use protocol, streaming, reasoning, subagents) running on a **persistent project filesystem** that your whole team shares with the agent in real time. On top of that, Zero adds the pieces an agent needs to actually be useful day-to-day:
 
@@ -96,7 +95,7 @@ Models, image providers, and per-user limits are configured at runtime via the a
 
 ## Tech Stack
 
-[Pi](https://github.com/block/pi-ai) · [OpenRouter](https://openrouter.ai) · [`@anthropic-ai/sandbox-runtime`](https://www.npmjs.com/package/@anthropic-ai/sandbox-runtime) · Node 20 · SQLite + [`s3lite`](https://github.com/0-AI-UG/s3lite) · React 19 · Tailwind v4 · `rebrowser-playwright` · Passkeys
+[Pi](https://github.com/badlogic/pi-mono) · [OpenRouter](https://openrouter.ai) · [`@anthropic-ai/sandbox-runtime`](https://www.npmjs.com/package/@anthropic-ai/sandbox-runtime) · Node 20 · SQLite + [`s3lite`](https://github.com/0-AI-UG/s3lite) · React 19 · Tailwind v4 · `rebrowser-playwright` · Passkeys
 
 ## Contributing
 
