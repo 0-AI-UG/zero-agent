@@ -548,7 +548,7 @@ function CustomizeAssistantSection({ projectId, project }: { projectId: string; 
   const updateMutation = useUpdateQuickAction(projectId);
   const deleteMutation = useDeleteQuickAction(projectId);
 
-  const [assistantForm, setAssistantForm] = useState({ name: "", description: "", icon: "message" });
+  const [assistantIcon, setAssistantIcon] = useState("message");
   const [systemPrompt, setSystemPrompt] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({ text: "", icon: "", description: "" });
@@ -557,11 +557,7 @@ function CustomizeAssistantSection({ projectId, project }: { projectId: string; 
 
   useEffect(() => {
     if (project) {
-      setAssistantForm({
-        name: project.assistantName,
-        description: project.assistantDescription,
-        icon: project.assistantIcon,
-      });
+      setAssistantIcon(project.assistantIcon);
       setSystemPrompt(project.systemPrompt || project.defaultSystemPrompt);
     }
   }, [project]);
@@ -579,14 +575,6 @@ function CustomizeAssistantSection({ projectId, project }: { projectId: string; 
 
   const isCustomPrompt =
     !!project.systemPrompt && project.systemPrompt !== project.defaultSystemPrompt;
-
-  const saveAssistant = () => {
-    updateProjectMutation.mutate({
-      assistantName: assistantForm.name,
-      assistantDescription: assistantForm.description,
-      assistantIcon: assistantForm.icon,
-    });
-  };
 
   const startEdit = (action: QuickAction) => {
     setEditingId(action.id);
@@ -624,37 +612,23 @@ function CustomizeAssistantSection({ projectId, project }: { projectId: string; 
     <section className="space-y-4">
       <h3 className="text-sm font-semibold">Assistant</h3>
 
-      {/* Identity */}
+      {/* Icon */}
       <div className="rounded-lg border p-4 space-y-3">
-        <h4 className="text-sm font-medium">Identity</h4>
-        <div className="space-y-2">
-          <Input
-            value={assistantForm.name}
-            onChange={(e) => setAssistantForm((f) => ({ ...f, name: e.target.value }))}
-            placeholder="Assistant name"
-            onBlur={saveAssistant}
-          />
-          <Input
-            value={assistantForm.description}
-            onChange={(e) => setAssistantForm((f) => ({ ...f, description: e.target.value }))}
-            placeholder="Description"
-            onBlur={saveAssistant}
-          />
-          <div className="flex items-center gap-1 flex-wrap">
-            {ICON_OPTIONS.map((name) => (
-              <button
-                key={name}
-                type="button"
-                onClick={() => {
-                  setAssistantForm((f) => ({ ...f, icon: name }));
-                  updateProjectMutation.mutate({ assistantIcon: name });
-                }}
-                className={`p-1.5 rounded-md transition-colors ${assistantForm.icon === name ? "bg-primary text-primary-foreground" : "hover:bg-muted text-muted-foreground"}`}
-              >
-                {ICON_MAP[name]}
-              </button>
-            ))}
-          </div>
+        <h4 className="text-sm font-medium">Icon</h4>
+        <div className="flex items-center gap-1 flex-wrap">
+          {ICON_OPTIONS.map((name) => (
+            <button
+              key={name}
+              type="button"
+              onClick={() => {
+                setAssistantIcon(name);
+                updateProjectMutation.mutate({ assistantIcon: name });
+              }}
+              className={`p-1.5 rounded-md transition-colors ${assistantIcon === name ? "bg-primary text-primary-foreground" : "hover:bg-muted text-muted-foreground"}`}
+            >
+              {ICON_MAP[name]}
+            </button>
+          ))}
         </div>
       </div>
 
