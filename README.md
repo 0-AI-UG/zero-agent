@@ -5,7 +5,7 @@
 <h1 align="center">Zero Agent</h1>
 
 <p align="center">
-  <strong>A self-hosted workspace where your team and an autonomous agent edit the same files in real time.</strong>
+  <strong><a href="https://github.com/block/pi-ai">Pi</a> with a collaborative web UI — self-hosted, multi-user, autonomous.</strong>
 </p>
 
 <p align="center">
