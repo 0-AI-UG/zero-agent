@@ -5,7 +5,7 @@
 <h1 align="center">Zero Agent</h1>
 
 <p align="center">
-  <strong><a href="https://github.com/block/pi-ai">Pi</a> with a collaborative web UI — self-hosted, multi-user, autonomous.</strong>
+  <strong><a href="https://github.com/block/pi-ai">Pi</a> with a collaborative web UI. Self-hosted, multi-user, autonomous.</strong>
 </p>
 
 <p align="center">
@@ -30,12 +30,12 @@
 
 ## What is this?
 
-Zero Agent takes [**Pi**](https://github.com/block/pi-ai) — Block's open agentic runtime — and wraps it in a **collaborative web UI** for teams.
+Zero Agent takes [**Pi**](https://github.com/block/pi-ai), Block's open agentic runtime, and wraps it in a **collaborative web UI** for teams.
 
 You get Pi's coding agent (real tool-use protocol, streaming, reasoning, subagents) running on a **persistent project filesystem** that your whole team shares with the agent in real time. On top of that, Zero adds the pieces an agent needs to actually be useful day-to-day:
 
-- a **`zero` CLI** the agent calls from bash — browser, web search, email (IMAP+SMTP), image generation, credentials vault, scheduled tasks, app preview URLs, embeddings;
-- **autonomy** — cron + file/message event triggers with cycle guards, a per-project `HEARTBEAT.md` loop, and a Telegram bridge where replies feed back into the same chat;
+- a **`zero` CLI** the agent calls from bash: browser, web search, email (IMAP+SMTP), image generation, credentials vault, scheduled tasks, app preview URLs, embeddings;
+- **autonomy**: cron + file/message event triggers with cycle guards, a per-project `HEARTBEAT.md` loop, and a Telegram bridge where replies feed back into the same chat;
 - **per-turn git snapshots** so every change is reversible at file granularity;
 - an **OS-level sandbox** (`bubblewrap` / `sandbox-exec`) plus passkey auth, encrypted credentials, and a Unix-socket proxy for subprocess callbacks.
 
@@ -63,15 +63,15 @@ Requires [Bun](https://bun.sh) v1.3+ and Node.js 20+.
 
 **From Pi (embedded in-process):**
 - Real tool-use protocol with streaming, reasoning, and parallel/chained subagents.
-- Coding agent — read, write, edit, bash, grep — with session JSONL persistence.
+- Coding agent (read, write, edit, bash, grep) with session JSONL persistence.
 
 **What Zero adds on top:**
-- **Collaborative web UI** — multiple users in the same project, live presence, typing indicators, and tool-call streaming over WebSocket.
-- **Persistent project filesystem** — real working directories under `/var/zero` that the agent picks up across sessions.
-- **`zero` CLI** — the agent's bash gateway to a headless browser pool, web search, email (IMAP + SMTP), image generation, credentials, scheduled tasks, proxied app preview URLs, and embeddings.
-- **Autonomy** — cron schedules, file/message event triggers with cooldowns and cycle guards, a per-project `HEARTBEAT.md` loop, and a Telegram bridge that posts replies back into the originating chat.
-- **Reversible by turn** — per-turn git snapshots in a hidden `.git-snapshots` dir; revert one file from one turn without resetting the chat.
-- **Safe to leave alone** — OS-level sandbox (`bubblewrap` / `sandbox-exec`), passkey auth, AES-encrypted credential vault accessed via shell substitution (never in the transcript), and a per-turn Unix-socket proxy for subprocess callbacks.
+- **Collaborative web UI.** Multiple users in the same project, live presence, typing indicators, and tool-call streaming over WebSocket.
+- **Persistent project filesystem.** Real working directories under `/var/zero` that the agent picks up across sessions.
+- **`zero` CLI.** The agent's bash gateway to a headless browser pool, web search, email (IMAP + SMTP), image generation, credentials, scheduled tasks, proxied app preview URLs, and embeddings.
+- **Autonomy.** Cron schedules, file/message event triggers with cooldowns and cycle guards, a per-project `HEARTBEAT.md` loop, and a Telegram bridge that posts replies back into the originating chat.
+- **Reversible by turn.** Per-turn git snapshots in a hidden `.git-snapshots` dir; revert one file from one turn without resetting the chat.
+- **Safe to leave alone.** OS-level sandbox (`bubblewrap` / `sandbox-exec`), passkey auth, AES-encrypted credential vault accessed via shell substitution (never in the transcript), and a per-turn Unix-socket proxy for subprocess callbacks.
 
 ## How it compares
 
@@ -82,16 +82,6 @@ Requires [Bun](https://bun.sh) v1.3+ and Node.js 20+.
 | Per-turn snapshots & revert | – | – | – | – | **Yes** |
 | OS-level sandbox | – | – | Docker | – | **bwrap / sandbox-exec** |
 | Scheduled + event autonomy | – | partial | – | – | **Yes** |
-
-## Architecture
-
-```
-Web (React 19) ──HTTP/WS──► Server (Node + SQLite) ──in-process──► Pi runtime (sandboxed)
-                                                                          │
-                                                          /var/zero  ◄────┘
-                                                          + .git-snapshots
-                                                          + host Chromium pool
-```
 
 ## Configuration
 
