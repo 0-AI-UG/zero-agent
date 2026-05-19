@@ -24,6 +24,10 @@
 
 ---
 
+<p align="center">
+  <img src="docs/screenshot.png" alt="Zero Agent UI" width="900">
+</p>
+
 ## Quick Start
 
 ```bash
