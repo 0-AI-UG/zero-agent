@@ -33,6 +33,10 @@ const EXCLUDE_PATTERNS = [
   "node_modules/",
   ".venv/",
   "__pycache__/",
+  // Browser storageState — cookies + localStorage + IndexedDB persisted by
+  // server/lib/browser/host-pool.ts. Excluded from snapshots so auth tokens
+  // don't get committed into the per-turn snapshot history.
+  ".chrome-state.json",
 ];
 
 export interface SnapshotContext {

@@ -76,7 +76,28 @@ import {
 
 const DENY_READ = ["~/.ssh", "~/.aws", "~/.gnupg"];
 const DENY_WRITE_GLOBS = [".env", ".env.*", "*.pem", "*.key"];
-const DENY_WRITE_RELATIVE = [".pi", ".pi-sessions", ".git-snapshots"];
+const DENY_WRITE_RELATIVE = [".pi", ".pi-sessions", ".git-snapshots", ".chrome-state.json"];
+// Project-relative paths the agent must not touch at all via the in-process
+// read/write/edit tools (the bash sandbox above also denies writes through
+// DENY_WRITE_RELATIVE, but in-process tools bypass the sandbox-runtime
+// layer entirely). `.chrome-state.json` holds the project's browser cookies
+// / localStorage / IndexedDB — exfiltration via prompt injection is real,
+// so it's read-denied too.
+const DENY_INPROCESS_RELATIVE = [".chrome-state.json"];
+
+function isDeniedInProcess(projectDir: string, inputPath: string): string | null {
+  const abs = path.isAbsolute(inputPath)
+    ? inputPath
+    : path.resolve(projectDir, inputPath);
+  const resolved = realpathOrParent(abs);
+  for (const rel of DENY_INPROCESS_RELATIVE) {
+    const denied = path.join(projectDir, rel);
+    if (resolved === denied || resolved.startsWith(denied + path.sep)) {
+      return rel;
+    }
+  }
+  return null;
+}
 
 function realpathOrParent(absPath: string): string {
   try {
@@ -100,6 +121,19 @@ function ensureInProject(
   if (resolved !== projectDir && !resolved.startsWith(projectDir + path.sep)) {
     throw new Error(
       `${toolName}: path "${inputPath}" escapes project dir (${projectDir})`,
+    );
+  }
+}
+
+function ensureNotDenied(
+  projectDir: string,
+  inputPath: string,
+  toolName: string,
+): void {
+  const hit = isDeniedInProcess(projectDir, inputPath);
+  if (hit) {
+    throw new Error(
+      `${toolName}: path "${inputPath}" is in the project deny list (${hit})`,
     );
   }
 }
@@ -281,6 +315,7 @@ export function createProjectSandboxExtension(
       label: "read (project-scoped)",
       async execute(id, params, signal, onUpdate, _ctx) {
         ensureReadable(projectDir, readOnlyRoots, params.path, "read");
+        ensureNotDenied(projectDir, params.path, "read");
         return read.execute(id, params, signal, onUpdate);
       },
     });
@@ -289,6 +324,7 @@ export function createProjectSandboxExtension(
       label: "write (project-scoped)",
       async execute(id, params, signal, onUpdate, _ctx) {
         ensureInProject(projectDir, params.path, "write");
+        ensureNotDenied(projectDir, params.path, "write");
         return write.execute(id, params, signal, onUpdate);
       },
     });
@@ -297,6 +333,7 @@ export function createProjectSandboxExtension(
       label: "edit (project-scoped)",
       async execute(id, params, signal, onUpdate, _ctx) {
         ensureInProject(projectDir, params.path, "edit");
+        ensureNotDenied(projectDir, params.path, "edit");
         return edit.execute(id, params, signal, onUpdate);
       },
     });
@@ -360,7 +397,14 @@ export function createProjectSandboxExtension(
         await SandboxManager.initialize({
           network: {} as InitArgs["network"],
           filesystem: {
-            denyRead: [...DENY_READ, projectsRoot],
+            denyRead: [
+              ...DENY_READ,
+              projectsRoot,
+              // Same set the in-process read/write tools refuse via
+              // ensureNotDenied — keep them blocked when the agent shells
+              // out (`cat .chrome-state.json`).
+              ...DENY_INPROCESS_RELATIVE.map((p) => path.join(projectDir, p)),
+            ],
             allowRead: [projectDir, ...readOnlyRoots],
             allowWrite: [projectDir, "/tmp"],
             denyWrite: [

@@ -22,6 +22,8 @@
  * subscribes and forwards to interested viewers.
  */
 import { EventEmitter } from "node:events";
+import { mkdir, rename, stat, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { addExtra } from "playwright-extra";
 import { chromium as rebrowserChromium } from "rebrowser-playwright";
 import StealthPlugin from "puppeteer-extra-plugin-stealth";
@@ -33,6 +35,22 @@ import type {
   CDPSession,
 } from "playwright";
 import { log } from "@/lib/utils/logger.ts";
+import { projectDirFor } from "@/lib/pi/run-turn.ts";
+
+/**
+ * Per-project storageState file. Holds cookies + localStorage + IndexedDB so
+ * the agent (and scheduled tasks) stay logged in to sites across turns
+ * without paying the RAM cost of a persistent Chromium per project.
+ *
+ * Written on context close / idle eviction; reloaded on next context create.
+ * Sensitive (auth tokens) — sandbox denies the agent both reading and
+ * writing this file, and snapshot-service excludes it from git snapshots.
+ */
+const STATE_FILENAME = ".chrome-state.json";
+
+function stateFileFor(projectId: string): string {
+  return join(projectDirFor(projectId), STATE_FILENAME);
+}
 
 // rebrowser-playwright is a drop-in fork that patches the Runtime.Enable CDP
 // leak (a major fingerprint tell that stealth alone can't fix). Wrapped via
@@ -178,9 +196,17 @@ class HostBrowserPool extends EventEmitter {
 
     const p = (async () => {
       const browser = await this.ensureBrowser();
+      const statePath = stateFileFor(projectId);
+      const hasState = await stat(statePath)
+        .then((s) => s.isFile())
+        .catch(() => false);
       const context = await browser.newContext({
         viewport: { width: 1280, height: 800 },
+        ...(hasState ? { storageState: statePath } : {}),
       });
+      if (hasState) {
+        browserLog.info("storageState loaded", { projectId });
+      }
       const page = await context.newPage();
       const cdp = await context.newCDPSession(page);
       await cdp.send("Page.enable").catch(() => {});
@@ -220,6 +246,15 @@ class HostBrowserPool extends EventEmitter {
     if (!s) return;
     this.sessions.delete(projectId);
     this.lastFrameAt.delete(projectId);
+    // Persist cookies + localStorage + IndexedDB before tearing the context
+    // down. storageState() must run while the context is still open; once
+    // close() resolves the underlying renderer is gone and the call throws.
+    await this.persistState(s).catch((err) =>
+      browserLog.warn("storageState persist failed", {
+        projectId,
+        err: err instanceof Error ? err.message : String(err),
+      }),
+    );
     try {
       await s.cdp.detach();
     } catch {}
@@ -227,6 +262,20 @@ class HostBrowserPool extends EventEmitter {
       await s.context.close();
     } catch {}
     browserLog.info("session closed", { projectId });
+  }
+
+  private async persistState(s: ProjectSession): Promise<void> {
+    const target = stateFileFor(s.projectId);
+    // storageState({ indexedDB: true }) captures cookies, localStorage, and
+    // IndexedDB. sessionStorage is intentionally not included (it's
+    // session-scoped by spec). Write to a temp file first and rename so a
+    // crash mid-write can't leave us with a half-truncated JSON that fails
+    // the next newContext({ storageState }) call.
+    const state = await s.context.storageState({ indexedDB: true });
+    const tmp = `${target}.tmp`;
+    await mkdir(join(target, ".."), { recursive: true });
+    await writeFile(tmp, JSON.stringify(state), { mode: 0o600 });
+    await rename(tmp, target);
   }
 
   private idleSweep(): void {
