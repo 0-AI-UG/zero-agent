@@ -82,7 +82,7 @@ export function TurnDiffPanel({ snapshotId }: Props) {
   const showEmpty = !isLoading && !error && entries && entries.length === 0;
 
   return (
-    <div className="bg-card">
+    <div>
       <div className="flex items-center gap-2 px-3 py-2 border-b">
         <GitCompareIcon className="size-3.5 text-muted-foreground shrink-0" />
         <span className="text-xs font-medium">Changes this turn</span>

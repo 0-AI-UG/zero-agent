@@ -82,7 +82,7 @@ export function TurnDiffFileRow({ snapshotId, entry }: Props) {
   };
 
   return (
-    <div className="rounded-md border bg-background">
+    <div className="rounded-md border bg-muted/30">
       <div className="flex items-center gap-2 px-2 py-1.5">
         <button
           type="button"
