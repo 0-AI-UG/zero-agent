@@ -143,16 +143,22 @@ export function MessageList({
         const senderUserId = (message as { userId?: string }).userId;
         // Turn end = no later assistant message until a user message (or end).
         // We render the model footer once per assistant turn on the last
-        // assistant message of that turn.
+        // assistant message of that turn — but not on the active turn while
+        // it is still streaming, so the metadata only appears once finished.
+        // `isLastTurn` means no user message follows, i.e. this is the most
+        // recent turn (the one currently running when `isStreaming`).
         let isTurnEnd = false;
+        let isLastTurn = false;
         if (message.role === "assistant") {
           isTurnEnd = true;
+          isLastTurn = true;
           for (let j = index + 1; j < messages.length; j++) {
             const next = messages[j]!;
-            if (next.role === "user") break;
-            if (next.role === "assistant") { isTurnEnd = false; break; }
+            if (next.role === "user") { isLastTurn = false; break; }
+            if (next.role === "assistant") { isTurnEnd = false; isLastTurn = false; break; }
           }
         }
+        const showModelFooter = isTurnEnd && !(isStreaming && isLastTurn);
         return (
           <div key={`${message.timestamp}-${index}`}>
             <MessageView
@@ -161,7 +167,7 @@ export function MessageList({
               memberMap={memberMap}
               isMultiMember={isMultiMember}
               senderUserId={senderUserId}
-              isTurnEnd={isTurnEnd}
+              isTurnEnd={showModelFooter}
             />
           </div>
         );

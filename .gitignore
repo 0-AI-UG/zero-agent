@@ -16,3 +16,6 @@ companion/output.txt
 desktop/build/
 .claude/scheduled_tasks.lock
 .claude/worktrees/
+
+# local agent tool state
+.cate/

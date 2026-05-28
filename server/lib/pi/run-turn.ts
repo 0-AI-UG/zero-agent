@@ -39,6 +39,7 @@ import {
 } from "./pi-config.ts";
 import { createProjectSandboxExtension } from "./extensions/project-sandbox/index.ts";
 import { createSubagentExtension } from "./extensions/subagent/index.ts";
+import { enablePromptCaching } from "./prompt-caching.ts";
 import { bootstrapAuthAndRegistry, type ResolvedPiModel } from "./model.ts";
 import { ensureZeroOnPath } from "./zero-cli.ts";
 import { registerPiTurnToken } from "@/lib/auth/proxy-token.ts";
@@ -223,6 +224,11 @@ export async function runTurn(opts: RunTurnOptions): Promise<TurnResult> {
     resourceLoader,
     sessionManager,
     settingsManager,
+  });
+
+  enablePromptCaching(session, {
+    retention: process.env.PI_CACHE_RETENTION === "long" ? "long" : "short",
+    sessionId: opts.chatId,
   });
 
   let count = 0;

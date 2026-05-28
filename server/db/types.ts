@@ -29,7 +29,6 @@ export interface ProjectRow {
   description: string;
   automation_enabled: number;
   assistant_name: string;
-  assistant_description: string;
   assistant_icon: string;
   system_prompt: string;
   tasks_model: string | null;

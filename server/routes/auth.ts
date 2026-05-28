@@ -38,8 +38,17 @@ const authLog = log.child({ module: "auth" });
 // Precomputed dummy hash to flatten timing oracle on unknown-username login.
 const DUMMY_HASH = bcrypt.hashSync("__dummy_password__", 10);
 
+// Dev-only escape hatch: skip the passkey requirement entirely so local
+// development against an admin account doesn't force enrollment/2FA. Gated on a
+// non-production build, matching the same bypass in user-invitations.ts. Never
+// active in a real deployment (NODE_ENV === "production").
+function passkeyDisabledForDev(): boolean {
+  return process.env.NODE_ENV !== "production";
+}
+
 // Passkey is required either for admins or when REQUIRE_2FA is set.
 function passkeyRequired(user: { is_admin?: number }): boolean {
+  if (passkeyDisabledForDev()) return false;
   if (user.is_admin === 1) return true;
   return getSetting("REQUIRE_2FA") === "1";
 }
@@ -101,7 +110,7 @@ export async function handleLogin(request: Request): Promise<Response> {
     }
 
     const passkeyCount = getPasskeyCount(user.id);
-    if (passkeyCount > 0) {
+    if (passkeyCount > 0 && !passkeyDisabledForDev()) {
       const tempToken = await createTempToken(user.id, "password-reset");
       authLog.info("login requires passkey", { userId: user.id });
       return Response.json(

@@ -38,6 +38,7 @@ import {
 } from "./agents.ts";
 import { createProjectSandboxExtension } from "../project-sandbox/index.ts";
 import { defaultAgentsDir } from "../../pi-config.ts";
+import { enablePromptCaching } from "../../prompt-caching.ts";
 
 const MAX_PARALLEL_TASKS = 8;
 const MAX_CONCURRENCY = 4;
@@ -266,6 +267,9 @@ async function runSingleAgent(args: RunSingleAgentArgs): Promise<SingleResult> {
       tools: agent.tools,
     });
     sessionRef = session;
+    enablePromptCaching(session, {
+      retention: process.env.PI_CACHE_RETENTION === "long" ? "long" : "short",
+    });
 
     const unsubscribe = session.subscribe((event: AgentSessionEvent) => {
       if (event.type === "message_end") {
