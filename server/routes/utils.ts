@@ -68,7 +68,6 @@ export function formatProject(row: ProjectRow, opts?: { role?: string; memberCou
     description: row.description,
     automationEnabled: row.automation_enabled === 1,
     assistantName: row.assistant_name,
-    assistantDescription: row.assistant_description,
     assistantIcon: row.assistant_icon,
     systemPrompt: row.system_prompt,
     defaultSystemPrompt: DEFAULT_SYSTEM_PROMPT,

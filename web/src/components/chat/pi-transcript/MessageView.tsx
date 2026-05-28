@@ -1,6 +1,5 @@
 import { memo, useState, type ReactNode } from "react";
-import { ChevronRightIcon, BrainIcon } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { BrainIcon } from "lucide-react";
 import type {
   AgentMessage,
   AssistantMessage,
@@ -35,7 +34,6 @@ function ReasoningBlock({ text }: { text: string }) {
         onClick={() => setExpanded((v) => !v)}
         className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground py-1"
       >
-        <ChevronRightIcon className={cn("size-3 shrink-0 transition-transform", expanded && "rotate-90")} />
         <BrainIcon className="size-3 shrink-0" />
         <span className="font-medium">Thinking</span>
       </button>

@@ -37,7 +37,6 @@ export const updateProjectSchema = z.object({
   description: z.string().max(500).optional(),
   automationEnabled: z.boolean().optional(),
   assistantName: z.string().min(1).max(100).optional(),
-  assistantDescription: z.string().max(500).optional(),
   assistantIcon: z.string().min(1).max(50).optional(),
   systemPrompt: z.string().max(20000).optional(),
   tasksModel: z.string().min(1).max(200).nullable().optional(),

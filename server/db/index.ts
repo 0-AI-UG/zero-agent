@@ -55,7 +55,6 @@ db.exec(`
     description               TEXT DEFAULT '',
     automation_enabled        INTEGER NOT NULL DEFAULT 0,
     assistant_name            TEXT NOT NULL DEFAULT 'Zero Agent',
-    assistant_description     TEXT NOT NULL DEFAULT 'Ask me anything - I can browse the web, manage files, run code, and automate tasks.',
     assistant_icon            TEXT NOT NULL DEFAULT 'message',
     system_prompt             TEXT NOT NULL DEFAULT '',
     tasks_model               TEXT,
@@ -627,6 +626,10 @@ db.exec(`
   }
   if (!cols.some((c) => c.name === "scripts_model")) {
     db.exec("ALTER TABLE projects ADD COLUMN scripts_model TEXT");
+  }
+  // The assistant tagline is now a fixed UI string, no longer per-project.
+  if (cols.some((c) => c.name === "assistant_description")) {
+    db.exec("ALTER TABLE projects DROP COLUMN assistant_description");
   }
 }
 
