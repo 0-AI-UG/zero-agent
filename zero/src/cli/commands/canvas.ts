@@ -8,7 +8,7 @@ ids to track.
 
 Usage:
   zero canvas get
-  zero canvas set <name> [--type note|rect|ellipse|text] [--text <t>]
+  zero canvas set <name> [--type rect|ellipse|text] [--text <t>]
                          [--x N] [--y N] [--w N] [--h N] [--color <c>]
   zero canvas arrow <from> <to> [--text <t>] [--color <c>]
   zero canvas rm <name>

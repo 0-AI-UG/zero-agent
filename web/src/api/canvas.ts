@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "@/api/client";
 import { queryKeys } from "@/lib/query-keys";
 
-export type CanvasShapeType = "note" | "rect" | "ellipse" | "text" | "arrow";
+export type CanvasShapeType = "rect" | "ellipse" | "text" | "arrow";
 
 export interface CanvasShape {
   id: string;

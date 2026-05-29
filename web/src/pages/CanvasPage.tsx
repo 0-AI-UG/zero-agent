@@ -4,7 +4,7 @@ import { nanoid } from "nanoid";
 import rough from "roughjs";
 import {
   MousePointer2Icon,
-  StickyNoteIcon,
+  BoxSelectIcon,
   SquareIcon,
   CircleIcon,
   TypeIcon,
@@ -13,6 +13,16 @@ import {
   EraserIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useAuthStore } from "@/stores/auth";
 import { subscribe, sendCanvasOp, sendCanvasCursor } from "@/lib/ws";
 import {
@@ -49,16 +59,29 @@ function originColor(origin: string): string {
   return `oklch(0.6 0.18 ${Math.abs(hash) % 360})`;
 }
 
-type Tool = "select" | CanvasShapeType;
+type Tool = "select" | "marquee" | CanvasShapeType;
 
 const TOOLS: { tool: Tool; icon: typeof SquareIcon; label: string }[] = [
   { tool: "select", icon: MousePointer2Icon, label: "Select / pan" },
-  { tool: "note", icon: StickyNoteIcon, label: "Sticky note" },
+  { tool: "marquee", icon: BoxSelectIcon, label: "Rectangle select" },
   { tool: "rect", icon: SquareIcon, label: "Rectangle" },
   { tool: "ellipse", icon: CircleIcon, label: "Ellipse" },
   { tool: "text", icon: TypeIcon, label: "Text" },
   { tool: "arrow", icon: MoveUpRightIcon, label: "Arrow" },
 ];
+
+/** Tools that select/move existing shapes (vs. tools that create new ones). */
+function isSelectTool(t: Tool): boolean {
+  return t === "select" || t === "marquee";
+}
+
+/** Axis-aligned overlap test, used for marquee hit-testing. */
+function boxesIntersect(
+  a: { x: number; y: number; w: number; h: number },
+  b: { x: number; y: number; w: number; h: number },
+): boolean {
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
 
 const MIN = 0.2;
 const MAX = 4;
@@ -121,7 +144,6 @@ function defaultShape(type: CanvasShapeType, x: number, y: number, color: ColorK
   const id = nanoid();
   if (type === "arrow") return { id, type, x, y, x2: x + 120, y2: y, color };
   if (type === "text") return { id, type, x, y, w: 200, h: 40, text: "Text", color };
-  if (type === "note") return { id, type, x, y, w: 180, h: 130, text: "", color };
   if (type === "ellipse") return { id, type, x, y, w: 130, h: 130, text: "", color };
   return { id, type, x, y, w: 170, h: 110, text: "", color }; // rect
 }
@@ -139,7 +161,11 @@ export function CanvasPage() {
   const [shapes, setShapes] = useState<Record<string, CanvasShape>>({});
   const [tool, setTool] = useState<Tool>("select");
   const [color, setColor] = useState<ColorKey>("yellow");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+  // Live marquee (rectangle-select) box in world coordinates while dragging.
+  const [marquee, setMarquee] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  const [confirmClearOpen, setConfirmClearOpen] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   const [view, setView] = useState<View>({ tx: 0, ty: 0, scale: 1 });
   const [cursors, setCursors] = useState<Record<string, Cursor>>({});
@@ -354,17 +380,17 @@ export function CanvasPage() {
       if (editing) return;
       const tgt = e.target as HTMLElement;
       if (tgt && (tgt.tagName === "INPUT" || tgt.tagName === "TEXTAREA")) return;
-      if ((e.key === "Delete" || e.key === "Backspace") && selectedId) {
+      if ((e.key === "Delete" || e.key === "Backspace") && selectedIds.length) {
         e.preventDefault();
-        commit({ kind: "delete", id: selectedId });
-        setSelectedId(null);
+        for (const id of selectedIds) commit({ kind: "delete", id });
+        setSelectedIds([]);
       } else if (e.key === "Escape") {
-        setSelectedId(null);
+        setSelectedIds([]);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selectedId, editing, commit]);
+  }, [selectedIds, editing, commit]);
 
   // ── Coordinate helpers ──
   const toWorld = useCallback((clientX: number, clientY: number) => {
@@ -404,19 +430,34 @@ export function CanvasPage() {
         }
         if (shape) sendCanvasOp(pid, { kind: "add", shape }, origin.current);
       }
-    } else if (drag.mode === "move" || drag.mode === "resize") {
+    } else if (drag.mode === "move") {
+      // Persist the final position of every shape in the (possibly multi-) drag.
+      for (const { id } of drag.origs as Array<{ id: string }>) {
+        const shape = shapesRef.current[id];
+        if (shape) {
+          sendCanvasOp(
+            pid,
+            { kind: "update", id, props: { x: shape.x, y: shape.y, x2: shape.x2, y2: shape.y2 } },
+            origin.current,
+          );
+        }
+      }
+    } else if (drag.mode === "resize") {
       const shape = shapesRef.current[drag.id];
       if (shape) {
-        const props: Partial<CanvasShape> = {
-          x: shape.x,
-          y: shape.y,
-          w: shape.w,
-          h: shape.h,
-          x2: shape.x2,
-          y2: shape.y2,
-        };
+        const props: Partial<CanvasShape> = { x: shape.x, y: shape.y, w: shape.w, h: shape.h };
         sendCanvasOp(pid, { kind: "update", id: drag.id, props }, origin.current);
       }
+    } else if (drag.mode === "marquee") {
+      // Select every shape the final box touches.
+      const box = drag.rect as { x: number; y: number; w: number; h: number } | undefined;
+      const hits = box
+        ? Object.values(shapesRef.current)
+            .filter((s) => boxesIntersect(shapeBox(s), box))
+            .map((s) => s.id)
+        : [];
+      setSelectedIds(hits);
+      setMarquee(null);
     }
     dragRef.current = null;
     window.removeEventListener("pointermove", onWindowMove);
@@ -433,6 +474,17 @@ export function CanvasPage() {
         const dx = e.clientX - drag.sx;
         const dy = e.clientY - drag.sy;
         setView((v) => ({ ...v, tx: drag.tx0 + dx, ty: drag.ty0 + dy }));
+        return;
+      }
+      if (drag.mode === "marquee") {
+        const rect = {
+          x: Math.min(drag.ox, w.x),
+          y: Math.min(drag.oy, w.y),
+          w: Math.abs(w.x - drag.ox),
+          h: Math.abs(w.y - drag.oy),
+        };
+        drag.rect = rect; // read back by endGesture to compute the selection
+        setMarquee(rect);
         return;
       }
       if (drag.mode === "create") {
@@ -452,12 +504,13 @@ export function CanvasPage() {
       if (drag.mode === "move") {
         const dx = w.x - drag.wx;
         const dy = w.y - drag.wy;
-        const o = drag.orig as CanvasShape;
-        const props: Partial<CanvasShape> =
-          o.type === "arrow"
-            ? { x: o.x + dx, y: o.y + dy, x2: (o.x2 ?? 0) + dx, y2: (o.y2 ?? 0) + dy }
-            : { x: o.x + dx, y: o.y + dy };
-        applyLocal({ kind: "update", id: drag.id, props });
+        for (const { id, orig } of drag.origs as Array<{ id: string; orig: CanvasShape }>) {
+          const props: Partial<CanvasShape> =
+            orig.type === "arrow"
+              ? { x: orig.x + dx, y: orig.y + dy, x2: (orig.x2 ?? 0) + dx, y2: (orig.y2 ?? 0) + dy }
+              : { x: orig.x + dx, y: orig.y + dy };
+          applyLocal({ kind: "update", id, props });
+        }
         return;
       }
       if (drag.mode === "resize") {
@@ -483,8 +536,14 @@ export function CanvasPage() {
     setEditing(null);
     const w = toWorld(e.clientX, e.clientY);
     if (tool === "select") {
-      setSelectedId(null);
+      setSelectedIds([]);
       beginGesture({ mode: "pan", sx: e.clientX, sy: e.clientY, tx0: view.tx, ty0: view.ty });
+      return;
+    }
+    if (tool === "marquee") {
+      setSelectedIds([]);
+      setMarquee({ x: w.x, y: w.y, w: 0, h: 0 });
+      beginGesture({ mode: "marquee", ox: w.x, oy: w.y });
       return;
     }
     const def = defaultShape(tool, w.x, w.y, color);
@@ -495,12 +554,12 @@ export function CanvasPage() {
       const shape: CanvasShape =
         tool === "arrow" ? { ...def, x2: w.x, y2: w.y } : { ...def, w: 0, h: 0 };
       applyLocal({ kind: "add", shape });
-      setSelectedId(shape.id);
+      setSelectedIds([shape.id]);
       beginGesture({ mode: "create", id: shape.id, shapeType: tool, ox: w.x, oy: w.y, def });
     } else {
-      // note / text — placed at click, no drag sizing; commit immediately.
+      // text — placed at click, no drag sizing; commit immediately.
       applyLocal({ kind: "add", shape: def });
-      setSelectedId(def.id);
+      setSelectedIds([def.id]);
       sendCanvasOp(pid, { kind: "add", shape: def }, origin.current);
       setTool("select");
     }
@@ -509,12 +568,18 @@ export function CanvasPage() {
   const onShapePointerDown = (e: React.PointerEvent, id: string) => {
     if (e.button !== 0) return;
     e.stopPropagation();
-    setSelectedId(id);
-    if (tool !== "select") return;
+    // Grabbing a shape that's part of a multi-selection drags the whole group;
+    // grabbing any other shape selects just it.
+    const keepGroup = selectedSet.has(id) && selectedIds.length > 1;
+    if (!keepGroup) setSelectedIds([id]);
+    if (!isSelectTool(tool)) return;
     const w = toWorld(e.clientX, e.clientY);
-    const orig = shapesRef.current[id];
-    if (!orig) return;
-    beginGesture({ mode: "move", id, wx: w.x, wy: w.y, orig });
+    const origs = (keepGroup ? selectedIds : [id])
+      .map((sid) => shapesRef.current[sid])
+      .filter((s): s is CanvasShape => !!s)
+      .map((s) => ({ id: s.id, orig: s }));
+    if (!origs.length) return;
+    beginGesture({ mode: "move", wx: w.x, wy: w.y, origs });
   };
 
   const onResizePointerDown = (e: React.PointerEvent, id: string) => {
@@ -553,13 +618,17 @@ export function CanvasPage() {
     if (drag && (drag.mode === "move" || drag.mode === "resize" || drag.mode === "create")) {
       if (now - lastMoveRef.current > 60) {
         lastMoveRef.current = now;
-        const shape = shapesRef.current[drag.id];
-        if (shape) {
-          sendCanvasOp(
-            pid,
-            { kind: "update", id: drag.id, props: { x: shape.x, y: shape.y, w: shape.w, h: shape.h, x2: shape.x2, y2: shape.y2 } },
-            origin.current,
-          );
+        const ids: string[] =
+          drag.mode === "move" ? (drag.origs as Array<{ id: string }>).map((o) => o.id) : [drag.id];
+        for (const id of ids) {
+          const shape = shapesRef.current[id];
+          if (shape) {
+            sendCanvasOp(
+              pid,
+              { kind: "update", id, props: { x: shape.x, y: shape.y, w: shape.w, h: shape.h, x2: shape.x2, y2: shape.y2 } },
+              origin.current,
+            );
+          }
         }
       }
     }
@@ -567,8 +636,8 @@ export function CanvasPage() {
 
   const setShapeColor = (key: ColorKey) => {
     setColor(key);
-    if (selectedId && shapesRef.current[selectedId]) {
-      commit({ kind: "update", id: selectedId, props: { color: key } });
+    for (const id of selectedIds) {
+      if (shapesRef.current[id]) commit({ kind: "update", id, props: { color: key } });
     }
   };
 
@@ -614,26 +683,24 @@ export function CanvasPage() {
         ))}
         <div className="mx-1 h-5 w-px bg-border/60" />
         <button
-          title="Delete selected"
-          disabled={!selectedId}
+          title="Erase selected"
+          disabled={selectedIds.length === 0}
           onClick={() => {
-            if (selectedId) {
-              commit({ kind: "delete", id: selectedId });
-              setSelectedId(null);
+            if (selectedIds.length) {
+              for (const id of selectedIds) commit({ kind: "delete", id });
+              setSelectedIds([]);
             }
           }}
           className="flex size-8 items-center justify-center rounded-md hover:bg-muted disabled:opacity-40"
         >
-          <Trash2Icon className="size-4" />
+          <EraserIcon className="size-4" />
         </button>
         <button
           title="Clear board"
-          onClick={() => {
-            if (confirm("Clear the entire board for everyone?")) commit({ kind: "clear" });
-          }}
+          onClick={() => setConfirmClearOpen(true)}
           className="flex size-8 items-center justify-center rounded-md hover:bg-muted"
         >
-          <EraserIcon className="size-4" />
+          <Trash2Icon className="size-4" />
         </button>
         <div className="ml-auto pr-1 text-xs tabular-nums text-muted-foreground">
           {Math.round(view.scale * 100)}%
@@ -655,7 +722,8 @@ export function CanvasPage() {
               <ShapeView
                 key={s.id}
                 shape={s}
-                selected={s.id === selectedId}
+                selected={selectedSet.has(s.id)}
+                resizable={selectedIds.length === 1 && selectedSet.has(s.id)}
                 entering={entering[s.id] !== undefined}
                 onPointerDown={(e) => onShapePointerDown(e, s.id)}
                 onDoubleClick={() => {
@@ -664,6 +732,22 @@ export function CanvasPage() {
                 onResizeDown={(e) => onResizePointerDown(e, s.id)}
               />
             ))}
+
+            {/* Live rectangle-select box */}
+            {marquee && (
+              <rect
+                x={marquee.x}
+                y={marquee.y}
+                width={marquee.w}
+                height={marquee.h}
+                fill="#3b82f6"
+                fillOpacity={0.08}
+                stroke="#3b82f6"
+                strokeWidth={1 / view.scale}
+                strokeDasharray={`${4 / view.scale} ${3 / view.scale}`}
+                pointerEvents="none"
+              />
+            )}
 
             {/* Flash ring on shapes a remote contributor just drew/changed */}
             {Object.entries(flash).map(([id, fl]) => {
@@ -760,6 +844,29 @@ export function CanvasPage() {
           </div>
         )}
       </div>
+
+      <AlertDialog open={confirmClearOpen} onOpenChange={setConfirmClearOpen}>
+        <AlertDialogContent size="sm">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Clear board</AlertDialogTitle>
+            <AlertDialogDescription>
+              Clear the entire board for everyone? This removes every shape and cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => {
+                commit({ kind: "clear" });
+                setSelectedIds([]);
+              }}
+            >
+              Clear board
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -769,6 +876,7 @@ export function CanvasPage() {
 function ShapeView({
   shape,
   selected,
+  resizable,
   entering,
   onPointerDown,
   onDoubleClick,
@@ -776,6 +884,7 @@ function ShapeView({
 }: {
   shape: CanvasShape;
   selected: boolean;
+  resizable: boolean;
   entering: boolean;
   onPointerDown: (e: React.PointerEvent) => void;
   onDoubleClick: () => void;
@@ -899,29 +1008,29 @@ function ShapeView({
         </div>
       </foreignObject>
       {selected && (
-        <>
-          <rect
-            x={shape.x - 2}
-            y={shape.y - 2}
-            width={w + 4}
-            height={h + 4}
-            rx={isText ? 4 : 10}
-            fill="none"
-            stroke="#3b82f6"
-            strokeWidth={1.5}
-            strokeDasharray="4 3"
-            pointerEvents="none"
-          />
-          <rect
-            x={shape.x + w - 6}
-            y={shape.y + h - 6}
-            width={12}
-            height={12}
-            fill="#3b82f6"
-            style={{ cursor: "nwse-resize" }}
-            onPointerDown={onResizeDown}
-          />
-        </>
+        <rect
+          x={shape.x - 2}
+          y={shape.y - 2}
+          width={w + 4}
+          height={h + 4}
+          rx={isText ? 4 : 10}
+          fill="none"
+          stroke="#3b82f6"
+          strokeWidth={1.5}
+          strokeDasharray="4 3"
+          pointerEvents="none"
+        />
+      )}
+      {resizable && (
+        <rect
+          x={shape.x + w - 6}
+          y={shape.y + h - 6}
+          width={12}
+          height={12}
+          fill="#3b82f6"
+          style={{ cursor: "nwse-resize" }}
+          onPointerDown={onResizeDown}
+        />
       )}
     </g>
   );
