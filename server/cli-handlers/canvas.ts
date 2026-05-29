@@ -45,7 +45,7 @@ function upsertShape(
   const existing = known.get(spec.id);
   const op = existing
     ? { kind: "update" as const, id: spec.id, props: stripUndefined(spec) }
-    : { kind: "add" as const, shape: normalizeShape({ ...spec, type: spec.type ?? "note" }) };
+    : { kind: "add" as const, shape: normalizeShape({ ...spec, type: spec.type ?? "rect" }) };
   const { changed, doc } = applyCanvasOpAndBroadcast(projectId, op, AGENT_ORIGIN);
   if (!changed && !existing) return { full: true };
   const shape = doc.shapes.find((s) => s.id === spec.id);

@@ -12,7 +12,7 @@
  * usable from either entry point.
  */
 
-export type ShapeType = "note" | "rect" | "ellipse" | "text" | "arrow";
+export type ShapeType = "rect" | "ellipse" | "text" | "arrow";
 
 export interface Shape {
   id: string;
@@ -58,7 +58,7 @@ export function parseDoc(json: string | null | undefined): CanvasDoc {
   }
 }
 
-const SHAPE_TYPES: ShapeType[] = ["note", "rect", "ellipse", "text", "arrow"];
+const SHAPE_TYPES: ShapeType[] = ["rect", "ellipse", "text", "arrow"];
 const MAX_SHAPES = 2000;
 const MAX_TEXT = 4000;
 
@@ -68,9 +68,11 @@ function num(v: unknown, fallback = 0): number {
 
 /** Coerce arbitrary input into a well-formed shape (used for `add`). */
 export function normalizeShape(input: Partial<Shape> & { id: string; type: string }): Shape {
+  // Legacy docs may still hold "note" shapes; they coerce to "rect" (a sticky
+  // note was always just a rectangle), and any unknown type does too.
   const type = (SHAPE_TYPES as string[]).includes(input.type)
     ? (input.type as ShapeType)
-    : "note";
+    : "rect";
   const shape: Shape = {
     id: input.id,
     type,

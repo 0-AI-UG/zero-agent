@@ -325,7 +325,7 @@ export const EmailSearchInput = z
 // field is that name) and addresses everything by that name: `set` upserts
 // a shape, `arrow` connects two by name, `remove` deletes one. The server
 // computes all arrow geometry, so callers never touch x2/y2.
-const CanvasShapeType = z.enum(["note", "rect", "ellipse", "text"]);
+const CanvasShapeType = z.enum(["rect", "ellipse", "text"]);
 const CanvasName = z.string().min(1).max(64);
 
 export const CanvasGetInput = z.object({}).strict();
@@ -333,7 +333,7 @@ export const CanvasGetInput = z.object({}).strict();
 // Fields shared by `set` and each shape in `draw`.
 const CanvasShapeFields = {
   id: CanvasName,
-  type: CanvasShapeType.optional(), // defaults to "note" on create
+  type: CanvasShapeType.optional(), // defaults to "rect" on create
   text: z.string().max(4000).optional(),
   x: z.number().optional(),
   y: z.number().optional(),

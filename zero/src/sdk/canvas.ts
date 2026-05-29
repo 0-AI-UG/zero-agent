@@ -11,7 +11,7 @@ import {
   type CanvasDrawInputT,
 } from "./schemas.ts";
 
-export type CanvasShapeType = "note" | "rect" | "ellipse" | "text" | "arrow";
+export type CanvasShapeType = "rect" | "ellipse" | "text" | "arrow";
 
 export interface CanvasShape {
   id: string;
