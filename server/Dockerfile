@@ -32,13 +32,12 @@ COPY web/package.json ./web/package.json
 COPY zero/package.json ./zero/package.json
 RUN bun install --frozen-lockfile
 
-# Install Chromium runtime system deps + browser binaries for both
-# playwright and rebrowser-playwright (host-pool.ts uses rebrowser's chromium
-# wrapped with playwright-extra). `install-deps` apts the libs Chromium needs
-# (libnss3, libxkbcommon0, fonts, etc.); `install chromium` downloads the
-# browser into the image so launch doesn't reach the network at runtime.
+# Install Chromium runtime system deps + the rebrowser-playwright browser
+# binary. host-pool.ts launches rebrowser's chromium (the `playwright` package
+# is imported type-only), so only that binary is downloaded. `install-deps`
+# apts the libs Chromium needs (libnss3, libxkbcommon0, fonts, etc.) — they
+# cover rebrowser's chromium too since it's the same Chromium build.
 RUN node node_modules/playwright/cli.js install-deps chromium && \
-    node node_modules/playwright/cli.js install chromium && \
     node node_modules/rebrowser-playwright/cli.js install chromium && \
     rm -rf /var/lib/apt/lists/*
 
@@ -62,15 +61,8 @@ RUN bun run compile
 # Create data directories
 RUN mkdir -p /app/data/workspaces
 
-# Headful browser support via xvfb-run. Toggled at runtime by BROWSER_HEADLESS
-# env var, so both xvfb and xauth are installed unconditionally — xvfb-run
-# needs xauth to manage MIT-MAGIC-COOKIE auth.
-RUN apt-get update && apt-get install -y --no-install-recommends xvfb xauth && \
-    rm -rf /var/lib/apt/lists/*
-ENV DISPLAY=:99
-
 EXPOSE 3000
 
 ENV NODE_ENV=production
 ENTRYPOINT ["/usr/bin/tini", "--"]
-CMD ["sh", "-c", "if [ \"$BROWSER_HEADLESS\" = \"false\" ]; then exec xvfb-run -a -s '-screen 0 1280x800x24 -nolisten tcp' npm start; else exec npm start; fi"]
+CMD ["npm", "start"]

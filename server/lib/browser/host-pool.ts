@@ -153,26 +153,19 @@ class HostBrowserPool extends EventEmitter {
     if (this.launching) return this.launching;
     this.launching = (async () => {
       const t0 = Date.now();
-      const headless = process.env.BROWSER_HEADLESS !== "false";
       const args = [
         "--no-sandbox",
         "--disable-dev-shm-usage",
         "--disable-blink-features=AutomationControlled",
       ];
-      // Pass env explicitly. With BROWSER_HEADLESS=false we rely on Xvfb +
-      // DISPLAY=:99; if some wrapper in the chain (playwright-extra / stealth
-      // / rebrowser) trims env, chromium silently launches without DISPLAY and
-      // fails with "Missing X server or $DISPLAY".
-      const env = { ...process.env };
-      if (!headless && !env.DISPLAY) env.DISPLAY = ":99";
-      const b = await chromium.launch({ headless, args, env });
+      const b = await chromium.launch({ headless: true, args });
       b.on("disconnected", () => {
         browserLog.warn("chromium disconnected");
         if (this.browser === b) this.browser = null;
         this.sessions.clear();
       });
       this.browser = b;
-      browserLog.info("chromium launched", { headless, ms: Date.now() - t0 });
+      browserLog.info("chromium launched", { ms: Date.now() - t0 });
       return b;
     })();
     try {
@@ -291,11 +284,6 @@ class HostBrowserPool extends EventEmitter {
   /** Returns the most recent frame for a project, if any. */
   lastFrameFor(projectId: string): ScreenshotFrame | null {
     return this.sessions.get(projectId)?.lastFrame ?? null;
-  }
-
-  /** True if a session exists for a project. */
-  hasSession(projectId: string): boolean {
-    return this.sessions.has(projectId);
   }
 
   /** Drives a single action for a project. Serialized per project. */

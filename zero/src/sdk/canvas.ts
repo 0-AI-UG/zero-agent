@@ -6,6 +6,7 @@ import {
   CanvasDrawInput,
   CanvasRemoveInput,
   CanvasClearInput,
+  CanvasViewInput,
   type CanvasSetInputT,
   type CanvasArrowInputT,
   type CanvasDrawInputT,
@@ -70,4 +71,22 @@ export const canvas = {
   clear(options?: CallOptions): Promise<{ success: boolean }> {
     return call<{ success: boolean }>("/zero/canvas/clear", CanvasClearInput.parse({}), options);
   },
+  /**
+   * Render the whole board to a PNG and return a `{path, fileId, ...}`
+   * reference. Read the returned path back as an image to visually verify
+   * the diagram — overlaps, overflow, alignment and arrow anchoring that
+   * the shape JSON alone won't reveal.
+   */
+  view(options?: CallOptions): Promise<CanvasViewResult> {
+    return call<CanvasViewResult>("/zero/canvas/view", CanvasViewInput.parse({}), options);
+  },
 };
+
+export interface CanvasViewResult {
+  type: "canvas_view";
+  shapeCount: number;
+  path: string;
+  fileId: string;
+  sizeBytes: number;
+  mediaType: string;
+}

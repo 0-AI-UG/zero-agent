@@ -129,7 +129,7 @@ import {
   handleAppStatus,
   handleCreateShareLink,
 } from "@/routes/apps.ts";
-import { handleGetCanvas } from "@/routes/canvas.ts";
+import { handleGetCanvas, handleExportCanvas } from "@/routes/canvas.ts";
 import { startBrowserPool, stopBrowserPool } from "@/lib/browser/host-pool.ts";
 import { proxyAppRequest } from "@/lib/http/app-proxy.ts";
 
@@ -448,6 +448,7 @@ app.get("/api/apps/:slug/status", h(handleAppStatus));
 
 // Canvas (collaborative whiteboard) — initial load; live edits over WS
 app.get("/api/projects/:projectId/canvas", h(handleGetCanvas));
+app.get("/api/projects/:projectId/canvas/export", h(handleExportCanvas));
 
 // Content-addressed blob serving, scoped to a project the caller is a member of.
 // Scoping is enforced via an in-memory ownership index populated at `putBlob`

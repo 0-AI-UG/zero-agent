@@ -1,4 +1,5 @@
 import { canvas as canvasSdk, type DrawItem } from "../../sdk/canvas.ts";
+import * as fs from "node:fs/promises";
 import { getOption, printJson } from "../format.ts";
 
 const HELP = `zero canvas - the project's collaborative whiteboard
@@ -14,10 +15,15 @@ Usage:
   zero canvas rm <name>
   zero canvas clear
   zero canvas draw '<json>'        Draw a whole diagram at once (or pipe via -)
+  zero canvas view [-o file.png]   Render the board to a PNG and see it
 
 set creates a shape the first time you use a name and updates it (patching
 only the fields you pass) every time after. arrow connects two shapes by
 name — the server figures out the coordinates, so you never do geometry.
+
+view renders the whole board to a PNG and returns its path; read that path
+back as an image to visually check the result (overlaps, overflow, alignment,
+arrow anchoring) the shape JSON alone won't reveal.
 
 Diagram in one call (shapes are {id,...}, arrows are {from,to}):
   zero canvas draw '[
@@ -131,6 +137,30 @@ export async function canvasCommand(args: string[]): Promise<number> {
       return 2;
     }
     printJson(await canvasSdk.draw(items));
+    return 0;
+  }
+
+  if (action === "view") {
+    // The server renders the board to a PNG, writes it to project storage,
+    // and returns only a compact `{path, fileId, ...}` reference. Read the
+    // returned path back as an image when you need to look at it.
+    const result = await canvasSdk.view();
+    const outFile = getOption(rest, "-o") ?? getOption(rest, "--out");
+    if (outFile && result?.path) {
+      // Project path == container workspace root, so a plain copy works.
+      try {
+        const src = await fs.readFile(result.path);
+        await fs.writeFile(outFile, src);
+        process.stdout.write(`saved ${outFile}\n`);
+        return 0;
+      } catch (err) {
+        process.stderr.write(
+          `zero canvas view: failed to copy to ${outFile}: ${err instanceof Error ? err.message : String(err)}\n`,
+        );
+        // Fall through and still print the server reference below.
+      }
+    }
+    printJson(result);
     return 0;
   }
 

@@ -17,6 +17,12 @@ import { generateId } from "@/db/index.ts";
 import { getCanvasDoc } from "@/db/queries/canvas.ts";
 import { applyCanvasOpAndBroadcast } from "@/lib/http/ws.ts";
 import { anchorBetween, normalizeShape, type Shape } from "@/lib/canvas/doc.ts";
+import { renderCanvasPng } from "@/lib/canvas/render.ts";
+import { insertFile } from "@/db/queries/files.ts";
+import { createFolder as createFolderRecord, getFolderByPath } from "@/db/queries/folders.ts";
+import { writeProjectFile, workspacePathFor } from "@/lib/projects/fs-ops.ts";
+import { sanitizePath } from "@/lib/files/sanitize.ts";
+import { sha256Hex } from "@/lib/utils/hash.ts";
 import type { CliContext } from "./context.ts";
 import { ok, fail } from "./response.ts";
 import type {
@@ -24,6 +30,7 @@ import type {
   CanvasArrowInput,
   CanvasDrawInput,
   CanvasRemoveInput,
+  CanvasViewInput,
 } from "zero/schemas";
 
 const AGENT_ORIGIN = "agent";
@@ -141,4 +148,59 @@ export async function handleCanvasRemove(
 export async function handleCanvasClear(ctx: CliContext): Promise<Response> {
   applyCanvasOpAndBroadcast(ctx.projectId, { kind: "clear" }, AGENT_ORIGIN);
   return ok({ success: true });
+}
+
+function ensureFoldersExist(projectId: string, folderPath: string) {
+  if (folderPath === "/") return;
+  const segments = folderPath.split("/").filter(Boolean);
+  let currentPath = "/";
+  for (const segment of segments) {
+    currentPath += segment + "/";
+    if (!getFolderByPath(projectId, currentPath)) {
+      createFolderRecord(projectId, currentPath, segment);
+    }
+  }
+}
+
+/**
+ * Render the current board to a PNG, write it into project storage as
+ * `.zero/canvas/view-...png`, and return a compact `{path, fileId, ...}`
+ * reference (no base64 on the wire — mirrors `handleBrowserScreenshot`). The
+ * agent reads the returned path back when it actually needs to look at it,
+ * giving it a visual check on the diagram it just drew.
+ */
+export async function handleCanvasView(
+  ctx: CliContext,
+  _input: z.infer<typeof CanvasViewInput>,
+): Promise<Response> {
+  const doc = getCanvasDoc(ctx.projectId);
+  let buffer: Buffer;
+  try {
+    buffer = await renderCanvasPng(doc.shapes);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return fail("render_failed", message, 500);
+  }
+
+  const ts = new Date().toISOString().replace(/[:.]/g, "-");
+  const filePath = sanitizePath(`.zero/canvas/view-${ts}.png`);
+  const filename = filePath.split("/").pop() ?? `view-${ts}.png`;
+  const folderPath = "/" + filePath.split("/").slice(0, -1).join("/") + "/";
+
+  ensureFoldersExist(ctx.projectId, folderPath);
+  await writeProjectFile(ctx.projectId, workspacePathFor(folderPath, filename), buffer);
+
+  const fileRow = insertFile(
+    ctx.projectId, filename, "image/png", buffer.byteLength, folderPath,
+    sha256Hex(buffer),
+  );
+
+  return ok({
+    type: "canvas_view",
+    shapeCount: doc.shapes.length,
+    path: filePath,
+    fileId: fileRow.id,
+    sizeBytes: buffer.byteLength,
+    mediaType: "image/png",
+  });
 }
