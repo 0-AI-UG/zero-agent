@@ -77,10 +77,3 @@ export function unsubscribeBrowser(ws: WebSocket, projectId?: string): void {
     if (s.subscribers.size === 0) subs.delete(pid);
   }
 }
-
-export function browserSubStats() {
-  return {
-    projects: subs.size,
-    totalSubscribers: [...subs.values()].reduce((n, s) => n + s.subscribers.size, 0),
-  };
-}

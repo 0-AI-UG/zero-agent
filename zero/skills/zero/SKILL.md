@@ -152,6 +152,7 @@ zero canvas arrow <from> <to> [--text <t>] [--color <c>]
 zero canvas rm <name>
 zero canvas clear
 zero canvas draw '<json>'        # a whole diagram in one call
+zero canvas view [-o file.png]   # render the board to a PNG and look at it
 ```
 The project's collaborative whiteboard (the Canvas tab) — every change is persisted and pushed live to teammates viewing the board. **You name every shape yourself and refer to it by that name; there are no ids to track.** `set` creates a shape the first time you use a name and patches it (only the fields you pass) every time after. `arrow` connects two shapes by name and the server works out the coordinates — you never do geometry.
 ```bash
@@ -170,6 +171,8 @@ zero canvas draw '[
 ]'
 ```
 Lay boxes on a grid (`x`/`y` top-left, step x by ~180, y by ~120). `color` is a palette name: yellow, blue, green, pink, purple, orange, gray.
+
+After drawing, run `zero canvas view` to render the whole board to a PNG and read the returned `path` back as an image — it's the only way to catch overlaps, text overflow, misalignment or arrows anchored to the wrong edge that the shape JSON won't show.
 
 ## health
 ```

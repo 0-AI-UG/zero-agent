@@ -67,6 +67,7 @@ import {
   handleCanvasDraw,
   handleCanvasRemove,
   handleCanvasClear,
+  handleCanvasView,
 } from "./canvas.ts";
 
 import {
@@ -113,6 +114,7 @@ import {
   CanvasDrawInput,
   CanvasRemoveInput,
   CanvasClearInput,
+  CanvasViewInput,
 } from "zero/schemas";
 
 export type CliHandler<S extends ZodTypeAny> = (
@@ -230,6 +232,7 @@ export function buildCliHandlerApp(): Hono {
   app.post("/zero/canvas/draw", bind(CanvasDrawInput, handleCanvasDraw));
   app.post("/zero/canvas/remove", bind(CanvasRemoveInput, handleCanvasRemove));
   app.post("/zero/canvas/clear", bind(CanvasClearInput, handleCanvasClear));
+  app.post("/zero/canvas/view", bind(CanvasViewInput, handleCanvasView));
 
   return app;
 }

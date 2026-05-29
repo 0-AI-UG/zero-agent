@@ -369,6 +369,9 @@ export const CanvasRemoveInput = z.object({ id: CanvasName }).strict();
 
 export const CanvasClearInput = z.object({}).strict();
 
+// Render the whole board to a PNG so the agent can visually verify it.
+export const CanvasViewInput = z.object({}).strict();
+
 // Convenience re-exports for SDK type inference.
 export type WebSearchInputT = z.infer<typeof WebSearchInput>;
 export type WebFetchInputT = z.infer<typeof WebFetchInput>;

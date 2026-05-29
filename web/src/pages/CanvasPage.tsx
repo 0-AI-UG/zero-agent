@@ -11,6 +11,7 @@ import {
   MoveUpRightIcon,
   Trash2Icon,
   EraserIcon,
+  DownloadIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -166,6 +167,7 @@ export function CanvasPage() {
   // Live marquee (rectangle-select) box in world coordinates while dragging.
   const [marquee, setMarquee] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const [confirmClearOpen, setConfirmClearOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   const [view, setView] = useState<View>({ tx: 0, ty: 0, scale: 1 });
   const [cursors, setCursors] = useState<Record<string, Cursor>>({});
@@ -649,6 +651,31 @@ export function CanvasPage() {
     if (s) sendCanvasOp(pid, { kind: "update", id, props: { text: s.text ?? "" } }, origin.current);
   };
 
+  // Download the server-rendered PNG of the current board. The endpoint streams
+  // the same render the agent sees; we turn it into a blob and click a throwaway
+  // <a download> so the browser saves it locally.
+  const exportPng = async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const res = await fetch(`/api/projects/${pid}/canvas/export`, { credentials: "include" });
+      if (!res.ok) throw new Error(`export failed: ${res.status}`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "canvas.png";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const list = Object.values(shapes);
 
   return (
@@ -701,6 +728,15 @@ export function CanvasPage() {
           className="flex size-8 items-center justify-center rounded-md hover:bg-muted"
         >
           <Trash2Icon className="size-4" />
+        </button>
+        <div className="mx-1 h-5 w-px bg-border/60" />
+        <button
+          title="Export as PNG"
+          disabled={exporting}
+          onClick={exportPng}
+          className="flex size-8 items-center justify-center rounded-md hover:bg-muted disabled:opacity-40"
+        >
+          <DownloadIcon className="size-4" />
         </button>
         <div className="ml-auto pr-1 text-xs tabular-nums text-muted-foreground">
           {Math.round(view.scale * 100)}%
