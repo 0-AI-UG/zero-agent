@@ -20,6 +20,7 @@ import { notificationCommand } from "./commands/notification.ts";
 import { embedCommand } from "./commands/embed.ts";
 import { searchCommand } from "./commands/search.ts";
 import { emailCommand } from "./commands/email.ts";
+import { canvasCommand } from "./commands/canvas.ts";
 
 const HELP = `zero - agent toolkit CLI
 
@@ -39,6 +40,7 @@ Groups:
   email            list, read, send, reply, search the project's mailbox
   embed            generate vector embeddings (single text or --batch)
   search           vector search over project files and messages
+  canvas           get, set, arrow, draw, rm, clear on the project whiteboard
 
 Run 'zero <group> --help' for details. All commands support --json.
 `;
@@ -82,6 +84,8 @@ async function main(argv: string[]): Promise<number> {
         return await embedCommand(rest);
       case "search":
         return await searchCommand(rest);
+      case "canvas":
+        return await canvasCommand(rest);
       default:
         process.stderr.write(`zero: unknown group "${group}"\n${HELP}`);
         return 2;

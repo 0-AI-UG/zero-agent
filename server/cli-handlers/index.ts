@@ -60,6 +60,14 @@ import {
   handleTriggerStateDelete,
   handleTriggerStateAll,
 } from "./trigger.ts";
+import {
+  handleCanvasGet,
+  handleCanvasSet,
+  handleCanvasArrow,
+  handleCanvasDraw,
+  handleCanvasRemove,
+  handleCanvasClear,
+} from "./canvas.ts";
 
 import {
   HealthInput,
@@ -99,6 +107,12 @@ import {
   TriggerStateSetInput,
   TriggerStateDeleteInput,
   TriggerStateAllInput,
+  CanvasGetInput,
+  CanvasSetInput,
+  CanvasArrowInput,
+  CanvasDrawInput,
+  CanvasRemoveInput,
+  CanvasClearInput,
 } from "zero/schemas";
 
 export type CliHandler<S extends ZodTypeAny> = (
@@ -209,6 +223,13 @@ export function buildCliHandlerApp(): Hono {
   app.post("/zero/trigger/state/set", bind(TriggerStateSetInput, handleTriggerStateSet));
   app.post("/zero/trigger/state/delete", bind(TriggerStateDeleteInput, handleTriggerStateDelete));
   app.post("/zero/trigger/state/all", bind(TriggerStateAllInput, handleTriggerStateAll));
+
+  app.post("/zero/canvas/get", bind(CanvasGetInput, handleCanvasGet));
+  app.post("/zero/canvas/set", bind(CanvasSetInput, handleCanvasSet));
+  app.post("/zero/canvas/arrow", bind(CanvasArrowInput, handleCanvasArrow));
+  app.post("/zero/canvas/draw", bind(CanvasDrawInput, handleCanvasDraw));
+  app.post("/zero/canvas/remove", bind(CanvasRemoveInput, handleCanvasRemove));
+  app.post("/zero/canvas/clear", bind(CanvasClearInput, handleCanvasClear));
 
   return app;
 }

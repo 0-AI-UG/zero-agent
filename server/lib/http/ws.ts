@@ -8,6 +8,8 @@ import { getChatById } from "@/db/queries/chats.ts";
 import { log } from "@/lib/utils/logger.ts";
 import { isChatWsMessage, handleChatMessage } from "@/lib/http/ws-chat.ts";
 import { subscribeBrowser, unsubscribeBrowser } from "@/lib/http/ws-browser.ts";
+import { applyAndPersist } from "@/db/queries/canvas.ts";
+import type { CanvasOp } from "@/lib/canvas/doc.ts";
 import type { PiEventEnvelope } from "@/lib/pi/run-turn.ts";
 import {
   applyPiEvent,
@@ -381,6 +383,12 @@ function handleMessage(ws: WebSocket, meta: ConnectionMeta, msg: any) {
     case "typing":
       handleTyping(ws, meta, msg.chatId);
       break;
+    case "canvas.op":
+      handleCanvasOp(meta, msg);
+      break;
+    case "canvas.cursor":
+      handleCanvasCursor(meta, msg);
+      break;
     case "heartbeat":
       send(ws, { type: "pong" });
       break;
@@ -476,6 +484,74 @@ function handleTyping(ws: WebSocket, meta: ConnectionMeta, chatId: string) {
       client.send(data);
     }
   }
+}
+
+// ── Canvas (collaborative whiteboard) ──
+//
+// The canvas is project-scoped, so it rides the existing project room.
+// A client must have joined the project (membership checked in
+// `handleJoin`) before its ops are accepted. Ops are applied to the
+// canonical doc and rebroadcast to the room; the `origin` tag lets the
+// sender ignore its own echo. Cursors are ephemeral and never persisted.
+
+function handleCanvasOp(meta: ConnectionMeta, msg: any) {
+  // Route by the room the client actually joined (membership was checked
+  // in handleJoin). Trusting meta.projectId rather than the client-sent
+  // projectId is both safer and avoids dropping ops on any benign
+  // join/param skew.
+  if (!meta.projectId) {
+    wsLog.warn("canvas.op dropped: socket not joined to a project", {
+      userId: meta.userId,
+      msgProjectId: msg.projectId,
+    });
+    return;
+  }
+  const op = msg.op as CanvasOp | undefined;
+  if (!op || typeof op.kind !== "string") return;
+  const origin = typeof msg.origin === "string" ? msg.origin : "";
+  const { changed } = applyCanvasOpAndBroadcast(meta.projectId, op, origin);
+  wsLog.info("canvas.op", {
+    projectId: meta.projectId,
+    kind: op.kind,
+    changed,
+    roomSize: projectRooms.get(meta.projectId)?.size ?? 0,
+  });
+}
+
+function handleCanvasCursor(meta: ConnectionMeta, msg: any) {
+  if (!meta.projectId) return;
+  broadcastToProject(meta.projectId, {
+    type: "canvas.cursor",
+    origin: typeof msg.origin === "string" ? msg.origin : "",
+    userId: meta.userId,
+    username: meta.username,
+    cursor: msg.cursor ?? null,
+  });
+}
+
+/**
+ * Apply a canvas op to the project's doc, persist it, and broadcast to
+ * everyone in the project room. Exported so the agent-facing CLI handler
+ * can push edits through the exact same path — humans then see the agent
+ * draw live. `origin` distinguishes the author (e.g. "agent").
+ */
+export function applyCanvasOpAndBroadcast(
+  projectId: string,
+  op: CanvasOp,
+  origin: string,
+): { changed: boolean; doc: import("@/lib/canvas/doc.ts").CanvasDoc } {
+  const result = applyAndPersist(projectId, op);
+  if (result.changed) {
+    broadcastToProject(projectId, { type: "canvas.op", origin, op });
+  }
+  wsLog.info("canvas.broadcast", {
+    projectId,
+    origin,
+    kind: (op as any).kind,
+    changed: result.changed,
+    roomSize: projectRooms.get(projectId)?.size ?? 0,
+  });
+  return result;
 }
 
 async function handleRefreshToken(ws: WebSocket, meta: ConnectionMeta, token: string) {

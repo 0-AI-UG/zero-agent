@@ -53,4 +53,7 @@ export const queryKeys = {
   apps: {
     byProject: (projectId: string) => ["apps", projectId] as const,
   },
+  canvas: {
+    byProject: (projectId: string) => ["canvas", projectId] as const,
+  },
 } as const;

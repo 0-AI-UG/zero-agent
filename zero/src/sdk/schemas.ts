@@ -319,6 +319,56 @@ export const EmailSearchInput = z
   })
   .strict();
 
+// -- canvas (collaborative whiteboard) --
+//
+// The agent never sees a server id. It names every shape itself (the `id`
+// field is that name) and addresses everything by that name: `set` upserts
+// a shape, `arrow` connects two by name, `remove` deletes one. The server
+// computes all arrow geometry, so callers never touch x2/y2.
+const CanvasShapeType = z.enum(["note", "rect", "ellipse", "text"]);
+const CanvasName = z.string().min(1).max(64);
+
+export const CanvasGetInput = z.object({}).strict();
+
+// Fields shared by `set` and each shape in `draw`.
+const CanvasShapeFields = {
+  id: CanvasName,
+  type: CanvasShapeType.optional(), // defaults to "note" on create
+  text: z.string().max(4000).optional(),
+  x: z.number().optional(),
+  y: z.number().optional(),
+  w: z.number().optional(),
+  h: z.number().optional(),
+  color: z.string().min(1).max(32).optional(),
+};
+
+// Create or update one shape by name. Re-running with the same name patches
+// only the fields you pass.
+export const CanvasSetInput = z.object(CanvasShapeFields).strict();
+
+// Connect two existing shapes; the server anchors the arrow edge-to-edge.
+const CanvasArrowFields = {
+  from: CanvasName,
+  to: CanvasName,
+  text: z.string().max(4000).optional(),
+  color: z.string().min(1).max(32).optional(),
+};
+export const CanvasArrowInput = z.object(CanvasArrowFields).strict();
+
+// Draw a whole diagram in one call. Each item is either a shape ({id,...})
+// or an arrow ({from,to}); order doesn't matter, arrows resolve by name.
+const CanvasDrawArrow = z.object(CanvasArrowFields).strict();
+const CanvasDrawShape = z.object(CanvasShapeFields).strict();
+export const CanvasDrawInput = z
+  .object({
+    items: z.array(z.union([CanvasDrawArrow, CanvasDrawShape])).min(1).max(200),
+  })
+  .strict();
+
+export const CanvasRemoveInput = z.object({ id: CanvasName }).strict();
+
+export const CanvasClearInput = z.object({}).strict();
+
 // Convenience re-exports for SDK type inference.
 export type WebSearchInputT = z.infer<typeof WebSearchInput>;
 export type WebFetchInputT = z.infer<typeof WebFetchInput>;
@@ -344,3 +394,6 @@ export type NotificationSendInputT = z.infer<typeof NotificationSendInput>;
 export type NotificationResponseInputT = z.infer<typeof NotificationResponseInput>;
 export type EmbedInputT = z.infer<typeof EmbedInput>;
 export type SearchInputT = z.infer<typeof SearchInput>;
+export type CanvasSetInputT = z.infer<typeof CanvasSetInput>;
+export type CanvasArrowInputT = z.infer<typeof CanvasArrowInput>;
+export type CanvasDrawInputT = z.infer<typeof CanvasDrawInput>;

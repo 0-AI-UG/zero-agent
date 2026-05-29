@@ -14,6 +14,7 @@ import { TasksPage } from "@/pages/TasksPage";
 import { SettingsPage } from "@/pages/SettingsPage";
 import { SkillsPage } from "@/pages/SkillsPage";
 import { AppsPage } from "@/pages/AppsPage";
+import { CanvasPage } from "@/pages/CanvasPage";
 import { HelpPage } from "@/pages/HelpPage";
 import { AccountPage } from "@/pages/AccountPage";
 import { AdminPage } from "@/pages/AdminPage";
@@ -59,6 +60,7 @@ export function App() {
               <Route path="files" element={<FilesPage />} />
               <Route path="tasks" element={<TasksPage />} />
               <Route path="apps" element={<AppsPage />} />
+              <Route path="canvas" element={<CanvasPage />} />
               <Route path="skills" element={<SkillsPage />} />
               <Route path="settings" element={<SettingsPage />} />
               <Route path="account" element={<AccountPage />} />

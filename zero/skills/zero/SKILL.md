@@ -144,6 +144,33 @@ zero search <query> [--collection file|message] [--top-k <n>]
 ```
 Hybrid vector search over project files and messages. `--collection` is repeatable; omit to search both.
 
+## canvas
+```
+zero canvas get
+zero canvas set <name> [--type note|rect|ellipse|text] [--text <t>] [--x N] [--y N] [--w N] [--h N] [--color <c>]
+zero canvas arrow <from> <to> [--text <t>] [--color <c>]
+zero canvas rm <name>
+zero canvas clear
+zero canvas draw '<json>'        # a whole diagram in one call
+```
+The project's collaborative whiteboard (the Canvas tab) — every change is persisted and pushed live to teammates viewing the board. **You name every shape yourself and refer to it by that name; there are no ids to track.** `set` creates a shape the first time you use a name and patches it (only the fields you pass) every time after. `arrow` connects two shapes by name and the server works out the coordinates — you never do geometry.
+```bash
+zero canvas set client --type rect --text Client --x 0 --y 0
+zero canvas set server --type rect --text Server --x 320 --y 0
+zero canvas arrow client server --text request
+```
+For more than a couple of shapes, send the whole diagram in one `draw` call instead of many `set`s. Items are shapes (`{id,...}`) or arrows (`{from,to}`), in any order:
+```bash
+zero canvas draw '[
+  {"id":"client","type":"rect","text":"Client","x":0,"y":0,"color":"blue"},
+  {"id":"server","type":"rect","text":"Server","x":320,"y":0,"color":"green"},
+  {"id":"db","type":"rect","text":"DB","x":640,"y":0},
+  {"from":"client","to":"server","text":"request"},
+  {"from":"server","to":"db","text":"query"}
+]'
+```
+Lay boxes on a grid (`x`/`y` top-left, step x by ~180, y by ~120). `color` is a palette name: yellow, blue, green, pink, purple, orange, gray.
+
 ## health
 ```
 zero health

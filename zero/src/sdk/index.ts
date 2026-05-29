@@ -34,3 +34,5 @@ export type { SearchResult, SearchResponse } from "./search.ts";
 export { trigger } from "./trigger.ts";
 export { email } from "./email.ts";
 export type { EmailSummary, EmailMessage, EmailSendResult } from "./email.ts";
+export { canvas } from "./canvas.ts";
+export type { CanvasShape, CanvasShapeType, SetShapeInput, ArrowInput, DrawItem } from "./canvas.ts";
