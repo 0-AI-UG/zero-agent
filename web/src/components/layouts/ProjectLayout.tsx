@@ -40,6 +40,7 @@ import {
   PlusIcon,
   PuzzleIcon,
   NetworkIcon,
+  PenToolIcon,
   SettingsIcon,
   TrashIcon,
   SendIcon,
@@ -307,6 +308,11 @@ function ProjectSidebar({
       to: `${basePath}/apps`,
       icon: NetworkIcon,
       label: "Apps",
+    },
+    {
+      to: `${basePath}/canvas`,
+      icon: PenToolIcon,
+      label: "Canvas",
     },
     {
       to: `${basePath}/skills`,

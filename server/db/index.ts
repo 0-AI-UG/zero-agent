@@ -431,6 +431,16 @@ db.exec(`
   )
 `);
 
+// ── Canvas (one collaborative whiteboard document per project) ──
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS canvas_documents (
+    project_id  TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+    doc         TEXT NOT NULL DEFAULT '{"shapes":[],"updatedAt":0}',
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+  )
+`);
+
 // ── User ↔ Telegram links (one linked identity per user) ──
 
 db.exec(`

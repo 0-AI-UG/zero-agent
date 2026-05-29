@@ -151,6 +151,17 @@ export function unsubscribeBrowser(projectId?: string) {
   send({ type: "unsubscribeBrowser", ...(projectId ? { projectId } : {}) });
 }
 
+/** Send a canvas op to the project room. `origin` is the sender's session
+ * id so it can ignore the server's echo of its own op. */
+export function sendCanvasOp(projectId: string, op: unknown, origin: string) {
+  send({ type: "canvas.op", projectId, origin, op });
+}
+
+/** Broadcast an ephemeral canvas cursor position (or null to clear). */
+export function sendCanvasCursor(projectId: string, origin: string, cursor: unknown) {
+  send({ type: "canvas.cursor", projectId, origin, cursor });
+}
+
 export function subscribe(handler: MessageHandler): () => void {
   listeners.add(handler);
   return () => listeners.delete(handler);
