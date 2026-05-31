@@ -6,7 +6,7 @@
 import {
   AuthStorage,
   ModelRegistry,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import { getSetting } from "@/lib/settings.ts";
 import { getActiveProvider, resolveChatModelId } from "@/lib/providers/index.ts";
 import { getModelById } from "@/db/queries/models.ts";

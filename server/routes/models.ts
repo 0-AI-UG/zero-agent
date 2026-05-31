@@ -10,7 +10,7 @@ import {
   type ModelInput,
 } from "@/db/queries/models.ts";
 import type { ModelRow } from "@/db/types.ts";
-import { getModel } from "@mariozechner/pi-ai";
+import { getModel } from "@earendil-works/pi-ai";
 
 function lookupContextWindow(provider: string, id: string): number | undefined {
   // The DB `provider` column groups models by maker (anthropic, moonshotai, …)

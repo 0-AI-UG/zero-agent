@@ -28,8 +28,8 @@ import {
   getAgentDir,
   SessionManager,
   SettingsManager,
-} from "@mariozechner/pi-coding-agent";
-import { type Api, type Message, type Model, StringEnum } from "@mariozechner/pi-ai";
+} from "@earendil-works/pi-coding-agent";
+import { type Api, type Message, type Model, StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import {
   type AgentConfig,

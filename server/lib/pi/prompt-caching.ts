@@ -11,8 +11,8 @@
  * "short" → 5min ephemeral (Anthropic) / in-memory (OpenAI).
  * "long"  → 1h (Anthropic) / 24h (OpenAI). Costs ~25% more on cache write.
  */
-import type { AgentSession } from "@mariozechner/pi-coding-agent";
-import { type CacheRetention, streamSimple } from "@mariozechner/pi-ai";
+import type { AgentSession } from "@earendil-works/pi-coding-agent";
+import { type CacheRetention, streamSimple } from "@earendil-works/pi-ai";
 
 export function enablePromptCaching(
   session: AgentSession,

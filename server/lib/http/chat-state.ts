@@ -18,7 +18,7 @@ import {
   SessionManager,
   buildSessionContext,
   type SessionEntry,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import { sessionsDirFor, type PiEventEnvelope } from "@/lib/pi/run-turn.ts";
 import { log } from "@/lib/utils/logger.ts";
 

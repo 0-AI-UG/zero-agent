@@ -72,7 +72,7 @@ import {
   createWriteTool,
   type ExtensionAPI,
   type ExtensionFactory,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 
 const DENY_READ = ["~/.ssh", "~/.aws", "~/.gnupg"];
 const DENY_WRITE_GLOBS = [".env", ".env.*", "*.pem", "*.key"];
