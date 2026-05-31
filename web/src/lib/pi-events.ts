@@ -1,6 +1,6 @@
 /**
  * Client-side mirror of the Pi event types we render. Mirrors
- * `@mariozechner/pi-agent-core` and `@mariozechner/pi-ai` plus the
+ * `@earendil-works/pi-agent-core` and `@earendil-works/pi-ai` plus the
  * server's WS envelope. Kept structural so the web bundle doesn't
  * pull in the Pi packages.
  */
