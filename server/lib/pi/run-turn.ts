@@ -149,13 +149,19 @@ export async function runTurn(opts: RunTurnOptions): Promise<TurnResult> {
   // released in finally. Per-turn env is plumbed through the bash sandbox's
   // BashOperations.exec rather than mutated on process.env so concurrent
   // turns can't clobber each other's ZERO_PROXY_TOKEN.
+  //
+  // The TTL is only a backstop: the token is released in `finally` when the
+  // turn ends, so this bounds an abandoned/hung turn rather than a healthy
+  // one. Long research/autonomous turns can run well past 30 min and would
+  // otherwise see their in-sandbox `zero` CLI calls fail mid-run with
+  // "Invalid or expired Pi turn token"; 2h gives ample headroom.
   const proxyToken = randomBytes(24).toString("hex");
   const releaseToken = registerPiTurnToken(proxyToken, {
     projectId: opts.projectId,
     chatId: opts.chatId,
     userId: opts.userId,
     runId,
-    expiresAt: Date.now() + 30 * 60 * 1000,
+    expiresAt: Date.now() + 2 * 60 * 60 * 1000,
   });
   const cliPort = parseInt(process.env.PORT ?? "3000");
   const zeroBinDir = ensureZeroOnPath();
