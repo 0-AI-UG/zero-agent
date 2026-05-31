@@ -58,6 +58,25 @@ docker compose up
 
 Requires [Bun](https://bun.sh) v1.3+ and Node.js 20+.
 
+### Run the prebuilt image (no clone)
+
+Every push to `main` publishes `ghcr.io/0-ai-ug/zero-agent/server:latest` to GitHub Container Registry. To run it without cloning the repo:
+
+```bash
+docker run -d --name zero-agent \
+  -p 3000:3000 \
+  -v zero-data:/app/data \
+  -v zero-projects:/var/zero \
+  --env-file .env \
+  --memory 1200m --memory-swap 1200m \
+  --restart unless-stopped \
+  ghcr.io/0-ai-ug/zero-agent/server:latest
+```
+
+The two volumes are required — `zero-projects` (`/var/zero`) holds workspaces and per-chat session history, so projects survive restarts. Supply secrets via `--env-file .env` (see [Configuration](#configuration)).
+
+The same image backs `docker-compose.yml`, so `docker compose pull` fetches it instead of building from source.
+
 ## Features
 
 **From Pi (embedded in-process):**
