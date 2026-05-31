@@ -1,5 +1,8 @@
 services:
   server:
+    # Built from source by `docker compose up`. The same tag is published to
+    # GHCR on every push to main, so `docker compose pull` fetches it instead.
+    image: ghcr.io/0-ai-ug/zero-agent/server:latest
     build:
       context: .
       dockerfile: server/Dockerfile
