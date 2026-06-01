@@ -2,10 +2,50 @@ import { jwtVerify, SignJWT } from "jose";
 import { AuthError, ForbiddenError } from "@/lib/utils/errors.ts";
 import { getUserById } from "@/db/queries/users.ts";
 import { readAuthCookie } from "@/lib/http/cookies.ts";
+import {
+  getCompanionTokenByValue,
+  isCompanionToken,
+  isCompanionTokenExpired,
+  touchCompanionToken,
+} from "@/db/queries/companion-tokens.ts";
 
 export interface TokenPayload {
   userId: string;
   username: string;
+  /**
+   * Set only when the caller authenticated with a companion token. The token
+   * is scoped to this single project; `authenticateRequest` refuses to let it
+   * act on any other project's routes.
+   */
+  companionProjectId?: string;
+}
+
+/**
+ * Pull the `:projectId` out of a project-scoped REST path
+ * (`/api/projects/<id>/...`). Returns null for routes without one.
+ */
+function projectIdFromPath(pathname: string): string | null {
+  const m = pathname.match(/\/projects\/([^/]+)/);
+  return m ? decodeURIComponent(m[1]!) : null;
+}
+
+/**
+ * Resolve a companion-token bearer to its owner. Throws AuthError when the
+ * token is unknown or expired. Project-scope enforcement happens in
+ * `authenticateRequest`, which knows the request path.
+ */
+export function verifyCompanionToken(token: string): TokenPayload {
+  const row = getCompanionTokenByValue(token);
+  if (!row) throw new AuthError("Unauthorized");
+  if (isCompanionTokenExpired(row)) throw new AuthError("Companion token expired");
+  const user = getUserById(row.user_id);
+  if (!user) throw new AuthError("Unauthorized");
+  touchCompanionToken(row.id);
+  return {
+    userId: row.user_id,
+    username: user.username,
+    companionProjectId: row.project_id,
+  };
 }
 
 // HS256 requires at least 32 bytes. Refuse to boot if unset/too short.
@@ -52,7 +92,28 @@ export async function authenticateRequest(
   if (!header?.startsWith("Bearer ")) {
     throw new AuthError("Unauthorized");
   }
-  return verifyToken(header.slice(7));
+  const bearer = header.slice(7);
+
+  // Companion tokens are project-scoped. They may reach ONLY routes bound to
+  // their own project (`/api/projects/<boundId>/...`) plus the small
+  // `/api/companion/` self-describe surface. Everything else — including the
+  // account-wide `/api/projects` listing and any sibling project — is denied.
+  // This default-deny chokepoint is what keeps a leaked companion token from
+  // ranging across the owner's account; the request path alone decides scope.
+  if (isCompanionToken(bearer)) {
+    const payload = verifyCompanionToken(bearer);
+    const pathname = new URL(request.url).pathname;
+    if (pathname.startsWith("/api/companion/")) {
+      return payload;
+    }
+    const pathProject = projectIdFromPath(pathname);
+    if (!pathProject || pathProject !== payload.companionProjectId) {
+      throw new ForbiddenError("Companion token is scoped to a single project");
+    }
+    return payload;
+  }
+
+  return verifyToken(bearer);
 }
 
 export async function createToken(payload: TokenPayload): Promise<string> {

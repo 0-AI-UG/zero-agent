@@ -21,6 +21,7 @@ import { AdminPage } from "@/pages/AdminPage";
 import { AppGatePage } from "@/pages/AppGatePage";
 import { SetupPage } from "@/pages/SetupPage";
 import { PendingResponsePage } from "@/pages/PendingResponsePage";
+import { DevicePage } from "@/pages/DevicePage";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
 import { ThemeApplier } from "@/components/ThemeApplier";
@@ -54,6 +55,7 @@ export function App() {
               <Route path="/admin" element={<AdminPage />} />
             </Route>
             <Route path="/pending/:id" element={<PendingResponsePage />} />
+            <Route path="/device" element={<DevicePage />} />
             <Route path="/projects/:projectId" element={<ProjectLayout />}>
               <Route index element={<ProjectPage />} />
               <Route path="c/:chatId" element={<ProjectPage />} />

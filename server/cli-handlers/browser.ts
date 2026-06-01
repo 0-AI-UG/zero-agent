@@ -27,6 +27,15 @@ import type {
   BrowserExtractInput,
 } from "zero/schemas";
 
+/**
+ * Per-call browser options derived from the request principal. `allowCompanion`
+ * is true only for user-initiated turns / direct laptop CLI use, so automated
+ * runs never drive the user's local browser.
+ */
+function browserOpts(ctx: CliContext): { userId: string; allowCompanion: boolean } {
+  return { userId: ctx.userId, allowCompanion: ctx.userInitiated };
+}
+
 function ensureFoldersExist(projectId: string, folderPath: string) {
   if (folderPath === "/") return;
   const segments = folderPath.split("/").filter(Boolean);
@@ -55,14 +64,14 @@ export const handleBrowserOpen = (
   ctx: CliContext,
   input: z.infer<typeof BrowserOpenInput>,
 ) => dispatch(ctx, () =>
-  getBrowserPool().execute(ctx.projectId, { type: "navigate", url: input.url }),
+  getBrowserPool().execute(ctx.projectId, { type: "navigate", url: input.url }, browserOpts(ctx)),
 );
 
 export const handleBrowserClick = (
   ctx: CliContext,
   input: z.infer<typeof BrowserClickInput>,
 ) => dispatch(ctx, () =>
-  getBrowserPool().execute(ctx.projectId, { type: "click", ref: input.ref }),
+  getBrowserPool().execute(ctx.projectId, { type: "click", ref: input.ref }, browserOpts(ctx)),
 );
 
 export const handleBrowserFill = (
@@ -74,7 +83,7 @@ export const handleBrowserFill = (
     ref: input.ref,
     text: input.text,
     submit: !!input.submit,
-  }),
+  }, browserOpts(ctx)),
 );
 
 /**
@@ -89,7 +98,7 @@ export const handleBrowserScreenshot = async (
 ): Promise<Response> => {
   let shot: { base64?: string; url?: string; title?: string };
   try {
-    shot = (await getBrowserPool().execute(ctx.projectId, { type: "screenshot" })) as {
+    shot = (await getBrowserPool().execute(ctx.projectId, { type: "screenshot" }, browserOpts(ctx))) as {
       base64?: string; url?: string; title?: string;
     };
   } catch (err) {
@@ -133,14 +142,14 @@ export const handleBrowserEvaluate = (
     type: "evaluate",
     script: input.script,
     awaitPromise: input.awaitPromise !== false,
-  }),
+  }, browserOpts(ctx)),
 );
 
 export const handleBrowserWait = (
   ctx: CliContext,
   input: z.infer<typeof BrowserWaitInput>,
 ) => dispatch(ctx, () =>
-  getBrowserPool().execute(ctx.projectId, { type: "wait", ms: input.ms }),
+  getBrowserPool().execute(ctx.projectId, { type: "wait", ms: input.ms }, browserOpts(ctx)),
 );
 
 export const handleBrowserSnapshot = (
@@ -151,7 +160,7 @@ export const handleBrowserSnapshot = (
     type: "snapshot",
     mode: input.mode ?? "interactive",
     selector: input.selector,
-  }),
+  }, browserOpts(ctx)),
 );
 
 /**
@@ -173,7 +182,7 @@ export const handleBrowserExtract = async (
       script: "document.documentElement.outerHTML",
       awaitPromise: false,
       maxChars: 500_000,
-    })) as { value?: unknown; url?: string; title?: string };
+    }, browserOpts(ctx))) as { value?: unknown; url?: string; title?: string };
     html = typeof result?.value === "string" ? result.value : "";
     url = typeof result?.url === "string" ? result.url : "";
     pageTitle = typeof result?.title === "string" ? result.title : "";

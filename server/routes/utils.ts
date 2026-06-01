@@ -3,6 +3,7 @@ import { corsHeaders } from "@/lib/http/cors.ts";
 import {
   NotFoundError,
   ConflictError,
+  ForbiddenError,
 } from "@/lib/utils/errors.ts";
 import { getProjectById } from "@/db/queries/projects.ts";
 import { isProjectMember, getMemberRole, getMemberCount } from "@/db/queries/members.ts";
@@ -81,6 +82,17 @@ export function formatProject(row: ProjectRow, opts?: { role?: string; memberCou
     createdAt: toUTC(row.created_at),
     updatedAt: toUTC(row.updated_at),
   };
+}
+
+/**
+ * Reject callers that authenticated with a companion token. Companion tokens are
+ * browser/control-plane scoped and must never be usable to mint more credentials
+ * or approve device logins (that would let a leaked token escalate).
+ */
+export function requireHumanSession(payload: { companionProjectId?: string }): void {
+  if (payload.companionProjectId) {
+    throw new ForbiddenError("Companion tokens cannot perform this action");
+  }
 }
 
 /** Verify the user is a member of the project (any role). Admins bypass membership check. */

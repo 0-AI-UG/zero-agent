@@ -272,6 +272,8 @@ export async function runScriptTask(
       userId,
       runId: run.id,
       expiresAt: Date.now() + 5 * 60 * 1000,
+      // Automated script trigger — never drives the user's local browser.
+      userInitiated: false,
     });
 
     const zeroBinDir = ensureZeroOnPath();

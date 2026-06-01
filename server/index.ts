@@ -65,6 +65,19 @@ import {
   handleGetTaskRuns,
 } from "@/routes/tasks.ts";
 import {
+  handleListCompanionTokens,
+  handleRevokeCompanionToken,
+} from "@/routes/companion-tokens.ts";
+import { handleCompanionMe } from "@/routes/companion.ts";
+import {
+  handleDeviceStart,
+  handleDevicePoll,
+  handleDeviceInfo,
+  handleDeviceApprove,
+  handleDeviceDeny,
+} from "@/routes/companion-device.ts";
+import { pruneExpiredDeviceAuthRequests } from "@/db/queries/device-auth.ts";
+import {
   handleListMembers,
   handleInviteMember,
   handleRemoveMember,
@@ -144,7 +157,7 @@ import {
 
 import { startScheduler, stopScheduler } from "@/lib/tasks/scheduler.ts";
 import { requestShutdown, drainActiveRuns, isShuttingDown } from "@/lib/durability/shutdown.ts";
-import { pruneOrphanedMessageVectors } from "@/lib/search/vectors.ts";
+import { pruneOrphanedMessageVectors, closeVectorClient } from "@/lib/search/vectors.ts";
 import { handleListUsers, handleCreateUser, handleDeleteUser, handleUpdateUser } from "@/routes/admin.ts";
 import {
   handleCreateInvitation,
@@ -339,6 +352,22 @@ app.delete("/api/projects/:projectId/tasks/:taskId", h(handleDeleteTask));
 app.post("/api/projects/:projectId/tasks/:taskId/run", h(handleRunTaskNow));
 app.get("/api/projects/:projectId/tasks/:taskId/runs", h(handleGetTaskRuns));
 
+// Companion tokens (laptop-side `zero` companion auth) — list + revoke only;
+// tokens are minted by the device-authorization flow below.
+app.get("/api/projects/:projectId/companion-tokens", h(handleListCompanionTokens));
+app.delete("/api/projects/:projectId/companion-tokens/:tokenId", h(handleRevokeCompanionToken));
+
+// Device-authorization login (`zero login`). start/poll are unauthenticated
+// (the CLI has no credential yet); info/approve/deny require a human session.
+app.post("/api/companion/device/start", h(handleDeviceStart));
+app.post("/api/companion/device/poll", h(handleDevicePoll));
+app.get("/api/companion/device/info", h(handleDeviceInfo));
+app.post("/api/companion/device/approve", h(handleDeviceApprove));
+app.post("/api/companion/device/deny", h(handleDeviceDeny));
+
+// Companion self-describe (token validation for `zero whoami`)
+app.get("/api/companion/me", h(handleCompanionMe));
+
 // Members
 app.get("/api/projects/:projectId/members", h(handleListMembers));
 app.post("/api/projects/:projectId/members/invite", h(handleInviteMember));
@@ -527,6 +556,12 @@ app.all("/api/*", (c) => {
   return Response.json({ error: "Not found" }, { status: 404, headers: corsHeaders });
 });
 
+// Laptop-side `zero` CLI installer (public, unauthenticated). Registered
+// before the SPA catch-all so these aren't swallowed by the index.html fallback.
+import { handleInstallScript, handleCliDownload } from "@/routes/install.ts";
+app.get("/install.sh", h(handleInstallScript));
+app.get("/zero-cli.js", h(handleCliDownload));
+
 // Frontend serving - same path for dev and prod.
 // In dev: served from web/dist/ on disk (rebuilt by `bun build.ts --watch`).
 // In compiled prod: served from embedded assets, with disk fallback.
@@ -654,6 +689,19 @@ const _vectorPruneInterval = setInterval(() => {
 }, 30 * 60 * 1000);
 if (typeof _vectorPruneInterval === "object" && "unref" in _vectorPruneInterval) _vectorPruneInterval.unref();
 
+// ── Periodic device-auth pruning (every 10 min) ──
+// Clears expired `zero login` requests — pending, denied, or approved-but-
+// never-polled — so the table (and any short-lived stashed token) can't linger.
+const _deviceAuthPruneInterval = setInterval(() => {
+  try {
+    const removed = pruneExpiredDeviceAuthRequests();
+    if (removed > 0) log.info("device-auth prune complete", { removed });
+  } catch (err) {
+    log.warn("device-auth prune failed", { error: err instanceof Error ? err.message : String(err) });
+  }
+}, 10 * 60 * 1000);
+if (typeof _deviceAuthPruneInterval === "object" && "unref" in _deviceAuthPruneInterval) _deviceAuthPruneInterval.unref();
+
 // ── Graceful Shutdown ──
 
 async function handleShutdown(signal: string) {
@@ -667,6 +715,8 @@ async function handleShutdown(signal: string) {
   closeWebSocketServer();
   await stopBrowserPool().catch(() => {});
   db.close();
+  // Release the s3lite vector-store lock so it doesn't go stale across restarts.
+  closeVectorClient();
   log.info("shutdown complete");
   server.close();
   process.exit(0);

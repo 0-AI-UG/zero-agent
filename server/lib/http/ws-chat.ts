@@ -163,6 +163,9 @@ async function handleChatSend(
     images: images.length > 0 ? images : undefined,
     model: piModel,
     abortSignal: abortController.signal,
+    // Interactive web chat — the user is present, so allow their local
+    // companion browser to take over `zero browser ...` actions.
+    userInitiated: true,
     onEvent: (env) => publishPiEvent(env),
   })
     .then(({ runId, aborted, truncated, truncationReason }) => {

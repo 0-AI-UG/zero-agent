@@ -50,6 +50,9 @@ export const queryKeys = {
   credentials: {
     byProject: (projectId: string) => ["credentials", projectId] as const,
   },
+  companionTokens: {
+    all: ["companion-tokens"] as const,
+  },
   apps: {
     byProject: (projectId: string) => ["apps", projectId] as const,
   },

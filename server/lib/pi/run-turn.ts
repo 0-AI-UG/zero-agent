@@ -76,6 +76,13 @@ export interface RunTurnOptions {
   model: ResolvedPiModel;
   abortSignal?: AbortSignal;
   onEvent: (e: PiEventEnvelope) => void;
+  /**
+   * True when a human started this turn (interactive chat / Telegram). Only
+   * user-initiated turns may drive the user's local companion browser; all
+   * automated triggers (scheduler, email, scripts) default to false and use
+   * the container's headless browser.
+   */
+  userInitiated?: boolean;
 }
 
 export interface TurnResult {
@@ -162,6 +169,7 @@ export async function runTurn(opts: RunTurnOptions): Promise<TurnResult> {
     userId: opts.userId,
     runId,
     expiresAt: Date.now() + 2 * 60 * 60 * 1000,
+    userInitiated: opts.userInitiated ?? false,
   });
   const cliPort = parseInt(process.env.PORT ?? "3000");
   const zeroBinDir = ensureZeroOnPath();

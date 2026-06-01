@@ -23,6 +23,7 @@ function ctx(): PiCliContext {
     userId: "u1",
     runId: "r1",
     expiresAt: Date.now() + 60_000,
+    userInitiated: false,
   };
 }
 

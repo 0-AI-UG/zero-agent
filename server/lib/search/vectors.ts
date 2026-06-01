@@ -62,10 +62,15 @@ let _client: VectorClient | null = null;
 function getClient(): VectorClient {
   if (!_client) {
     const dbPath = process.env.VECTOR_DB_PATH ?? "./data/vectors.db";
-    // s3lite <=0.6.0 writes only the bare PID into the vector-store lock file,
-    // so across container restarts a PID-20 → PID-20 collision makes it think
-    // the lock is still held. We run single-process per container, so any
-    // pre-existing lock at startup is guaranteed stale — clear it.
+    // Best-effort fast-path clear of a pre-existing vector-store lock. s3lite
+    // >=0.6.0 already self-detects stale locks (PID liveness + start-time +
+    // hostname), so this is only a belt-and-suspenders for the single-process-
+    // per-container model. NOTE: both this unlink and s3lite's own cleanup need
+    // write permission on the data DIR — if the persistent volume's mount-point
+    // is owned by a different uid than the container runs as (and the container
+    // lacks CAP_DAC_OVERRIDE), this fails EACCES and every acquire() throws
+    // "Database is locked by another process". Keep the data dir writable by the
+    // runtime uid.
     try {
       unlinkSync(`${dbPath}-vdata.lock`);
       vecLog.info("cleared stale vector lock", { path: `${dbPath}-vdata.lock` });
