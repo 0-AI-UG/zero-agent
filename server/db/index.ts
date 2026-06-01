@@ -296,6 +296,12 @@ db.exec(`
   )
 `);
 
+// Additive migration: a device_auth_requests table created before token_id /
+// minted_token were introduced won't pick them up via CREATE TABLE IF NOT
+// EXISTS, so ALTER them in (no-op once present).
+try { db.exec(`ALTER TABLE device_auth_requests ADD COLUMN token_id TEXT REFERENCES companion_tokens(id) ON DELETE SET NULL`); } catch { /* already present */ }
+try { db.exec(`ALTER TABLE device_auth_requests ADD COLUMN minted_token TEXT`); } catch { /* already present */ }
+
 db.exec(`
   CREATE TABLE IF NOT EXISTS quick_actions (
     id          TEXT PRIMARY KEY,
