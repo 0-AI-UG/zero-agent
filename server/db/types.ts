@@ -11,6 +11,35 @@ export interface UserRow {
   created_at: string;
 }
 
+export interface CompanionTokenRow {
+  id: string;
+  user_id: string;
+  project_id: string;
+  /** SHA-256 hex of the raw `cmp_…` secret. The plaintext is never stored. */
+  token_hash: string;
+  /** Display-only masked prefix, e.g. `cmp_AbCd…`. Safe to expose. */
+  token_prefix: string;
+  name: string;
+  last_connected_at: string | null;
+  expires_at: string;
+  created_at: string;
+}
+
+export interface DeviceAuthRequestRow {
+  id: string;
+  device_code: string;
+  user_code: string;
+  status: "pending" | "approved" | "denied";
+  device_name: string | null;
+  user_id: string | null;
+  project_id: string | null;
+  token_id: string | null;
+  /** Raw companion secret, present only between approval and first poll. */
+  minted_token: string | null;
+  created_at: string;
+  expires_at: string;
+}
+
 export interface UserPasskeyRow {
   id: string;
   user_id: string;

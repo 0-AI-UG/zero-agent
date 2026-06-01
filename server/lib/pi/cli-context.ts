@@ -14,4 +14,11 @@ export interface PiCliContext {
   userId: string;
   runId: string;
   expiresAt: number;
+  /**
+   * True when this turn was started by a human message (interactive chat /
+   * Telegram) rather than an automated trigger (scheduler, email, scripts).
+   * Gates whether `zero browser ...` may drive the user's local companion
+   * browser instead of the container's headless one.
+   */
+  userInitiated: boolean;
 }

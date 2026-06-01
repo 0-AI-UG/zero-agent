@@ -15,4 +15,12 @@ export interface CliContext {
   projectId: string;
   userId: string;
   chatId: string;
+  /**
+   * True when the originating turn was started by a human (interactive chat /
+   * Telegram) or is the user themselves driving the CLI from their laptop via
+   * a companion token. Gates whether `zero browser ...` may drive the user's
+   * local companion browser. Automated turns (scheduler/email/scripts) are
+   * false and always use the container browser.
+   */
+  userInitiated: boolean;
 }

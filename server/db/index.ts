@@ -246,16 +246,53 @@ db.exec(`
   )
 `);
 
+// Pre-release schema fix: an earlier build stored the raw companion token in a
+// `token` column. We now store only its SHA-256 hash (plus a display prefix),
+// so drop the legacy table before (re)creating it. No production data exists.
+try {
+  const cols = db.prepare("PRAGMA table_info(companion_tokens)").all() as { name: string }[];
+  if (cols.some((c) => c.name === "token")) {
+    db.exec("DROP TABLE companion_tokens");
+  }
+} catch {
+  /* table doesn't exist yet */
+}
+
 db.exec(`
   CREATE TABLE IF NOT EXISTS companion_tokens (
     id                TEXT PRIMARY KEY,
     user_id           TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     project_id        TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    token             TEXT UNIQUE NOT NULL,
+    token_hash        TEXT UNIQUE NOT NULL,
+    token_prefix      TEXT NOT NULL,
     name              TEXT NOT NULL DEFAULT 'default',
     last_connected_at TEXT,
     expires_at        TEXT NOT NULL DEFAULT (datetime('now', '+30 days')),
     created_at        TEXT NOT NULL DEFAULT (datetime('now'))
+  )
+`);
+
+// Short-lived device-authorization requests backing `zero login` (RFC 8628
+// style). The CLI starts one, the user approves it in the web app by typing the
+// 6-digit user_code and picking a project, and the CLI polls with the secret
+// device_code until a companion token is minted. Rows are consumed (deleted)
+// once the token is delivered, and otherwise expire after 10 minutes.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS device_auth_requests (
+    id           TEXT PRIMARY KEY,
+    device_code  TEXT UNIQUE NOT NULL,
+    user_code    TEXT UNIQUE NOT NULL,
+    status       TEXT NOT NULL DEFAULT 'pending',
+    device_name  TEXT,
+    user_id      TEXT REFERENCES users(id) ON DELETE CASCADE,
+    project_id   TEXT REFERENCES projects(id) ON DELETE CASCADE,
+    token_id     TEXT REFERENCES companion_tokens(id) ON DELETE SET NULL,
+    -- The raw minted companion secret, stashed here only between approval and
+    -- the CLI's next poll. The row (and this column) is deleted on delivery, so
+    -- the plaintext lives at most ~10 minutes and only in this short-lived row.
+    minted_token TEXT,
+    created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    expires_at   TEXT NOT NULL DEFAULT (datetime('now', '+10 minutes'))
   )
 `);
 
@@ -692,7 +729,7 @@ db.exec(`CREATE INDEX IF NOT EXISTS idx_todos_project_chat ON todos(project_id, 
 db.exec(`CREATE INDEX IF NOT EXISTS idx_skills_project ON skills(project_id)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_companion_tokens_user ON companion_tokens(user_id)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_companion_tokens_project ON companion_tokens(project_id)`);
-db.exec(`CREATE INDEX IF NOT EXISTS idx_companion_tokens_token ON companion_tokens(token)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_companion_tokens_token ON companion_tokens(token_hash)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_quick_actions_project ON quick_actions(project_id, sort_order)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_push_subs_user ON push_subscriptions(user_id)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_trigger ON scheduled_tasks(trigger_type, trigger_event, enabled)`);

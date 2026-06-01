@@ -7,6 +7,7 @@ import { FingerprintIcon, Trash2Icon, MoonIcon, SunIcon, MonitorIcon, PaletteIco
 import { passkeyRegisterOptions, passkeyRegisterVerify, passkeyList, passkeyDelete } from "@/api/passkeys";
 import { startRegistration } from "@simplewebauthn/browser";
 import { NotificationsCenter } from "@/components/settings/NotificationsCenter";
+import { CompanionTokensManager } from "@/components/settings/CompanionTokensManager";
 import { useColorModeStore, resolveColorMode, type ColorMode } from "@/stores/color-mode";
 import { validateThemeConfig, EXAMPLE_THEMES, type ThemeConfig, type ThemeColors } from "@/lib/theme-engine";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -15,6 +16,7 @@ const NAV_ITEMS = [
   { id: "general", label: "General" },
   { id: "appearance", label: "Appearance" },
   { id: "security", label: "Security" },
+  { id: "companion", label: "Companion" },
   { id: "notifications", label: "Notifications" },
 ] as const;
 
@@ -110,6 +112,11 @@ export function AccountPage() {
               Passkeys are required to sign in when two-factor authentication is enabled on your account.
             </p>
             <PasskeySection />
+          </div>
+
+          {/* Companion (laptop-side zero CLI tokens — user-scoped) */}
+          <div id="section-companion">
+            <CompanionTokensManager />
           </div>
 
           {/* Notifications */}

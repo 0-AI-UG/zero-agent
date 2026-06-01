@@ -1,4 +1,5 @@
 import { tasks as tasksSdk } from "../../sdk/tasks.ts";
+import { remote, isRemoteMode } from "../../sdk/remote.ts";
 import { hasFlag, getOption, printJson } from "../format.ts";
 
 const HELP = `zero tasks - manage scheduled / event / script tasks
@@ -61,6 +62,11 @@ Script triggers:
 export async function tasksCommand(args: string[]): Promise<number> {
   const [action, ...rest] = args;
   if (!action || action === "--help" || action === "-h") { process.stdout.write(HELP); return 0; }
+
+  // Laptop mode: drive the bound project's tasks over the public /api surface.
+  if (isRemoteMode()) {
+    return tasksCommandRemote(action, rest);
+  }
 
   if (action === "add") {
     const name = getOption(rest, "--name");
@@ -137,5 +143,80 @@ export async function tasksCommand(args: string[]): Promise<number> {
   }
 
   process.stderr.write(`zero tasks: unknown action "${action}"\n${HELP}`);
+  return 2;
+}
+
+/** Remote (laptop) variant: maps task actions onto /api/projects/:id/tasks. */
+async function tasksCommandRemote(action: string, rest: string[]): Promise<number> {
+  const project = getOption(rest, "--project");
+
+  if (action === "add") {
+    const name = getOption(rest, "--name");
+    const prompt = getOption(rest, "--prompt");
+    if (!name || !prompt) { process.stderr.write("zero tasks add: --name and --prompt required\n"); return 2; }
+    const sched = getOption(rest, "--schedule");
+    const event = getOption(rest, "--event");
+    const script = getOption(rest, "--script");
+    const cooldown = getOption(rest, "--cooldown");
+
+    let triggerType: "schedule" | "event" | "script";
+    if (script) {
+      triggerType = "script";
+      if (!sched) { process.stderr.write("zero tasks add: --schedule is required when using --script\n"); return 2; }
+    } else if (event) {
+      triggerType = "event";
+    } else {
+      triggerType = "schedule";
+    }
+
+    const task = await remote.addTask({
+      name, prompt, triggerType,
+      schedule: sched,
+      triggerEvent: event,
+      scriptPath: script,
+      cooldownSeconds: cooldown ? Number(cooldown) : undefined,
+    }, project);
+    if (hasFlag(rest, "--json")) printJson(task);
+    else process.stdout.write(`created ${task.id} (${task.name})\n`);
+    return 0;
+  }
+
+  if (action === "ls" || action === "list") {
+    const tasks = await remote.listTasks(project);
+    if (hasFlag(rest, "--json")) printJson({ tasks });
+    else for (const t of tasks) {
+      let trig: string;
+      if (t.triggerType === "event") trig = `event:${t.triggerEvent}`;
+      else if (t.triggerType === "script") trig = `script: ${t.scriptPath ?? `.zero/triggers/${t.id}.ts`}, ${t.schedule}`;
+      else trig = t.schedule ?? "";
+      process.stdout.write(`${t.id}  ${t.enabled ? "[on] " : "[off]"} ${t.name}  (${trig})\n`);
+    }
+    return 0;
+  }
+
+  if (action === "run") {
+    const taskId = getOption(rest, "--task");
+    if (!taskId) { process.stderr.write("zero tasks run: --task required\n"); return 2; }
+    await remote.runTask(taskId, project);
+    if (hasFlag(rest, "--json")) printJson({ ok: true, taskId });
+    else process.stdout.write(`triggered ${taskId}\n`);
+    return 0;
+  }
+
+  if (action === "rm" || action === "remove") {
+    const taskId = getOption(rest, "--task");
+    if (!taskId) { process.stderr.write("zero tasks rm: --task required\n"); return 2; }
+    await remote.removeTask(taskId, project);
+    if (hasFlag(rest, "--json")) printJson({ deletedTask: taskId });
+    else process.stdout.write(`removed ${taskId}\n`);
+    return 0;
+  }
+
+  if (action === "update") {
+    process.stderr.write("zero tasks update: not yet supported in remote mode\n");
+    return 2;
+  }
+
+  process.stderr.write(`zero tasks: unknown action "${action}"\n`);
   return 2;
 }

@@ -1,6 +1,7 @@
 import { WebSocketServer, WebSocket } from "ws";
 import type { Server as HttpServer, IncomingMessage } from "node:http";
-import { verifyToken, type TokenPayload } from "@/lib/auth/auth.ts";
+import { verifyToken, verifyCompanionToken, type TokenPayload } from "@/lib/auth/auth.ts";
+import { getCompanionRegistry } from "@/lib/companion/registry.ts";
 import { isProjectMember } from "@/db/queries/members.ts";
 import { getUserById } from "@/db/queries/users.ts";
 import { getProjectById } from "@/db/queries/projects.ts";
@@ -22,6 +23,21 @@ import {
 } from "@/lib/http/chat-state.ts";
 
 const wsLog = log.child({ module: "ws" });
+
+/**
+ * Extract a companion token from the `Sec-WebSocket-Protocol` request header.
+ * The client offers the token as one of its subprotocols (alongside a
+ * `zero-companion` marker); we pick out the `cmp_…` entry.
+ */
+function companionTokenFromProtocols(header: string | string[] | undefined): string | null {
+  if (!header) return null;
+  const raw = Array.isArray(header) ? header.join(",") : header;
+  for (const part of raw.split(",")) {
+    const value = part.trim();
+    if (value.startsWith("cmp_")) return value;
+  }
+  return null;
+}
 
 // ── Types ──
 
@@ -165,6 +181,37 @@ export function attachWebSocketServer(server: HttpServer) {
       return;
     }
     const url = new URL(req.url ?? "/", `http://${req.headers.host}`);
+
+    // Companion control tunnel: authenticated by a project-scoped companion
+    // token (cmp_...), not a session JWT. Handled on its own path so the main
+    // /ws room logic stays untouched.
+    if (url.pathname === "/ws/companion") {
+      // The token rides in the `Sec-WebSocket-Protocol` header (offered as a
+      // `cmp_…` subprotocol), not the URL query string — query strings leak
+      // into reverse-proxy access logs, and this is a 30-day credential.
+      const cToken = companionTokenFromProtocols(req.headers["sec-websocket-protocol"]);
+      let cPayload: TokenPayload;
+      try {
+        if (!cToken) throw new Error("missing token");
+        cPayload = verifyCompanionToken(cToken);
+      } catch {
+        socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+        socket.destroy();
+        return;
+      }
+      const projectId = cPayload.companionProjectId;
+      if (!projectId) {
+        socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+        socket.destroy();
+        return;
+      }
+      wss.handleUpgrade(req, socket, head, (ws) => {
+        // One companion per user; tagged with the project the token is bound to.
+        getCompanionRegistry().register(ws, cPayload.userId, projectId);
+      });
+      return;
+    }
+
     if (url.pathname !== "/ws") {
       wsLog.info("upgrade rejected - wrong path", { pathname: url.pathname });
       socket.destroy();

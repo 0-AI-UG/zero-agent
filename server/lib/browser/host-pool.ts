@@ -36,6 +36,8 @@ import type {
 } from "playwright";
 import { log } from "@/lib/utils/logger.ts";
 import { projectDirFor } from "@/lib/pi/run-turn.ts";
+import { getCompanionRegistry } from "@/lib/companion/registry.ts";
+import type { BrowserAction as ProtocolBrowserAction } from "@/lib/browser/protocol.ts";
 
 /**
  * Per-project storageState file. Holds cookies + localStorage + IndexedDB so
@@ -286,8 +288,38 @@ class HostBrowserPool extends EventEmitter {
     return this.sessions.get(projectId)?.lastFrame ?? null;
   }
 
-  /** Drives a single action for a project. Serialized per project. */
-  execute(projectId: string, action: BrowserAction): Promise<BrowserResult> {
+  /**
+   * Drives a single action for a project. Serialized per project.
+   *
+   * When `opts.allowCompanion` is set and the acting user has a live companion
+   * bound to this project, drive their real local browser instead of the
+   * container's headless chromium. The agent-facing surface is identical —
+   * same action/result shapes — so neither the CLI handler nor the agent can
+   * tell which browser it's talking to. `allowCompanion` is set only for
+   * user-initiated turns (see `cli-handlers/browser.ts`): scheduled/automated
+   * runs always use the container browser so they never hijack the laptop.
+   *
+   * Once an action is routed to the companion we do NOT silently re-run it on
+   * the container: a mid-flight failure may have already performed a
+   * non-idempotent action (a click, a form submit) on the laptop, and re-running
+   * would do it twice and against a different page. The error is surfaced
+   * instead. If the tunnel is gone entirely, `isConnectedFor` is already false
+   * and the next action transparently uses the container browser.
+   */
+  execute(
+    projectId: string,
+    action: BrowserAction,
+    opts?: { userId?: string; allowCompanion?: boolean },
+  ): Promise<BrowserResult> {
+    const userId = opts?.userId;
+    if (opts?.allowCompanion && userId) {
+      const registry = getCompanionRegistry();
+      if (registry.isConnectedFor(userId, projectId)) {
+        return registry
+          .executeBrowser(userId, action as unknown as ProtocolBrowserAction)
+          .then((r) => r as unknown as BrowserResult);
+      }
+    }
     return this.runQueued(projectId, () => this.runAction(projectId, action));
   }
 

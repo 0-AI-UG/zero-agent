@@ -14,6 +14,7 @@
 import { browser } from "../../sdk/browser.ts";
 import * as fs from "node:fs/promises";
 import { hasFlag, getOption, printJson } from "../format.ts";
+import { companionConnect } from "./companion.ts";
 
 const HELP = `zero browser - drive the per-project browser session
 
@@ -27,6 +28,7 @@ Usage:
   zero browser snapshot [--mode interactive|full] [--selector <css>]
   zero browser extract <query> [--max <n>]
   zero browser status
+  zero browser connect [--cdp <url>] [--chromium]   (run on YOUR laptop)
 
 Context-efficient tip: prefer \`snapshot\` (text a11y tree) or \`extract\` (query-driven paragraphs) over \`screenshot\` / full DOM dumps.
 
@@ -36,6 +38,12 @@ All commands support --json. Element refs come from a snapshot.
 export async function browserCommand(args: string[]): Promise<number> {
   const [action, ...rest] = args;
   if (!action || action === "--help" || action === "-h") { process.stdout.write(HELP); return 0; }
+
+  // `connect` runs the LOCAL companion (laptop side) rather than issuing a
+  // remote browser action. It never touches the SDK call path.
+  if (action === "connect") {
+    return companionConnect(rest);
+  }
 
   const positional = rest.filter(a => !a.startsWith("--") && a !== "-o");
   // Strip --option <value> pairs from positional
