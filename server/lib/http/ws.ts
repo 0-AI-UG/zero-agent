@@ -189,7 +189,13 @@ export function attachWebSocketServer(server: HttpServer) {
       // The token rides in the `Sec-WebSocket-Protocol` header (offered as a
       // `cmp_…` subprotocol), not the URL query string — query strings leak
       // into reverse-proxy access logs, and this is a 30-day credential.
-      const cToken = companionTokenFromProtocols(req.headers["sec-websocket-protocol"]);
+      // Newer companions send the token in a request header (kept out of the
+      // handshake response); older ones still ride it as a second subprotocol.
+      const headerToken =
+        typeof req.headers["x-zero-companion-token"] === "string"
+          ? (req.headers["x-zero-companion-token"] as string)
+          : undefined;
+      const cToken = headerToken ?? companionTokenFromProtocols(req.headers["sec-websocket-protocol"]);
       let cPayload: TokenPayload;
       try {
         if (!cToken) throw new Error("missing token");
