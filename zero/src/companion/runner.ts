@@ -9,9 +9,20 @@
  *   3. answers `ping` for liveness and reports capabilities on connect.
  *
  * It auto-reconnects with backoff so a flaky network or laptop sleep doesn't
- * permanently drop the project's browser. Uses the global `WebSocket` present
- * in both Bun and Node 22+.
+ * permanently drop the project's browser.
+ *
+ * Transport: we use the `ws` library's WebSocket rather than the global one.
+ * The companion token rides in the `x-zero-companion-token` REQUEST header
+ * (the global WHATWG WebSocket can't set headers), and we offer a SINGLE
+ * `zero-companion` subprotocol. Carrying the token as a second subprotocol —
+ * the previous approach — proved fragile: some Bun versions validate the
+ * server's echoed subprotocol against the *whole* offered string instead of by
+ * membership, so the server replying with just the first protocol closed the
+ * socket with 1002 "Mismatch client protocol". A single subprotocol echoes
+ * back verbatim and matches on every runtime; a header keeps the secret out of
+ * both the URL (access logs) and the handshake response (proxy response logs).
  */
+import { WebSocket } from "ws";
 import { requireConfig } from "../sdk/config.ts";
 import { CompanionEngine, type EngineOptions } from "./engine.ts";
 import type { CompanionControl, CompanionMessage } from "../sdk/browser-protocol.ts";
@@ -88,11 +99,11 @@ export class CompanionRunner {
   private connect(): void {
     if (this.stopped) return;
     const cfg = requireConfig();
-    // The token travels as a WebSocket subprotocol, not a query param, so it
-    // never lands in proxy access logs. The `zero-companion` marker MUST stay
-    // first: the server echoes the first offered subprotocol in its handshake
-    // response, and we want that to be the marker, never the secret.
-    const ws = new WebSocket(wsUrl(cfg.baseUrl), ["zero-companion", cfg.token]);
+    // Token in a request header (kept out of the URL and the handshake
+    // response); a single, unambiguous subprotocol the server echoes verbatim.
+    const ws = new WebSocket(wsUrl(cfg.baseUrl), ["zero-companion"], {
+      headers: { "x-zero-companion-token": cfg.token },
+    });
     this.ws = ws;
 
     ws.onopen = () => {
@@ -103,7 +114,7 @@ export class CompanionRunner {
       void this.sendStatus();
     };
 
-    ws.onmessage = (ev: MessageEvent) => {
+    ws.onmessage = (ev) => {
       let control: CompanionControl;
       try {
         control = JSON.parse(typeof ev.data === "string" ? ev.data : String(ev.data)) as CompanionControl;
@@ -113,7 +124,7 @@ export class CompanionRunner {
       void this.handleControl(control);
     };
 
-    ws.onclose = (ev: CloseEvent) => {
+    ws.onclose = (ev) => {
       this.ws = null;
       if (this.stopped) return;
       // A deliberate takeover from another computer: yield instead of

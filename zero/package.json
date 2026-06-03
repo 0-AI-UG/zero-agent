@@ -18,10 +18,12 @@
     "dev:cli": "bun src/cli/index.ts"
   },
   "dependencies": {
+    "ws": "^8.20.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "@types/ws": "^8.18.1",
     "typescript": "^5"
   }
 }
