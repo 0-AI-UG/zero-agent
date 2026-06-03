@@ -11,16 +11,19 @@
  * It auto-reconnects with backoff so a flaky network or laptop sleep doesn't
  * permanently drop the project's browser.
  *
- * Transport: we use the `ws` library's WebSocket rather than the global one.
- * The companion token rides in the `x-zero-companion-token` REQUEST header
- * (the global WHATWG WebSocket can't set headers), and we offer a SINGLE
- * `zero-companion` subprotocol. Carrying the token as a second subprotocol —
- * the previous approach — proved fragile: some Bun versions validate the
- * server's echoed subprotocol against the *whole* offered string instead of by
- * membership, so the server replying with just the first protocol closed the
- * socket with 1002 "Mismatch client protocol". A single subprotocol echoes
- * back verbatim and matches on every runtime; a header keeps the secret out of
- * both the URL (access logs) and the handshake response (proxy response logs).
+ * Transport: we use the `ws` library's WebSocket rather than the global one so
+ * we can set request headers. The companion token rides in the
+ * `x-zero-companion-token` REQUEST header — keeping it out of the URL (access
+ * logs) and the handshake response — and we offer NO WebSocket subprotocol.
+ *
+ * History: the token used to ride as a second subprotocol, then as a single
+ * `zero-companion` subprotocol with the token moved to a header. Both leaned on
+ * the server echoing back `Sec-WebSocket-Protocol`, which reverse proxies
+ * mishandle: some Bun versions closed the socket with 1002 "Mismatch client
+ * protocol", and a deployed proxy was severing the upgraded socket within a
+ * second — while the cookie/query-token chat `/ws` (no subprotocol) stayed up
+ * through the same proxy. So we drop the subprotocol entirely and connect like
+ * the chat socket does.
  */
 import { WebSocket } from "ws";
 import { requireConfig } from "../sdk/config.ts";
@@ -100,8 +103,9 @@ export class CompanionRunner {
     if (this.stopped) return;
     const cfg = requireConfig();
     // Token in a request header (kept out of the URL and the handshake
-    // response); a single, unambiguous subprotocol the server echoes verbatim.
-    const ws = new WebSocket(wsUrl(cfg.baseUrl), ["zero-companion"], {
+    // response). No subprotocol — an empty protocols array — so there is no
+    // `Sec-WebSocket-Protocol` echo for a proxy to mishandle.
+    const ws = new WebSocket(wsUrl(cfg.baseUrl), [], {
       headers: { "x-zero-companion-token": cfg.token },
     });
     this.ws = ws;
