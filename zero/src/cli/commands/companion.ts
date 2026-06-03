@@ -53,6 +53,9 @@ export async function companionConnect(args: string[]): Promise<number> {
     channel,
     onWarn: write,
     onStatus: write,
+    // Displaced by another computer on this account: the runner has already
+    // stopped and printed why, so exit cleanly rather than hang idle.
+    onTakenOver: () => process.exit(0),
   });
 
   let shuttingDown = false;

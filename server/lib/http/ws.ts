@@ -194,13 +194,22 @@ export function attachWebSocketServer(server: HttpServer) {
       try {
         if (!cToken) throw new Error("missing token");
         cPayload = verifyCompanionToken(cToken);
-      } catch {
+      } catch (err) {
+        // Log the reason so a laptop stuck in a "link dropped" reconnect loop is
+        // diagnosable: no token usually means a proxy stripped the
+        // Sec-WebSocket-Protocol header; an invalid/expired one means a stale or
+        // foreign `zero login`. The token value itself is never logged.
+        wsLog.warn("companion upgrade rejected (401)", {
+          reason: cToken ? (err instanceof Error ? err.message : String(err)) : "no companion token in Sec-WebSocket-Protocol header",
+          hasToken: !!cToken,
+        });
         socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
         socket.destroy();
         return;
       }
       const projectId = cPayload.companionProjectId;
       if (!projectId) {
+        wsLog.warn("companion upgrade rejected (401)", { reason: "token has no bound project", userId: cPayload.userId });
         socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
         socket.destroy();
         return;
