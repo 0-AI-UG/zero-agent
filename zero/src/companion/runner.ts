@@ -19,7 +19,20 @@ import type { CompanionControl, CompanionMessage } from "../sdk/browser-protocol
 export interface RunnerOptions extends EngineOptions {
   /** Called with human-readable status lines for the CLI to print. */
   onStatus?: (line: string) => void;
+  /**
+   * Called when the server permanently evicts this companion because another
+   * computer connected as the same user (last-writer-wins). The runner stops
+   * reconnecting; the CLI uses this to exit cleanly instead of hanging.
+   */
+  onTakenOver?: () => void;
 }
+
+/**
+ * Close reason the server sends when a newer connection for the same user
+ * displaces this one (see server companion registry). On this — unlike a
+ * network blip — we must NOT reconnect, or the two machines fight forever.
+ */
+const REPLACED_REASON = "replaced";
 
 const MAX_BACKOFF_MS = 30_000;
 
@@ -35,6 +48,11 @@ export class CompanionRunner {
   private ws: WebSocket | null = null;
   private stopped = false;
   private backoff = 1000;
+  /** Set once the WS has opened at least once — distinguishes a transient drop
+   *  from a link that has NEVER established (almost always auth/URL/proxy). */
+  private everConnected = false;
+  /** Consecutive closes without an intervening successful open. */
+  private failedAttempts = 0;
 
   constructor(private opts: RunnerOptions) {
     this.engine = new CompanionEngine(opts);
@@ -79,6 +97,8 @@ export class CompanionRunner {
 
     ws.onopen = () => {
       this.backoff = 1000;
+      this.everConnected = true;
+      this.failedAttempts = 0;
       this.log("✓ companion linked — the agent will now drive your browser");
       void this.sendStatus();
     };
@@ -93,10 +113,40 @@ export class CompanionRunner {
       void this.handleControl(control);
     };
 
-    ws.onclose = () => {
+    ws.onclose = (ev: CloseEvent) => {
       this.ws = null;
       if (this.stopped) return;
-      this.log(`link dropped; reconnecting in ${Math.round(this.backoff / 1000)}s…`);
+      // A deliberate takeover from another computer: yield instead of
+      // reconnecting, otherwise both machines evict each other in a loop.
+      if ((ev?.reason ?? "").toLowerCase().includes(REPLACED_REASON)) {
+        this.stopped = true;
+        this.log("✗ another computer connected to this account and took over the browser link.");
+        this.log("  Not reconnecting. Re-run `zero browser connect` here to take it back.");
+        void this.engine.stop();
+        this.opts.onTakenOver?.();
+        return;
+      }
+      this.failedAttempts += 1;
+      // Surface the close code/reason so an opaque "link dropped" becomes
+      // diagnosable. A clean handshake rejection (bad/blocked token) shows up
+      // as code 1006 with no reason; a server-side close carries a reason.
+      const code = ev?.code ?? 0;
+      const reason = ev?.reason ? ` "${ev.reason}"` : "";
+      const detail = code ? ` (code ${code}${reason})` : reason;
+
+      // If the link has NEVER come up, repeated failures are almost never a
+      // transient network blip — the server is rejecting the upgrade. Point at
+      // the usual culprits instead of looping silently forever.
+      if (!this.everConnected && this.failedAttempts >= 2) {
+        this.log(`✗ could not establish the companion link${detail}.`);
+        this.log("  The server rejected the connection. Likely causes:");
+        this.log("    • the session here is stale or for a different server — re-run `zero login --url <server>`");
+        this.log("    • a network/VPN/corporate proxy is blocking the WebSocket upgrade or stripping headers");
+        this.log("    • the --url doesn't match the server you logged into");
+        this.log("  Still retrying in the background; fix the above and it will link automatically.");
+      } else {
+        this.log(`link dropped${detail}; reconnecting in ${Math.round(this.backoff / 1000)}s…`);
+      }
       setTimeout(() => this.connect(), this.backoff);
       this.backoff = Math.min(this.backoff * 2, MAX_BACKOFF_MS);
     };
