@@ -24,7 +24,8 @@ Options:
   --chrome      Launch your installed Google Chrome (default).
   --chromium    Launch Playwright's bundled "Chrome for Testing" build instead.
 
-Requires \`zero login\` first, and Playwright installed locally.
+Requires \`zero login\` first. Playwright is installed automatically into
+~/.zero on first use if it's missing.
 `;
 
 /** Run the companion runner until interrupted. Shared by `browser connect` and `companion`. */
