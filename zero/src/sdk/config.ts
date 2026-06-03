@@ -33,6 +33,16 @@ function configDir(): string {
   return process.env.ZERO_CONFIG_DIR || join(homedir(), ".zero");
 }
 
+/**
+ * The zero home directory (`~/.zero`, or `$ZERO_CONFIG_DIR`). This is where the
+ * installer drops `bin/zero` and where laptop-only optional deps (Playwright)
+ * are installed, so a bare `import("playwright")` from the bundle resolves
+ * `<home>/node_modules/playwright` by walking up from `<home>/bin/zero`.
+ */
+export function zeroHomeDir(): string {
+  return configDir();
+}
+
 function configPath(): string {
   return join(configDir(), "config.json");
 }

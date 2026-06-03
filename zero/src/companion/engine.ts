@@ -15,6 +15,7 @@
  * runs the companion) doesn't need it installed.
  */
 import type { BrowserAction, BrowserResult } from "../sdk/browser-protocol.ts";
+import { loadPlaywright } from "./playwright-setup.ts";
 
 // Minimal structural types so we don't hard-depend on Playwright's types at
 // build time (it's an optional dependency).
@@ -66,18 +67,9 @@ export class CompanionEngine {
 
   constructor(private opts: EngineOptions) {}
 
-  private async loadPlaywright(): Promise<any> {
-    try {
-      return await import("playwright");
-    } catch {
-      throw new Error(
-        "Playwright is required to connect your local browser. Install it with `npm i -g playwright` (or `npx playwright install chromium`).",
-      );
-    }
-  }
-
   async start(): Promise<void> {
-    const pw = await this.loadPlaywright();
+    // Playwright is loaded lazily and auto-installed into ~/.zero on first use.
+    const pw = await loadPlaywright((line) => this.opts.onWarn?.(line));
     const chromium = pw.chromium;
     if (this.opts.cdpUrl) {
       this.browser = await chromium.connectOverCDP(this.opts.cdpUrl);

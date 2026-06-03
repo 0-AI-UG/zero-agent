@@ -60,14 +60,44 @@ echo "Downloading zero → $BIN"
 curl -fsSL "$ZERO_URL/zero-cli.js" -o "$BIN"
 chmod +x "$BIN"
 
-case ":$PATH:" in
-  *":$INSTALL_DIR:"*) ;;
-  *)
+# Install Playwright for the local-browser companion (\`zero browser connect\`).
+# It MUST live under the zero home so the bundled CLI (run by Bun) can resolve
+# a bare \`import("playwright")\` by walking up from <home>/bin/zero. A global
+# \`npm i -g playwright\` lands in the npm prefix instead — off that path — so it
+# would install successfully yet never be found. The runtime also self-heals on
+# first use, so a failure here is non-fatal.
+ZERO_HOME="\${ZERO_CONFIG_DIR:-$HOME/.zero}"
+mkdir -p "$ZERO_HOME"
+if [ ! -d "$ZERO_HOME/node_modules/playwright" ]; then
+  echo ""
+  echo "Installing Playwright for the local-browser companion…"
+  ( cd "$ZERO_HOME" && PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 bun add playwright ) \\
+    || echo "warning: Playwright install failed; \\\`zero browser connect\\\` will retry on first use." >&2
+fi
+# Best-effort: fetch the bundled Chromium used only for \`--chromium\` / the
+# fallback. The default companion path drives your installed Google Chrome and
+# needs no download, so a failure here is fine.
+if [ -f "$ZERO_HOME/node_modules/playwright/cli.js" ]; then
+  ( cd "$ZERO_HOME" && bun "$ZERO_HOME/node_modules/playwright/cli.js" install chromium ) \\
+    || echo "note: Chromium download skipped; your installed Chrome will be used." >&2
+fi
+
+# Add the install dir to PATH automatically by appending to the shell rc.
+if ! { case ":$PATH:" in *":$INSTALL_DIR:"*) true ;; *) false ;; esac; }; then
+  case "$(basename "\${SHELL:-sh}")" in
+    zsh)  RC="$HOME/.zshrc" ;;
+    bash) RC="$HOME/.bashrc" ;;
+    *)    RC="$HOME/.profile" ;;
+  esac
+  if [ -f "$RC" ] && grep -qF "$INSTALL_DIR" "$RC" 2>/dev/null; then
+    : # PATH entry already written on a previous run
+  else
+    printf '\\n# Added by the zero CLI installer\\nexport PATH="%s:$PATH"\\n' "$INSTALL_DIR" >> "$RC"
     echo ""
-    echo "Add zero to your PATH (append to ~/.zshrc or ~/.bashrc):"
-    echo "  export PATH=\\"$INSTALL_DIR:\\$PATH\\""
-    ;;
-esac
+    echo "Added $INSTALL_DIR to PATH in $RC"
+  fi
+  echo "Open a new terminal (or run: source $RC) to pick up \\\`zero\\\`."
+fi
 
 echo ""
 echo "Installed. Next, connect this computer:"
