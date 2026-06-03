@@ -353,9 +353,12 @@ app.post("/api/projects/:projectId/tasks/:taskId/run", h(handleRunTaskNow));
 app.get("/api/projects/:projectId/tasks/:taskId/runs", h(handleGetTaskRuns));
 
 // Companion tokens (laptop-side `zero` companion auth) — list + revoke only;
-// tokens are minted by the device-authorization flow below.
-app.get("/api/projects/:projectId/companion-tokens", h(handleListCompanionTokens));
-app.delete("/api/projects/:projectId/companion-tokens/:tokenId", h(handleRevokeCompanionToken));
+// tokens are minted by the device-authorization flow below. These are
+// USER-scoped (a user manages every connected computer from Account →
+// Companion, across all projects), so they live at the top level — NOT under
+// /api/projects/:projectId — matching what the web client calls.
+app.get("/api/companion-tokens", h(handleListCompanionTokens));
+app.delete("/api/companion-tokens/:tokenId", h(handleRevokeCompanionToken));
 
 // Device-authorization login (`zero login`). start/poll are unauthenticated
 // (the CLI has no credential yet); info/approve/deny require a human session.
