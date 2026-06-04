@@ -14,13 +14,11 @@
  * Playwright is imported lazily so the in-container `zero` CLI (which never
  * runs the companion) doesn't need it installed.
  */
-import type { Dirent } from "node:fs";
-import { mkdir, rm, copyFile, readdir } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { BrowserAction, BrowserResult } from "../sdk/browser-protocol.ts";
 import { loadPlaywright } from "./playwright-setup.ts";
-import { zeroHomeDir } from "../sdk/config.ts";
 
 // Minimal structural types so we don't hard-depend on Playwright's types at
 // build time (it's an optional dependency).
@@ -66,30 +64,15 @@ export interface EngineOptions {
    */
   channel?: string;
   /**
-   * When launching, drive a CLEAN throwaway profile (no logins/cookies) instead
-   * of the user's real Chrome profile. Default is to use the real profile so the
-   * agent inherits the user's existing sessions.
-   */
-  fresh?: boolean;
-  /**
-   * Drive the user's real Chrome profile IN PLACE rather than a clone. Logins
-   * made during the session sync back, but Chrome locks a profile while open,
-   * so this requires the user's normal Chrome to be fully quit first. Advanced;
-   * the zero-config default clones the profile so Chrome can stay open. Ignored
-   * over CDP and when `fresh` is set.
-   */
-  live?: boolean;
-  /**
    * Chrome user-data dir to launch against (the persistent profile root that
    * holds cookies/logins). Defaults to the OS-standard Google Chrome location.
-   * Unless `live` is set this is the SOURCE that gets cloned. Ignored over CDP
-   * and when `fresh` is set.
+   * Ignored over CDP.
    */
   userDataDir?: string;
   /**
    * Name of the profile subdirectory within the user-data dir to load
    * (e.g. "Default", "Profile 1"). Maps to Chrome's `--profile-directory`.
-   * Defaults to whatever Chrome picks (usually "Default").
+   * Defaults to the profile Chrome last used (read from "Local State").
    */
   profileDirectory?: string;
   /** Sink for non-fatal warnings (e.g. channel → bundled fallback). */
@@ -119,29 +102,21 @@ export function defaultChromeUserDataDir(): string {
 }
 
 /**
- * Profile sub-entries to skip when cloning a Chrome profile: large regenerable
- * caches (no value, slow to copy) and the live singleton lock files/sockets
- * (copying them would point the clone at the running instance).
+ * The profile directory Chrome last used, read from "Local State" in the
+ * user-data dir (the `profile.last_used` field). Lets us open the profile the
+ * user actually has their logins in, instead of always assuming "Default" —
+ * which is empty/signed-out for anyone whose sessions live in "Profile 1" etc.
+ * Returns "Default" if Local State is missing/unreadable or names no profile.
  */
-const PROFILE_CLONE_SKIP = new Set([
-  "Cache",
-  "Code Cache",
-  "GPUCache",
-  "DawnCache",
-  "DawnGraphiteCache",
-  "DawnWebGPUCache",
-  "GraphiteDawnCache",
-  "Service Worker",
-  "Application Cache",
-  "ShaderCache",
-  "GrShaderCache",
-  "component_crx_cache",
-]);
-
-function skipInClone(name: string): boolean {
-  // SingletonLock / SingletonCookie / SingletonSocket are symlinks/sockets that
-  // tie a profile to its live process — never copy them into the clone.
-  return PROFILE_CLONE_SKIP.has(name) || name.startsWith("Singleton");
+async function lastUsedProfile(userDataDir: string): Promise<string> {
+  try {
+    const raw = await readFile(join(userDataDir, "Local State"), "utf8");
+    const lastUsed = JSON.parse(raw)?.profile?.last_used;
+    if (typeof lastUsed === "string" && lastUsed.trim()) return lastUsed;
+  } catch {
+    // missing/unreadable/not-JSON — fall through to the default
+  }
+  return "Default";
 }
 
 /**
@@ -191,26 +166,16 @@ export class CompanionEngine {
       this.context = ctxs[0] ?? (await this.browser!.newContext());
       const pages = this.context.pages();
       this.page = pages[0] ?? (await this.context.newPage());
-    } else if (this.opts.fresh) {
-      // Opt-in clean room: a throwaway profile with no logins/cookies. Useful
-      // for isolated automation, but the agent won't have the user's sessions.
-      this.browser = await this.launchFresh(chromium, this.opts.channel);
-      this.context = await this.browser!.newContext({ viewport: null });
-      this.ownsContext = true;
-      this.page = await this.context.newPage();
     } else {
-      // Default: launch the user's installed Google Chrome with their existing
-      // logins/cookies/sessions. To avoid fighting a running Chrome for the
-      // profile lock (which confuses non-technical users), we CLONE the profile
-      // and launch against the copy, so their normal Chrome can stay open. The
-      // advanced --live mode drives the real profile in place instead (logins
-      // sync back, but Chrome must be quit first; launchPersistent() turns the
-      // resulting lock into a clear error).
-      const source = this.opts.userDataDir ?? defaultChromeUserDataDir();
-      const userDataDir = this.opts.live
-        ? source
-        : await this.cloneProfile(source, this.opts.profileDirectory ?? "Default");
-      this.context = await this.launchPersistent(chromium, userDataDir);
+      // Default: launch the user's installed Google Chrome against their real
+      // profile, so the agent gets their existing logins/cookies/sessions. We
+      // open the profile Chrome last used (not blindly "Default") so we land on
+      // the one they're actually signed in to. Chrome locks a profile while it's
+      // open, so this needs their normal Chrome quit first; launchPersistent()
+      // turns that lock into a clear, actionable error.
+      const userDataDir = this.opts.userDataDir ?? defaultChromeUserDataDir();
+      const profile = this.opts.profileDirectory ?? (await lastUsedProfile(userDataDir));
+      this.context = await this.launchPersistent(chromium, userDataDir, profile);
       this.ownsContext = true;
       this.browser = this.context.browser?.() ?? null;
       const pages = this.context.pages();
@@ -225,31 +190,13 @@ export class CompanionEngine {
   }
 
   /**
-   * Launch a CLEAN headed browser (no profile), preferring the requested
-   * channel (installed Google Chrome) and falling back to Playwright's bundled
-   * Chromium if that channel isn't available on this machine.
+   * Launch a headed browser bound to the user's real Chrome profile (a
+   * persistent context over their on-disk user-data dir), so their logins and
+   * cookies carry over. Translates a profile-lock failure (Chrome already
+   * running) into an actionable error, and falls back to the bundled Chromium
+   * if the installed-Chrome channel is unavailable.
    */
-  private async launchFresh(chromium: any, channel?: string): Promise<PwBrowser> {
-    try {
-      return await chromium.launch({ headless: false, ...(channel ? { channel } : {}) });
-    } catch (err) {
-      if (!channel) throw err;
-      this.opts.onWarn?.(
-        `could not launch installed Chrome (channel "${channel}"): ${err instanceof Error ? err.message : String(err)}; ` +
-          `falling back to Playwright's bundled Chromium`,
-      );
-      return await chromium.launch({ headless: false });
-    }
-  }
-
-  /**
-   * Launch a headed browser bound to a persistent on-disk profile (the user's
-   * real Chrome user-data dir), so cookies/logins carry over. Translates a
-   * profile-lock failure (Chrome already running) into an actionable error, and
-   * falls back to the bundled Chromium if the installed-Chrome channel is
-   * unavailable.
-   */
-  private async launchPersistent(chromium: any, userDataDir: string): Promise<PwBrowserContext> {
+  private async launchPersistent(chromium: any, userDataDir: string, profile: string): Promise<PwBrowserContext> {
     const channel = this.opts.channel;
     const launchOpts: Record<string, any> = {
       headless: false,
@@ -260,7 +207,7 @@ export class CompanionEngine {
       // keychain key) and every site looks logged-out. Drop that default arg so
       // Chrome uses the real keychain and the user's sessions actually carry over.
       ignoreDefaultArgs: ["--use-mock-keychain"],
-      args: this.opts.profileDirectory ? [`--profile-directory=${this.opts.profileDirectory}`] : [],
+      args: [`--profile-directory=${profile}`],
     };
     try {
       return await chromium.launchPersistentContext(userDataDir, { ...launchOpts, ...(channel ? { channel } : {}) });
@@ -271,7 +218,6 @@ export class CompanionEngine {
           `Could not open Chrome with your profile — it looks like Google Chrome is already running.\n` +
             `Chrome locks a profile while it's open, so the agent can't drive it at the same time.\n` +
             `Fix: quit Google Chrome completely (Cmd-Q / fully exit, not just close the window), then re-run \`zero browser connect\`.\n` +
-            `Alternatives: pass \`--fresh\` to use a clean throwaway profile, or \`--cdp <url>\` to attach to a Chrome started with --remote-debugging-port.\n` +
             `(profile dir: ${userDataDir}; underlying error: ${msg})`,
         );
       }
@@ -284,65 +230,10 @@ export class CompanionEngine {
     }
   }
 
-  /**
-   * Clone the live Chrome profile into a separate user-data dir under ~/.zero
-   * and return that dir, so we can launch against it without fighting the
-   * running Chrome for the profile lock. Copies the root "Local State" (holds
-   * the os_crypt key reference cookies are encrypted with) plus the named
-   * profile subdir, skipping bulky caches and the live singleton lock files.
-   * The copy is refreshed on every start so sessions are as current as possible.
-   */
-  private async cloneProfile(sourceUserDataDir: string, profile: string): Promise<string> {
-    const dest = join(zeroHomeDir(), "chrome-profile-copy");
-    // Start clean each run: stale entries from a previous copy (or a different
-    // source profile) would otherwise linger and confuse Chrome.
-    await rm(dest, { recursive: true, force: true });
-    await mkdir(join(dest, profile), { recursive: true });
-
-    const localState = join(sourceUserDataDir, "Local State");
-    await copyFile(localState, join(dest, "Local State")).catch(() => {
-      // Without Local State, cookies won't decrypt; warn but keep going so at
-      // least non-encrypted state (history, some logins) is available.
-      this.opts.onWarn?.(`could not copy "Local State" from ${sourceUserDataDir} — some logins may not carry over`);
-    });
-
-    const srcProfile = join(sourceUserDataDir, profile);
-    await this.copyDirFiltered(srcProfile, join(dest, profile));
-    this.opts.onWarn?.(`cloned your Chrome profile "${profile}" to ${dest} (sessions as of now)`);
-    return dest;
-  }
-
-  /**
-   * Recursively copy a directory, skipping cache dirs and singleton lock files
-   * (see {@link skipInClone}). Per-file copy errors (e.g. a file briefly locked
-   * by the running Chrome) are swallowed so one unreadable file can't abort the
-   * whole clone. Symlinks/sockets are not followed.
-   */
-  private async copyDirFiltered(src: string, dest: string): Promise<void> {
-    let entries: Dirent[];
-    try {
-      entries = await readdir(src, { withFileTypes: true });
-    } catch {
-      return; // source profile/subdir missing — nothing to copy
-    }
-    await mkdir(dest, { recursive: true });
-    for (const entry of entries) {
-      if (skipInClone(entry.name)) continue;
-      const from = join(src, entry.name);
-      const to = join(dest, entry.name);
-      if (entry.isDirectory()) {
-        await this.copyDirFiltered(from, to);
-      } else if (entry.isFile()) {
-        await copyFile(from, to).catch(() => {});
-      }
-      // ignore symlinks/sockets/fifos
-    }
-  }
-
   async stop(): Promise<void> {
-    // For a context we launched (persistent or fresh), closing it tears down the
-    // browser too. For an attached CDP context we must leave the user's context
-    // alone and only drop our connection to the browser.
+    // For a persistent context we launched, closing it tears down the browser
+    // too. For an attached CDP context we must leave the user's context alone
+    // and only drop our connection to the browser.
     if (this.ownsContext) {
       try {
         await this.context?.close();
