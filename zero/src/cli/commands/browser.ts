@@ -14,7 +14,7 @@
 import { browser } from "../../sdk/browser.ts";
 import * as fs from "node:fs/promises";
 import { hasFlag, getOption, printJson } from "../format.ts";
-import { companionConnect } from "./companion.ts";
+import { companionConnect, companionSetup } from "./companion.ts";
 
 const HELP = `zero browser - drive the per-project browser session
 
@@ -28,7 +28,8 @@ Usage:
   zero browser snapshot [--mode interactive|full] [--selector <css>]
   zero browser extract <query> [--max <n>]
   zero browser status
-  zero browser connect [--cdp <url>] [--chromium]   (run on YOUR laptop)
+  zero browser setup     (run on YOUR laptop — one-time: add the Chrome extension)
+  zero browser connect   (run on YOUR laptop — drive the agent with your Chrome)
 
 Context-efficient tip: prefer \`snapshot\` (text a11y tree) or \`extract\` (query-driven paragraphs) over \`screenshot\` / full DOM dumps.
 
@@ -39,8 +40,11 @@ export async function browserCommand(args: string[]): Promise<number> {
   const [action, ...rest] = args;
   if (!action || action === "--help" || action === "-h") { process.stdout.write(HELP); return 0; }
 
-  // `connect` runs the LOCAL companion (laptop side) rather than issuing a
-  // remote browser action. It never touches the SDK call path.
+  // `setup` and `connect` run the LOCAL companion (laptop side) rather than
+  // issuing a remote browser action. They never touch the SDK call path.
+  if (action === "setup") {
+    return companionSetup(rest);
+  }
   if (action === "connect") {
     return companionConnect(rest);
   }

@@ -19,30 +19,33 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
+import { spawn } from "node:child_process";
 import { WebSocketServer, WebSocket } from "ws";
 import { zeroHomeDir } from "../sdk/config.ts";
 import type { BrowserAction, BrowserResult } from "../sdk/browser-protocol.ts";
 import { EXTENSION_ASSETS } from "./extension-assets.ts";
-import { ensureChromeWithExtension } from "./chrome-launch.ts";
 
 export interface EngineOptions {
   /** Sink for non-fatal warnings. */
   onWarn?: (line: string) => void;
   /** Sink for human-readable status lines (shared with the runner). */
   onStatus?: (line: string) => void;
-  /**
-   * Skip the one-time Chrome relaunch and just wait for the extension to
-   * connect (for users who loaded the extension themselves). Default false.
-   */
-  noLaunch?: boolean;
 }
 
 /** How long a single forwarded action may take before we give up (matches the server's 90s). */
 const COMMAND_TIMEOUT_MS = 90_000;
-/** Grace period to see if the extension is already live before relaunching Chrome. */
+/** Grace period to see if the extension is already installed and live. */
 const INITIAL_WAIT_MS = 2_500;
-/** How long to wait for the extension to connect after relaunching Chrome. */
-const LAUNCH_WAIT_MS = 30_000;
+/**
+ * `connect` wait for the extension's worker to (re)connect. Sized to exceed the
+ * extension's 30s service-worker wake alarm so a dormant-but-installed worker
+ * is reliably picked up.
+ */
+const CONNECT_WAIT_MS = 35_000;
+/** How long `setup` keeps waiting for first install before giving up. */
+const INSTALL_WAIT_MS = 10 * 60_000;
+/** Re-print a gentle nudge on this cadence while waiting for first install. */
+const NUDGE_MS = 45_000;
 /**
  * Ping the extension on this cadence. Must stay under Chrome's 30s MV3
  * service-worker idle kill: an incoming WS message resets that timer
@@ -76,40 +79,99 @@ export class BridgeEngine {
     this.opts.onStatus?.(line);
   }
 
-  async start(): Promise<void> {
+  private async prepare(): Promise<void> {
     this.materializeExtension();
     await this.listen();
     this.writeBridgeConfig();
+  }
 
-    // The extension may already be live from a prior connect — give it a beat.
+  /**
+   * `zero browser connect` — link to an extension that's already installed.
+   * Does NOT walk through install; if nothing connects, points at `setup`.
+   */
+  async start(): Promise<void> {
+    await this.prepare();
+    this.status("linking to your browser…");
+    if (await this.waitForExtension(CONNECT_WAIT_MS)) return;
+    throw new Error(
+      "Couldn't reach the Zero Companion extension.\n" +
+        "Run `zero browser setup` once to add it to Chrome, make sure Chrome is open, then try again.",
+    );
+  }
+
+  /**
+   * `zero browser setup` — one-time install of the extension into Chrome.
+   * Chrome 137+ disabled --load-extension, so the only no-store path is
+   * Load-unpacked: open the page, reveal the folder to drag in, and block until
+   * the extension connects (confirming it works). Once loaded it persists.
+   */
+  async setup(): Promise<void> {
+    await this.prepare();
     if (await this.waitForExtension(INITIAL_WAIT_MS)) {
+      this.status("✓ Zero Companion is already set up — run `zero browser connect` to start.");
       return;
     }
-
-    if (this.opts.noLaunch) {
-      this.status("waiting for the Zero Companion extension to connect…");
-      if (await this.waitForExtension(LAUNCH_WAIT_MS)) return;
-      throw new Error(
-        "The Zero Companion extension never connected. Load it in chrome://extensions " +
-          `(Developer mode → Load unpacked → ${this.extDir}) and re-run \`zero browser connect\`.`,
-      );
+    this.printInstallGuide();
+    this.openExtensionsPage();
+    this.revealExtensionFolder();
+    if (await this.waitForInstall()) {
+      this.status("");
+      this.status("✓ Zero Companion is set up. Run `zero browser connect` to start.");
+      return;
     }
-
-    this.status("opening Chrome with the Zero Companion helper (your tabs will be restored)…");
-    this.status("Chrome will show \"Zero Companion started debugging this browser\" — that's expected.");
-    try {
-      await ensureChromeWithExtension(this.extDir, (l) => this.status(l));
-    } catch (err) {
-      throw new Error(
-        `Couldn't open Chrome with the helper extension: ${err instanceof Error ? err.message : String(err)}\n` +
-          `You can load it manually in chrome://extensions (Developer mode → Load unpacked → ${this.extDir}).`,
-      );
-    }
-    if (await this.waitForExtension(LAUNCH_WAIT_MS)) return;
     throw new Error(
-      "Chrome opened but the Zero Companion extension didn't connect in time.\n" +
-        `Open chrome://extensions and confirm "Zero Companion" is enabled (or Load unpacked → ${this.extDir}), then re-run \`zero browser connect\`.`,
+      "Timed out waiting for the Zero Companion extension. Once you've added it in " +
+        `chrome://extensions (Developer mode → Load unpacked → ${this.extDir}), run \`zero browser setup\` again.`,
     );
+  }
+
+  /** Print the one-time, copy-pasteable setup steps. */
+  private printInstallGuide(): void {
+    const mac = process.platform === "darwin";
+    const lines = [
+      "",
+      "──────────────────────────────────────────────────────────────",
+      "  One-time setup — add the Zero Companion extension to Chrome",
+      "──────────────────────────────────────────────────────────────",
+      "  1. Chrome should have opened chrome://extensions.",
+      "     (If not, open that page yourself.)",
+      "  2. Turn ON \"Developer mode\" — the toggle in the top-right.",
+      mac
+        ? "  3. Drag the \"extension\" folder from the Finder window that"
+        : "  3. Click \"Load unpacked\" and choose this folder:",
+      mac ? "     just opened onto the chrome://extensions page." : `       ${this.extDir}`,
+      mac ? "     (or click \"Load unpacked\" and choose the folder below)." : "",
+      mac ? `     Folder: ${this.extDir}` : "",
+      "──────────────────────────────────────────────────────────────",
+      "  Waiting for the extension to connect… (leave this running)",
+      "",
+    ].filter((l) => l !== "");
+    for (const l of lines) this.status(l);
+  }
+
+  private openExtensionsPage(): void {
+    // Best-effort; the printed steps cover it if the OS blocks the deep link.
+    if (process.platform === "darwin") {
+      this.spawnDetached("open", ["-a", "Google Chrome", "chrome://extensions/"]);
+    } else if (process.platform === "win32") {
+      this.spawnDetached("cmd", ["/c", "start", "chrome", "chrome://extensions/"]);
+    } else {
+      this.spawnDetached("google-chrome", ["chrome://extensions/"]);
+    }
+  }
+
+  private revealExtensionFolder(): void {
+    if (process.platform === "darwin") this.spawnDetached("open", ["-R", this.extDir]);
+  }
+
+  private spawnDetached(cmd: string, args: string[]): void {
+    try {
+      const child = spawn(cmd, args, { detached: true, stdio: "ignore" });
+      child.on("error", () => {});
+      child.unref();
+    } catch {
+      /* best-effort */
+    }
   }
 
   async stop(): Promise<void> {
@@ -301,6 +363,23 @@ export class BridgeEngine {
       this.connectedWaiters.push(() => done(true));
       setTimeout(() => done(this.isAlive()), timeout);
     });
+  }
+
+  /**
+   * Block until the extension connects (first-time install), nudging every so
+   * often so the wait doesn't look frozen. Resolves true on connect, false on
+   * the overall INSTALL_WAIT_MS timeout.
+   */
+  private async waitForInstall(): Promise<boolean> {
+    const deadline = Date.now() + INSTALL_WAIT_MS;
+    while (Date.now() < deadline) {
+      const slice = Math.min(NUDGE_MS, deadline - Date.now());
+      if (await this.waitForExtension(slice)) return true;
+      if (Date.now() < deadline) {
+        this.status("… still waiting — finish the steps above in chrome://extensions");
+      }
+    }
+    return this.isAlive();
   }
 
   private materializeExtension(): void {
