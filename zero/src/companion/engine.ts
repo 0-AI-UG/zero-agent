@@ -72,17 +72,17 @@ export interface EngineOptions {
    */
   fresh?: boolean;
   /**
-   * Clone the real Chrome profile to a separate dir and launch against the
-   * copy, so the user's normal Chrome can stay open (no profile-lock conflict).
-   * Trade-off: the copy is a point-in-time snapshot — logins made after the
-   * copy, and logins made inside the copy, don't sync back. Ignored over CDP
-   * and when `fresh` is set.
+   * Drive the user's real Chrome profile IN PLACE rather than a clone. Logins
+   * made during the session sync back, but Chrome locks a profile while open,
+   * so this requires the user's normal Chrome to be fully quit first. Advanced;
+   * the zero-config default clones the profile so Chrome can stay open. Ignored
+   * over CDP and when `fresh` is set.
    */
-  copyProfile?: boolean;
+  live?: boolean;
   /**
    * Chrome user-data dir to launch against (the persistent profile root that
    * holds cookies/logins). Defaults to the OS-standard Google Chrome location.
-   * With `copyProfile` this is the SOURCE that gets cloned. Ignored over CDP
+   * Unless `live` is set this is the SOURCE that gets cloned. Ignored over CDP
    * and when `fresh` is set.
    */
   userDataDir?: string;
@@ -199,17 +199,17 @@ export class CompanionEngine {
       this.ownsContext = true;
       this.page = await this.context.newPage();
     } else {
-      // Default: launch the user's installed Google Chrome against their REAL
-      // profile (a persistent context over their on-disk user-data dir), so the
-      // agent inherits their existing logins/cookies/sessions. Chrome locks a
-      // profile while it's open, so this requires the user's normal Chrome to be
-      // fully quit first; launchPersistent() turns that lock into a clear error.
-      // With --copy-profile we instead clone the profile and launch against the
-      // copy, so the user's normal Chrome can stay open (no lock conflict).
+      // Default: launch the user's installed Google Chrome with their existing
+      // logins/cookies/sessions. To avoid fighting a running Chrome for the
+      // profile lock (which confuses non-technical users), we CLONE the profile
+      // and launch against the copy, so their normal Chrome can stay open. The
+      // advanced --live mode drives the real profile in place instead (logins
+      // sync back, but Chrome must be quit first; launchPersistent() turns the
+      // resulting lock into a clear error).
       const source = this.opts.userDataDir ?? defaultChromeUserDataDir();
-      const userDataDir = this.opts.copyProfile
-        ? await this.cloneProfile(source, this.opts.profileDirectory ?? "Default")
-        : source;
+      const userDataDir = this.opts.live
+        ? source
+        : await this.cloneProfile(source, this.opts.profileDirectory ?? "Default");
       this.context = await this.launchPersistent(chromium, userDataDir);
       this.ownsContext = true;
       this.browser = this.context.browser?.() ?? null;
