@@ -31,9 +31,10 @@ async function build() {
       target: "bun",
       format: "esm",
       naming: "cli.js",
-      // `ws` is resolved at runtime (the companion's localhost bridge uses it);
-      // keep it external so it isn't inlined into the bundle.
-      external: ["ws"],
+      // Bundle everything (incl. `ws`, used by the companion's localhost
+      // bridge) so the shipped CLI is a single self-contained file — the
+      // installer just drops it on PATH, no node_modules needed.
+      external: [],
     });
     return;
   }
@@ -48,8 +49,8 @@ async function build() {
       target: "node20",
       format: "esm",
       banner: { js: "#!/usr/bin/env node" },
-      // See note above: `ws` stays external (resolved at runtime).
-      external: ["ws"],
+      // See note above: bundle everything (incl. `ws`) — self-contained CLI.
+      external: [],
     });
     return;
   } catch {}
