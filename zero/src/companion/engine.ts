@@ -254,6 +254,12 @@ export class CompanionEngine {
     const launchOpts: Record<string, any> = {
       headless: false,
       viewport: null,
+      // Playwright launches Chrome with --use-mock-keychain by default. On macOS
+      // that hands Chrome a mock encryption key, so it can't decrypt the cookies
+      // in the profile (they were encrypted with the real "Chrome Safe Storage"
+      // keychain key) and every site looks logged-out. Drop that default arg so
+      // Chrome uses the real keychain and the user's sessions actually carry over.
+      ignoreDefaultArgs: ["--use-mock-keychain"],
       args: this.opts.profileDirectory ? [`--profile-directory=${this.opts.profileDirectory}`] : [],
     };
     try {
