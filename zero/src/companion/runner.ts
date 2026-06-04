@@ -4,8 +4,8 @@
  *
  *   1. opens an authenticated WebSocket to the server's `/ws/companion`
  *      endpoint using the saved companion token,
- *   2. drives the user's local Chrome via {@link CompanionEngine} in response
- *      to `command` control frames, and
+ *   2. drives the user's local Chrome via {@link BridgeEngine} (which forwards
+ *      to the Zero Companion extension) in response to `command` control frames, and
  *   3. answers `ping` for liveness and reports capabilities on connect.
  *
  * It auto-reconnects with backoff so a flaky network or laptop sleep doesn't
@@ -27,12 +27,10 @@
  */
 import { WebSocket } from "ws";
 import { requireConfig, getOrCreateDeviceId } from "../sdk/config.ts";
-import { CompanionEngine, type EngineOptions } from "./engine.ts";
+import { BridgeEngine, type EngineOptions } from "./bridge-engine.ts";
 import type { CompanionControl, CompanionMessage } from "../sdk/browser-protocol.ts";
 
 export interface RunnerOptions extends EngineOptions {
-  /** Called with human-readable status lines for the CLI to print. */
-  onStatus?: (line: string) => void;
   /**
    * Called when the server permanently evicts this companion because a newer
    * connection for the same user took over the link — either another computer
@@ -69,7 +67,7 @@ function wsUrl(baseUrl: string): string {
 }
 
 export class CompanionRunner {
-  private engine: CompanionEngine;
+  private engine: BridgeEngine;
   private ws: WebSocket | null = null;
   private stopped = false;
   private backoff = 1000;
@@ -80,7 +78,7 @@ export class CompanionRunner {
   private failedAttempts = 0;
 
   constructor(private opts: RunnerOptions) {
-    this.engine = new CompanionEngine(opts);
+    this.engine = new BridgeEngine(opts);
   }
 
   private log(line: string): void {
@@ -89,14 +87,11 @@ export class CompanionRunner {
 
   async start(): Promise<void> {
     const cfg = requireConfig();
-    const binary = this.opts.channel === undefined ? "bundled Chrome for Testing" : "your installed Google Chrome";
-    const target = this.opts.cdpUrl ? `CDP ${this.opts.cdpUrl}` : `${binary}, with your logins`;
-    this.log(`starting local browser (${target})…`);
-    if (!this.opts.cdpUrl) {
-      this.log("note: quit Google Chrome first if it's open — Chrome only lets one program use your profile at a time.");
-    }
+    this.log("setting up the Zero Companion browser extension…");
+    // BridgeEngine materializes the extension, opens Chrome with it if needed,
+    // and resolves once the extension has connected to the local bridge.
     await this.engine.start();
-    this.log(`connected to local Chrome — linking to ${cfg.projectName ?? "your project"}…`);
+    this.log(`browser helper ready — linking to ${cfg.projectName ?? "your project"}…`);
     this.connect();
   }
 

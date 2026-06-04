@@ -1,4 +1,4 @@
-import { getOption, hasFlag } from "../format.ts";
+import { hasFlag } from "../format.ts";
 import { loadConfig } from "../../sdk/config.ts";
 import { CompanionRunner } from "../../companion/runner.ts";
 
@@ -8,23 +8,21 @@ Usage:
   zero browser connect
   zero companion        (alias for "zero browser connect")
 
-Opens your Google Chrome with your existing logins and cookies, and the agent
-drives that window for the bound project. Press Ctrl-C to stop and hand control
-back to the agent's own browser.
+Installs the Zero Companion extension into your Google Chrome and lets the agent
+drive your active tab for the bound project — your real session, your logins, no
+separate browser. You can keep browsing while it works. Press Ctrl-C to stop and
+hand control back to the agent's own browser.
 
-Quit Google Chrome before running this: Chrome only lets one program use a
-profile at a time, so your normal Chrome must be fully closed first.
+The first time (or after you fully quit Chrome), Chrome reopens once with the
+helper loaded — your tabs are restored. Chrome shows "Zero Companion started
+debugging this browser" while the agent is driving; that's expected.
 
-Requires \`zero login\` first. The browser tools install automatically on first
-use, which can take a minute.
+Requires \`zero login\` first.
 
-Advanced options (most people don't need these):
-  --cdp <url>          Attach to a Chrome started with --remote-debugging-port
-                       instead of launching one (lets your Chrome stay open).
-  --chromium           Use the bundled browser instead of your installed Chrome.
-  --user-data-dir <p>  Profile root to use (default: your OS's Chrome location).
-  --profile <name>     Profile to load, e.g. "Default" or "Profile 1"
-                       (default: the profile Chrome last used).
+Options:
+  --no-launch   Don't reopen Chrome automatically. Load the extension yourself
+                via chrome://extensions (Developer mode → Load unpacked), then
+                this just waits for it to connect.
 `;
 
 /** Run the companion runner until interrupted. Shared by `browser connect` and `companion`. */
@@ -39,21 +37,11 @@ export async function companionConnect(args: string[]): Promise<number> {
     return 1;
   }
 
-  const cdpUrl = getOption(args, "--cdp");
-  const launch = hasFlag(args, "--launch") || !cdpUrl;
-  // Default to the user's installed Google Chrome; --chromium opts back into
-  // Playwright's bundled "Chrome for Testing" build.
-  const channel = hasFlag(args, "--chromium") ? undefined : "chrome";
-  const userDataDir = getOption(args, "--user-data-dir");
-  const profileDirectory = getOption(args, "--profile");
+  const noLaunch = hasFlag(args, "--no-launch");
 
   const write = (line: string) => process.stdout.write(`${line}\n`);
   const runner = new CompanionRunner({
-    cdpUrl,
-    launch,
-    channel,
-    userDataDir,
-    profileDirectory,
+    noLaunch,
     onWarn: write,
     onStatus: write,
     // Displaced by another computer on this account: the runner has already

@@ -31,11 +31,9 @@ async function build() {
       target: "bun",
       format: "esm",
       naming: "cli.js",
-      // playwright is an OPTIONAL, laptop-only dependency used solely by the
-      // companion (`zero browser connect`). It's loaded via dynamic import at
-      // runtime and pulls in unbundleable deps (electron, chromium-bidi), so
-      // keep it external — the in-container CLI never imports it.
-      external: ["playwright", "playwright-core", "ws"],
+      // `ws` is resolved at runtime (the companion's localhost bridge uses it);
+      // keep it external so it isn't inlined into the bundle.
+      external: ["ws"],
     });
     return;
   }
@@ -50,8 +48,8 @@ async function build() {
       target: "node20",
       format: "esm",
       banner: { js: "#!/usr/bin/env node" },
-      // See note above: playwright stays external (optional, laptop-only).
-      external: ["playwright", "playwright-core", "ws"],
+      // See note above: `ws` stays external (resolved at runtime).
+      external: ["ws"],
     });
     return;
   } catch {}
