@@ -8,22 +8,23 @@ Usage:
   zero browser connect
   zero companion        (alias for "zero browser connect")
 
-Just run it. It opens your Google Chrome with your existing logins and cookies,
-and the agent drives that window for the bound project. Your normal Chrome can
-stay open — this uses a copy of your profile. Press Ctrl-C to stop and hand
-control back to the agent's own browser.
+Opens your Google Chrome with your existing logins and cookies, and the agent
+drives that window for the bound project. Press Ctrl-C to stop and hand control
+back to the agent's own browser.
+
+Quit Google Chrome before running this: Chrome only lets one program use a
+profile at a time, so your normal Chrome must be fully closed first.
 
 Requires \`zero login\` first. The browser tools install automatically on first
 use, which can take a minute.
 
 Advanced options (most people don't need these):
-  --live               Drive your real profile in place so logins you make stick
-                       — but you must fully quit Google Chrome first.
-  --fresh              Use a clean profile with no logins (isolated automation).
-  --cdp <url>          Attach to a Chrome started with --remote-debugging-port.
+  --cdp <url>          Attach to a Chrome started with --remote-debugging-port
+                       instead of launching one (lets your Chrome stay open).
   --chromium           Use the bundled browser instead of your installed Chrome.
   --user-data-dir <p>  Profile root to use (default: your OS's Chrome location).
-  --profile <name>     Profile to load, e.g. "Default" or "Profile 1".
+  --profile <name>     Profile to load, e.g. "Default" or "Profile 1"
+                       (default: the profile Chrome last used).
 `;
 
 /** Run the companion runner until interrupted. Shared by `browser connect` and `companion`. */
@@ -43,11 +44,6 @@ export async function companionConnect(args: string[]): Promise<number> {
   // Default to the user's installed Google Chrome; --chromium opts back into
   // Playwright's bundled "Chrome for Testing" build.
   const channel = hasFlag(args, "--chromium") ? undefined : "chrome";
-  // Default: clone the user's profile so Chrome can stay open (their sessions,
-  // zero config). --live drives the real profile in place; --fresh uses a clean
-  // throwaway profile.
-  const fresh = hasFlag(args, "--fresh");
-  const live = hasFlag(args, "--live");
   const userDataDir = getOption(args, "--user-data-dir");
   const profileDirectory = getOption(args, "--profile");
 
@@ -56,8 +52,6 @@ export async function companionConnect(args: string[]): Promise<number> {
     cdpUrl,
     launch,
     channel,
-    fresh,
-    live,
     userDataDir,
     profileDirectory,
     onWarn: write,
