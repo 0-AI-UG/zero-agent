@@ -26,7 +26,7 @@
  * the chat socket does.
  */
 import { WebSocket } from "ws";
-import { requireConfig } from "../sdk/config.ts";
+import { requireConfig, getOrCreateDeviceId } from "../sdk/config.ts";
 import { CompanionEngine, type EngineOptions } from "./engine.ts";
 import type { CompanionControl, CompanionMessage } from "../sdk/browser-protocol.ts";
 
@@ -34,19 +34,30 @@ export interface RunnerOptions extends EngineOptions {
   /** Called with human-readable status lines for the CLI to print. */
   onStatus?: (line: string) => void;
   /**
-   * Called when the server permanently evicts this companion because another
-   * computer connected as the same user (last-writer-wins). The runner stops
-   * reconnecting; the CLI uses this to exit cleanly instead of hanging.
+   * Called when the server permanently evicts this companion because a newer
+   * connection for the same user took over the link — either another computer
+   * (a real takeover) or a fresh connection from this same computer (a routine
+   * hand-off). Either way the runner stops reconnecting; the CLI uses this to
+   * exit cleanly instead of hanging.
    */
   onTakenOver?: () => void;
 }
 
 /**
- * Close reason the server sends when a newer connection for the same user
- * displaces this one (see server companion registry). On this — unlike a
- * network blip — we must NOT reconnect, or the two machines fight forever.
+ * Close reason the server sends when a newer connection from a DIFFERENT
+ * computer displaces this one (see server companion registry). On this — unlike
+ * a network blip — we must NOT reconnect, or the two machines fight forever.
  */
 const REPLACED_REASON = "replaced";
+
+/**
+ * Close reason the server sends when a newer connection from the SAME computer
+ * (matching deviceId) takes over — e.g. the user re-ran `zero browser connect`
+ * here while this process was still in a background reconnect loop. A routine
+ * hand-off, not a takeover: step aside quietly without the alarming message,
+ * and (like a takeover) do NOT reconnect, so the two never ping-pong.
+ */
+const SUPERSEDED_REASON = "superseded";
 
 const MAX_BACKOFF_MS = 30_000;
 
@@ -106,7 +117,12 @@ export class CompanionRunner {
     // response). No subprotocol — an empty protocols array — so there is no
     // `Sec-WebSocket-Protocol` echo for a proxy to mishandle.
     const ws = new WebSocket(wsUrl(cfg.baseUrl), [], {
-      headers: { "x-zero-companion-token": cfg.token },
+      headers: {
+        "x-zero-companion-token": cfg.token,
+        // Identifies this machine so the server can tell a same-computer
+        // reconnect/hand-off from a real takeover by another computer.
+        "x-zero-companion-device": getOrCreateDeviceId(),
+      },
     });
     this.ws = ws;
 
@@ -131,9 +147,21 @@ export class CompanionRunner {
     ws.onclose = (ev) => {
       this.ws = null;
       if (this.stopped) return;
+      const closeReason = (ev?.reason ?? "").toLowerCase();
+      // A newer connection from THIS computer took over (e.g. a fresh
+      // `zero browser connect` here superseding this background process). A
+      // routine hand-off: exit quietly without alarming the user, and don't
+      // reconnect, or the two would evict each other in a loop.
+      if (closeReason.includes(SUPERSEDED_REASON)) {
+        this.stopped = true;
+        this.log("↪ a newer `zero browser connect` on this computer took over the link; exiting this one.");
+        void this.engine.stop();
+        this.opts.onTakenOver?.();
+        return;
+      }
       // A deliberate takeover from another computer: yield instead of
       // reconnecting, otherwise both machines evict each other in a loop.
-      if ((ev?.reason ?? "").toLowerCase().includes(REPLACED_REASON)) {
+      if (closeReason.includes(REPLACED_REASON)) {
         this.stopped = true;
         this.log("✗ another computer connected to this account and took over the browser link.");
         this.log("  Not reconnecting. Re-run `zero browser connect` here to take it back.");

@@ -48,6 +48,13 @@ interface CompanionConn {
   userId: string;
   /** The single project this companion authorized for (the token's binding). */
   projectId: string;
+  /**
+   * Stable identifier for the computer this connection came from (the runner's
+   * `~/.zero/device-id`). Null for older clients that don't send it. Used to
+   * tell a same-computer hand-off from a cross-computer takeover when a newer
+   * connection displaces this one.
+   */
+  deviceId: string | null;
   capabilities: CompanionCapabilities | null;
   pending: Map<string, Pending>;
   isAlive: boolean;
@@ -86,18 +93,31 @@ class CompanionRegistry {
    * Register a freshly authenticated companion socket for a user. Any existing
    * companion for that user is closed first (last writer wins) — a user has at
    * most one live companion across all projects.
+   *
+   * The displaced connection is closed with a reason that tells the runner how
+   * to react: a takeover from a DIFFERENT computer ("replaced") warns the user,
+   * while a hand-off from the SAME computer ("superseded", matching deviceId)
+   * steps aside quietly. Either way the old runner stops rather than fighting
+   * to reconnect.
    */
-  register(ws: WebSocket, userId: string, projectId: string): void {
+  register(ws: WebSocket, userId: string, projectId: string, deviceId: string | null): void {
     const existing = this.byUser.get(userId);
     if (existing && existing.ws !== ws) {
-      companionLog.info("replacing existing companion", { userId });
-      this.teardown(existing, "replaced by a newer connection");
+      const sameDevice = deviceId !== null && existing.deviceId === deviceId;
+      if (sameDevice) {
+        companionLog.info("superseding companion from same device", { userId, deviceId });
+        this.teardown(existing, "superseded by a new connection from this device");
+      } else {
+        companionLog.info("replacing existing companion", { userId });
+        this.teardown(existing, "replaced by a newer connection");
+      }
     }
 
     const conn: CompanionConn = {
       ws,
       userId,
       projectId,
+      deviceId,
       capabilities: null,
       pending: new Map(),
       isAlive: true,

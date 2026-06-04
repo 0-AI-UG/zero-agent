@@ -220,9 +220,16 @@ export function attachWebSocketServer(server: HttpServer) {
         socket.destroy();
         return;
       }
+      // Identifies the connecting machine (set by newer companions). Lets the
+      // registry distinguish a same-computer hand-off from a cross-computer
+      // takeover; absent for older clients, which always count as "other".
+      const deviceId =
+        typeof req.headers["x-zero-companion-device"] === "string"
+          ? (req.headers["x-zero-companion-device"] as string)
+          : null;
       wss.handleUpgrade(req, socket, head, (ws) => {
         // One companion per user; tagged with the project the token is bound to.
-        getCompanionRegistry().register(ws, cPayload.userId, projectId);
+        getCompanionRegistry().register(ws, cPayload.userId, projectId, deviceId);
       });
       return;
     }
