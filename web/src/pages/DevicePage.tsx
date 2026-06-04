@@ -156,9 +156,6 @@ export function DevicePage() {
                     ))}
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-muted-foreground">
-                  The computer will be able to manage this project's tasks and connect your browser.
-                </p>
               </div>
 
               {error && <div className="text-xs text-destructive">{error}</div>}

@@ -9,6 +9,7 @@
  */
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { randomUUID } from "node:crypto";
 import {
   mkdirSync,
   readFileSync,
@@ -101,4 +102,34 @@ export function clearConfig(): void {
 
 export function configFilePath(): string {
   return configPath();
+}
+
+function deviceIdPath(): string {
+  return join(configDir(), "device-id");
+}
+
+let cachedDeviceId: string | null = null;
+
+/**
+ * Stable per-machine identifier for this companion install, persisted to
+ * `~/.zero/device-id`. The server uses it to tell "the same computer
+ * reconnecting" apart from "a different computer taking over the link": a new
+ * connection carrying the same deviceId is a silent hand-off (the prior one on
+ * this machine quietly steps aside), not the cross-machine takeover that warns
+ * the user. Kept separate from the auth config so it survives logout — a
+ * re-login from the same machine keeps its identity.
+ */
+export function getOrCreateDeviceId(): string {
+  if (cachedDeviceId) return cachedDeviceId;
+  const path = deviceIdPath();
+  try {
+    const existing = readFileSync(path, "utf8").trim();
+    if (existing) return (cachedDeviceId = existing);
+  } catch {
+    // Not created yet — fall through and mint one.
+  }
+  const id = randomUUID();
+  mkdirSync(configDir(), { recursive: true });
+  writeFileSync(path, id + "\n", { mode: 0o600 });
+  return (cachedDeviceId = id);
 }
