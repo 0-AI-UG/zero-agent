@@ -201,12 +201,35 @@ export class CompanionEngine {
     const launchOpts: Record<string, any> = {
       headless: false,
       viewport: null,
-      // Playwright launches Chrome with --use-mock-keychain by default. On macOS
-      // that hands Chrome a mock encryption key, so it can't decrypt the cookies
-      // in the profile (they were encrypted with the real "Chrome Safe Storage"
-      // keychain key) and every site looks logged-out. Drop that default arg so
-      // Chrome uses the real keychain and the user's sessions actually carry over.
-      ignoreDefaultArgs: ["--use-mock-keychain"],
+      // This drives the user's REAL everyday Chrome, so it must behave like their
+      // normal browser — not a neutered automation build. Playwright's launch
+      // defaults are tuned for throwaway CI Chromium and actively break that:
+      //
+      //   • chromiumSandbox defaults to FALSE, which adds `--no-sandbox`. On a
+      //     real desktop Chrome that both disables the OS sandbox on the user's
+      //     live browsing AND trips Chrome's "you are using an unsupported
+      //     command-line flag … stability and security will suffer" warning bar.
+      //     Re-enable the sandbox so it launches exactly like a normal Chrome.
+      //   • the default args also disable the user's extensions (so their
+      //     password manager / 1Password / etc. vanish — and logins break),
+      //     force software WebGL (`--enable-unsafe-swiftshader`, janky
+      //     rendering), and turn off sync/component-update. Strip those so the
+      //     window the agent drives is the user's actual Chrome.
+      //
+      // `--use-mock-keychain` is stripped for a different reason: it hands Chrome
+      // a mock encryption key so it can't decrypt the profile's cookies (real
+      // "Chrome Safe Storage" keychain key) and every site looks logged-out.
+      chromiumSandbox: true,
+      ignoreDefaultArgs: [
+        "--use-mock-keychain",
+        "--disable-extensions",
+        "--disable-component-extensions-with-background-pages",
+        "--disable-component-update",
+        "--disable-default-apps",
+        "--disable-sync",
+        "--enable-automation",
+        "--enable-unsafe-swiftshader",
+      ],
       args: [`--profile-directory=${profile}`],
     };
     try {
