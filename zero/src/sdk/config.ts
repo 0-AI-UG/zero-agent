@@ -36,9 +36,9 @@ function configDir(): string {
 
 /**
  * The zero home directory (`~/.zero`, or `$ZERO_CONFIG_DIR`). This is where the
- * installer drops `bin/zero` and where laptop-only optional deps (Playwright)
- * are installed, so a bare `import("playwright")` from the bundle resolves
- * `<home>/node_modules/playwright` by walking up from `<home>/bin/zero`.
+ * installer drops `bin/zero`, and where the companion writes the Zero Companion
+ * browser extension (`<home>/extension/`) that `zero browser connect` side-loads
+ * into the user's Chrome.
  */
 export function zeroHomeDir(): string {
   return configDir();

@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "Zero Companion",
+  "version": "1.0.0",
+  "description": "Lets the Zero agent drive a tab in your real Chrome — your logins, your session, no separate browser.",
+  "permissions": ["debugger", "tabs", "scripting", "activeTab", "alarms"],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "worker.js"
+  }
+}
