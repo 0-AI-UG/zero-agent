@@ -5,24 +5,32 @@ import { CompanionRunner } from "../../companion/runner.ts";
 const HELP = `zero browser connect - drive the agent's browser with YOUR local Chrome
 
 Usage:
-  zero browser connect [--cdp <url>] [--launch]
+  zero browser connect [--cdp <url>] [--fresh] [--chromium]
+                       [--user-data-dir <path>] [--profile <name>]
   zero companion        (alias for "zero browser connect")
 
 While this is running, the agent's \`zero browser ...\` actions for the bound
 project are executed in your local browser instead of the container's headless
 one. Stop it with Ctrl-C to hand control back to the container browser.
 
-By default this launches your installed Google Chrome (a fresh window with a
-clean automation profile — not your existing logins/tabs). To drive Chrome with
-your real profile and sessions, start Chrome with --remote-debugging-port=9222
-and attach with --cdp instead.
+By default this launches your installed Google Chrome against YOUR real profile,
+so the agent inherits your existing logins, cookies, and sessions. Chrome locks
+a profile while it's open, so you must QUIT Google Chrome completely first (fully
+exit, not just close the window); otherwise the launch fails with a clear note.
 
 Options:
-  --cdp <url>   Attach to a Chrome already running with remote debugging,
-                e.g. start Chrome with --remote-debugging-port=9222 and pass
-                --cdp http://127.0.0.1:9222. Uses your existing profile/tabs.
-  --chrome      Launch your installed Google Chrome (default).
-  --chromium    Launch Playwright's bundled "Chrome for Testing" build instead.
+  --cdp <url>          Attach to a Chrome already running with remote debugging,
+                       e.g. start Chrome with --remote-debugging-port=9222 and
+                       pass --cdp http://127.0.0.1:9222. Adopts its tabs/profile.
+  --fresh              Use a clean throwaway profile (no logins/cookies) instead
+                       of your real one. Lets Chrome stay open; agent gets no
+                       sessions.
+  --chrome             Launch your installed Google Chrome (default).
+  --chromium           Launch Playwright's bundled "Chrome for Testing" build.
+  --user-data-dir <p>  Profile root to launch against (defaults to the standard
+                       Google Chrome location for your OS).
+  --profile <name>     Profile subdirectory to load, e.g. "Default" or
+                       "Profile 1" (maps to Chrome's --profile-directory).
 
 Requires \`zero login\` first. Playwright is installed automatically into
 ~/.zero on first use if it's missing.
@@ -45,12 +53,20 @@ export async function companionConnect(args: string[]): Promise<number> {
   // Default to the user's installed Google Chrome; --chromium opts back into
   // Playwright's bundled "Chrome for Testing" build.
   const channel = hasFlag(args, "--chromium") ? undefined : "chrome";
+  // Default to the user's real profile (their sessions); --fresh opts into a
+  // clean throwaway profile.
+  const fresh = hasFlag(args, "--fresh");
+  const userDataDir = getOption(args, "--user-data-dir");
+  const profileDirectory = getOption(args, "--profile");
 
   const write = (line: string) => process.stdout.write(`${line}\n`);
   const runner = new CompanionRunner({
     cdpUrl,
     launch,
     channel,
+    fresh,
+    userDataDir,
+    profileDirectory,
     onWarn: write,
     onStatus: write,
     // Displaced by another computer on this account: the runner has already
