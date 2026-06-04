@@ -40,7 +40,7 @@ Groups:
   image            generate
   tasks            add (with --schedule, --event, or --script), ls, update, rm
   creds            ls, get, set, rm
-  browser          open, snapshot, click, fill, screenshot, evaluate, wait, extract, status, connect
+  browser          open, snapshot, click, fill, screenshot, evaluate, wait, extract, status, setup, connect
   companion        run the local companion (drive the agent's browser with your Chrome)
   apps             create, delete, list
   llm              generate

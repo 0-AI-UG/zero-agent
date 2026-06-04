@@ -29,7 +29,8 @@ declare const chrome: any;
 // ── Bridge link constants ──
 
 const RECONNECT_MIN_MS = 1_000;
-const RECONNECT_MAX_MS = 15_000;
+// Cap retries low so a live worker re-links to a fresh `connect` bridge quickly.
+const RECONNECT_MAX_MS = 5_000;
 /**
  * Secondary wake: if the worker is ever killed while the bridge is down, this
  * alarm revives it to retry connecting. The PRIMARY keepalive is the bridge's
@@ -442,21 +443,26 @@ async function reResolveRef(drv: TabDriver, ref: string): Promise<number> {
 type BrowserAction = { type: string; [k: string]: any };
 type BrowserResult = Record<string, any>;
 
-async function executeAction(drv: TabDriver, action: BrowserAction): Promise<BrowserResult> {
-  switch (action.type) {
-    case "navigate": {
-      const loaded = drv.once("Page.loadEventFired", 30_000);
-      try {
-        await drv.send("Page.navigate", { url: action.url });
-      } catch (err) {
-        throw new Error(`navigate failed: ${err instanceof Error ? err.message : String(err)}`);
-      }
-      await loaded;
-      await new Promise((r) => setTimeout(r, 500)); // settle (≈ networkidle)
-      const info = await drv.info();
-      const snapshot = await takeSnapshot(drv, { interactiveOnly: true });
-      return { type: "done", ...info, message: `Navigated to ${action.url}`, snapshot };
+async function executeAction(action: BrowserAction): Promise<BrowserResult> {
+  // Navigation goes through chrome.tabs (no debugger attach needed), so it
+  // works even when the active tab is a chrome:// / new-tab page that CDP can't
+  // attach to. We attach only afterwards, once it's a real page, for the snapshot.
+  if (action.type === "navigate") {
+    let tabId: number;
+    try {
+      tabId = await navigateAgentTab(action.url);
+    } catch (err) {
+      throw new Error(`navigate failed: ${err instanceof Error ? err.message : String(err)}`);
     }
+    await new Promise((r) => setTimeout(r, 500)); // settle (≈ networkidle)
+    const drv = await ensureAttached(tabId);
+    const info = await drv.info();
+    const snapshot = await takeSnapshot(drv, { interactiveOnly: true });
+    return { type: "done", ...info, message: `Navigated to ${action.url}`, snapshot };
+  }
+
+  const drv = await ensureAttached(requireAgentTab());
+  switch (action.type) {
     case "click": {
       const urlBefore = (await drv.info()).url;
       let nodeId = resolveRef(drv, action.ref);
@@ -631,28 +637,88 @@ async function navigateHistory(drv: TabDriver, delta: number): Promise<void> {
 
 let driver: TabDriver | null = null;
 
-async function resolveTargetTabId(): Promise<number> {
-  let tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-  let tab = tabs[0];
-  if (!tab) {
-    tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-    tab = tabs[0];
+/**
+ * The agent drives its OWN tab — created on the first navigate — rather than
+ * hijacking whatever the user is looking at. Cookies/logins are profile-wide,
+ * so this tab is fully signed in, and the user can keep using their other tabs
+ * (and switch away) without disrupting the agent. Reused across actions until
+ * it's closed; a closed tab is reopened on the next navigate.
+ */
+let agentTabId: number | null = null;
+
+async function tabExists(id: number): Promise<boolean> {
+  try {
+    await chrome.tabs.get(id);
+    return true;
+  } catch {
+    return false;
   }
-  if (!tab) {
-    tabs = await chrome.tabs.query({ active: true });
-    tab = tabs[0];
-  }
-  if (!tab || typeof tab.id !== "number") throw new Error("No active tab to control");
-  const url: string = tab.url ?? "";
-  if (/^(chrome|edge|brave|devtools|chrome-extension|about):/i.test(url) || url.startsWith("https://chromewebstore.google.com")) {
-    throw new Error(`Can't control this page (${url || "internal page"}). Switch to a normal website tab and try again.`);
-  }
-  return tab.id;
 }
 
-/** Ensure we're attached to the current active tab; (re)attach + enable domains. */
-async function ensureAttached(): Promise<TabDriver> {
-  const tabId = await resolveTargetTabId();
+/** Navigate the agent's tab to a URL, creating the tab if it doesn't exist yet. */
+async function navigateAgentTab(url: string): Promise<number> {
+  const current = agentTabId;
+  if (current != null && (await tabExists(current))) {
+    const complete = waitForTabComplete(current, 30_000);
+    await chrome.tabs.update(current, { url, active: true });
+    await complete;
+    return current;
+  }
+  const tab = await chrome.tabs.create({ url, active: true });
+  if (typeof tab?.id !== "number") throw new Error("could not open a new tab");
+  const newId: number = tab.id;
+  agentTabId = newId;
+  if (tab.status !== "complete") await waitForTabComplete(newId, 30_000);
+  return newId;
+}
+
+function requireAgentTab(): number {
+  if (agentTabId == null) throw new Error("No page open yet — navigate to a URL first.");
+  return agentTabId;
+}
+
+/** chrome.debugger can't attach to chrome://, the Web Store, etc. */
+function isAttachable(url: string): boolean {
+  if (/^(chrome|edge|brave|devtools|chrome-extension|about|view-source):/i.test(url)) return false;
+  if (url.startsWith("https://chromewebstore.google.com")) return false;
+  if (url.startsWith("https://chrome.google.com/webstore")) return false;
+  return true;
+}
+
+/** Resolve once a tab finishes loading (chrome.tabs status), or after `timeout` ms. */
+function waitForTabComplete(tabId: number, timeout: number): Promise<void> {
+  return new Promise<void>((resolve) => {
+    let done = false;
+    const fin = () => {
+      if (done) return;
+      done = true;
+      try {
+        chrome.tabs.onUpdated.removeListener(listener);
+      } catch {
+        /* ignore */
+      }
+      resolve();
+    };
+    const listener = (id: number, info: any) => {
+      if (id === tabId && info?.status === "complete") fin();
+    };
+    chrome.tabs.onUpdated.addListener(listener);
+    setTimeout(fin, timeout);
+  });
+}
+
+/** Ensure we're attached to the given tab; (re)attach + enable CDP domains. */
+async function ensureAttached(tabId: number): Promise<TabDriver> {
+  let url = "";
+  try {
+    const t = await chrome.tabs.get(tabId);
+    url = t?.url ?? "";
+  } catch {
+    /* ignore */
+  }
+  if (!isAttachable(url)) {
+    throw new Error(`Can't control this page (${url || "internal page"}). Open a normal website tab and try again.`);
+  }
   if (driver && driver.tabId === tabId) return driver;
   if (driver) {
     try {
@@ -688,6 +754,12 @@ chrome.debugger.onDetach.addListener((source: any) => {
   if (driver && source?.tabId === driver.tabId) driver = null;
 });
 
+// If the agent's tab is closed, forget it so the next navigate opens a fresh one.
+chrome.tabs.onRemoved.addListener((tabId: number) => {
+  if (tabId === agentTabId) agentTabId = null;
+  if (driver && driver.tabId === tabId) driver = null;
+});
+
 // ── Bridge connection ──
 
 let socket: any = null;
@@ -704,8 +776,7 @@ function sendToBridge(msg: Record<string, unknown>): void {
 
 async function handleCommand(id: string, action: BrowserAction): Promise<void> {
   try {
-    const drv = await ensureAttached();
-    const result = await executeAction(drv, action);
+    const result = await executeAction(action);
     sendToBridge({ type: "response", id, result });
   } catch (err) {
     sendToBridge({ type: "response", id, error: err instanceof Error ? err.message : String(err) });

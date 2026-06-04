@@ -1,34 +1,60 @@
-import { hasFlag } from "../format.ts";
 import { loadConfig } from "../../sdk/config.ts";
 import { CompanionRunner } from "../../companion/runner.ts";
+import { BridgeEngine } from "../../companion/bridge-engine.ts";
 
-const HELP = `zero browser connect - let the agent use YOUR Chrome (with your logins)
+const SETUP_HELP = `zero browser setup - one-time setup so the agent can use your Chrome
+
+Usage:
+  zero browser setup
+
+Adds the "Zero Companion" extension to your Google Chrome. Run this once: it
+opens chrome://extensions and the extension folder for you — turn on Developer
+mode and drag the folder in. Once it's added it stays added.
+
+After setup, run \`zero browser connect\` to start a session.
+`;
+
+const CONNECT_HELP = `zero browser connect - let the agent use YOUR Chrome (with your logins)
 
 Usage:
   zero browser connect
   zero companion        (alias for "zero browser connect")
 
-Installs the Zero Companion extension into your Google Chrome and lets the agent
-drive your active tab for the bound project — your real session, your logins, no
-separate browser. You can keep browsing while it works. Press Ctrl-C to stop and
-hand control back to the agent's own browser.
+Lets the agent drive a tab in your own Google Chrome for the bound project —
+your real session, your logins, no separate browser. The agent works in its own
+tab, so you can keep browsing. While it's driving you'll see "Zero Companion
+started debugging this browser" — that's expected. Press Ctrl-C to stop.
 
-The first time (or after you fully quit Chrome), Chrome reopens once with the
-helper loaded — your tabs are restored. Chrome shows "Zero Companion started
-debugging this browser" while the agent is driving; that's expected.
-
-Requires \`zero login\` first.
-
-Options:
-  --no-launch   Don't reopen Chrome automatically. Load the extension yourself
-                via chrome://extensions (Developer mode → Load unpacked), then
-                this just waits for it to connect.
+Run \`zero browser setup\` once first. Requires \`zero login\`.
 `;
 
-/** Run the companion runner until interrupted. Shared by `browser connect` and `companion`. */
+function isHelp(args: string[]): boolean {
+  return args.includes("--help") || args.includes("-h");
+}
+
+/** `zero browser setup` — one-time install of the companion extension. */
+export async function companionSetup(args: string[]): Promise<number> {
+  if (isHelp(args)) {
+    process.stdout.write(SETUP_HELP);
+    return 0;
+  }
+  const write = (line: string) => process.stdout.write(`${line}\n`);
+  const engine = new BridgeEngine({ onWarn: write, onStatus: write });
+  try {
+    await engine.setup();
+    return 0;
+  } catch (err) {
+    process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`);
+    return 1;
+  } finally {
+    await engine.stop();
+  }
+}
+
+/** `zero browser connect` — link the agent to your already-installed extension. */
 export async function companionConnect(args: string[]): Promise<number> {
-  if (hasFlag(args, "--help") || hasFlag(args, "-h")) {
-    process.stdout.write(HELP);
+  if (isHelp(args)) {
+    process.stdout.write(CONNECT_HELP);
     return 0;
   }
   const cfg = loadConfig();
@@ -37,11 +63,8 @@ export async function companionConnect(args: string[]): Promise<number> {
     return 1;
   }
 
-  const noLaunch = hasFlag(args, "--no-launch");
-
   const write = (line: string) => process.stdout.write(`${line}\n`);
   const runner = new CompanionRunner({
-    noLaunch,
     onWarn: write,
     onStatus: write,
     // Displaced by another computer on this account: the runner has already
@@ -63,7 +86,7 @@ export async function companionConnect(args: string[]): Promise<number> {
   try {
     await runner.start();
   } catch (err) {
-    process.stderr.write(`companion failed: ${err instanceof Error ? err.message : String(err)}\n`);
+    process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`);
     return 1;
   }
 
