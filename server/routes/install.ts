@@ -60,27 +60,10 @@ echo "Downloading zero → $BIN"
 curl -fsSL "$ZERO_URL/zero-cli.js" -o "$BIN"
 chmod +x "$BIN"
 
-# Install Playwright for the local-browser companion (\`zero browser connect\`).
-# It MUST live under the zero home so the bundled CLI (run by Bun) can resolve
-# a bare \`import("playwright")\` by walking up from <home>/bin/zero. A global
-# \`npm i -g playwright\` lands in the npm prefix instead — off that path — so it
-# would install successfully yet never be found. The runtime also self-heals on
-# first use, so a failure here is non-fatal.
-ZERO_HOME="\${ZERO_CONFIG_DIR:-$HOME/.zero}"
-mkdir -p "$ZERO_HOME"
-if [ ! -d "$ZERO_HOME/node_modules/playwright" ]; then
-  echo ""
-  echo "Installing Playwright for the local-browser companion…"
-  ( cd "$ZERO_HOME" && PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 bun add playwright ) \\
-    || echo "warning: Playwright install failed; \\\`zero browser connect\\\` will retry on first use." >&2
-fi
-# Best-effort: fetch the bundled Chromium used only for \`--chromium\` / the
-# fallback. The default companion path drives your installed Google Chrome and
-# needs no download, so a failure here is fine.
-if [ -f "$ZERO_HOME/node_modules/playwright/cli.js" ]; then
-  ( cd "$ZERO_HOME" && bun "$ZERO_HOME/node_modules/playwright/cli.js" install chromium ) \\
-    || echo "note: Chromium download skipped; your installed Chrome will be used." >&2
-fi
+# The CLI bundle is fully self-contained — the local-browser companion
+# (\`zero browser connect\`) drives your own Chrome through a small extension it
+# installs on first \`zero browser setup\`, so there are no extra downloads
+# (no Playwright, no bundled Chromium) to fetch here.
 
 # Add the install dir to PATH automatically by appending to the shell rc.
 if ! { case ":$PATH:" in *":$INSTALL_DIR:"*) true ;; *) false ;; esac; }; then
@@ -100,9 +83,10 @@ if ! { case ":$PATH:" in *":$INSTALL_DIR:"*) true ;; *) false ;; esac; }; then
 fi
 
 echo ""
-echo "Installed. Next, connect this computer:"
-echo "  zero login --url $ZERO_URL"
-echo "Then approve the code in the web app under Account → Companion."
+echo "Installed. Next:"
+echo "  1. zero login --url $ZERO_URL   (then approve the code under Account → Companion)"
+echo "  2. zero browser setup           (one-time: add the Chrome extension)"
+echo "  3. zero browser connect         (let the agent use your Chrome)"
 `;
 }
 
