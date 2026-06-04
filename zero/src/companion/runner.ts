@@ -94,9 +94,13 @@ export class CompanionRunner {
       ? `CDP ${this.opts.cdpUrl}`
       : this.opts.fresh
         ? `${binary}, clean profile`
-        : `${binary}, your real profile`;
+        : this.opts.copyProfile
+          ? `${binary}, copy of your real profile`
+          : `${binary}, your real profile`;
     this.log(`starting local browser (${target})…`);
-    if (!this.opts.cdpUrl && !this.opts.fresh) {
+    if (this.opts.copyProfile) {
+      this.log("note: cloning your Chrome profile — your normal Chrome can stay open; sessions are a snapshot taken now.");
+    } else if (!this.opts.cdpUrl && !this.opts.fresh) {
       this.log("note: using your real Chrome profile — quit Google Chrome first if it's open, or it can't be driven.");
     }
     await this.engine.start();

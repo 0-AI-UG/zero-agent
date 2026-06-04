@@ -5,7 +5,7 @@ import { CompanionRunner } from "../../companion/runner.ts";
 const HELP = `zero browser connect - drive the agent's browser with YOUR local Chrome
 
 Usage:
-  zero browser connect [--cdp <url>] [--fresh] [--chromium]
+  zero browser connect [--cdp <url>] [--copy-profile] [--fresh] [--chromium]
                        [--user-data-dir <path>] [--profile <name>]
   zero companion        (alias for "zero browser connect")
 
@@ -22,6 +22,9 @@ Options:
   --cdp <url>          Attach to a Chrome already running with remote debugging,
                        e.g. start Chrome with --remote-debugging-port=9222 and
                        pass --cdp http://127.0.0.1:9222. Adopts its tabs/profile.
+  --copy-profile       Clone your real profile to a separate dir and drive the
+                       copy, so your normal Chrome can stay open. Snapshot only:
+                       sessions are as of launch, and don't sync back.
   --fresh              Use a clean throwaway profile (no logins/cookies) instead
                        of your real one. Lets Chrome stay open; agent gets no
                        sessions.
@@ -54,8 +57,9 @@ export async function companionConnect(args: string[]): Promise<number> {
   // Playwright's bundled "Chrome for Testing" build.
   const channel = hasFlag(args, "--chromium") ? undefined : "chrome";
   // Default to the user's real profile (their sessions); --fresh opts into a
-  // clean throwaway profile.
+  // clean throwaway profile, --copy-profile drives a clone so Chrome can stay open.
   const fresh = hasFlag(args, "--fresh");
+  const copyProfile = hasFlag(args, "--copy-profile");
   const userDataDir = getOption(args, "--user-data-dir");
   const profileDirectory = getOption(args, "--profile");
 
@@ -65,6 +69,7 @@ export async function companionConnect(args: string[]): Promise<number> {
     launch,
     channel,
     fresh,
+    copyProfile,
     userDataDir,
     profileDirectory,
     onWarn: write,
