@@ -14,6 +14,8 @@
  * Playwright is imported lazily so the in-container `zero` CLI (which never
  * runs the companion) doesn't need it installed.
  */
+import { homedir } from "node:os";
+import { join } from "node:path";
 import type { BrowserAction, BrowserResult } from "../sdk/browser-protocol.ts";
 import { loadPlaywright } from "./playwright-setup.ts";
 
@@ -36,6 +38,10 @@ interface PwPage {
 interface PwBrowserContext {
   pages(): PwPage[];
   newPage(): Promise<PwPage>;
+  close(): Promise<void>;
+  /** Owning browser, or null for a persistent context on some Playwright versions. */
+  browser?(): PwBrowser | null;
+  on?(event: string, cb: (...args: any[]) => void): void;
 }
 
 interface PwBrowser {
@@ -56,14 +62,75 @@ export interface EngineOptions {
    * Playwright's bundled "Chrome for Testing" build. Defaults to "chrome".
    */
   channel?: string;
+  /**
+   * When launching, drive a CLEAN throwaway profile (no logins/cookies) instead
+   * of the user's real Chrome profile. Default is to use the real profile so the
+   * agent inherits the user's existing sessions.
+   */
+  fresh?: boolean;
+  /**
+   * Chrome user-data dir to launch against (the persistent profile root that
+   * holds cookies/logins). Defaults to the OS-standard Google Chrome location.
+   * Ignored over CDP and when `fresh` is set.
+   */
+  userDataDir?: string;
+  /**
+   * Name of the profile subdirectory within the user-data dir to load
+   * (e.g. "Default", "Profile 1"). Maps to Chrome's `--profile-directory`.
+   * Defaults to whatever Chrome picks (usually "Default").
+   */
+  profileDirectory?: string;
   /** Sink for non-fatal warnings (e.g. channel → bundled fallback). */
   onWarn?: (line: string) => void;
+}
+
+/**
+ * OS-standard Google Chrome user-data directory (the profile root, NOT a single
+ * profile). Chrome loads its "Default" profile from inside this unless
+ * `--profile-directory` overrides it.
+ */
+export function defaultChromeUserDataDir(): string {
+  const home = homedir();
+  switch (process.platform) {
+    case "darwin":
+      return join(home, "Library", "Application Support", "Google", "Chrome");
+    case "win32":
+      return join(
+        process.env.LOCALAPPDATA ?? join(home, "AppData", "Local"),
+        "Google",
+        "Chrome",
+        "User Data",
+      );
+    default:
+      return join(home, ".config", "google-chrome");
+  }
+}
+
+/**
+ * Heuristic: does this launch error look like Chrome refusing because the
+ * profile is already locked by a running Chrome (the SingletonLock)? Chrome
+ * can't share a user-data dir between a live browser and an automation launch.
+ */
+function looksLikeProfileLock(msg: string): boolean {
+  const m = msg.toLowerCase();
+  return (
+    m.includes("singletonlock") ||
+    m.includes("processsingleton") ||
+    m.includes("already running") ||
+    m.includes("profile appears to be in use") ||
+    m.includes("being used by another") ||
+    m.includes("closed unexpectedly")
+  );
 }
 
 export class CompanionEngine {
   private browser: PwBrowser | null = null;
   private context: PwBrowserContext | null = null;
   private page: PwPage | null = null;
+  /** True when we own a persistent context we launched (vs. an attached CDP one). */
+  private ownsContext = false;
+  /** Liveness fallback for persistent contexts whose browser() is null. */
+  private alive = false;
 
   constructor(private opts: EngineOptions) {}
 
@@ -72,29 +139,48 @@ export class CompanionEngine {
     const pw = await loadPlaywright((line) => this.opts.onWarn?.(line));
     const chromium = pw.chromium;
     if (this.opts.cdpUrl) {
+      // Attach to a Chrome the user already started with remote debugging. We
+      // adopt its existing context (and thus its tabs/logins) and must NOT close
+      // it on stop — it's the user's own running browser.
       this.browser = await chromium.connectOverCDP(this.opts.cdpUrl);
       const ctxs = this.browser!.contexts();
       this.context = ctxs[0] ?? (await this.browser!.newContext());
       const pages = this.context.pages();
       this.page = pages[0] ?? (await this.context.newPage());
-    } else {
-      // Launch a visible browser the user can watch and interact with. By
-      // default this is their installed Google Chrome (channel "chrome") rather
-      // than Playwright's bundled "Chrome for Testing" build, so it's the real
-      // browser binary they're used to. Note: a fresh launch still gets a clean
-      // automation profile — to reuse existing logins/tabs, attach over CDP.
-      this.browser = await this.launchHeaded(chromium, this.opts.channel);
+    } else if (this.opts.fresh) {
+      // Opt-in clean room: a throwaway profile with no logins/cookies. Useful
+      // for isolated automation, but the agent won't have the user's sessions.
+      this.browser = await this.launchFresh(chromium, this.opts.channel);
       this.context = await this.browser!.newContext({ viewport: null });
+      this.ownsContext = true;
       this.page = await this.context.newPage();
+    } else {
+      // Default: launch the user's installed Google Chrome against their REAL
+      // profile (a persistent context over their on-disk user-data dir), so the
+      // agent inherits their existing logins/cookies/sessions. Chrome locks a
+      // profile while it's open, so this requires the user's normal Chrome to be
+      // fully quit first; launchPersistent() turns that lock into a clear error.
+      const userDataDir = this.opts.userDataDir ?? defaultChromeUserDataDir();
+      this.context = await this.launchPersistent(chromium, userDataDir);
+      this.ownsContext = true;
+      this.browser = this.context.browser?.() ?? null;
+      const pages = this.context.pages();
+      this.page = pages[0] ?? (await this.context.newPage());
     }
+    // Track liveness even when browser() is null (persistent contexts on some
+    // Playwright versions): flip dead when the context closes.
+    this.alive = true;
+    this.context?.on?.("close", () => {
+      this.alive = false;
+    });
   }
 
   /**
-   * Launch a headed browser, preferring the requested channel (e.g. installed
-   * Google Chrome) and falling back to Playwright's bundled Chromium if that
-   * channel isn't available on this machine.
+   * Launch a CLEAN headed browser (no profile), preferring the requested
+   * channel (installed Google Chrome) and falling back to Playwright's bundled
+   * Chromium if that channel isn't available on this machine.
    */
-  private async launchHeaded(chromium: any, channel?: string): Promise<PwBrowser> {
+  private async launchFresh(chromium: any, channel?: string): Promise<PwBrowser> {
     try {
       return await chromium.launch({ headless: false, ...(channel ? { channel } : {}) });
     } catch (err) {
@@ -107,19 +193,67 @@ export class CompanionEngine {
     }
   }
 
+  /**
+   * Launch a headed browser bound to a persistent on-disk profile (the user's
+   * real Chrome user-data dir), so cookies/logins carry over. Translates a
+   * profile-lock failure (Chrome already running) into an actionable error, and
+   * falls back to the bundled Chromium if the installed-Chrome channel is
+   * unavailable.
+   */
+  private async launchPersistent(chromium: any, userDataDir: string): Promise<PwBrowserContext> {
+    const channel = this.opts.channel;
+    const launchOpts: Record<string, any> = {
+      headless: false,
+      viewport: null,
+      args: this.opts.profileDirectory ? [`--profile-directory=${this.opts.profileDirectory}`] : [],
+    };
+    try {
+      return await chromium.launchPersistentContext(userDataDir, { ...launchOpts, ...(channel ? { channel } : {}) });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (looksLikeProfileLock(msg)) {
+        throw new Error(
+          `Could not open Chrome with your profile — it looks like Google Chrome is already running.\n` +
+            `Chrome locks a profile while it's open, so the agent can't drive it at the same time.\n` +
+            `Fix: quit Google Chrome completely (Cmd-Q / fully exit, not just close the window), then re-run \`zero browser connect\`.\n` +
+            `Alternatives: pass \`--fresh\` to use a clean throwaway profile, or \`--cdp <url>\` to attach to a Chrome started with --remote-debugging-port.\n` +
+            `(profile dir: ${userDataDir}; underlying error: ${msg})`,
+        );
+      }
+      if (!channel) throw err;
+      this.opts.onWarn?.(
+        `could not launch installed Chrome (channel "${channel}"): ${msg}; ` +
+          `falling back to Playwright's bundled Chromium`,
+      );
+      return await chromium.launchPersistentContext(userDataDir, launchOpts);
+    }
+  }
+
   async stop(): Promise<void> {
+    // For a context we launched (persistent or fresh), closing it tears down the
+    // browser too. For an attached CDP context we must leave the user's context
+    // alone and only drop our connection to the browser.
+    if (this.ownsContext) {
+      try {
+        await this.context?.close();
+      } catch {
+        // ignore
+      }
+    }
     try {
       await this.browser?.close();
     } catch {
       // ignore
     }
+    this.alive = false;
     this.browser = null;
     this.context = null;
     this.page = null;
   }
 
   isAlive(): boolean {
-    return !!this.browser && this.browser.isConnected();
+    if (this.browser) return this.browser.isConnected();
+    return this.alive;
   }
 
   async capabilities(): Promise<{ dockerInstalled: boolean; dockerRunning: boolean; chromeAvailable: boolean }> {

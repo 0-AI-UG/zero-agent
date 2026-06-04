@@ -89,12 +89,16 @@ export class CompanionRunner {
 
   async start(): Promise<void> {
     const cfg = requireConfig();
+    const binary = this.opts.channel === undefined ? "bundled Chrome for Testing" : "your installed Google Chrome";
     const target = this.opts.cdpUrl
       ? `CDP ${this.opts.cdpUrl}`
-      : this.opts.channel === undefined
-        ? "bundled Chrome for Testing"
-        : "your installed Google Chrome";
+      : this.opts.fresh
+        ? `${binary}, clean profile`
+        : `${binary}, your real profile`;
     this.log(`starting local browser (${target})…`);
+    if (!this.opts.cdpUrl && !this.opts.fresh) {
+      this.log("note: using your real Chrome profile — quit Google Chrome first if it's open, or it can't be driven.");
+    }
     await this.engine.start();
     this.log(`connected to local Chrome — linking to ${cfg.projectName ?? "your project"}…`);
     this.connect();
