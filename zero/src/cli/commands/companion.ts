@@ -2,38 +2,28 @@ import { getOption, hasFlag } from "../format.ts";
 import { loadConfig } from "../../sdk/config.ts";
 import { CompanionRunner } from "../../companion/runner.ts";
 
-const HELP = `zero browser connect - drive the agent's browser with YOUR local Chrome
+const HELP = `zero browser connect - let the agent use YOUR Chrome (with your logins)
 
 Usage:
-  zero browser connect [--cdp <url>] [--fresh] [--chromium]
-                       [--user-data-dir <path>] [--profile <name>]
+  zero browser connect
   zero companion        (alias for "zero browser connect")
 
-While this is running, the agent's \`zero browser ...\` actions for the bound
-project are executed in your local browser instead of the container's headless
-one. Stop it with Ctrl-C to hand control back to the container browser.
+Just run it. It opens your Google Chrome with your existing logins and cookies,
+and the agent drives that window for the bound project. Your normal Chrome can
+stay open — this uses a copy of your profile. Press Ctrl-C to stop and hand
+control back to the agent's own browser.
 
-By default this launches your installed Google Chrome against YOUR real profile,
-so the agent inherits your existing logins, cookies, and sessions. Chrome locks
-a profile while it's open, so you must QUIT Google Chrome completely first (fully
-exit, not just close the window); otherwise the launch fails with a clear note.
+Requires \`zero login\` first. The browser tools install automatically on first
+use, which can take a minute.
 
-Options:
-  --cdp <url>          Attach to a Chrome already running with remote debugging,
-                       e.g. start Chrome with --remote-debugging-port=9222 and
-                       pass --cdp http://127.0.0.1:9222. Adopts its tabs/profile.
-  --fresh              Use a clean throwaway profile (no logins/cookies) instead
-                       of your real one. Lets Chrome stay open; agent gets no
-                       sessions.
-  --chrome             Launch your installed Google Chrome (default).
-  --chromium           Launch Playwright's bundled "Chrome for Testing" build.
-  --user-data-dir <p>  Profile root to launch against (defaults to the standard
-                       Google Chrome location for your OS).
-  --profile <name>     Profile subdirectory to load, e.g. "Default" or
-                       "Profile 1" (maps to Chrome's --profile-directory).
-
-Requires \`zero login\` first. Playwright is installed automatically into
-~/.zero on first use if it's missing.
+Advanced options (most people don't need these):
+  --live               Drive your real profile in place so logins you make stick
+                       — but you must fully quit Google Chrome first.
+  --fresh              Use a clean profile with no logins (isolated automation).
+  --cdp <url>          Attach to a Chrome started with --remote-debugging-port.
+  --chromium           Use the bundled browser instead of your installed Chrome.
+  --user-data-dir <p>  Profile root to use (default: your OS's Chrome location).
+  --profile <name>     Profile to load, e.g. "Default" or "Profile 1".
 `;
 
 /** Run the companion runner until interrupted. Shared by `browser connect` and `companion`. */
@@ -53,9 +43,11 @@ export async function companionConnect(args: string[]): Promise<number> {
   // Default to the user's installed Google Chrome; --chromium opts back into
   // Playwright's bundled "Chrome for Testing" build.
   const channel = hasFlag(args, "--chromium") ? undefined : "chrome";
-  // Default to the user's real profile (their sessions); --fresh opts into a
-  // clean throwaway profile.
+  // Default: clone the user's profile so Chrome can stay open (their sessions,
+  // zero config). --live drives the real profile in place; --fresh uses a clean
+  // throwaway profile.
   const fresh = hasFlag(args, "--fresh");
+  const live = hasFlag(args, "--live");
   const userDataDir = getOption(args, "--user-data-dir");
   const profileDirectory = getOption(args, "--profile");
 
@@ -65,6 +57,7 @@ export async function companionConnect(args: string[]): Promise<number> {
     launch,
     channel,
     fresh,
+    live,
     userDataDir,
     profileDirectory,
     onWarn: write,

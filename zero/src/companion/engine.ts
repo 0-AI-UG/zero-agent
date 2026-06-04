@@ -14,10 +14,13 @@
  * Playwright is imported lazily so the in-container `zero` CLI (which never
  * runs the companion) doesn't need it installed.
  */
+import type { Dirent } from "node:fs";
+import { mkdir, rm, copyFile, readdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { BrowserAction, BrowserResult } from "../sdk/browser-protocol.ts";
 import { loadPlaywright } from "./playwright-setup.ts";
+import { zeroHomeDir } from "../sdk/config.ts";
 
 // Minimal structural types so we don't hard-depend on Playwright's types at
 // build time (it's an optional dependency).
@@ -69,9 +72,18 @@ export interface EngineOptions {
    */
   fresh?: boolean;
   /**
+   * Drive the user's real Chrome profile IN PLACE rather than a clone. Logins
+   * made during the session sync back, but Chrome locks a profile while open,
+   * so this requires the user's normal Chrome to be fully quit first. Advanced;
+   * the zero-config default clones the profile so Chrome can stay open. Ignored
+   * over CDP and when `fresh` is set.
+   */
+  live?: boolean;
+  /**
    * Chrome user-data dir to launch against (the persistent profile root that
    * holds cookies/logins). Defaults to the OS-standard Google Chrome location.
-   * Ignored over CDP and when `fresh` is set.
+   * Unless `live` is set this is the SOURCE that gets cloned. Ignored over CDP
+   * and when `fresh` is set.
    */
   userDataDir?: string;
   /**
@@ -104,6 +116,32 @@ export function defaultChromeUserDataDir(): string {
     default:
       return join(home, ".config", "google-chrome");
   }
+}
+
+/**
+ * Profile sub-entries to skip when cloning a Chrome profile: large regenerable
+ * caches (no value, slow to copy) and the live singleton lock files/sockets
+ * (copying them would point the clone at the running instance).
+ */
+const PROFILE_CLONE_SKIP = new Set([
+  "Cache",
+  "Code Cache",
+  "GPUCache",
+  "DawnCache",
+  "DawnGraphiteCache",
+  "DawnWebGPUCache",
+  "GraphiteDawnCache",
+  "Service Worker",
+  "Application Cache",
+  "ShaderCache",
+  "GrShaderCache",
+  "component_crx_cache",
+]);
+
+function skipInClone(name: string): boolean {
+  // SingletonLock / SingletonCookie / SingletonSocket are symlinks/sockets that
+  // tie a profile to its live process — never copy them into the clone.
+  return PROFILE_CLONE_SKIP.has(name) || name.startsWith("Singleton");
 }
 
 /**
@@ -161,12 +199,17 @@ export class CompanionEngine {
       this.ownsContext = true;
       this.page = await this.context.newPage();
     } else {
-      // Default: launch the user's installed Google Chrome against their REAL
-      // profile (a persistent context over their on-disk user-data dir), so the
-      // agent inherits their existing logins/cookies/sessions. Chrome locks a
-      // profile while it's open, so this requires the user's normal Chrome to be
-      // fully quit first; launchPersistent() turns that lock into a clear error.
-      const userDataDir = this.opts.userDataDir ?? defaultChromeUserDataDir();
+      // Default: launch the user's installed Google Chrome with their existing
+      // logins/cookies/sessions. To avoid fighting a running Chrome for the
+      // profile lock (which confuses non-technical users), we CLONE the profile
+      // and launch against the copy, so their normal Chrome can stay open. The
+      // advanced --live mode drives the real profile in place instead (logins
+      // sync back, but Chrome must be quit first; launchPersistent() turns the
+      // resulting lock into a clear error).
+      const source = this.opts.userDataDir ?? defaultChromeUserDataDir();
+      const userDataDir = this.opts.live
+        ? source
+        : await this.cloneProfile(source, this.opts.profileDirectory ?? "Default");
       this.context = await this.launchPersistent(chromium, userDataDir);
       this.ownsContext = true;
       this.browser = this.context.browser?.() ?? null;
@@ -232,6 +275,61 @@ export class CompanionEngine {
           `falling back to Playwright's bundled Chromium`,
       );
       return await chromium.launchPersistentContext(userDataDir, launchOpts);
+    }
+  }
+
+  /**
+   * Clone the live Chrome profile into a separate user-data dir under ~/.zero
+   * and return that dir, so we can launch against it without fighting the
+   * running Chrome for the profile lock. Copies the root "Local State" (holds
+   * the os_crypt key reference cookies are encrypted with) plus the named
+   * profile subdir, skipping bulky caches and the live singleton lock files.
+   * The copy is refreshed on every start so sessions are as current as possible.
+   */
+  private async cloneProfile(sourceUserDataDir: string, profile: string): Promise<string> {
+    const dest = join(zeroHomeDir(), "chrome-profile-copy");
+    // Start clean each run: stale entries from a previous copy (or a different
+    // source profile) would otherwise linger and confuse Chrome.
+    await rm(dest, { recursive: true, force: true });
+    await mkdir(join(dest, profile), { recursive: true });
+
+    const localState = join(sourceUserDataDir, "Local State");
+    await copyFile(localState, join(dest, "Local State")).catch(() => {
+      // Without Local State, cookies won't decrypt; warn but keep going so at
+      // least non-encrypted state (history, some logins) is available.
+      this.opts.onWarn?.(`could not copy "Local State" from ${sourceUserDataDir} — some logins may not carry over`);
+    });
+
+    const srcProfile = join(sourceUserDataDir, profile);
+    await this.copyDirFiltered(srcProfile, join(dest, profile));
+    this.opts.onWarn?.(`cloned your Chrome profile "${profile}" to ${dest} (sessions as of now)`);
+    return dest;
+  }
+
+  /**
+   * Recursively copy a directory, skipping cache dirs and singleton lock files
+   * (see {@link skipInClone}). Per-file copy errors (e.g. a file briefly locked
+   * by the running Chrome) are swallowed so one unreadable file can't abort the
+   * whole clone. Symlinks/sockets are not followed.
+   */
+  private async copyDirFiltered(src: string, dest: string): Promise<void> {
+    let entries: Dirent[];
+    try {
+      entries = await readdir(src, { withFileTypes: true });
+    } catch {
+      return; // source profile/subdir missing — nothing to copy
+    }
+    await mkdir(dest, { recursive: true });
+    for (const entry of entries) {
+      if (skipInClone(entry.name)) continue;
+      const from = join(src, entry.name);
+      const to = join(dest, entry.name);
+      if (entry.isDirectory()) {
+        await this.copyDirFiltered(from, to);
+      } else if (entry.isFile()) {
+        await copyFile(from, to).catch(() => {});
+      }
+      // ignore symlinks/sockets/fifos
     }
   }
 
