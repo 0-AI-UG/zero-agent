@@ -116,8 +116,14 @@ function looksLikeProfileLock(msg: string): boolean {
   return (
     m.includes("singletonlock") ||
     m.includes("processsingleton") ||
+    // Chrome's own wording when the user-data dir is held by a running instance:
+    // "Opening in existing browser session. This usually means that the profile
+    //  is already in use by another instance of Chromium."
+    m.includes("opening in existing browser session") ||
+    m.includes("already in use") ||
     m.includes("already running") ||
     m.includes("profile appears to be in use") ||
+    m.includes("in use by another") ||
     m.includes("being used by another") ||
     m.includes("closed unexpectedly")
   );
