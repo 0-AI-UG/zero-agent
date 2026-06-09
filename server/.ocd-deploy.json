@@ -13,6 +13,7 @@
     "size": 20,
     "path": "/app/data"
   },
+  "userns": true,
   "env": [
     {
       "key": "PI_PROJECTS_ROOT",
