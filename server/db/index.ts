@@ -771,19 +771,23 @@ db.exec(`CREATE INDEX IF NOT EXISTS idx_email_messages_chat ON email_messages(ch
     default?: boolean; multimodal?: boolean;
     pi?: { provider?: string; model?: string };
   }>;
-  // Seed-driven fields only — never overwrite admin-edited pi routing on
-  // existing rows. New rows still get the seed's pi block as initial values.
-  // Upsert. On conflict we re-apply seed-canonical fields but only update
-  // pi routing when the row is still at the default (openrouter / no
-  // override) — this lets new pi blocks in models.json reach existing DBs
-  // without clobbering admin customizations.
+  // Seed-driven fields only — never overwrite admin-edited pi routing or the
+  // admin-chosen default model on existing rows. New rows still get the seed's
+  // values as initial state.
+  // Upsert. On conflict we re-apply seed-canonical fields but:
+  //   - is_default is left untouched, so the admin's choice of default model
+  //     survives redeploys (a new image re-runs this seed). New DBs still get
+  //     the seed default via the INSERT path; a safety net below guarantees
+  //     exactly one default exists.
+  //   - pi routing is only updated when the row is still at the default
+  //     (openrouter / no override) — this lets new pi blocks in models.json
+  //     reach existing DBs without clobbering admin customizations.
   const insertModel = db.prepare(
     `INSERT INTO models (id, name, provider, is_default, multimodal, sort_order, pi_provider, pi_model_id)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
        name = excluded.name,
        provider = excluded.provider,
-       is_default = excluded.is_default,
        multimodal = excluded.multimodal,
        sort_order = excluded.sort_order,
        pi_provider = CASE
@@ -812,6 +816,17 @@ db.exec(`CREATE INDEX IF NOT EXISTS idx_email_messages_chat ON email_messages(ch
   const seedIds = seedModels.map((m) => m.id);
   const placeholders = seedIds.map(() => "?").join(",");
   db.prepare(`DELETE FROM models WHERE id NOT IN (${placeholders})`).run(...seedIds);
+
+  // Safety net: guarantee exactly one default exists. We never touch
+  // is_default on existing rows above, so a brand-new DB (rows just inserted
+  // with the seed flag) is already fine — but if no default is set (e.g. the
+  // admin's chosen default was dropped from the seed and deleted), fall back
+  // to the seed's default model.
+  const hasDefault = db.prepare(`SELECT 1 FROM models WHERE is_default = 1 LIMIT 1`).get();
+  if (!hasDefault) {
+    const fallbackId = seedModels.find((m) => m.default)?.id ?? seedModels[0]?.id;
+    if (fallbackId) db.prepare(`UPDATE models SET is_default = 1 WHERE id = ?`).run(fallbackId);
+  }
 }
 
 // ── Exports ──
