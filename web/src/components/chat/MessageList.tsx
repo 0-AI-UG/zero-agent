@@ -2,6 +2,7 @@ import { AlertCircleIcon } from "lucide-react";
 import { useMemo, type ReactNode } from "react";
 import type { AgentMessage, PendingTool, ToolExecution, ToolResultContentPart } from "@/lib/pi-events";
 import { contentText } from "@/lib/pi-events";
+import { friendlyErrorMessage } from "@/lib/error-messages";
 import { MessageShell } from "@/components/chat-ui/MessageShell";
 import { ZeroLoader } from "@/components/chat-ui/ZeroLoader";
 import { MessageView } from "./pi-transcript";
@@ -183,7 +184,7 @@ export function MessageList({
         <MessageShell role="assistant">
           <div className="flex items-center gap-3 text-destructive text-sm">
             <AlertCircleIcon className="size-4 shrink-0" />
-            <span>Something went wrong.</span>
+            <span>{friendlyErrorMessage(error.message)}</span>
           </div>
         </MessageShell>
       )}
