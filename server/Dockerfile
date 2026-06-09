@@ -70,6 +70,15 @@ RUN bun --filter zero build
 # Copy server source
 COPY server/ ./server/
 
+# Compile the Landlock bash-sandbox helper (server/landlock-exec). Pure C,
+# UAPI structs defined inline so it needs no kernel headers; links only libc.
+# bash on Linux is routed through this by project-sandbox so a prompt-injected
+# command can't read/write sibling projects. `/var/empty` is the GIT_TEMPLATE_DIR
+# the bash ops point git at; it must exist and be readable inside the ruleset.
+RUN g++ -O2 -x c server/landlock-exec/zero-landlock.c -o /usr/local/bin/zero-landlock \
+ && chmod 755 /usr/local/bin/zero-landlock \
+ && mkdir -p /var/empty
+
 # Build frontend (build.ts uses `bun x vite build`)
 COPY web/ ./web/
 COPY build.ts ./build.ts

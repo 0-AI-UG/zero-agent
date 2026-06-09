@@ -35,7 +35,10 @@ import type {
   CDPSession,
 } from "playwright";
 import { log } from "@/lib/utils/logger.ts";
-import { projectDirFor } from "@/lib/pi/run-turn.ts";
+import {
+  chromeStateFileFor,
+  legacyChromeStateFileFor,
+} from "@/lib/pi/run-turn.ts";
 import { getCompanionRegistry } from "@/lib/companion/registry.ts";
 import type { BrowserAction as ProtocolBrowserAction } from "@/lib/browser/protocol.ts";
 
@@ -45,13 +48,39 @@ import type { BrowserAction as ProtocolBrowserAction } from "@/lib/browser/proto
  * without paying the RAM cost of a persistent Chromium per project.
  *
  * Written on context close / idle eviction; reloaded on next context create.
- * Sensitive (auth tokens) — sandbox denies the agent both reading and
- * writing this file, and snapshot-service excludes it from git snapshots.
+ * Sensitive (auth tokens), so it lives OUTSIDE the project dir
+ * (`chromeStateFileFor`): the agent's bash is Landlock-confined to the project
+ * dir but Landlock can't deny a single file within a granted tree, so the only
+ * reliable protection is keeping this file out of that tree. In-process tools
+ * are project-dir-scoped and can't reach it either.
  */
-const STATE_FILENAME = ".chrome-state.json";
-
 function stateFileFor(projectId: string): string {
-  return join(projectDirFor(projectId), STATE_FILENAME);
+  return chromeStateFileFor(projectId);
+}
+
+/**
+ * One-time migration: older builds stored the file at
+ * `<projectDir>/.chrome-state.json`. Move any such file to the new
+ * out-of-tree location on next open so existing sessions aren't logged out
+ * and the secret no longer sits in the Landlock-readable project dir.
+ */
+async function migrateLegacyState(projectId: string): Promise<void> {
+  const legacy = legacyChromeStateFileFor(projectId);
+  const exists = await stat(legacy)
+    .then((s) => s.isFile())
+    .catch(() => false);
+  if (!exists) return;
+  const target = stateFileFor(projectId);
+  try {
+    await mkdir(join(target, ".."), { recursive: true });
+    await rename(legacy, target);
+    browserLog.info("migrated legacy chrome-state out of project dir", { projectId });
+  } catch (err) {
+    browserLog.warn("legacy chrome-state migration failed", {
+      projectId,
+      err: err instanceof Error ? err.message : String(err),
+    });
+  }
 }
 
 // rebrowser-playwright is a drop-in fork that patches the Runtime.Enable CDP
@@ -191,6 +220,7 @@ class HostBrowserPool extends EventEmitter {
 
     const p = (async () => {
       const browser = await this.ensureBrowser();
+      await migrateLegacyState(projectId);
       const statePath = stateFileFor(projectId);
       const hasState = await stat(statePath)
         .then((s) => s.isFile())

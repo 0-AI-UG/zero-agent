@@ -33,9 +33,10 @@ const EXCLUDE_PATTERNS = [
   "node_modules/",
   ".venv/",
   "__pycache__/",
-  // Browser storageState — cookies + localStorage + IndexedDB persisted by
-  // server/lib/browser/host-pool.ts. Excluded from snapshots so auth tokens
-  // don't get committed into the per-turn snapshot history.
+  // Browser storageState now lives outside the project dir (see
+  // chromeStateFileFor in run-turn.ts), but older projects may still have a
+  // legacy in-project `.chrome-state.json` until it's migrated on next browser
+  // open. Keep excluding it so those stragglers never land in snapshot history.
   ".chrome-state.json",
 ];
 
