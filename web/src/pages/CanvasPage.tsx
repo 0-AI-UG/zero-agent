@@ -793,6 +793,20 @@ export function CanvasPage() {
           onPointerMove={onCanvasPointerMove}
           onWheel={onWheel}
         >
+          {/* Background dot grid — pans and zooms with the view. */}
+          <defs>
+            <pattern
+              id="canvas-dots"
+              width={24 * view.scale}
+              height={24 * view.scale}
+              patternUnits="userSpaceOnUse"
+              patternTransform={`translate(${view.tx} ${view.ty})`}
+            >
+              <circle cx={1} cy={1} r={1} fill="currentColor" className="text-border" />
+            </pattern>
+          </defs>
+          <rect x={0} y={0} width="100%" height="100%" fill="url(#canvas-dots)" pointerEvents="none" />
+
           <g transform={`translate(${view.tx} ${view.ty}) scale(${view.scale})`}>
             {list.map((s) => (
               <ShapeView
@@ -880,13 +894,6 @@ export function CanvasPage() {
           />
         )}
 
-        {list.length === 0 && (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-            <p className="text-sm text-muted-foreground">
-              Pick a tool and click to start — or ask the agent to draw here.
-            </p>
-          </div>
-        )}
       </div>
 
       <AlertDialog open={confirmClearOpen} onOpenChange={setConfirmClearOpen}>
