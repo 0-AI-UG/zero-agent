@@ -20,7 +20,7 @@
  * in-process (no child `pi`), so no env-based model inheritance is needed.
  */
 import { existsSync, mkdirSync } from "node:fs";
-import { isAbsolute, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { randomBytes } from "node:crypto";
 import {
   type AgentSessionEvent,
@@ -114,6 +114,24 @@ const PROJECTS_ROOT = isAbsolute(PROJECTS_ROOT_INPUT)
 
 export function projectDirFor(projectId: string): string {
   return join(PROJECTS_ROOT, projectId);
+}
+
+// Browser storageState (cookies + localStorage + IndexedDB) lives in a sibling
+// of the projects root, NOT inside the project dir. The agent's bash is
+// confined to the project dir by Landlock (which grants the whole project dir
+// rw and can't do per-file deny), so keeping this secret file out of that tree
+// is the only way to stop a prompt-injected command from reading session
+// tokens. The in-process tools are project-dir-scoped, so they can't reach it
+// either. See server/lib/browser/host-pool.ts.
+const CHROME_STATE_ROOT = join(dirname(PROJECTS_ROOT), "chrome-state");
+
+export function chromeStateFileFor(projectId: string): string {
+  return join(CHROME_STATE_ROOT, `${projectId}.json`);
+}
+
+/** Legacy in-project location, kept only for one-time migration on open. */
+export function legacyChromeStateFileFor(projectId: string): string {
+  return join(projectDirFor(projectId), ".chrome-state.json");
 }
 
 export function sessionsDirFor(projectId: string): string {

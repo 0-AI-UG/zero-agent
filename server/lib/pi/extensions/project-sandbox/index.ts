@@ -13,16 +13,24 @@
  *      Wrapped to resolve the input path (realpath-ing to follow symlinks)
  *      and reject anything that escapes the project dir.
  *
- *   2. The `bash` tool. Wrapped via `@anthropic-ai/sandbox-runtime`
- *      (bubblewrap on Linux, sandbox-exec on macOS) with filesystem-only
- *      restrictions — *no* network sandbox. The bundled pi sandbox
- *      extension always defines `network.allowedDomains`, which triggers
- *      `bwrap --unshare-net` and severs the agent's `zero` CLI from the
- *      in-process server at 127.0.0.1:<ZERO_PROXY_PORT>. By calling
- *      `SandboxManager.initialize` ourselves with only a `filesystem`
- *      block we get fs containment (cross-project writes blocked,
- *      container-global writes blocked) and keep the host's network —
- *      including loopback — intact.
+ *   2. The `bash` tool. Confined per-platform:
+ *
+ *      - **Linux (incl. the prod OCD deploy): Landlock.** bubblewrap can't
+ *        run on the hardened host (capless root + blocked unprivileged
+ *        userns), so we use the `zero-landlock` helper, which applies a
+ *        Landlock filesystem ruleset (deny-by-default allowlist) and then
+ *        execs the command. Landlock needs no caps and no userns — only
+ *        `PR_SET_NO_NEW_PRIVS`, already set on the container. The projects
+ *        root is never granted, so sibling projects are denied by default.
+ *        Networking is untouched, so the agent's `zero` CLI keeps reaching
+ *        the in-process server at 127.0.0.1:<port>.
+ *
+ *      - **macOS (local dev): `@anthropic-ai/sandbox-runtime`** (sandbox-exec)
+ *        with a filesystem-only block. We call `SandboxManager.initialize`
+ *        ourselves with only a `filesystem` block (the bundled pi sandbox
+ *        extension always sets `network.allowedDomains`, which on Linux would
+ *        trigger `bwrap --unshare-net` and sever loopback) so we get fs
+ *        containment while keeping the host network intact.
  *
  * Without this extension, a prompt-injected or buggy bash command could
  * read/write any sibling project under `data/projects/<id>/`, or persist
@@ -76,27 +84,92 @@ import {
 
 const DENY_READ = ["~/.ssh", "~/.aws", "~/.gnupg"];
 const DENY_WRITE_GLOBS = [".env", ".env.*", "*.pem", "*.key"];
-const DENY_WRITE_RELATIVE = [".pi", ".pi-sessions", ".git-snapshots", ".chrome-state.json"];
-// Project-relative paths the agent must not touch at all via the in-process
-// read/write/edit tools (the bash sandbox above also denies writes through
-// DENY_WRITE_RELATIVE, but in-process tools bypass the sandbox-runtime
-// layer entirely). `.chrome-state.json` holds the project's browser cookies
-// / localStorage / IndexedDB — exfiltration via prompt injection is real,
-// so it's read-denied too.
-const DENY_INPROCESS_RELATIVE = [".chrome-state.json"];
+const DENY_WRITE_RELATIVE = [".pi", ".pi-sessions", ".git-snapshots"];
+// The project's browser storageState (`.chrome-state.json`: cookies +
+// localStorage + IndexedDB) used to live inside the project dir and was
+// special-cased here as read/write-denied. It now lives OUTSIDE the project
+// dir (see chromeStateFileFor in run-turn.ts), so both the project-scoped
+// in-process tools and Landlock-confined bash are blocked from it by
+// construction — no per-file deny needed.
 
-function isDeniedInProcess(projectDir: string, inputPath: string): string | null {
-  const abs = path.isAbsolute(inputPath)
-    ? inputPath
-    : path.resolve(projectDir, inputPath);
-  const resolved = realpathOrParent(abs);
-  for (const rel of DENY_INPROCESS_RELATIVE) {
-    const denied = path.join(projectDir, rel);
-    if (resolved === denied || resolved.startsWith(denied + path.sep)) {
-      return rel;
-    }
-  }
-  return null;
+// Landlock (Linux) configuration. The helper binary applies a deny-by-default
+// filesystem ruleset, so this is an allowlist: only what a contained shell
+// needs to function. Deliberately granular — NOT `/app` (would expose
+// `/app/data`: app.db, credentials, vectors) and NOT the projects root (would
+// expose sibling projects). The helper skips paths that don't exist, so listing
+// extras is harmless. The zero package root, agents dir, etc. arrive separately
+// via `readOnlyRoots`.
+const LANDLOCK_BIN = process.env.ZERO_LANDLOCK_BIN ?? "zero-landlock";
+const LANDLOCK_SYSTEM_RO = [
+  "/usr",
+  "/bin",
+  "/sbin",
+  "/lib",
+  "/lib32",
+  "/lib64",
+  "/libx32",
+  "/etc",
+  "/opt",
+  "/proc",
+  "/root/.bun",
+  "/var/empty", // GIT_TEMPLATE_DIR target set in createBashOps
+];
+// Character devices a normal shell expects. Granted read+write (the helper
+// also adds TRUNCATE/IOCTL_DEV where the kernel ABI handles them, so /dev/tty
+// terminal ioctls work).
+const LANDLOCK_DEV_RW = [
+  "/dev/null",
+  "/dev/zero",
+  "/dev/full",
+  "/dev/random",
+  "/dev/urandom",
+  "/dev/tty",
+];
+
+/**
+ * Build the `--rw/--ro/--rwfile` flags for the `zero-landlock` helper.
+ * rw: the project dir + /tmp. ro: system dirs + the read-only roots (zero
+ * package, agents dir) + the server's node_modules (the `zero` CLI resolves
+ * its deps there at runtime). The projects root is intentionally absent.
+ */
+function buildLandlockArgs(projectDir: string, readOnlyRoots: string[]): string[] {
+  const rw = [projectDir, "/tmp"];
+  const ro = [
+    ...LANDLOCK_SYSTEM_RO,
+    ...readOnlyRoots,
+    path.join(process.cwd(), "node_modules"),
+  ];
+  const args: string[] = [];
+  for (const d of rw) args.push("--rw", d);
+  for (const d of ro) args.push("--ro", d);
+  for (const f of LANDLOCK_DEV_RW) args.push("--rwfile", f);
+  return args;
+}
+
+type BashSandboxMode = "landlock" | "sandbox-runtime" | "none";
+
+// Secrets the server reads from its environment (docker-compose) that bash
+// must never inherit — otherwise a prompt-injected command could `echo
+// $OPENROUTER_API_KEY` and exfiltrate them. The agent's `zero` CLI reaches
+// model/search/etc. through the in-process proxy (ZERO_PROXY_*), so it never
+// needs these directly. The proxy token itself is re-added via perTurnEnv
+// AFTER this scrub, so stripping here doesn't break it.
+const SECRET_ENV_NAMES = new Set([
+  "JWT_SECRET",
+  "CREDENTIALS_KEY",
+  "OPENROUTER_API_KEY",
+  "BRAVE_SEARCH_API_KEY",
+  "TELEGRAM_WEBHOOK_SECRET",
+]);
+// Catch-all for secret-shaped names the server might gain later. Scrubbing is
+// applied only to the inherited process.env base (perTurnEnv is overlaid
+// after), so ZERO_PROXY_TOKEN — added via perTurnEnv — survives despite
+// matching `_TOKEN`.
+const SECRET_ENV_PATTERN =
+  /(SECRET|PASSWORD|PRIVATE_KEY|_TOKEN|API_KEY|ACCESS_KEY|CREDENTIAL)/i;
+
+function isSecretEnvKey(key: string): boolean {
+  return SECRET_ENV_NAMES.has(key) || SECRET_ENV_PATTERN.test(key);
 }
 
 function realpathOrParent(absPath: string): string {
@@ -125,19 +198,6 @@ function ensureInProject(
   }
 }
 
-function ensureNotDenied(
-  projectDir: string,
-  inputPath: string,
-  toolName: string,
-): void {
-  const hit = isDeniedInProcess(projectDir, inputPath);
-  if (hit) {
-    throw new Error(
-      `${toolName}: path "${inputPath}" is in the project deny list (${hit})`,
-    );
-  }
-}
-
 function ensureReadable(
   projectDir: string,
   extraRoots: string[],
@@ -159,7 +219,7 @@ function ensureReadable(
 
 function createBashOps(
   perTurnEnv: Record<string, string>,
-  opts: { sandboxed: boolean },
+  opts: { mode: BashSandboxMode; landlockArgs: string[] },
 ): BashOperations {
   return {
     async exec(command, cwd, { onData, signal, timeout, env }) {
@@ -167,19 +227,37 @@ function createBashOps(
         throw new Error(`Working directory does not exist: ${cwd}`);
       }
 
-      const wrappedCommand = opts.sandboxed
-        ? await SandboxManager.wrapWithSandbox(command)
-        : command;
+      // Choose the spawn target by sandbox mode:
+      //   landlock        -> `zero-landlock <allow flags> -- bash -c <cmd>`
+      //                      (helper applies the ruleset, then execs bash)
+      //   sandbox-runtime -> bash -c <sandbox-exec-wrapped cmd> (macOS)
+      //   none            -> bash -c <cmd> (unsandboxed fallback)
+      let spawnCmd: string;
+      let spawnArgs: string[];
+      if (opts.mode === "landlock") {
+        spawnCmd = LANDLOCK_BIN;
+        spawnArgs = [...opts.landlockArgs, "--", "bash", "-c", command];
+      } else if (opts.mode === "sandbox-runtime") {
+        spawnCmd = "bash";
+        spawnArgs = ["-c", await SandboxManager.wrapWithSandbox(command)];
+      } else {
+        spawnCmd = "bash";
+        spawnArgs = ["-c", command];
+      }
 
-      // Merge order: process.env (base), env from pi (per-call overrides),
-      // perTurnEnv (turn-scoped overrides — proxy token, run id, etc.).
-      // Done here instead of mutating process.env so concurrent turns can't
-      // clobber each other's ZERO_PROXY_TOKEN and cause cross-context
-      // confusion at the proxy.
+      // Merge order: process.env (base, with the server's own secrets
+      // scrubbed), env from pi (per-call overrides), perTurnEnv (turn-scoped
+      // overrides — proxy token, run id, etc.). Done here instead of mutating
+      // process.env so concurrent turns can't clobber each other's
+      // ZERO_PROXY_TOKEN and cause cross-context confusion at the proxy.
       // GIT_TEMPLATE_DIR=/var/empty sidesteps sandbox-runtime's mandatory
       // deny on **/.git/hooks/** for git clone/init.
+      const scrubbedBase: NodeJS.ProcessEnv = {};
+      for (const [k, v] of Object.entries(process.env)) {
+        if (!isSecretEnvKey(k)) scrubbedBase[k] = v;
+      }
       const mergedEnv: NodeJS.ProcessEnv = {
-        ...process.env,
+        ...scrubbedBase,
         ...env,
         ...perTurnEnv,
       };
@@ -193,7 +271,7 @@ function createBashOps(
       const envWithGitTemplate = mergedEnv;
 
       return new Promise((resolve, reject) => {
-        const child = spawn("bash", ["-c", wrappedCommand], {
+        const child = spawn(spawnCmd, spawnArgs, {
           cwd,
           env: envWithGitTemplate,
           detached: true,
@@ -315,7 +393,6 @@ export function createProjectSandboxExtension(
       label: "read (project-scoped)",
       async execute(id, params, signal, onUpdate, _ctx) {
         ensureReadable(projectDir, readOnlyRoots, params.path, "read");
-        ensureNotDenied(projectDir, params.path, "read");
         return read.execute(id, params, signal, onUpdate);
       },
     });
@@ -324,7 +401,6 @@ export function createProjectSandboxExtension(
       label: "write (project-scoped)",
       async execute(id, params, signal, onUpdate, _ctx) {
         ensureInProject(projectDir, params.path, "write");
-        ensureNotDenied(projectDir, params.path, "write");
         return write.execute(id, params, signal, onUpdate);
       },
     });
@@ -333,7 +409,6 @@ export function createProjectSandboxExtension(
       label: "edit (project-scoped)",
       async execute(id, params, signal, onUpdate, _ctx) {
         ensureInProject(projectDir, params.path, "edit");
-        ensureNotDenied(projectDir, params.path, "edit");
         return edit.execute(id, params, signal, onUpdate);
       },
     });
@@ -364,27 +439,62 @@ export function createProjectSandboxExtension(
 
     // Always route bash through our ops so per-turn env (proxy token,
     // PATH prefix) is injected even if sandbox init fails on this platform.
+    // `bashMode` is resolved at session_start (Landlock on Linux, sandbox-exec
+    // on macOS, else unsandboxed) and read at exec time.
     const localBashTemplate = createBashTool(projectDir);
-    let sandboxReady = false;
+    const landlockArgs = buildLandlockArgs(projectDir, readOnlyRoots);
+    let bashMode: BashSandboxMode = "none";
 
     pi.registerTool({
       ...localBashTemplate,
       label: "bash (sandboxed)",
       async execute(id, params, signal, onUpdate, _ctx) {
         const bash = createBashTool(projectDir, {
-          operations: createBashOps(bashEnv, { sandboxed: sandboxReady }),
+          operations: createBashOps(bashEnv, { mode: bashMode, landlockArgs }),
         });
         return bash.execute(id, params, signal, onUpdate);
       },
     });
 
     pi.on("user_bash", () => ({
-      operations: createBashOps(bashEnv, { sandboxed: sandboxReady }),
+      operations: createBashOps(bashEnv, { mode: bashMode, landlockArgs }),
     }));
 
     pi.on("session_start", async (_event, ctx) => {
       const platform = process.platform;
-      if (platform !== "darwin" && platform !== "linux") {
+
+      if (platform === "linux") {
+        // Landlock: probe via the helper's `--check`, then route bash through
+        // it. No SandboxManager.initialize (bubblewrap) on Linux — it can't
+        // engage on the hardened deploy and would only sever loopback.
+        try {
+          await new Promise<void>((resolve, reject) => {
+            const child = spawn(LANDLOCK_BIN, ["--check"], { stdio: "ignore" });
+            child.on("error", reject);
+            child.on("close", (code) =>
+              code === 0
+                ? resolve()
+                : reject(new Error(`zero-landlock --check exited ${code}`)),
+            );
+          });
+          bashMode = "landlock";
+          ctx.ui.setStatus(
+            "sandbox",
+            ctx.ui.theme.fg("accent", `🔒 Bash sandboxed (Landlock) to ${projectDir}`),
+          );
+        } catch (err) {
+          bashMode = "none";
+          ctx.ui.notify(
+            `Landlock bash sandbox unavailable — bash runs unsandboxed: ${
+              err instanceof Error ? err.message : err
+            }`,
+            "error",
+          );
+        }
+        return;
+      }
+
+      if (platform !== "darwin") {
         ctx.ui.notify(
           `Sandbox not supported on ${platform} — bash runs unsandboxed`,
           "warning",
@@ -392,19 +502,13 @@ export function createProjectSandboxExtension(
         return;
       }
 
+      // macOS local dev: sandbox-exec via sandbox-runtime.
       try {
         type InitArgs = Parameters<typeof SandboxManager.initialize>[0];
         await SandboxManager.initialize({
           network: {} as InitArgs["network"],
           filesystem: {
-            denyRead: [
-              ...DENY_READ,
-              projectsRoot,
-              // Same set the in-process read/write tools refuse via
-              // ensureNotDenied — keep them blocked when the agent shells
-              // out (`cat .chrome-state.json`).
-              ...DENY_INPROCESS_RELATIVE.map((p) => path.join(projectDir, p)),
-            ],
+            denyRead: [...DENY_READ, projectsRoot],
             allowRead: [projectDir, ...readOnlyRoots],
             allowWrite: [projectDir, "/tmp"],
             denyWrite: [
@@ -418,13 +522,13 @@ export function createProjectSandboxExtension(
             allowGitConfig: true,
           },
         });
-        sandboxReady = true;
+        bashMode = "sandbox-runtime";
         ctx.ui.setStatus(
           "sandbox",
           ctx.ui.theme.fg("accent", `🔒 Bash sandboxed to ${projectDir}`),
         );
       } catch (err) {
-        sandboxReady = false;
+        bashMode = "none";
         ctx.ui.notify(
           `Bash sandbox init failed: ${err instanceof Error ? err.message : err}`,
           "error",
@@ -433,7 +537,7 @@ export function createProjectSandboxExtension(
     });
 
     pi.on("session_shutdown", async () => {
-      if (sandboxReady) {
+      if (bashMode === "sandbox-runtime") {
         try {
           await SandboxManager.reset();
         } catch {
