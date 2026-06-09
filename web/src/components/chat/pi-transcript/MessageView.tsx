@@ -7,6 +7,7 @@ import type {
   UserMessage,
 } from "@/lib/pi-events";
 import { contentText } from "@/lib/pi-events";
+import { friendlyErrorMessage } from "@/lib/error-messages";
 import { MessageShell } from "@/components/chat-ui/MessageShell";
 import { Markdown } from "@/components/chat-ui/Markdown";
 import { ToolCallCard } from "./ToolCallCard";
@@ -147,7 +148,9 @@ function AssistantMessageView({
           {message.stopReason === "aborted" ? (
             <div className="text-sm text-muted-foreground italic">Agent was interrupted.</div>
           ) : (
-            <div className="text-sm text-destructive">{message.errorMessage}</div>
+            <div className="text-sm text-destructive">
+              {friendlyErrorMessage(message.errorMessage)}
+            </div>
           )}
         </MessageShell>
       )}
