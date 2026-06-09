@@ -15,12 +15,29 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     make \
     g++ \
     ripgrep \
-    fd-find \
     jq \
     less \
     tree \
     tini \
     && rm -rf /var/lib/apt/lists/*
+
+# Install fd from upstream releases rather than apt: Debian bookworm pins
+# fd-find at 8.7.0, which predates the `--no-require-git` flag the agent's
+# `find` tool relies on (added in fd 9.0). Provide both `fd` and the
+# Debian-style `fdfind` name so either invocation resolves.
+ARG TARGETARCH
+RUN FD_VER=10.2.0 \
+ && case "${TARGETARCH:-amd64}" in \
+      arm64) FD_ARCH=aarch64-unknown-linux-gnu ;; \
+      *)     FD_ARCH=x86_64-unknown-linux-gnu ;; \
+    esac \
+ && curl -fsSL "https://github.com/sharkdp/fd/releases/download/v${FD_VER}/fd-v${FD_VER}-${FD_ARCH}.tar.gz" \
+    | tar -xz -C /tmp \
+ && mv "/tmp/fd-v${FD_VER}-${FD_ARCH}/fd" /usr/local/bin/fd \
+ && ln -sf /usr/local/bin/fd /usr/local/bin/fdfind \
+ && rm -rf "/tmp/fd-v${FD_VER}-${FD_ARCH}" \
+ && fd --version
+
 RUN curl -fsSL https://bun.sh/install | bash
 ENV PATH="/root/.bun/bin:${PATH}"
 
