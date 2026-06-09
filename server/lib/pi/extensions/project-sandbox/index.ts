@@ -50,6 +50,61 @@ import {
   DANGEROUS_DIRECTORIES,
 } from "@anthropic-ai/sandbox-runtime/dist/sandbox/sandbox-utils.js";
 import { resolveZeroPackageRoot } from "../../zero-cli.ts";
+import { log } from "../../../utils/logger.ts";
+
+const sandboxLog = log.child({ module: "project-sandbox" });
+
+// When set truthy, bash is *disabled* (rather than run unsandboxed) if the
+// filesystem sandbox can't engage. Use this once the deploy is known to grant
+// bubblewrap the namespaces it needs, so a future regression (missing dep,
+// dropped capability) can't silently re-open cross-project bash access.
+const REQUIRE_BASH_SANDBOX = /^(1|true|yes)$/i.test(
+  process.env.PI_REQUIRE_BASH_SANDBOX ?? "",
+);
+
+/**
+ * Confirm the sandbox actually *runs*, not just that its binaries exist.
+ *
+ * `SandboxManager.initialize()` only checks that `bwrap`/`socat`/`rg` are on
+ * PATH (a `which`). But a present `bwrap` still fails at runtime if the
+ * container forbids user/mount namespaces (no CAP_SYS_ADMIN, or seccomp blocks
+ * `unshare`) — and then *every* real bash command would die with "Operation
+ * not permitted", losing the agent its bash tool entirely. So we wrap a
+ * trivial command and run it: only trust the sandbox if it exits cleanly.
+ */
+async function sandboxActuallyRuns(projectDir: string): Promise<boolean> {
+  let wrapped: string;
+  try {
+    wrapped = await SandboxManager.wrapWithSandbox("true");
+  } catch {
+    return false;
+  }
+  return new Promise<boolean>((resolve) => {
+    const child = spawn("bash", ["-c", wrapped], { cwd: projectDir, stdio: "ignore" });
+    let settled = false;
+    const done = (ok: boolean) => {
+      if (settled) return;
+      settled = true;
+      resolve(ok);
+    };
+    const timer = setTimeout(() => {
+      try {
+        child.kill("SIGKILL");
+      } catch {
+        // ignore
+      }
+      done(false);
+    }, 5000);
+    child.on("error", () => {
+      clearTimeout(timer);
+      done(false);
+    });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      done(code === 0);
+    });
+  });
+}
 
 const UNBLOCK_FILES = new Set([".mcp.json", ".gitmodules"]);
 const UNBLOCK_DIRS = new Set([".vscode", ".idea"]);
@@ -371,6 +426,13 @@ export function createProjectSandboxExtension(
       ...localBashTemplate,
       label: "bash (sandboxed)",
       async execute(id, params, signal, onUpdate, _ctx) {
+        if (!sandboxReady && REQUIRE_BASH_SANDBOX) {
+          throw new Error(
+            "bash is disabled: filesystem sandbox is unavailable and " +
+              "PI_REQUIRE_BASH_SANDBOX is set. Cross-project access can't be " +
+              "guaranteed, so bash is refused rather than run unsandboxed.",
+          );
+        }
         const bash = createBashTool(projectDir, {
           operations: createBashOps(bashEnv, { sandboxed: sandboxReady }),
         });
@@ -385,6 +447,13 @@ export function createProjectSandboxExtension(
     pi.on("session_start", async (_event, ctx) => {
       const platform = process.platform;
       if (platform !== "darwin" && platform !== "linux") {
+        sandboxReady = false;
+        sandboxLog.error(
+          "bash sandbox unsupported on this platform — bash is running UNSANDBOXED " +
+            "(cross-project reads/writes are NOT blocked)",
+          undefined,
+          { platform, projectDir },
+        );
         ctx.ui.notify(
           `Sandbox not supported on ${platform} — bash runs unsandboxed`,
           "warning",
@@ -418,6 +487,19 @@ export function createProjectSandboxExtension(
             allowGitConfig: true,
           },
         });
+
+        // initialize() only `which`-checks the binaries; confirm the sandbox
+        // can actually create its namespaces before we trust it (see
+        // sandboxActuallyRuns). Without this, a deploy that ships bwrap but
+        // forbids user namespaces would break *every* bash command.
+        if (!(await sandboxActuallyRuns(projectDir))) {
+          throw new Error(
+            "bubblewrap is installed but cannot create user/mount namespaces — " +
+              "the container likely needs `--security-opt seccomp=unconfined` " +
+              "(or CAP_SYS_ADMIN / userns). Falling back to unsandboxed bash.",
+          );
+        }
+
         sandboxReady = true;
         ctx.ui.setStatus(
           "sandbox",
@@ -425,9 +507,24 @@ export function createProjectSandboxExtension(
         );
       } catch (err) {
         sandboxReady = false;
+        if (REQUIRE_BASH_SANDBOX) {
+          sandboxLog.error(
+            "bash sandbox unavailable — bash is DISABLED (PI_REQUIRE_BASH_SANDBOX set)",
+            err,
+            { projectDir },
+          );
+        } else {
+          sandboxLog.error(
+            "bash sandbox unavailable — bash is running UNSANDBOXED " +
+              "(cross-project reads/writes are NOT blocked). Set " +
+              "PI_REQUIRE_BASH_SANDBOX=1 to disable bash instead.",
+            err,
+            { projectDir },
+          );
+        }
         ctx.ui.notify(
-          `Bash sandbox init failed: ${err instanceof Error ? err.message : err}`,
-          "error",
+          `Bash sandbox unavailable: ${err instanceof Error ? err.message : err}`,
+          REQUIRE_BASH_SANDBOX ? "error" : "warning",
         );
       }
     });

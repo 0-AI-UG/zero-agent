@@ -19,7 +19,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     less \
     tree \
     tini \
+    bubblewrap \
+    socat \
     && rm -rf /var/lib/apt/lists/*
+
+# bubblewrap + socat back the agent's bash sandbox (@anthropic-ai/sandbox-runtime
+# on Linux). They confine `bash` to the current project dir so a prompt-injected
+# command can't read sibling projects. NOTE: bubblewrap also needs the container
+# to permit user+mount namespaces — i.e. the platform must launch this container
+# with `--security-opt seccomp=unconfined` (or grant CAP_SYS_ADMIN / userns).
+# Without that, the binaries are present but `bwrap --unshare-*` fails at runtime;
+# the sandbox extension probes for this at session start and falls back rather
+# than breaking bash (see server/lib/pi/extensions/project-sandbox/index.ts).
 
 # Install fd from upstream releases rather than apt: Debian bookworm pins
 # fd-find at 8.7.0, which predates the `--no-require-git` flag the agent's
