@@ -58,6 +58,9 @@ import {
   DANGEROUS_DIRECTORIES,
 } from "@anthropic-ai/sandbox-runtime/dist/sandbox/sandbox-utils.js";
 import { resolveZeroPackageRoot } from "../../zero-cli.ts";
+import { log } from "@/lib/utils/logger.ts";
+
+const sandboxLog = log.child({ module: "project-sandbox" });
 
 const UNBLOCK_FILES = new Set([".mcp.json", ".gitmodules"]);
 const UNBLOCK_DIRS = new Set([".vscode", ".idea"]);
@@ -439,34 +442,45 @@ export function createProjectSandboxExtension(
 
     // Always route bash through our ops so per-turn env (proxy token,
     // PATH prefix) is injected even if sandbox init fails on this platform.
-    // `bashMode` is resolved at session_start (Landlock on Linux, sandbox-exec
-    // on macOS, else unsandboxed) and read at exec time.
     const localBashTemplate = createBashTool(projectDir);
     const landlockArgs = buildLandlockArgs(projectDir, readOnlyRoots);
-    let bashMode: BashSandboxMode = "none";
 
-    pi.registerTool({
-      ...localBashTemplate,
-      label: "bash (sandboxed)",
-      async execute(id, params, signal, onUpdate, _ctx) {
-        const bash = createBashTool(projectDir, {
-          operations: createBashOps(bashEnv, { mode: bashMode, landlockArgs }),
-        });
-        return bash.execute(id, params, signal, onUpdate);
-      },
-    });
+    // `bashMode` is resolved LAZILY on first bash use (memoized), NOT in a
+    // session_start handler. The in-process SDK path this server uses
+    // (createAgentSession + session.prompt) never calls `bindExtensions`, so
+    // `session_start` is never emitted — a handler-based resolution would
+    // leave the mode unresolved and bash unsandboxed. session_start still
+    // calls ensureBashMode() below so interactive/rpc modes resolve eagerly
+    // and get a status line; the lazy path covers headless.
+    let bashMode: BashSandboxMode | null = null;
+    let bashModeProbe: Promise<BashSandboxMode> | null = null;
 
-    pi.on("user_bash", () => ({
-      operations: createBashOps(bashEnv, { mode: bashMode, landlockArgs }),
-    }));
+    // `ctx` is only present when called from session_start (interactive/rpc);
+    // it carries the UI for the status line. Typed loosely to avoid coupling
+    // to pi's context shape.
+    type ProbeCtx = {
+      ui: {
+        setStatus: (k: string, v: string) => void;
+        notify: (msg: string, level: string) => void;
+        theme: { fg: (k: string, s: string) => string };
+      };
+    };
 
-    pi.on("session_start", async (_event, ctx) => {
+    async function probeBashMode(ctx?: ProbeCtx): Promise<BashSandboxMode> {
       const platform = process.platform;
+      const ok = (mode: BashSandboxMode, label: string) => {
+        ctx?.ui.setStatus("sandbox", ctx.ui.theme.fg("accent", label));
+        return mode;
+      };
+      const fail = (msg: string, level = "error"): BashSandboxMode => {
+        ctx?.ui.notify(msg, level);
+        return "none";
+      };
 
       if (platform === "linux") {
-        // Landlock: probe via the helper's `--check`, then route bash through
-        // it. No SandboxManager.initialize (bubblewrap) on Linux — it can't
-        // engage on the hardened deploy and would only sever loopback.
+        // Landlock: probe the helper's `--check`. No SandboxManager.initialize
+        // (bubblewrap) on Linux — it can't engage on the hardened deploy and
+        // would only sever loopback.
         try {
           await new Promise<void>((resolve, reject) => {
             const child = spawn(LANDLOCK_BIN, ["--check"], { stdio: "ignore" });
@@ -477,29 +491,18 @@ export function createProjectSandboxExtension(
                 : reject(new Error(`zero-landlock --check exited ${code}`)),
             );
           });
-          bashMode = "landlock";
-          ctx.ui.setStatus(
-            "sandbox",
-            ctx.ui.theme.fg("accent", `🔒 Bash sandboxed (Landlock) to ${projectDir}`),
-          );
+          return ok("landlock", `🔒 Bash sandboxed (Landlock) to ${projectDir}`);
         } catch (err) {
-          bashMode = "none";
-          ctx.ui.notify(
+          return fail(
             `Landlock bash sandbox unavailable — bash runs unsandboxed: ${
               err instanceof Error ? err.message : err
             }`,
-            "error",
           );
         }
-        return;
       }
 
       if (platform !== "darwin") {
-        ctx.ui.notify(
-          `Sandbox not supported on ${platform} — bash runs unsandboxed`,
-          "warning",
-        );
-        return;
+        return fail(`Sandbox not supported on ${platform} — bash runs unsandboxed`, "warning");
       }
 
       // macOS local dev: sandbox-exec via sandbox-runtime.
@@ -522,18 +525,61 @@ export function createProjectSandboxExtension(
             allowGitConfig: true,
           },
         });
-        bashMode = "sandbox-runtime";
-        ctx.ui.setStatus(
-          "sandbox",
-          ctx.ui.theme.fg("accent", `🔒 Bash sandboxed to ${projectDir}`),
-        );
+        return ok("sandbox-runtime", `🔒 Bash sandboxed to ${projectDir}`);
       } catch (err) {
-        bashMode = "none";
-        ctx.ui.notify(
-          `Bash sandbox init failed: ${err instanceof Error ? err.message : err}`,
-          "error",
-        );
+        return fail(`Bash sandbox init failed: ${err instanceof Error ? err.message : err}`);
       }
+    }
+
+    function ensureBashMode(ctx?: ProbeCtx): Promise<BashSandboxMode> {
+      if (!bashModeProbe) {
+        bashModeProbe = probeBashMode(ctx).then((mode) => {
+          bashMode = mode;
+          // Durable, headless-visible record of whether bash is actually
+          // contained — the ctx.ui status line is a no-op in the SDK path, so
+          // without this the sandbox state is invisible in prod.
+          const level = mode === "none" ? "warn" : "info";
+          sandboxLog[level]("bash sandbox mode resolved", {
+            mode,
+            platform: process.platform,
+            projectDir,
+          });
+          return mode;
+        });
+      }
+      return bashModeProbe;
+    }
+
+    pi.registerTool({
+      ...localBashTemplate,
+      label: "bash (sandboxed)",
+      async execute(id, params, signal, onUpdate, _ctx) {
+        // Resolve (and memoize) the sandbox mode before the first bash runs.
+        // This is what makes containment work in the headless SDK path where
+        // session_start never fires.
+        const mode = await ensureBashMode();
+        const bash = createBashTool(projectDir, {
+          operations: createBashOps(bashEnv, { mode, landlockArgs }),
+        });
+        return bash.execute(id, params, signal, onUpdate);
+      },
+    });
+
+    // user_bash is synchronous; kick off resolution so the mode is known, and
+    // fall back to the fully-sandboxed-or-nothing value resolved so far. In
+    // practice user_bash only fires in interactive mode, where session_start
+    // has already resolved it.
+    pi.on("user_bash", () => {
+      void ensureBashMode();
+      return {
+        operations: createBashOps(bashEnv, { mode: bashMode ?? "none", landlockArgs }),
+      };
+    });
+
+    // Resolve eagerly when the lifecycle event is available (interactive/rpc)
+    // so the status line shows and the first turn isn't delayed by the probe.
+    pi.on("session_start", async (_event, ctx) => {
+      await ensureBashMode(ctx as unknown as ProbeCtx);
     });
 
     pi.on("session_shutdown", async () => {
