@@ -226,6 +226,38 @@
   display: none;
 }
 
+/* ── Slim, unobtrusive scrollbar for the project sidebar ── */
+[data-slot="sidebar-content"] {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+  transition: scrollbar-color 0.2s ease;
+}
+[data-slot="sidebar-content"]:hover,
+[data-slot="sidebar-content"]:focus-within {
+  scrollbar-color: color-mix(in srgb, var(--sidebar-foreground) 22%, transparent)
+    transparent;
+}
+[data-slot="sidebar-content"]::-webkit-scrollbar {
+  width: 10px;
+}
+[data-slot="sidebar-content"]::-webkit-scrollbar-track {
+  background: transparent;
+}
+[data-slot="sidebar-content"]::-webkit-scrollbar-thumb {
+  background-color: transparent;
+  border: 3px solid transparent;
+  border-radius: 9999px;
+  background-clip: padding-box;
+  transition: background-color 0.2s ease;
+}
+[data-slot="sidebar-content"]:hover::-webkit-scrollbar-thumb,
+[data-slot="sidebar-content"]:focus-within::-webkit-scrollbar-thumb {
+  background-color: color-mix(in srgb, var(--sidebar-foreground) 22%, transparent);
+}
+[data-slot="sidebar-content"]::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(in srgb, var(--sidebar-foreground) 38%, transparent);
+}
+
 .scroll-shadow {
   background:
     linear-gradient(var(--background) 30%, transparent),
