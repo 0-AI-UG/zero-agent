@@ -20,7 +20,7 @@ export const ConversationContent = ({
 }: ComponentProps<typeof StickToBottom.Content>) => (
   <StickToBottom.Content
     className={cn("flex min-w-0 flex-col gap-4 p-4", className)}
-    scrollClassName="min-w-0"
+    scrollClassName="min-w-0 chat-scroll"
     {...props}
   />
 );
