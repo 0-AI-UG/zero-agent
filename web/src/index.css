@@ -226,24 +226,36 @@
   display: none;
 }
 
-/* ── Slim, unobtrusive scrollbar for the project sidebar ── */
+/* ── Slim, unobtrusive scrollbars (sidebar + chat transcript) ── */
 [data-slot="sidebar-content"] {
+  --scrollbar-tint: var(--sidebar-foreground);
+}
+.chat-scroll {
+  --scrollbar-tint: var(--foreground);
+}
+[data-slot="sidebar-content"],
+.chat-scroll {
   scrollbar-width: thin;
   scrollbar-color: transparent transparent;
   transition: scrollbar-color 0.2s ease;
 }
 [data-slot="sidebar-content"]:hover,
-[data-slot="sidebar-content"]:focus-within {
-  scrollbar-color: color-mix(in srgb, var(--sidebar-foreground) 22%, transparent)
+[data-slot="sidebar-content"]:focus-within,
+.chat-scroll:hover,
+.chat-scroll:focus-within {
+  scrollbar-color: color-mix(in srgb, var(--scrollbar-tint) 22%, transparent)
     transparent;
 }
-[data-slot="sidebar-content"]::-webkit-scrollbar {
+[data-slot="sidebar-content"]::-webkit-scrollbar,
+.chat-scroll::-webkit-scrollbar {
   width: 10px;
 }
-[data-slot="sidebar-content"]::-webkit-scrollbar-track {
+[data-slot="sidebar-content"]::-webkit-scrollbar-track,
+.chat-scroll::-webkit-scrollbar-track {
   background: transparent;
 }
-[data-slot="sidebar-content"]::-webkit-scrollbar-thumb {
+[data-slot="sidebar-content"]::-webkit-scrollbar-thumb,
+.chat-scroll::-webkit-scrollbar-thumb {
   background-color: transparent;
   border: 3px solid transparent;
   border-radius: 9999px;
@@ -251,11 +263,14 @@
   transition: background-color 0.2s ease;
 }
 [data-slot="sidebar-content"]:hover::-webkit-scrollbar-thumb,
-[data-slot="sidebar-content"]:focus-within::-webkit-scrollbar-thumb {
-  background-color: color-mix(in srgb, var(--sidebar-foreground) 22%, transparent);
+[data-slot="sidebar-content"]:focus-within::-webkit-scrollbar-thumb,
+.chat-scroll:hover::-webkit-scrollbar-thumb,
+.chat-scroll:focus-within::-webkit-scrollbar-thumb {
+  background-color: color-mix(in srgb, var(--scrollbar-tint) 22%, transparent);
 }
-[data-slot="sidebar-content"]::-webkit-scrollbar-thumb:hover {
-  background-color: color-mix(in srgb, var(--sidebar-foreground) 38%, transparent);
+[data-slot="sidebar-content"]::-webkit-scrollbar-thumb:hover,
+.chat-scroll::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(in srgb, var(--scrollbar-tint) 38%, transparent);
 }
 
 .scroll-shadow {
