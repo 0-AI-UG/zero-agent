@@ -147,7 +147,7 @@ const CLAUDE_CODE_PROMPT = `Clone the zero-agent repo from https://github.com/0-
 
 1. git clone https://github.com/0-AI-UG/zero-agent.git && cd zero-agent
 2. Run bun install to install all dependencies (this is a monorepo with api/ and web/ workspaces)
-3. Copy .env.example to .env - the only required key is OPENROUTER_API_KEY from https://openrouter.ai
+3. Copy .env.example to .env - add an API key for at least one model provider (e.g. OPENROUTER_API_KEY or ANTHROPIC_API_KEY)
 4. Start the dev server with bun run dev (this runs the API on :3001 and the web app on :3000 concurrently with HMR)
 5. Open http://localhost:3000/setup in the browser to create an admin account and configure the LLM
 

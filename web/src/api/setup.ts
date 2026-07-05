@@ -12,8 +12,8 @@ export async function getSetupStatus(): Promise<SetupStatus> {
 export interface SetupCompleteRequest {
   username: string;
   password: string;
-  openrouterApiKey: string;
-  openrouterModel?: string;
+  provider: string;
+  providerApiKey: string;
   braveSearchApiKey?: string;
 }
 

@@ -8,6 +8,7 @@ import {
   generateCsrfToken,
 } from "@/lib/http/cookies.ts";
 import { setSetting } from "@/lib/settings.ts";
+import { getProvider } from "@/lib/providers/index.ts";
 import { handleError } from "@/routes/utils.ts";
 import { usernameSchema, passwordSchema } from "@/lib/auth/validation.ts";
 import { log } from "@/lib/utils/logger.ts";
@@ -33,11 +34,18 @@ export async function handleSetupStatus(_request: Request): Promise<Response> {
 export async function handleSetupComplete(request: Request): Promise<Response> {
   try {
     const body = await request.json() as Record<string, string>;
-    const { openrouterApiKey, openrouterModel, braveSearchApiKey } = body;
+    const { provider, providerApiKey, braveSearchApiKey } = body;
 
-    if (!openrouterApiKey) {
+    if (!provider || !providerApiKey) {
       return Response.json(
-        { error: "OpenRouter API key is required" },
+        { error: "A model provider and its API key are required" },
+        { status: 400, headers: corsHeaders },
+      );
+    }
+    const providerDef = getProvider(provider);
+    if (!providerDef) {
+      return Response.json(
+        { error: `Unknown provider: ${provider}` },
         { status: 400, headers: corsHeaders },
       );
     }
@@ -70,8 +78,7 @@ export async function handleSetupComplete(request: Request): Promise<Response> {
       throw e;
     }
 
-    setSetting("OPENROUTER_API_KEY", openrouterApiKey);
-    if (openrouterModel) setSetting("OPENROUTER_MODEL", openrouterModel);
+    setSetting(providerDef.apiKeySettingKey, providerApiKey);
     if (braveSearchApiKey) setSetting("BRAVE_SEARCH_API_KEY", braveSearchApiKey);
 
     if (!IS_PROD) {

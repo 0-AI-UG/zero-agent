@@ -8,8 +8,12 @@ import {
   ModelRegistry,
 } from "@earendil-works/pi-coding-agent";
 import { getSetting } from "@/lib/settings.ts";
-import { getActiveProvider, resolveChatModelId } from "@/lib/providers/index.ts";
-import { getModelById } from "@/db/queries/models.ts";
+import {
+  getDefaultChatModelId,
+  getProvider,
+  listProviders,
+} from "@/lib/providers/index.ts";
+import { getDefaultModel, getModelById } from "@/db/queries/models.ts";
 import type { ThinkingLevel } from "@/db/types.ts";
 
 export interface ResolvedPiModel {
@@ -24,11 +28,11 @@ export interface ResolvedPiModel {
 }
 
 export function resolveModelForPi(modelId?: string): ResolvedPiModel {
-  const canonicalId = modelId
-    ? resolveChatModelId(modelId)
-    : getActiveProvider().getDefaultChatModelId();
+  const canonicalId = modelId ?? getDefaultChatModelId();
   const row = getModelById(canonicalId);
-  const provider = row?.pi_provider ?? "openrouter";
+  // Ids missing from the models table are raw aggregator slugs; route them
+  // like the default model does, with openrouter as the last-ditch guess.
+  const provider = row?.pi_provider ?? getDefaultModel()?.pi_provider ?? "openrouter";
   const upstreamId = row?.pi_model_id ?? canonicalId;
   return {
     modelId: upstreamId,
@@ -38,27 +42,19 @@ export function resolveModelForPi(modelId?: string): ResolvedPiModel {
   };
 }
 
-// Settings keys for Pi's built-in providers. AuthStorage natively falls
-// back to env vars by these same names, so we only need to seed values
-// that come from the settings store (admin-configured at runtime).
-const BUILTIN_PROVIDER_KEYS: Record<string, string> = {
-  openrouter: "OPENROUTER_API_KEY",
-  deepseek: "DEEPSEEK_API_KEY",
-  anthropic: "ANTHROPIC_API_KEY",
-  openai: "OPENAI_API_KEY",
-  google: "GOOGLE_API_KEY",
-  groq: "GROQ_API_KEY",
-  cerebras: "CEREBRAS_API_KEY",
-  mistral: "MISTRAL_API_KEY",
-  xai: "XAI_API_KEY",
-  zai: "ZAI_API_KEY",
-  fireworks: "FIREWORKS_API_KEY",
-  minimax: "MINIMAX_API_KEY",
-  huggingface: "HUGGINGFACE_API_KEY",
-};
-
+/**
+ * Settings keys for Pi's built-in providers, sourced from the provider
+ * registry — Pi and the registry share one provider id space. AuthStorage
+ * natively falls back to env vars by these same names, so we only need to
+ * seed values that come from the settings store (admin-configured at runtime).
+ */
 export function listBuiltinProviderKeys(): Array<{ provider: string; envVar: string }> {
-  return Object.entries(BUILTIN_PROVIDER_KEYS).map(([provider, envVar]) => ({ provider, envVar }));
+  return listProviders().map((p) => ({ provider: p.id, envVar: p.apiKeySettingKey }));
+}
+
+/** Settings/env key holding the API key for a provider, if known. */
+export function envVarForProvider(provider: string): string | undefined {
+  return getProvider(provider)?.apiKeySettingKey;
 }
 
 /**
@@ -72,7 +68,7 @@ export function bootstrapAuthAndRegistry(): {
 } {
   const authStorage = AuthStorage.inMemory();
 
-  for (const [provider, envVar] of Object.entries(BUILTIN_PROVIDER_KEYS)) {
+  for (const { provider, envVar } of listBuiltinProviderKeys()) {
     const v = getSetting(envVar);
     if (v) authStorage.setRuntimeApiKey(provider, v);
   }

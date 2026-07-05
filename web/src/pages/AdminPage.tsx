@@ -92,7 +92,6 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
-  CommandSeparator,
 } from "@/components/ui/command";
 import {
   useAdminModels,
@@ -100,6 +99,7 @@ import {
   useUpdateModel,
   useDeleteModel,
 } from "@/api/models";
+import { useModelProviders, type ProviderCapability } from "@/api/providers";
 import {
   useUsageSummary,
   useUsageByModel,
@@ -245,7 +245,8 @@ export function AdminPage() {
             <SecuritySection />
           </section>
 
-          <section id="models" className="scroll-mt-10">
+          <section id="models" className="space-y-8 scroll-mt-10">
+            <ProviderKeysSection />
             <ModelManagementSection />
           </section>
 
@@ -330,41 +331,130 @@ function ApiKeyField({
   );
 }
 
-const IMAGE_MODEL_DEFAULT = "google/gemini-2.5-flash-image";
+const AUTO_PROVIDER = "__auto__";
 
-function ImageModelPicker() {
-  const { data: settings } = useAdminSettings();
+const CAPABILITY_ROUTES: Array<{
+  capability: ProviderCapability;
+  title: string;
+  description: string;
+  providerKey: string;
+  modelKey: string;
+}> = [
+  {
+    capability: "embedding",
+    title: "Embeddings",
+    description: "Powers search indexing and the embed tool. Models must produce 1536-dimension vectors.",
+    providerKey: "EMBEDDING_PROVIDER",
+    modelKey: "EMBEDDING_MODEL",
+  },
+  {
+    capability: "image",
+    title: "Image generation",
+    description: "Used by the image generate tool.",
+    providerKey: "IMAGE_PROVIDER",
+    modelKey: "IMAGE_MODEL",
+  },
+  {
+    capability: "vision",
+    title: "Image captioning",
+    description: "Describes incoming photos when the chat model has no vision support.",
+    providerKey: "VISION_PROVIDER",
+    modelKey: "VISION_MODEL",
+  },
+];
+
+/** Curated OpenRouter image-model browser (from image_models.json). */
+function ImageModelBrowse({ onSelect }: { onSelect: (id: string) => void }) {
   const { data: options } = useImageModels();
-  const updateSettings = useUpdateSettings();
   const [open, setOpen] = useState(false);
-  const [customOpen, setCustomOpen] = useState(false);
-  const [customValue, setCustomValue] = useState("");
 
-  const active = settings?.IMAGE_MODEL ?? IMAGE_MODEL_DEFAULT;
-  const activeEntry = options?.find((m) => m.id === active);
-  const isCustom = !!options && !options.find((m) => m.id === active);
-
-  // Group models by provider (slug before /)
+  // Group models by maker (slug before /)
   const grouped = useMemo(() => {
     const map = new Map<string, ImageModelOption[]>();
     for (const m of options ?? []) {
-      const provider = m.id.split("/")[0] ?? "other";
-      const list = map.get(provider) ?? [];
+      const maker = m.id.split("/")[0] ?? "other";
+      const list = map.get(maker) ?? [];
       list.push(m);
-      map.set(provider, list);
+      map.set(maker, list);
     }
     return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b));
   }, [options]);
 
-  function save(id: string) {
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button size="sm" variant="outline">Browse</Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="p-0 w-80">
+        <Command>
+          <CommandInput placeholder="Search image models..." />
+          <CommandList className="max-h-72">
+            <CommandEmpty>No model found.</CommandEmpty>
+            {grouped.map(([maker, items]) => (
+              <CommandGroup key={maker} heading={maker}>
+                {items.map((m) => (
+                  <CommandItem
+                    key={m.id}
+                    value={`${m.name} ${m.id}`}
+                    onSelect={() => { onSelect(m.id); setOpen(false); }}
+                    className="flex-col items-start gap-0"
+                  >
+                    <div className="flex items-center gap-2 w-full">
+                      <span className="text-xs font-medium truncate flex-1">{m.name}</span>
+                      {m.outputModalities.length > 1 && (
+                        <Badge variant="outline" className="text-[9px] h-4 px-1">
+                          +text
+                        </Badge>
+                      )}
+                    </div>
+                    <span className="text-[10px] text-muted-foreground font-mono">{m.id}</span>
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            ))}
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function CapabilityRouteCard({
+  capability,
+  title,
+  description,
+  providerKey,
+  modelKey,
+}: {
+  capability: ProviderCapability;
+  title: string;
+  description: string;
+  providerKey: string;
+  modelKey: string;
+}) {
+  const { data: settings } = useAdminSettings();
+  const { data: providers } = useModelProviders();
+  const updateSettings = useUpdateSettings();
+  const [providerDraft, setProviderDraft] = useState<string | null>(null);
+  const [modelDraft, setModelDraft] = useState<string | null>(null);
+
+  const capable = (providers ?? []).filter((p) => p.capabilities[capability]);
+  const provider = providerDraft ?? settings?.[providerKey] ?? AUTO_PROVIDER;
+  const model = modelDraft ?? settings?.[modelKey] ?? "";
+  const selected = capable.find((p) => p.id === provider);
+  const dirty = providerDraft !== null || modelDraft !== null;
+
+  function save() {
     updateSettings.mutate(
-      { IMAGE_MODEL: id },
+      {
+        [providerKey]: provider === AUTO_PROVIDER ? "" : provider,
+        [modelKey]: model.trim(),
+      },
       {
         onSuccess: () => {
-          toast.success("Image model updated");
-          setOpen(false);
-          setCustomOpen(false);
-          setCustomValue("");
+          setProviderDraft(null);
+          setModelDraft(null);
+          toast.success(`${title} route updated`);
         },
         onError: (err) => toast.error(err.message),
       },
@@ -372,107 +462,58 @@ function ImageModelPicker() {
   }
 
   return (
-    <div className="rounded-lg border p-3 flex items-center justify-between gap-3">
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <p className="text-sm font-medium truncate">
-            {activeEntry?.name ?? active}
-          </p>
-          {isCustom && (
-            <Badge variant="outline" className="text-[10px] h-4 px-1">Custom</Badge>
-          )}
-        </div>
-        <p className="text-[11px] text-muted-foreground font-mono truncate">{active}</p>
-        <p className="text-[11px] text-muted-foreground mt-0.5">
-          Used by the <code>image generate</code> tool.
-          {activeEntry?.description ? ` ${activeEntry.description}` : ""}
+    <div className="rounded-lg border p-3 space-y-2">
+      <div>
+        <p className="text-sm font-medium">{title}</p>
+        <p className="text-[11px] text-muted-foreground">{description}</p>
+      </div>
+      <div className="flex gap-2">
+        <Select value={provider} onValueChange={setProviderDraft}>
+          <SelectTrigger className="h-8 w-40 shrink-0 text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={AUTO_PROVIDER}>Auto</SelectItem>
+            {capable.map((p) => (
+              <SelectItem key={p.id} value={p.id}>{p.displayName}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Input
+          value={model}
+          onChange={(e) => setModelDraft(e.target.value)}
+          placeholder={selected?.defaults[capability] ?? "model id (blank = provider default)"}
+          className="h-8 flex-1 text-xs font-mono"
+        />
+        {capability === "image" && (provider === "openrouter" || provider === AUTO_PROVIDER) && (
+          <ImageModelBrowse onSelect={(id) => setModelDraft(id)} />
+        )}
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={!dirty || updateSettings.isPending}
+          onClick={save}
+        >
+          Save
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function CapabilityRoutingSection() {
+  return (
+    <div className="space-y-3">
+      <div>
+        <h4 className="text-sm font-semibold">Capability routing</h4>
+        <p className="text-xs text-muted-foreground">
+          Which provider serves each built-in capability. Auto picks the first
+          configured provider that supports it.
         </p>
       </div>
-      <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>
-          <Button size="sm" variant="outline">Change</Button>
-        </PopoverTrigger>
-        <PopoverContent align="end" className="p-0 w-80">
-          <Command>
-            <CommandInput placeholder="Search image models..." />
-            <CommandList className="max-h-72">
-              <CommandEmpty>No model found.</CommandEmpty>
-              {grouped.map(([provider, items]) => (
-                <CommandGroup key={provider} heading={provider}>
-                  {items.map((m) => (
-                    <CommandItem
-                      key={m.id}
-                      value={`${m.name} ${m.id}`}
-                      onSelect={() => save(m.id)}
-                      className="flex-col items-start gap-0"
-                    >
-                      <div className="flex items-center gap-2 w-full">
-                        <span className="text-xs font-medium truncate flex-1">{m.name}</span>
-                        {m.outputModalities.length > 1 && (
-                          <Badge variant="outline" className="text-[9px] h-4 px-1">
-                            +text
-                          </Badge>
-                        )}
-                        {m.id === active && <CheckIcon className="size-3.5 shrink-0" />}
-                      </div>
-                      <span className="text-[10px] text-muted-foreground font-mono">{m.id}</span>
-                    </CommandItem>
-                  ))}
-                </CommandGroup>
-              ))}
-              <CommandSeparator />
-              <CommandGroup>
-                <CommandItem
-                  onSelect={() => {
-                    setCustomValue(isCustom ? active : "");
-                    setCustomOpen(true);
-                    setOpen(false);
-                  }}
-                  className="text-xs"
-                >
-                  <PencilIcon className="size-3.5 mr-2" />
-                  Use custom model ID…
-                </CommandItem>
-              </CommandGroup>
-            </CommandList>
-          </Command>
-        </PopoverContent>
-      </Popover>
-
-      <Dialog open={customOpen} onOpenChange={setCustomOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="font-display">Custom image model</DialogTitle>
-            <DialogDescription>
-              Enter any OpenRouter model slug. Image-only models work via{" "}
-              <code>modalities: ["image"]</code>; we auto-select the right modalities.
-            </DialogDescription>
-          </DialogHeader>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (customValue.trim()) save(customValue.trim());
-            }}
-            className="space-y-3"
-          >
-            <Input
-              placeholder="provider/model-id"
-              value={customValue}
-              onChange={(e) => setCustomValue(e.target.value)}
-              className="font-mono text-xs"
-              autoFocus
-            />
-            <DialogFooter>
-              <Button
-                type="submit"
-                disabled={!customValue.trim() || updateSettings.isPending}
-              >
-                Save
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+      {CAPABILITY_ROUTES.map((route) => (
+        <CapabilityRouteCard key={route.capability} {...route} />
+      ))}
     </div>
   );
 }
@@ -487,12 +528,6 @@ function InstanceSettingsSection() {
         <h3 className="text-sm font-semibold">Instance Settings</h3>
       </div>
       <div className="rounded-lg border p-4 space-y-4">
-        <ApiKeyField
-          label="OpenRouter API Key"
-          placeholder="sk-or-..."
-          currentValue={settings?.OPENROUTER_API_KEY}
-          settingKey="OPENROUTER_API_KEY"
-        />
         <ApiKeyField
           label="Brave Search API Key"
           placeholder="BSA..."
@@ -510,41 +545,28 @@ function InstanceSettingsSection() {
   );
 }
 
-const DIRECT_ROUTE_PROVIDERS: Array<{ provider: string; envVar: string }> = [
-  { provider: "anthropic", envVar: "ANTHROPIC_API_KEY" },
-  { provider: "openai", envVar: "OPENAI_API_KEY" },
-  { provider: "deepseek", envVar: "DEEPSEEK_API_KEY" },
-  { provider: "google", envVar: "GOOGLE_API_KEY" },
-  { provider: "groq", envVar: "GROQ_API_KEY" },
-  { provider: "cerebras", envVar: "CEREBRAS_API_KEY" },
-  { provider: "mistral", envVar: "MISTRAL_API_KEY" },
-  { provider: "xai", envVar: "XAI_API_KEY" },
-  { provider: "zai", envVar: "ZAI_API_KEY" },
-  { provider: "fireworks", envVar: "FIREWORKS_API_KEY" },
-  { provider: "minimax", envVar: "MINIMAX_API_KEY" },
-  { provider: "huggingface", envVar: "HUGGINGFACE_API_KEY" },
-];
-
-function DirectRouteKeysCard() {
+function ProviderKeysSection() {
   const { data: settings } = useAdminSettings();
+  const { data: providers } = useModelProviders();
 
   return (
-    <details className="rounded-lg border">
-      <summary className="cursor-pointer px-4 py-3 text-sm font-medium select-none">
-        Direct-route provider keys
-      </summary>
-      <div className="px-4 pb-4 pt-1 space-y-4">
-        {DIRECT_ROUTE_PROVIDERS.map((b) => (
+    <section className="space-y-4">
+      <div className="flex items-center gap-2">
+        <KeyIcon className="size-4 text-muted-foreground" />
+        <h3 className="text-sm font-semibold">Model Providers</h3>
+      </div>
+      <div className="rounded-lg border p-4 space-y-4">
+        {(providers ?? []).map((p) => (
           <ApiKeyField
-            key={b.envVar}
-            label={b.provider}
-            placeholder={b.envVar}
-            currentValue={settings?.[b.envVar]}
-            settingKey={b.envVar}
+            key={p.id}
+            label={p.displayName}
+            placeholder={p.envVar}
+            currentValue={settings?.[p.envVar]}
+            settingKey={p.envVar}
           />
         ))}
       </div>
-    </details>
+    </section>
   );
 }
 
@@ -629,18 +651,13 @@ type AdminModel = ModelConfig & { enabled: boolean; sortOrder: number };
 
 /** Inline chip showing where a model's chat turns actually route. */
 function RouteChip({ piProvider, piModelId }: { piProvider?: string; piModelId?: string | null }) {
-  const route = piProvider ?? "openrouter";
-  const isDirect = route !== "openrouter";
+  if (!piProvider) return null;
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded px-1 py-px font-mono text-[10px] ${
-        isDirect
-          ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
-          : "bg-muted text-muted-foreground"
-      }`}
-      title={isDirect && piModelId ? `Direct → ${route} (${piModelId})` : `Routes via ${route}`}
+      className="inline-flex items-center gap-1 rounded px-1 py-px font-mono text-[10px] bg-muted text-muted-foreground"
+      title={`Routes via ${piProvider}${piModelId ? ` (${piModelId})` : ""}`}
     >
-      {isDirect ? "→ " : ""}{route}{isDirect && piModelId ? `:${piModelId}` : ""}
+      {piProvider}{piModelId ? `:${piModelId}` : ""}
     </span>
   );
 }
@@ -670,8 +687,6 @@ function ModelManagementSection() {
         </div>
         <AddModelDialog open={addOpen} onOpenChange={setAddOpen} providers={providers} />
       </div>
-
-      <ImageModelPicker />
 
       <div className="rounded-lg border overflow-hidden">
         {isLoading ? (
@@ -791,7 +806,7 @@ function ModelManagementSection() {
         )}
       </div>
 
-      <DirectRouteKeysCard />
+      <CapabilityRoutingSection />
 
       {editModel && (
         <EditModelDialog
@@ -807,15 +822,20 @@ function ModelManagementSection() {
 
 function AddModelDialog({ open, onOpenChange, providers }: { open: boolean; onOpenChange: (v: boolean) => void; providers: string[] }) {
   const createModel = useCreateModel();
+  const { data: modelProviders } = useModelProviders();
   const [id, setId] = useState("");
   const [name, setName] = useState("");
   const [provider, setProvider] = useState(providers[0] ?? "");
+  const [piProvider, setPiProvider] = useState("");
+  const [piModelId, setPiModelId] = useState("");
   const [multimodal, setMultimodal] = useState(false);
 
-  const canSubmit = id.trim() && name.trim() && provider.trim();
+  const routeOptions = (modelProviders ?? []).filter((p) => p.capabilities.chat);
+  const canSubmit = id.trim() && name.trim() && provider.trim() && piProvider.trim();
 
   function reset() {
     setId(""); setName(""); setProvider(providers[0] ?? "");
+    setPiProvider(""); setPiModelId("");
     setMultimodal(false);
   }
 
@@ -825,6 +845,8 @@ function AddModelDialog({ open, onOpenChange, providers }: { open: boolean; onOp
         id: id.trim(),
         name: name.trim(),
         provider: provider.trim(),
+        piProvider: piProvider.trim(),
+        piModelId: piModelId.trim() === "" ? null : piModelId.trim(),
         multimodal,
       },
       {
@@ -845,7 +867,7 @@ function AddModelDialog({ open, onOpenChange, providers }: { open: boolean; onOp
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="font-display">Add model</DialogTitle>
-          <DialogDescription>Add a new model available through OpenRouter.</DialogDescription>
+          <DialogDescription>Register a model and choose which provider it routes through.</DialogDescription>
         </DialogHeader>
         <form onSubmit={(e) => { e.preventDefault(); if (canSubmit) handleCreate(); }} className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
@@ -858,10 +880,10 @@ function AddModelDialog({ open, onOpenChange, providers }: { open: boolean; onOp
               <Input placeholder="Model Name" value={name} onChange={(e) => setName(e.target.value)} className="h-8 text-xs" />
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium">Provider</label>
+              <label className="text-xs font-medium">Provider Tag</label>
               <Select value={provider} onValueChange={setProvider}>
                 <SelectTrigger className="h-8 w-full text-xs">
-                  <SelectValue placeholder={providers.length === 0 ? "No providers" : "Select provider"} />
+                  <SelectValue placeholder={providers.length === 0 ? "No tags" : "Select tag"} />
                 </SelectTrigger>
                 <SelectContent>
                   {providers.map((p) => (
@@ -869,6 +891,27 @@ function AddModelDialog({ open, onOpenChange, providers }: { open: boolean; onOp
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+            <div className="col-span-2 pt-3 border-t space-y-2">
+              <p className="text-xs font-medium">Route through</p>
+              <div className="grid grid-cols-[1fr_1fr] gap-2">
+                <Select value={piProvider} onValueChange={setPiProvider}>
+                  <SelectTrigger className="h-8 w-full text-xs">
+                    <SelectValue placeholder="Select provider" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {routeOptions.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>{p.displayName}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Input
+                  value={piModelId}
+                  onChange={(e) => setPiModelId(e.target.value)}
+                  placeholder="upstream model id (optional)"
+                  className="h-8 text-xs font-mono"
+                />
+              </div>
             </div>
             <div className="col-span-2 flex items-center justify-between gap-2">
               <div className="space-y-0.5">
@@ -905,24 +948,13 @@ function EditModelDialog({ model, providers, open, onOpenChange }: { model: Admi
   const [thinkingLevel, setThinkingLevel] = useState<string>(
     model.thinkingLevel ?? THINKING_DEFAULT,
   );
-  const [piProvider, setPiProvider] = useState<string>(model.piProvider ?? "openrouter");
+  const [piProvider, setPiProvider] = useState<string>(model.piProvider ?? "");
   const [piModelId, setPiModelId] = useState<string>(model.piModelId ?? "");
+  const { data: modelProviders } = useModelProviders();
 
-  const piOptions = [
-    { value: "openrouter", label: "openrouter" },
-    { value: "anthropic", label: "anthropic" },
-    { value: "openai", label: "openai" },
-    { value: "deepseek", label: "deepseek" },
-    { value: "google", label: "google" },
-    { value: "groq", label: "groq" },
-    { value: "cerebras", label: "cerebras" },
-    { value: "mistral", label: "mistral" },
-    { value: "xai", label: "xai" },
-    { value: "zai", label: "zai" },
-    { value: "fireworks", label: "fireworks" },
-    { value: "minimax", label: "minimax" },
-    { value: "huggingface", label: "huggingface" },
-  ];
+  const piOptions = (modelProviders ?? [])
+    .filter((p) => p.capabilities.chat)
+    .map((p) => ({ value: p.id, label: p.displayName }));
   // Keep existing rows editable even if their pi_provider isn't in the list.
   if (piProvider && !piOptions.some((o) => o.value === piProvider)) {
     piOptions.unshift({ value: piProvider, label: piProvider });
@@ -936,7 +968,7 @@ function EditModelDialog({ model, providers, open, onOpenChange }: { model: Admi
         provider: provider.trim(),
         multimodal,
         thinkingLevel: thinkingLevel === THINKING_DEFAULT ? null : thinkingLevel,
-        piProvider: piProvider.trim() || "openrouter",
+        piProvider: piProvider.trim(),
         piModelId: piModelId.trim() === "" ? null : piModelId.trim(),
       },
       {
@@ -1013,14 +1045,14 @@ function EditModelDialog({ model, providers, open, onOpenChange }: { model: Admi
                 <Input
                   value={piModelId}
                   onChange={(e) => setPiModelId(e.target.value)}
-                  placeholder={piProvider === "openrouter" ? model.id : "upstream model id"}
+                  placeholder="upstream model id (blank = model id)"
                   className="h-8 text-xs font-mono"
                 />
               </div>
             </div>
           </div>
           <DialogFooter>
-            <Button type="submit" disabled={updateModelMutation.isPending} className="w-full sm:w-auto">
+            <Button type="submit" disabled={!piProvider.trim() || updateModelMutation.isPending} className="w-full sm:w-auto">
               <CheckIcon className="size-3.5 mr-1.5" />
               {updateModelMutation.isPending ? "Saving..." : "Save changes"}
             </Button>

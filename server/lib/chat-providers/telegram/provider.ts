@@ -13,7 +13,7 @@
  *    replies can resolve the right pending response.
  */
 import sharp from "sharp";
-import { generateText } from "@/lib/openrouter/text.ts";
+import { generateText } from "@/lib/inference/text.ts";
 import { runTurn } from "@/lib/pi/run-turn.ts";
 import { resolveModelForPi } from "@/lib/pi/model.ts";
 
@@ -30,7 +30,7 @@ import {
   type TelegramMessage,
   type TelegramCallbackQuery,
 } from "@/lib/telegram-global/telegram.ts";
-import { getActiveProvider, getVisionModelId } from "@/lib/providers/index.ts";
+import { getCapabilityRoute, getDefaultChatModelId } from "@/lib/providers/index.ts";
 import {
   getBotToken,
   getBotInfoSync,
@@ -413,10 +413,10 @@ async function runAgentTurn(
       }
     }
 
-    // Telegram has no UI to pick a model, so resolve the active provider's
-    // default once and pass it explicitly to the agent - that way the image
+    // Telegram has no UI to pick a model, so resolve the default chat model
+    // once and pass it explicitly to the agent - that way the image
     // capability check below and the actual run share one source of truth.
-    const chatModelId = getActiveProvider().getDefaultChatModelId();
+    const chatModelId = getDefaultChatModelId();
 
     const resolved = resolveModelForPi(chatModelId);
     const modelSupportsImages = resolved.supportsImages;
@@ -432,13 +432,12 @@ async function runAgentTurn(
         tgLog.info("forwarding telegram image natively", { chatModelId });
       } else {
         try {
-          const visionModel = getVisionModelId();
-          const dataUrl = `data:${imageData.mediaType};base64,${imageData.base64}`;
+          const vision = getCapabilityRoute("vision");
           const { text: caption } = await generateText({
-            model: visionModel,
-            messages:
-              "Describe this image in detail. Include all visible text, layout, colors, and key elements.\n\n" +
-              dataUrl,
+            provider: vision.provider.id,
+            model: vision.modelId,
+            prompt: "Describe this image in detail. Include all visible text, layout, colors, and key elements.",
+            images: [{ data: imageData.base64, mediaType: imageData.mediaType }],
           });
           imageCaption = caption;
           tgLog.info("captioned telegram image", { chatModelId, captionLength: caption.length });

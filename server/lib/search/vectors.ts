@@ -1,9 +1,8 @@
 import { unlinkSync } from "node:fs";
 import { VectorClient } from "@0-ai/s3lite/vectors";
 import type { QueryResult, SparseVector } from "@0-ai/s3lite/vectors";
-import { embed } from "@/lib/openrouter/embed.ts";
-import { getEmbeddingModelId } from "@/lib/providers/index.ts";
-import { getSetting } from "@/lib/settings.ts";
+import { embed } from "@/lib/inference/embed.ts";
+import { isCapabilityConfigured } from "@/lib/providers/index.ts";
 import { db } from "@/db/index.ts";
 import { log } from "@/lib/utils/logger.ts";
 const vecLog = log.child({ module: "vectors" });
@@ -96,14 +95,11 @@ export function closeVectorClient(): void {
 }
 
 export function isEmbeddingConfigured(): boolean {
-  // Embeddings are served by the active inference provider. We treat the
-  // OpenRouter API key as the canonical signal for now since it is the only
-  // provider that ships embedding support; future providers can extend this.
-  return !!getSetting("OPENROUTER_API_KEY");
+  return isCapabilityConfigured("embedding");
 }
 
 async function embedValues(values: string[]): Promise<number[][]> {
-  return embed(values, { model: getEmbeddingModelId() });
+  return embed(values);
 }
 
 export async function embedValue(value: string): Promise<number[]> {

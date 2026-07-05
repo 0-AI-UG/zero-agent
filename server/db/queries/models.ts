@@ -49,7 +49,7 @@ export interface ModelInput {
   enabled?: boolean;
   sortOrder?: number;
   thinkingLevel?: ThinkingLevel | null;
-  piProvider?: string;
+  piProvider: string;
   piModelId?: string | null;
 }
 
@@ -64,7 +64,7 @@ export function insertModel(data: ModelInput): ModelRow {
     data.enabled !== false ? 1 : 0,
     data.sortOrder ?? 0,
     data.thinkingLevel ?? null,
-    data.piProvider ?? "openrouter",
+    data.piProvider,
     data.piModelId ?? null,
   );
   return getById.get(data.id) as ModelRow;

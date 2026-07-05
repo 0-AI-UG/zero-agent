@@ -46,7 +46,7 @@ Self-hosted. Multi-user. Runs unattended.
 git clone https://github.com/0-AI-UG/zero-agent.git
 cd zero-agent && bun install
 
-cp .env.example .env   # add OPENROUTER_API_KEY, generate JWT_SECRET + CREDENTIALS_KEY
+cp .env.example .env   # add a model provider API key, generate JWT_SECRET + CREDENTIALS_KEY
 bun run dev
 ```
 
@@ -105,12 +105,12 @@ The same image backs `docker-compose.yml`, so `docker compose pull` fetches it i
 
 | Variable | Description |
 |---|---|
-| `OPENROUTER_API_KEY` | Required. [OpenRouter](https://openrouter.ai) key. |
+| `OPENROUTER_API_KEY` · `ANTHROPIC_API_KEY` · `OPENAI_API_KEY` · … | At least one model provider key is required; all providers are configured the same way (see `.env.example` for the full list). |
 | `JWT_SECRET` · `CREDENTIALS_KEY` | Required. ≥32 chars each (`openssl rand -hex 32`). |
 | `BRAVE_SEARCH_API_KEY` | Optional. Web search. |
 | `APP_URL` · `RP_ID` · `CORS_ORIGIN` · `TRUST_PROXY` | Set in production. |
 
-Models, image providers, and per-user limits are configured at runtime via the admin panel.
+Models, provider keys, capability routing (embeddings / image generation / captioning), and per-user limits are configured at runtime via the admin panel.
 
 ## Tech Stack
 
