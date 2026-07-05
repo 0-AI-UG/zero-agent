@@ -167,6 +167,7 @@ import {
   handleAcceptUserInvitation,
 } from "@/routes/user-invitations.ts";
 import { handleSetupStatus, handleSetupComplete } from "@/routes/setup.ts";
+import { handleListProviders } from "@/routes/providers.ts";
 import { handleGetSettings, handleUpdateSettings, handleListImageModels } from "@/routes/settings.ts";
 import { handleEmailFeatureStatus, handleEmailFeatureToggle } from "@/routes/admin-email.ts";
 import {
@@ -427,6 +428,9 @@ app.post("/api/pending-responses/:id/respond", h(handleRespondPendingResponse));
 // Setup (no auth required)
 app.get("/api/setup/status", h(handleSetupStatus));
 app.post("/api/setup/complete", h(handleSetupComplete));
+
+// Model providers (no auth required — static, no secrets)
+app.get("/api/providers", h(handleListProviders));
 
 // Admin
 app.get("/api/admin/users", h(handleListUsers));

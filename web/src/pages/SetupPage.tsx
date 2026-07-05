@@ -9,6 +9,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { useModelProviders } from "@/api/providers";
+import {
   Card,
   CardContent,
   CardDescription,
@@ -37,8 +45,9 @@ export function SetupPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
 
   // Step 2
-  const [openrouterApiKey, setOpenrouterApiKey] = useState("");
-  const [openrouterModel, setOpenrouterModel] = useState("");
+  const { data: providers } = useModelProviders();
+  const [provider, setProvider] = useState("");
+  const [providerApiKey, setProviderApiKey] = useState("");
   const [braveSearchApiKey, setBraveSearchApiKey] = useState("");
 
   // Step 3 (passkey)
@@ -76,8 +85,8 @@ export function SetupPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (!openrouterApiKey) {
-      setError("OpenRouter API key is required.");
+    if (!provider || !providerApiKey) {
+      setError("Pick a model provider and enter its API key.");
       return;
     }
     setLoading(true);
@@ -85,8 +94,8 @@ export function SetupPage() {
       const result = await completeSetup({
         username,
         password,
-        openrouterApiKey,
-        openrouterModel: openrouterModel || undefined,
+        provider,
+        providerApiKey,
         braveSearchApiKey: braveSearchApiKey || undefined,
       });
       if ("token" in result && !("requires2FASetup" in result)) {
@@ -203,24 +212,29 @@ export function SetupPage() {
               <form onSubmit={handleSubmit} className="space-y-4">
                 {error && <div className="text-sm text-destructive">{error}</div>}
                 <div className="space-y-2">
-                  <Label htmlFor="setup-api-key">OpenRouter API key</Label>
+                  <Label htmlFor="setup-provider">Model provider</Label>
+                  <Select value={provider} onValueChange={setProvider}>
+                    <SelectTrigger id="setup-provider" className="w-full">
+                      <SelectValue placeholder="Select a provider" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(providers ?? []).map((p) => (
+                        <SelectItem key={p.id} value={p.id}>{p.displayName}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    You can add keys for more providers later in Admin settings.
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="setup-api-key">API key</Label>
                   <Input
                     id="setup-api-key"
                     type="password"
-                    value={openrouterApiKey}
-                    onChange={(e) => setOpenrouterApiKey(e.target.value)}
+                    value={providerApiKey}
+                    onChange={(e) => setProviderApiKey(e.target.value)}
                     required
-                    placeholder="sk-or-..."
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="setup-model">Model (optional)</Label>
-                  <Input
-                    id="setup-model"
-                    type="text"
-                    value={openrouterModel}
-                    onChange={(e) => setOpenrouterModel(e.target.value)}
-                    placeholder="anthropic/claude-opus-4-7"
                   />
                 </div>
                 <div className="space-y-2">

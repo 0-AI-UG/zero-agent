@@ -20,7 +20,7 @@ import { generateId, db } from "@/db/index.ts";
 import type { ChatRow, ProjectRow } from "@/db/types.ts";
 import { runTurn } from "@/lib/pi/run-turn.ts";
 import { resolveModelForPi } from "@/lib/pi/model.ts";
-import { getActiveProvider } from "@/lib/providers/index.ts";
+import { getDefaultChatModelId } from "@/lib/providers/index.ts";
 import { beginChatStream, endChatStream, publishPiEvent } from "@/lib/http/ws.ts";
 import { events as eventBus } from "@/lib/tasks/events.ts";
 
@@ -229,7 +229,7 @@ async function runEmailAgentTurn(
   const isFirstTurn = !existsSync(join(sessionsDirFor(project.id), `${chatId}.jsonl`));
   const priorOutbound = isFirstTurn ? outboundForChat(project.id, chatId) : [];
   const userText = composeUserMessage(parsed, attachments, priorOutbound, inboundEmailId);
-  const chatModelId = getActiveProvider().getDefaultChatModelId();
+  const chatModelId = getDefaultChatModelId();
   const resolved = resolveModelForPi(chatModelId);
 
   beginChatStream(chatId, "");

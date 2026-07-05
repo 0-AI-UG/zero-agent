@@ -1,133 +1,155 @@
 import { getSetting } from "@/lib/settings.ts";
 import { log } from "@/lib/utils/logger.ts";
-import { getDefaultModel } from "@/db/queries/models.ts";
+import { getDefaultModel, getEnabledModels } from "@/db/queries/models.ts";
 import { getProjectById } from "@/db/queries/projects.ts";
-import type {
-  InferenceProvider,
-  OpenRouterRouting,
-} from "@/lib/providers/types.ts";
+import type { Capability, InferenceProvider } from "@/lib/providers/types.ts";
 import { openrouterProvider } from "@/lib/providers/openrouter.ts";
+import { anthropicProvider } from "@/lib/providers/anthropic.ts";
+import { openaiProvider } from "@/lib/providers/openai.ts";
+import { googleProvider } from "@/lib/providers/google.ts";
+import { compatibleProviders } from "@/lib/providers/openai-compatible.ts";
 
 const provLog = log.child({ module: "providers" });
 
 // ── Registry ──
+// Every supported provider registers here on equal footing; ids share Pi's
+// provider id space, so `pi_provider` on model rows resolves against this
+// same registry. List order only matters as the auto-pick order when no
+// explicit *_PROVIDER setting exists — openrouter stays first so pre-existing
+// deployments (which only had an OpenRouter key) keep their behavior.
+const ALL_PROVIDERS: InferenceProvider[] = [
+  openrouterProvider,
+  anthropicProvider,
+  openaiProvider,
+  googleProvider,
+  ...compatibleProviders,
+];
 
-const PROVIDERS: Record<string, InferenceProvider> = {
-  [openrouterProvider.id]: openrouterProvider,
-};
-
-export function registerProvider(provider: InferenceProvider): void {
-  PROVIDERS[provider.id] = provider;
-}
+const PROVIDERS: Record<string, InferenceProvider> = Object.fromEntries(
+  ALL_PROVIDERS.map((p) => [p.id, p]),
+);
 
 export function getProvider(id: string): InferenceProvider | undefined {
   return PROVIDERS[id];
 }
 
-export function listProviders(): InferenceProvider[] {
-  return Object.values(PROVIDERS);
+export function getProviderOrThrow(id: string): InferenceProvider {
+  const provider = PROVIDERS[id];
+  if (!provider) throw new Error(`Unknown inference provider: ${id}`);
+  return provider;
 }
 
-// ── Active provider (global setting) ──
+export function listProviders(): InferenceProvider[] {
+  return ALL_PROVIDERS;
+}
 
-const DEFAULT_PROVIDER_ID = "openrouter";
-const FALLBACK_PROVIDER_ID = "openrouter";
+export function isProviderConfigured(provider: InferenceProvider): boolean {
+  return !!getSetting(provider.apiKeySettingKey);
+}
 
-export function getActiveProvider(): InferenceProvider {
-  const id = getSetting("INFERENCE_PROVIDER") ?? DEFAULT_PROVIDER_ID;
-  return PROVIDERS[id] ?? PROVIDERS[DEFAULT_PROVIDER_ID]!;
+// ── Per-capability routing (embedding / image / vision) ──
+// Chat is not routed here: agent turns and aux text generation resolve
+// (provider, model) per model row via `resolveModelForPi`.
+
+export type AuxCapability = Exclude<Capability, "chat">;
+
+const ROUTE_SETTINGS: Record<AuxCapability, { provider: string; model: string }> = {
+  embedding: { provider: "EMBEDDING_PROVIDER", model: "EMBEDDING_MODEL" },
+  image: { provider: "IMAGE_PROVIDER", model: "IMAGE_MODEL" },
+  vision: { provider: "VISION_PROVIDER", model: "VISION_MODEL" },
+};
+
+export interface CapabilityRoute {
+  provider: InferenceProvider;
+  modelId: string;
+}
+
+const warnedRoutes = new Set<string>();
+function warnRouteOnce(key: string, message: string, ctx: Record<string, string>) {
+  if (warnedRoutes.has(key)) return;
+  warnedRoutes.add(key);
+  provLog.warn(message, ctx);
 }
 
 /**
- * Resolve the provider for a specific model id. Today we only register
- * openrouter, so this collapses to the active provider — the per-model
- * `inference_provider` column was dropped in the Pi cutover.
+ * Provider serving a capability: the `*_PROVIDER` setting when valid,
+ * otherwise the first capable provider with an API key configured,
+ * otherwise the first capable provider.
  */
-export function getProviderForModel(_modelId: string): InferenceProvider {
-  return getActiveProvider();
+export function resolveCapabilityProvider(capability: AuxCapability): InferenceProvider | undefined {
+  const settingKey = ROUTE_SETTINGS[capability].provider;
+  const requested = getSetting(settingKey);
+  if (requested) {
+    const provider = PROVIDERS[requested];
+    if (provider?.capabilities[capability]) return provider;
+    warnRouteOnce(`${capability}:${requested}`, "configured provider cannot serve capability; auto-picking", {
+      capability,
+      setting: settingKey,
+      requested,
+    });
+  }
+  const capable = ALL_PROVIDERS.filter((p) => p.capabilities[capability]);
+  return capable.find(isProviderConfigured) ?? capable[0];
 }
 
-// ── Capability fallback ──
-
-const warnedFallbacks = new Set<string>();
-function warnFallbackOnce(capability: string, activeId: string) {
-  const key = `${capability}:${activeId}`;
-  if (warnedFallbacks.has(key)) return;
-  warnedFallbacks.add(key);
-  provLog.warn("provider missing capability, falling back", {
-    capability,
-    activeProvider: activeId,
-    fallback: FALLBACK_PROVIDER_ID,
-  });
+export function getCapabilityRoute(capability: AuxCapability): CapabilityRoute {
+  const provider = resolveCapabilityProvider(capability);
+  if (!provider) throw new Error(`No provider supports ${capability}`);
+  const modelId = getSetting(ROUTE_SETTINGS[capability].model) ?? provider.defaultModel(capability);
+  if (!modelId) {
+    throw new Error(
+      `No ${capability} model configured for ${provider.displayName} — set ${ROUTE_SETTINGS[capability].model}`,
+    );
+  }
+  return { provider, modelId };
 }
 
-function withCapability<K extends keyof InferenceProvider["capabilities"]>(capability: K): InferenceProvider {
-  const active = getActiveProvider();
-  if (active.capabilities[capability]) return active;
-  warnFallbackOnce(capability, active.id);
-  return PROVIDERS[FALLBACK_PROVIDER_ID]!;
+/** True when the provider serving `capability` has an API key configured. */
+export function isCapabilityConfigured(capability: AuxCapability): boolean {
+  const provider = resolveCapabilityProvider(capability);
+  return !!provider && isProviderConfigured(provider);
 }
 
-// ── ID resolver surface (replaces the old AI-SDK-typed re-exports) ──
+// ── Chat model resolution (models table) ──
 
-export function getChatModelId(): string {
-  return getActiveProvider().getChatModelId();
-}
-
-export function resolveChatModelId(modelId: string): string {
-  return getProviderForModel(modelId).getChatModelId(modelId);
-}
-
-export function getImageModelId(modelId?: string): string {
-  return withCapability("image").getImageModelId(modelId);
-}
-
-export function getVisionModelId(modelId?: string): string {
-  return withCapability("vision").getVisionModelId(modelId);
-}
-
-export function getEmbeddingModelId(modelId?: string): string {
-  return withCapability("embedding").getEmbeddingModelId(modelId);
+/**
+ * Default chat model id: admin-marked default in the `models` table → first
+ * enabled model → a configured provider's built-in default.
+ */
+export function getDefaultChatModelId(): string {
+  const dbDefault = getDefaultModel();
+  if (dbDefault) return dbDefault.id;
+  const firstEnabled = getEnabledModels()[0];
+  if (firstEnabled) return firstEnabled.id;
+  const withDefault = ALL_PROVIDERS.filter((p) => p.defaultModel("chat"));
+  const provider = withDefault.find(isProviderConfigured) ?? withDefault[0];
+  if (provider) return provider.defaultModel("chat")!;
+  throw new Error("No chat model configured");
 }
 
 /**
  * Model used for `zero llm generate` — container scripts calling out via
  * the SDK/CLI proxy. Resolved in order: project `scripts_model` column →
- * admin-marked default in the `models` table → active provider's default.
+ * default chat model.
  */
 export function getScriptsModelId(projectId?: string): string {
   if (projectId) {
     const project = getProjectById(projectId);
     if (project?.scripts_model) return project.scripts_model;
   }
-  const dbDefault = getDefaultModel();
-  if (dbDefault) return dbDefault.id;
-  return getActiveProvider().getDefaultChatModelId();
+  return getDefaultChatModelId();
 }
 
 /**
  * Model used by scheduled tasks (cron, event, script triggers, "run now").
- * Resolved in order: project `tasks_model` column → admin-marked default
- * in the `models` table → active provider's default.
+ * Resolved in order: project `tasks_model` column → default chat model.
  */
 export function getTasksModelId(projectId?: string): string {
   if (projectId) {
     const project = getProjectById(projectId);
     if (project?.tasks_model) return project.tasks_model;
   }
-  const dbDefault = getDefaultModel();
-  if (dbDefault) return dbDefault.id;
-  return getActiveProvider().getDefaultChatModelId();
+  return getDefaultChatModelId();
 }
 
-/**
- * Per-model OpenRouter routing config (`{ order, allow_fallbacks }`) parsed
- * from the model row's `provider_config` column. Callers merge this into
- * `callModel({ provider: routing })`.
- */
-export function getRoutingForModel(modelId: string): OpenRouterRouting | undefined {
-  const provider = getProviderForModel(modelId);
-  return provider.getRoutingForModel?.(modelId);
-}
-
-export type { InferenceProvider, OpenRouterRouting };
+export type { Capability, InferenceProvider };

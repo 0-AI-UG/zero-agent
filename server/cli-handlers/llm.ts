@@ -4,8 +4,9 @@
  * without needing direct API key access.
  */
 import type { z } from "zod";
-import { generateText } from "@/lib/openrouter/text.ts";
+import { generateText } from "@/lib/inference/text.ts";
 import { getScriptsModelId } from "@/lib/providers/index.ts";
+import { resolveModelForPi } from "@/lib/pi/model.ts";
 import { insertUsageLog } from "@/db/queries/usage-logs.ts";
 import type { CliContext } from "./context.ts";
 import { ok } from "./response.ts";
@@ -16,10 +17,12 @@ export async function handleLlmGenerate(
   input: z.infer<typeof LlmGenerateInput>,
 ): Promise<Response> {
   const model = getScriptsModelId(ctx.projectId);
+  const resolved = resolveModelForPi(model);
 
   const result = await generateText({
-    model,
-    messages: input.prompt,
+    provider: resolved.provider,
+    model: resolved.modelId,
+    prompt: input.prompt,
     system: input.system,
     maxOutputTokens: input.maxTokens ?? 4096,
   });

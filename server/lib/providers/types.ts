@@ -1,50 +1,54 @@
 /**
- * Provider interface. Post-AI-SDK: providers are now model-ID resolvers +
- * config parsers. Callers pass the returned string into one of the helpers
- * under `server/lib/openrouter/` (`generateText`, `embed`, `generateImage`)
- * or into the agent loop — the SDK client is shared.
+ * Capability-aware inference provider interface. Every provider is a real
+ * implementation: it exposes AI SDK models for text/embedding work and an
+ * image-generation entry point where the vendor offers one. All providers
+ * register on equal footing in `index.ts` — which provider serves a given
+ * capability is a settings concern (`EMBEDDING_PROVIDER`, `IMAGE_PROVIDER`,
+ * `VISION_PROVIDER`), not a hierarchy. Chat routes per model row via
+ * `pi_provider`.
  */
+import type { EmbeddingModel, LanguageModel } from "ai";
 
-export interface ProviderCapabilities {
-  chat: boolean;
-  image: boolean;
-  vision: boolean;
-  embedding: boolean;
+export type Capability = "chat" | "embedding" | "image" | "vision";
+
+export type ProviderCapabilities = Record<Capability, boolean>;
+
+export interface GenerateImageArgs {
+  prompt: string;
+  model: string;
+  aspectRatio?: string;
+  imageSize?: string;
 }
 
-export interface OpenRouterRouting {
-  order: string[];
-  allow_fallbacks?: boolean;
+export interface GeneratedImage {
+  data: Uint8Array;
+  mediaType: string;
 }
 
 export interface InferenceProvider {
-  /** Stable identifier - must match the `inference_provider` column on model rows. */
+  /** Stable identifier — shares Pi's provider id space (`pi_provider` column). */
   id: string;
   displayName: string;
   capabilities: ProviderCapabilities;
 
-  /** Default chat model id used when callers don't specify one. */
-  getDefaultChatModelId(): string;
+  /** Settings/env key holding this provider's API key. */
+  apiKeySettingKey: string;
+
+  /** Default model id for a capability, if the provider ships one. */
+  defaultModel(capability: Capability): string | undefined;
+
+  /** AI SDK language model (chat + vision). */
+  languageModel(modelId: string): LanguageModel;
+
+  /** AI SDK embedding model — present iff `capabilities.embedding`. */
+  embeddingModel?(modelId: string): EmbeddingModel;
 
   /**
-   * Resolve the model id for each category. Pass `undefined` to get the
-   * provider's default for that category.
+   * Provider options merged into `embedMany` calls, e.g. to pin the output
+   * dimensionality to the fixed vector-index dimension.
    */
-  getChatModelId(modelId?: string): string;
-  getImageModelId(modelId?: string): string;
-  getVisionModelId(modelId?: string): string;
-  getEmbeddingModelId(modelId?: string): string;
+  embeddingProviderOptions?(modelId: string): Record<string, unknown> | undefined;
 
-  /**
-   * Parse the provider-specific `provider_config` JSON blob from a model row.
-   * Each provider knows its own shape.
-   */
-  parseConfig(raw: string | null): unknown;
-
-  /**
-   * Optional: per-model routing/passthrough config. For OpenRouter this is the
-   * `{ order, allow_fallbacks }` object lifted from the `provider_config`
-   * column; callers merge it into `callModel` as `{ provider: routing }`.
-   */
-  getRoutingForModel?(modelId: string): OpenRouterRouting | undefined;
+  /** Image generation — present iff `capabilities.image`. */
+  generateImage?(args: GenerateImageArgs): Promise<GeneratedImage>;
 }

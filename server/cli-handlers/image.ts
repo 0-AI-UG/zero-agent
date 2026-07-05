@@ -1,11 +1,11 @@
 /**
- * Image generation handler — wraps generateImageViaOpenRouter, writes the
+ * Image generation handler — wraps generateImageViaProvider, writes the
  * bytes into the project directory so the agent can read them back, and
  * inserts a `files` row. The inotify watcher converges FTS / vectors
  * after the file lands.
  */
 import type { z } from "zod";
-import { generateImageViaOpenRouter } from "@/lib/media/image.ts";
+import { generateImageViaProvider } from "@/lib/media/image.ts";
 import { insertFile } from "@/db/queries/files.ts";
 import { createFolder as createFolderRecord, getFolderByPath } from "@/db/queries/folders.ts";
 import { writeProjectFile, workspacePathFor } from "@/lib/projects/fs-ops.ts";
@@ -31,7 +31,7 @@ export async function handleImageGenerate(
   ctx: CliContext,
   input: z.infer<typeof ImageGenerateInput>,
 ): Promise<Response> {
-  const image = await generateImageViaOpenRouter(input.prompt);
+  const image = await generateImageViaProvider(input.prompt);
   const timestamp = Date.now();
   const rawPath = input.path ?? `images/${timestamp}.png`;
   const filePath = sanitizePath(rawPath);

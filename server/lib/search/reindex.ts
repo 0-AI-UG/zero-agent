@@ -1,6 +1,5 @@
 import { deleteProjectIndex, ensureIndex, putProjectVectors, isEmbeddingConfigured, chunkText, textToSparseVector } from "@/lib/search/vectors.ts";
-import { embed } from "@/lib/openrouter/embed.ts";
-import { getEmbeddingModelId } from "@/lib/providers/index.ts";
+import { embed } from "@/lib/inference/embed.ts";
 import { log } from "@/lib/utils/logger.ts";
 import { db } from "@/db/index.ts";
 import { readProjectFile } from "@/lib/projects/fs-ops.ts";
@@ -70,7 +69,7 @@ const OVERALL_TIMEOUT_MS = 300_000; // 5 minutes
 const FILE_CONCURRENCY = 3;
 
 async function embedValues(values: string[]): Promise<number[][]> {
-  return embed(values, { model: getEmbeddingModelId() });
+  return embed(values);
 }
 
 function storeVectors(projectId: string, vectors: VectorEntry[], indexReset: { done: boolean }): void {
@@ -148,7 +147,7 @@ export async function reindexProject(
   onProgress?: (progress: ReindexProgress) => void,
 ): Promise<{ files: number }> {
   if (!isEmbeddingConfigured()) {
-    throw new Error("Embedding not configured - set OPENROUTER_API_KEY first");
+    throw new Error("Embedding not configured - add an API key for the embedding provider first");
   }
 
   if (isReindexRunning(projectId)) {

@@ -12,14 +12,18 @@ import {
 import type { ModelRow } from "@/db/types.ts";
 import { getModel } from "@earendil-works/pi-ai";
 
-function lookupContextWindow(provider: string, id: string): number | undefined {
-  // The DB `provider` column groups models by maker (anthropic, moonshotai, …)
-  // but inference is routed through OpenRouter, so model ids are openrouter-format.
-  // Try openrouter first, then fall back to the maker provider.
-  for (const key of ["openrouter", provider]) {
+function lookupContextWindow(m: ModelRow): number | undefined {
+  // Try the model's actual route first, then the aggregator id format, then
+  // the maker tag (the DB `provider` column groups models by maker).
+  const candidates: Array<[string, string]> = [
+    [m.pi_provider, m.pi_model_id ?? m.id],
+    ["openrouter", m.id],
+    [m.provider, m.id],
+  ];
+  for (const [key, id] of candidates) {
     try {
-      const m = getModel(key as never, id as never) as { contextWindow?: number } | undefined;
-      if (m?.contextWindow) return m.contextWindow;
+      const model = getModel(key as never, id as never) as { contextWindow?: number } | undefined;
+      if (model?.contextWindow) return model.contextWindow;
     } catch {
       // unknown (provider, id) combination — try next
     }
@@ -39,7 +43,7 @@ function formatModel(m: ModelRow) {
     thinkingLevel: m.thinking_level,
     piProvider: m.pi_provider,
     piModelId: m.pi_model_id,
-    contextWindow: lookupContextWindow(m.provider, m.id),
+    contextWindow: lookupContextWindow(m),
   };
 }
 
@@ -79,8 +83,8 @@ export async function handleCreateModel(request: Request): Promise<Response> {
     await requireAdmin(request);
     const body: any = await request.json();
 
-    if (!body.id || !body.name || !body.provider) {
-      return Response.json({ error: "id, name, and provider are required" }, { status: 400, headers: corsHeaders });
+    if (!body.id || !body.name || !body.provider || !body.piProvider) {
+      return Response.json({ error: "id, name, provider, and piProvider are required" }, { status: 400, headers: corsHeaders });
     }
 
     const data: ModelInput = {

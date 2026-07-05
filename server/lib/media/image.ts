@@ -1,10 +1,9 @@
-import { generateImage } from "@/lib/openrouter/image.ts";
-import { getImageModelId } from "@/lib/providers/index.ts";
+import { generateImage } from "@/lib/inference/image.ts";
 import { log } from "@/lib/utils/logger.ts";
 
 const imgLog = log.child({ module: "image" });
 
-export async function generateImageViaOpenRouter(
+export async function generateImageViaProvider(
   prompt: string,
 ): Promise<{ data: Uint8Array; mediaType: string }> {
   imgLog.info("generating image", { prompt: prompt.slice(0, 200) });
@@ -12,7 +11,6 @@ export async function generateImageViaOpenRouter(
 
   try {
     const result = await generateImage({
-      model: getImageModelId(),
       prompt,
       aspectRatio: "9:16",
     });
