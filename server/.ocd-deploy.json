@@ -5,10 +5,14 @@
   "description": "API server with real-time chat, agent orchestration, and multi-provider LLM support",
   "suggested_app_name": "zero-server",
   "build": {
-    "dockerfile": "Dockerfile",
+    "repository": "https://github.com/0-AI-UG/zero-agent.git",
+    "branch": "main",
+    "dockerfile": "server/Dockerfile",
     "context": ".",
-    "container_port": 3000
+    "image_repository": "ghcr.io/0-ai-ug/zero-agent/zero-server",
+    "webhook": true
   },
+  "container_port": 3000,
   "volume": {
     "size": 20,
     "path": "/app/data"
@@ -64,9 +68,5 @@
       "description": "Logging verbosity (debug, info, warn, error)",
       "default": "info"
     }
-  ],
-  "webhook": {
-    "enabled": true,
-    "branch": "main"
-  }
+  ]
 }
