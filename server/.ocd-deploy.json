@@ -1,7 +1,7 @@
 {
   "$schema": 1,
   "$llm": "https://ocd.cero-ai.com/llm.txt",
-  "name": "Zero Agent — Server",
+  "name": "Zero Agent \u2014 Server",
   "description": "API server with real-time chat, agent orchestration, and multi-provider LLM support",
   "suggested_app_name": "zero-server",
   "build": {
@@ -12,61 +12,20 @@
     "image_repository": "ghcr.io/0-ai-ug/zero-agent/zero-server",
     "webhook": true
   },
-  "container_port": 3000,
   "volume": {
     "size": 20,
     "path": "/app/data"
   },
-  "env": [
-    {
-      "key": "PI_PROJECTS_ROOT",
-      "description": "Where Pi stores per-project workspaces and chat session JSONLs. Kept inside /app/data so the persistent volume covers both SQLite and project files.",
-      "default": "/app/data/projects"
+  "env": {
+    "CORS_ORIGIN": "*",
+    "JWT_SECRET": {
+      "from": "environment.JWT_SECRET"
     },
-    {
-      "key": "JWT_SECRET",
-      "description": "Secret key for signing JWT tokens. Must be set in production.",
-      "required": true,
-      "secret": true
-    },
-    {
-      "key": "CREDENTIALS_KEY",
-      "description": "Encryption key for stored secrets (API keys, tokens). Falls back to JWT_SECRET if unset.",
-      "secret": true
-    },
-    {
-      "key": "OPENROUTER_API_KEY",
-      "description": "OpenRouter API key for LLM access. Can also be set later via admin panel.",
-      "secret": true
-    },
-    {
-      "key": "BRAVE_SEARCH_API_KEY",
-      "description": "Brave Search API key for web search. Can also be set later via admin panel.",
-      "secret": true
-    },
-    {
-      "key": "APP_URL",
-      "description": "Full public URL of the app (e.g. https://zero.example.com). Used for passkey auth and webhooks."
-    },
-    {
-      "key": "RP_ID",
-      "description": "WebAuthn relying party ID — the domain without protocol (e.g. zero.example.com)",
-      "default": "localhost"
-    },
-    {
-      "key": "RP_NAME",
-      "description": "Display name shown during passkey registration",
-      "default": "ZeroAgent"
-    },
-    {
-      "key": "CORS_ORIGIN",
-      "description": "Allowed CORS origin. Set to your app URL in production.",
-      "default": "*"
-    },
-    {
-      "key": "LOG_LEVEL",
-      "description": "Logging verbosity (debug, info, warn, error)",
-      "default": "info"
-    }
-  ]
+    "LOG_LEVEL": "info",
+    "PI_PROJECTS_ROOT": "/app/data/projects",
+    "RP_ID": "localhost",
+    "RP_NAME": "ZeroAgent"
+  },
+  "environment": "zero-server",
+  "container_port": 3000
 }
