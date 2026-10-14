@@ -36,7 +36,7 @@ You get Pi's coding agent (real tool-use protocol, streaming, reasoning, subagen
 - a **`zero` CLI** the agent calls from bash: browser, web search, email (IMAP+SMTP), image generation, credentials vault, scheduled tasks, app preview URLs, embeddings;
 - **autonomy**: cron + file/message event triggers with cycle guards, a per-project `HEARTBEAT.md` loop, and a Telegram bridge where replies feed back into the same chat;
 - **per-turn git snapshots** so every change is reversible at file granularity;
-- an **OS-level sandbox** (`bubblewrap` / `sandbox-exec`) plus passkey auth, encrypted credentials, and a Unix-socket proxy for subprocess callbacks.
+- an **OS-level sandbox** (Landlock on Linux / `sandbox-exec` on macOS) plus passkey auth, encrypted credentials, and a per-turn token-authenticated loopback proxy for subprocess callbacks.
 
 Self-hosted. Multi-user. Runs unattended.
 
@@ -89,7 +89,7 @@ The same image backs `docker-compose.yml`, so `docker compose pull` fetches it i
 - **`zero` CLI.** The agent's bash gateway to a headless browser pool, web search, email (IMAP + SMTP), image generation, credentials, scheduled tasks, proxied app preview URLs, and embeddings.
 - **Autonomy.** Cron schedules, file/message event triggers with cooldowns and cycle guards, a per-project `HEARTBEAT.md` loop, and a Telegram bridge that posts replies back into the originating chat.
 - **Reversible by turn.** Per-turn git snapshots in a hidden `.git-snapshots` dir; revert one file from one turn without resetting the chat.
-- **Safe to leave alone.** OS-level sandbox (`bubblewrap` / `sandbox-exec`), passkey auth, AES-encrypted credential vault accessed via shell substitution (never in the transcript), and a per-turn Unix-socket proxy for subprocess callbacks.
+- **Safe to leave alone.** OS-level sandbox (Landlock on Linux, `sandbox-exec` on macOS) that confines the agent's bash to its project directory, passkey auth, AES-encrypted credential vault accessed via shell substitution (never in the transcript), and a per-turn, token-authenticated loopback proxy for subprocess callbacks.
 
 ## How it compares
 
@@ -98,7 +98,7 @@ The same image backs `docker-compose.yml`, so `docker compose pull` fetches it i
 | Persistent project filesystem | – | – | per-session | – | **Yes** |
 | Multi-user on same workspace | per-user chats | per-app | single-user | per-workspace docs | **Shared + presence** |
 | Per-turn snapshots & revert | – | – | – | – | **Yes** |
-| OS-level sandbox | – | – | Docker | – | **bwrap / sandbox-exec** |
+| OS-level sandbox | – | – | Docker | – | **Landlock / sandbox-exec** |
 | Scheduled + event autonomy | – | partial | – | – | **Yes** |
 
 ## Configuration
